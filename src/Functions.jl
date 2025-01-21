@@ -1,189 +1,5 @@
 using MacroTools
 
-#=Grid lattice functions=#
-
-# Matrix Coordinates to vector Coordinates
-@inline function coordToIdx(i, j, length)
-    return Int32(i + (j - 1) * length)
-end
-
-@inline function coordToIdx(i,j,k, len, wid)
-    return Int32(i + (j - 1) * len + (k - 1) * len * wid)
-end
-
-@inline function coordToIdx(coords::NTuple{N,<:Integer}, size::NTuple{N,<:Integer}) where N
-    # Convert
-    coords = Int32.(coords)
-    size = Int32.(size)
-    
-    idx = 1
-    for i in 1:N
-        idx += (coords[i] - 1) * prod(size[1:i-1])
-    end
-    return idx
-end
-
-# Insert coordinates as tuple
-coordToIdx((i, j), length::Integer) = coordToIdx(i, j, length)
-
-# Go from idx to lattice coordinates, for rectangular grids
-@inline function idxToCoord(idx::T, length::Integer) where T <: Integer
-    return (T((idx - 1) % length + 1), T((idx - 1) ÷ length + 1))
-end
-
-
-#TODO Check this one
-@inline function idxToCoord(idx::Integer, size::NTuple{DIMS,T}) where {DIMS,T}
-    idx = convert(T, idx)
-    if DIMS == 2
-        r(T((idx - 1) % length + 1), T((idx - 1) ÷ length + 1))
-    elseif DIMS == 3
-        len = size[1]
-        wid = size[2]
-        #(i,j,k)
-        return (T((idx - 1) % len + 1), T((idx - 1) ÷ len % wid + 1), T((idx - 1) ÷ (len * wid) + 1))
-    end
-end
-
-"""
-Put a lattice index (i or j) back onto lattice by looping in a direction
-First argument is index, second is length in that direction
-"""
-@inline function latmod(idx::T, L::T) where T <: Integer
-    # return mod((idx - T(1)), L) + T(1)
-    return mod1(idx, L)
-end
-
-@inline function latmod(i::T,j::T,layer) where T
-    len = glength(layer)
-    wid = gwidth(layer)
-
-    return latmod(i,len), latmod(j,wid)
-end 
-
-@inline function latmod(i::T,j::T,len::T,wid::T) where T
-    return latmod(i,len), latmod(j,wid)
-end
-
-@inline function latmod(i::T,j::T,k::T,len::T,wid::T,hei::T) where T
-    return latmod(i,len), latmod(j,wid), latmod(k,hei)
-end
-
-@inline function latmod(coords::NTuple{N,T}, size::NTuple{N,T}) where {N,T}
-    if N == 2
-        return latmod(coords[1], coords[2], size[1], size[2])
-    elseif N == 3
-        return latmod(coords[1], coords[2], coords[3], size[1], size[2], size[3])
-    end
-end
-
-export latmod
-
-@inline function inlat(idx::T, L::T) where T <: Integer
-    if idx <= L && idx > 0
-        return idx
-    else
-        return 0
-    end
-end
-
-
-# Array functions
-
-# Searches backwards from idx in list and removes item
-# This is because spin idx can only be before it's own index in aliveList
-function revRemoveSpin!(list,spin_idx)
-    init = min(spin_idx, length(list)) #Initial search index
-    for offset in 0:(init-1)
-        @inbounds if list[init-offset] == spin_idx
-            deleteat!(list,init-offset)
-            return init-offset # Returns index where element was found
-        end
-    end
-end
-
-# Zip together two ordered lists into a new ordered list; fast  
-function zipOrderedLists(vec1::Vector{T},vec2::Vector{T}) where T
-    # result::Vector{T} = zeros(length(vec1)+length(vec2))
-    result = Vector{T}(undef, length(vec1)+length(vec2))
-
-    ofs1 = 1
-    ofs2 = 1
-    while ofs1 <= length(vec1) && ofs2 <= length(vec2)
-        @inbounds el1 = vec1[ofs1]
-        @inbounds el2 = vec2[ofs2]
-        if el1 < el2
-            @inbounds result[ofs1+ofs2-1] = el1
-            ofs1 += 1
-        else
-            @inbounds result[ofs1+ofs2-1] = el2
-            ofs2 += 1
-        end
-    end
-
-    if ofs1 <= length(vec1)
-        @inbounds result[ofs1+ofs2-1:end] = vec1[ofs1:end]
-    else
-        @inbounds result[ofs1+ofs2-1:end] = vec2[ofs2:end]
-    end
-    return result
-end
-
-# Deletes els from vec which should be ordered
-# Assumes that els are in vec!
-# Should I make ordered vec a type?
-function remOrdEls(vec::Vector{T}, els::Vector{T}) where T
-    # result::Vector{T} = zeros(length(vec)-length(els))
-    result = Vector{T}(undef, length(vec)-length(els))
-    it_idx = 1
-    num_del = 0
-    for el in els
-            while el != vec[it_idx]
-        
-            result[it_idx - num_del] = vec[it_idx]
-            it_idx +=1
-        end
-            num_del +=1
-            it_idx += 1
-    end
-        result[(it_idx - num_del):end] = vec[it_idx:end]
-    return result
-end
-
-# Remove first element equal to el and returns correpsonding index
-function removeFirst!(list,el)
-    for (idx,item) in enumerate(list)
-        if item == el
-            deleteat!(list,idx)
-            return idx
-        end
-    end
-end
-
-#=
-Threads
-=#
-
-# Spawn a new thread for a function, but only if no thread for that function was already created
-# The function is "locked" using a reference to a Boolean value: spawned
-function spawnOne(f::Function, spawned::Ref{Bool}, threadname = "", args... )
-    # Run function, when thread is finished mark it as not running
-    function runOne(func::Function, spawned::Ref{Bool}, args...)
-        func(args...)
-        spawned[] = false
-        GC.safepoint()
-    end
-
-    # Mark as running, then spawn thread
-    if !spawned[]
-        spawned[] = true
-        # Threads.@spawn runOne(f,spawned)
-        runOne(f,spawned, args...)
-    else
-        println("Already spawned" * threadname)
-    end
-end
-
 macro includefile(filepath)
     esc(Meta.parse(read(open(eval(filepath)), String)))
 end
@@ -561,8 +377,6 @@ macro enumeratelayers(layers, length)
 end
 export @enumeratelayers
 
-changesize(sp::SparseMatrixCSC, rows, cols) = sparse(findnz(sp)..., rows, cols)
-
 macro tryLockPause(sim, expr, blockpause = false, blockunpause = false)
     fexp = quote end
     push!(fexp.args, :(lockPause($sim, block = $blockpause)))
@@ -646,15 +460,6 @@ function rangeidx(range, value)
 end
 export rangeidx
 
-function sumsimd(v::AbstractArray{T}) where T
-    cum = zero(T)
-    @turbo for idx in eachindex(v)
-        cum += v[idx]
-    end
-    return cum
-end
-export sumsimd
-
 """
 Deepcopy all the fields of one struct to another.
 """
@@ -700,13 +505,3 @@ function functionargs(ex)
     @capture(ex2, function f_(xs__) where {T_}  body_ end)
     xs
 end
-
-# macro parameterfunc(structname, func_ex)
-#     total_ex = quote end
-#     # push original func exp
-#     push!(total_ex.args, func_ex)
-#     # get the struct Parameters
-#     p_names = parameternames(find_struct_in(structname, @__DIR__))
-#     type_func_ex = deepcopy(func_ex)
-#     args = functionargs(type_func_ex)
-# end

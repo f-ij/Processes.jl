@@ -66,7 +66,7 @@ function createtask!(process, @specialize(func); runtime = Indefinite(), prepare
     else
         # Prepare always has access to process and runtime
         if isnothing(prepare) # If prepare is nothing, then the user didn't specify a prepare function
-            prepared_args = InteractiveIsing.prepare(func, (;proc = process, runtime, args...))
+            prepared_args = Processes.prepare(func, (;proc = process, runtime, args...))
         else
             prepared_args = prepare(func, (;proc = process, runtime, args...))
         end
