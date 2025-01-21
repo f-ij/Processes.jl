@@ -1,4 +1,4 @@
-using Processes, BenchmarkTools
+using Processes
 
 struct Fib <: ProcessAlgorithm end
 

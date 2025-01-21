@@ -1,5 +1,3 @@
-using MacroTools
-
 macro includefile(filepath)
     esc(Meta.parse(read(open(eval(filepath)), String)))
 end
