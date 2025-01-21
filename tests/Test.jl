@@ -62,8 +62,8 @@ end
 struct FibLucTrig{Intervals} end
 
 function Processes.prepare(::Type{FibLucTrig{Intervals}}, args) where Intervals
-    (;runtime) = args
-    rpts = Processes.repeats(runtime)
+    (;lifetime) = args
+    rpts = Processes.repeats(lifetime)
     triggers = ((Processes.InitTriggerList(interval) for interval in Intervals)...,)
     for i in 1:rpts
         for (i_idx, interval) in enumerate(Intervals)
@@ -96,7 +96,7 @@ benchmark(FibLuc, 1000000)
 
 
 # p, args = ex_p_and_args(FibLucComp, 1000000, loopfunction = unrollloop)
-# (;runtime) = args
+# (;lifetime) = args
 
 # import Processes: _comp_dispatch, gethead, gettail, get_intervals, headval, get_funcs, typeheadval, typetail
 # @code_warntype Processes.comp_dispatch(FibLucComp, args)
@@ -106,7 +106,7 @@ benchmark(FibLuc, 1000000)
 
 # @code_warntype Processes.unroll_step(FibLucComp, args)
 
-p1 = Process(FibLuc; runtime = 1000000)
+p1 = Process(FibLuc; lifetime = 1000000)
 start(p1)
 runtime_ns(p1)
 
@@ -126,11 +126,11 @@ function testloop(args)
 end
 
 function test_testloop()
-    outerargs = (;fiblist = [0, 1], luclist = [2, 1])
-    sizehint!(outerargs.fiblist, 1000000)
-    sizehint!(outerargs.luclist, 1000000)
     runtimes = []
     for _ in 1:100
+        outerargs = (;fiblist = [0, 1], luclist = [2, 1])
+        sizehint!(outerargs.fiblist, 1000000)
+        sizehint!(outerargs.luclist, 1000000)
         push!(runtimes, testloop(outerargs))
     end
     runtimes ./= 1e9

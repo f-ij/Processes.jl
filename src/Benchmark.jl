@@ -1,5 +1,5 @@
 function benchmark(func, rt, trials = 100; loopfunction = nothing, progress = false) 
-    p = Process(func; runtime = rt)
+    p = Process(func; lifetime = rt)
     createtask!(p; loopfunction)
     times = []
     for t_idx in 1:trials
@@ -9,7 +9,6 @@ function benchmark(func, rt, trials = 100; loopfunction = nothing, progress = fa
         start(p)
         wait(p)
         push!(times, runtime(p))
-        display(getargs(p))
     end
     return sum(times) / trials
 end

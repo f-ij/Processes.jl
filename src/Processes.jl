@@ -13,10 +13,16 @@ module Processes
     include("Functions.jl")
     include("ExpressionTools.jl")
     @ForwardDeclare Process ""
+
+ 
     include("TaskFuncs.jl")
     include("CompositeAlgorithms.jl")
     include("Benchmark.jl")
     include("Debugging.jl")
     include("Process.jl")
+    include("ProcessStatus.jl")
+    include("Interface.jl")
+    include("Loops.jl")
+    include("Tools.jl")
 
 end

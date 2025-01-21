@@ -1,20 +1,20 @@
-define_processdebug_task(@specialize(p), @specialize(func), @specialize(args), @specialize(runtime)) = @task mainloop_warntype(p, func, args, runtime)
+define_processdebug_task(@specialize(p), @specialize(func), @specialize(args), @specialize(lifetime)) = @task mainloop_warntype(p, func, args, lifetime)
 
 function process_warntype(p)
     func = getfunc(p)
     args = getinputargs(p)
-    runtime = getruntime(p)
-    mainloop_warntype(p, func, args, runtime)
+    lifetime = getlifetime(p)
+    mainloop_warntype(p, func, args, lifetime)
 end
 export process_warntype
 import InteractiveUtils: @code_warntype
 
-function mainloop_warntype(@specialize(p), @specialize(func), @specialize(args), ::Runtime)
+function mainloop_warntype(@specialize(p), @specialize(func), @specialize(args), ::Lifetime)
     Base.code_typed(func, Tuple{typeof(args)}; optimize=true)
 end
 
 function get_example_process(func, rt; loopfunction = nothing)
-    p = Process(func; runtime = rt)
+    p = Process(func; lifetime = rt)
     createtask!(p; loopfunction)
     return p
 end

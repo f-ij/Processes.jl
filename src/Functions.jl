@@ -505,3 +505,62 @@ function functionargs(ex)
     @capture(ex2, function f_(xs__) where {T_}  body_ end)
     xs
 end
+
+"""
+From a tuple of struct names, get the fieldnames of the first struct
+"""
+call_all(tup) = map(f -> f(), tup)
+
+
+"""
+Check if function is defined for arg
+"""
+function iserror(func, arg)
+    try
+        func(arg)
+        return false
+    catch
+        return true
+    end
+end
+
+
+function deletekey(ps::Base.Pairs, key)
+    _keys = collect(keys(ps))
+    filter!(x -> x != key, _keys)
+    if !isempty(_keys)
+        return pairs(ps[_keys...])
+    else
+        pairs((;))
+    end
+end
+"""
+From kwargs delete a key
+"""
+function deletekey(ps::Union{Base.Pairs, NamedTuple}, key)
+    _keys = collect(keys(ps))
+    filter!(x -> x != key, _keys)
+    if !isempty(_keys)
+        if ps isa NamedTuple
+            ps[_keys]
+        else
+            pairs(ps[_keys...])
+        end
+    else
+        if typeof ps isa NamedTuple
+            return NamedTuple()
+        else
+            return pairs((;))
+        end
+
+    end
+end
+
+
+"""
+From kwargs delete a key
+"""
+function deletekeys(ps::NamedTuple, ks...)
+    leftover_keys = filter(x -> !(x in ks), collect(keys(ps)))
+    return ps[leftover_keys]
+end
