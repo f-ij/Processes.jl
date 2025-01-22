@@ -14,6 +14,7 @@ mutable struct Process
     errorlog::Any
     algorithm::Any #Ref to the algorithm being run TODO:: Remove this one?
 end
+export Process
 
 getinputargs(p::Process) = p.taskfunc.args
 getargs(p::Process) = p.taskfunc.prepared_args

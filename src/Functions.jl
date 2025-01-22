@@ -384,18 +384,6 @@ macro tryLockPause(sim, expr, blockpause = false, blockunpause = false)
 end
 export @tryLockPause
 
-"""
-Insert a vector into another vector
-"""
-function Base.insert!(collection::Vector{T}, idx::Integer, items::Vector{T}) where T
-    original_len = length(collection)
-    shifted_items = length(collection) - idx + 1
-    resize!(collection, length(collection) + length(items))
-    collection[end-shifted_items+1:end] = collection[idx:original_len]
-    collection[idx:idx+length(items)-1] = items
-    return collection
-end
-
 #TIME 
 getnowtime() =  begin nowtime = string(now())[1:(end-7)]; nowtime = replace(nowtime, ":" => "."); return nowtime end
 
