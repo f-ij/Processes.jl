@@ -474,24 +474,6 @@ Give a module subfolder and a structname, find the struct in the files in the su
 """
 find_struct_in(structname, subfolder) = getstruct(string(structname), readdir(joinpath(modulefolder, subfolder)))
 
-function parameternames(structstr)
-    c1 = @capture(Meta.parse(structstr), struct T_ fieldnames__ end)
-    if c1
-        return T.args[1].args[2:end]
-    else
-        c2 = @capture(Meta.parse(structstr), mutable struct T_ fieldnames__ end)
-        if c2
-            return T.args[1].args[2:end]
-        end
-    end
-    return nothing
-end
-
-function functionargs(ex)
-    @capture(ex2, function f_(xs__) where {T_}  body_ end)
-    xs
-end
-
 """
 From a tuple of struct names, get the fieldnames of the first struct
 """

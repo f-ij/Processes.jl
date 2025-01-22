@@ -1,5 +1,6 @@
 
-export start, restart, quit, pause, close
+export start, restart, quit, pause, close, refresh
+
 function start(p::Process, sticky = false)
     # @assert isfree(p) "Process is already in use"
     @assert !isnothing(p.taskfunc) "No task to run"
