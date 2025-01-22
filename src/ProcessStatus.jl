@@ -1,3 +1,4 @@
+export isfree, isused, isrunning, ispaused, isdone, isidle, status, message
 status(p::Process) = isrunning(p) ? :Running : :Quit
 message(p::Process) = run(p) ? :Run : :Quit
 
