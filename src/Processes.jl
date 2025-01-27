@@ -16,6 +16,7 @@ module Processes
 
  
     include("TaskFuncs.jl")
+    include("TriggerList.jl")
     include("CompositeAlgorithms.jl")
     include("Benchmark.jl")
     include("Debugging.jl")

@@ -9,12 +9,14 @@ mutable struct Process
     @atomic paused::Bool
     starttime ::Union{Nothing, Float64, UInt64}
     endtime::Union{Nothing, Float64, UInt64}
-    objectref::Any
-    retval::Any
+    linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
+    retval::Any ## Todo, this one neccesary?
     errorlog::Any
     algorithm::Any #Ref to the algorithm being run TODO:: Remove this one?
 end
 export Process
+
+Base.:==(p1::Process, p2::Process) = p1.id == p2.id
 
 getinputargs(p::Process) = p.taskfunc.args
 getargs(p::Process) = p.taskfunc.prepared_args
@@ -24,6 +26,8 @@ lifetime(p::Process) = p.taskfunc.lifetime
 set_starttime!(p::Process) = p.starttime = time_ns()
 set_endtime!(p::Process) = p.endtime = time_ns()
 reset_times!(p::Process) = (p.starttime = nothing; p.endtime = nothing)
+
+get_linked_processes(p::Process) = p.linked_processes
 
 # List of processes in use
 const processlist = Dict{UUID, WeakRef}()
@@ -65,7 +69,7 @@ function Process(func = nothing; lifetime = Indefinite(), overrides = (;), args.
     end
     # tf = TaskFunc(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
     tf = TaskFunc(func; args, lifetime, overrides...)
-    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, nothing, nothing, nothing, nothing)
+    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], nothing, nothing, nothing)
     register_process!(p)
     return p
 end
@@ -129,14 +133,11 @@ function runtask!(p::Process)
 end
 export runtask!
 
-(p::Process)(taskf::Function, objectref = nothing) = runtask(p, taskf, objectref)
-(p::Process)(task::Task, objectref = nothing) = runtask(p, task, objectref)
-
 @inline lock(p::Process) = lock(p.lock)
 @inline lock(f, p::Process) = lock(f, p.lock)
 @inline unlock(p::Process) =  unlock(p.lock)
 
-reset!(p::Process) = (p.loopidx = 1; p.retval = nothing; p.task = nothing; @atomic p.run = false; p.objectref = nothing)
+reset!(p::Process) = (p.loopidx = 1; p.retval = nothing; p.task = nothing; @atomic p.run = false)
 
 """
 Get value of run of a process, denoting wether it should run or not
@@ -151,3 +152,10 @@ run(p::Process, val) = @atomic p.run = val
 Increments the loop index of a process
 """
 @inline inc!(p::Process) = p.loopidx += 1
+
+
+
+### LINKING
+
+link_process!(p1::Process, p2::Process) = push!(p1.linked_processes, p2)
+unlink_process!(p1::Process, p2::Process) = filter!(x -> x != p2, p1.linked_processes)

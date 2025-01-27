@@ -1,52 +1,5 @@
-export CompositeAlgorithm, prepare, loopexp, 
-    TriggerList, AlwaysTrigger, TriggerList, 
-    CompositeTriggers, InitTriggerList, peeknext, next!, skiplist!, thislist, maxtriggers, triggeridx
+export CompositeAlgorithm, prepare, loopexp
 
-mutable struct TriggerList{Always}
-    const triggers::Vector{Int}
-    idx::Int
-end
-
-TriggerList() = TriggerList{false}([], 1)
-
-AlwaysTrigger() = TriggerList{true}([], 1)
-TriggerList(v::Vector{Int}) = TriggerList{false}(v, 1)
-
-
-InitTriggerList(interval) = interval == 1 ? AlwaysTrigger() : TriggerList()
-
-Base.length(tl::TriggerList) = length(tl.triggers)
-Base.size(tl::TriggerList) = size(tl.triggers)
-isfinished(tl::TriggerList) = tl.idx > length(tl.triggers)
-
-
-peeknext(tl::TriggerList) = tl.triggers[tl.idx]
-
-next!(tl::TriggerList) = tl.idx += 1
-next!(tl::TriggerList{true}) = nothing
-
-mutable struct CompositeTriggers{N, TL}
-    const lists::TL
-    listidx::Int
-end
-
-Base.getindex(ct::CompositeTriggers, i) = ct.lists[i]
-
-CompositeTriggers(lists) = CompositeTriggers{length(lists), typeof(lists)}(lists, 1)
-inc!(ct::CompositeTriggers) = ct.lists[ct.listidx] |> next!
-
-@inline peeknext(ct::CompositeTriggers) = ct.lists[ct.listidx] |> peeknext
-function shouldtrigger(ct::CompositeTriggers, loopidx)
-    if thislist(ct) |> isfinished
-        return false
-    end
-    return peeknext(ct) == loopidx
-end
-
-skiplist!(ct::CompositeTriggers) = ct.listidx = mod1(ct.listidx + 1, length(ct.lists))
-thislist(ct::CompositeTriggers) = ct.lists[ct.listidx]
-maxtriggers(ct::CompositeTriggers) = length(thislist(ct))
-triggeridx(ct::CompositeTriggers) = thislist(ct).idx
 struct CompositeAlgorithm{FT, Intervals, T} 
     funcs::T
 end
@@ -77,6 +30,10 @@ prepare_number(args) = args.preparing_algo_num[]
 
 get_this_interval(args) = getinterval(getfunc(args.proc), prepare_number(args))
 
+numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
+@inline getfunc(::CompositeAlgorithm{T,I}, idx) where {T,I} = T.parameters[idx]
+@inline getinterval(::CompositeAlgorithm{T,I}, idx) where {T,I} = I[idx]
+
 
 function prepare(f::CompositeAlgorithm, args)
     (;lifetime) = args
@@ -106,8 +63,8 @@ end
 
 
 function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), rp::Repeat{repeats}) where {F,I,repeats}
-    set_starttime!(p)
-    for i in 1:repeats
+    before_while(p)
+    for _ in 1:repeats
         if !run(p)
             break
         end
@@ -115,11 +72,15 @@ function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}),
         inc!(p)
         GC.safepoint()
     end
-    set_endtime!(p)
-    cleanup(func, args)
+    after_while(p)
+    return cleanup(func, args)
 end
 
-function comp_dispatch(@specialize(func::CompositeAlgorithm{Fs,I}), args) where {Fs,I}
+"""
+Dispatch on a composite function
+    Made such that the functions will be completely inlined at compile time
+"""
+@inlline function comp_dispatch(@specialize(func::CompositeAlgorithm{Fs,I}), args) where {Fs,I}
     @inline _comp_dispatch(typehead(Fs), headval(I), typetail(Fs), gettail(I), args)
 end
 
@@ -137,14 +98,6 @@ end
 
 _comp_dispatch(::Nothing, ::Any, ::Any, ::Any, args) = nothing
 
-"""
-Fallback cleanup
-"""
-cleanup(func::Any, ::Any) = nothing
-
-numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
-@inline getfunc(::CompositeAlgorithm{T,I}, idx) where {T,I} = T.parameters[idx]
-@inline getinterval(::CompositeAlgorithm{T,I}, idx) where {T,I} = I[idx]
 
 
 @inline function typehead(t::Type{T}) where T<:Tuple
@@ -178,19 +131,6 @@ end
 @inline gettail(::Tuple{}) = nothing
 
 
-##
-####Triggers
-function compute_triggers(ca::CompositeAlgorithm{F, Intervals}, ::Repeat{repeats}) where {F, Intervals, repeats}
-    triggers = ((InitTriggerList(interval) for interval in Intervals)...,)
-    for i in 1:repeats
-        for (i_idx, interval) in enumerate(Intervals)
-            if i % interval == 0
-                push!(triggers[i_idx].triggers, i)
-            end
-        end
-    end
-    return CompositeTriggers(triggers)
-end
 
-# _comp_type_dispatch_int(::Nothing, ::Nothing, ::Any, ::Any, args) = nothing
+
 
