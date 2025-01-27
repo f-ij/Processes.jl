@@ -76,6 +76,17 @@ function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}),
     return cleanup(func, args)
 end
 
+function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), ::Indefinite) where {F,I}
+    before_while(p)
+    while run(p)
+        @inline comp_dispatch(func, args)
+        inc!(p)
+        GC.safepoint()
+    end
+    after_while(p)
+    return cleanup(func, args)
+end
+
 """
 Dispatch on a composite function
     Made such that the functions will be completely inlined at compile time
