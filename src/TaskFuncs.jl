@@ -79,11 +79,16 @@ function createtask!(process, @specialize(func); lifetime = Indefinite(), prepar
     if skip_prepare
         prepared_args = process.taskfunc.prepared_args
     else
+        calledobject = func
+        try 
+            calledobject = func()
+        catch
+        end
         # Prepare always has access to process and lifetime
         if isnothing(prepare) # If prepare is nothing, then the user didn't specify a prepare function
-            prepared_args = Processes.prepare(func, (;proc = process, lifetime, args...))
+            prepared_args = Processes.prepare(calledobject, (;proc = process, lifetime, args...))
         else
-            prepared_args = prepare(func, (;proc = process, lifetime, args...))
+            prepared_args = prepare(calledobject, (;proc = process, lifetime, args...))
         end
         if isnothing(prepared_args)
             prepared_args = (;)
