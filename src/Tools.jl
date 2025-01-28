@@ -19,6 +19,9 @@ give the array a size hint based on the lifetime and the number of updates per s
     end
 end
 
+"""
+Recommend a size for an array based on the lifetime of the process and the number of updates per step.
+"""
 @inline function recommendsize(args, updates_per_step = 1) 
     p = args.proc
     this_func = getfunc(p)
@@ -47,5 +50,28 @@ function newallocator(args)
         end
     end
 end
+
+####
+export TimeTracker, wait, add_timetracker
+"""
+A time tracker for waiting in loops
+"""
+mutable struct TimeTracker
+    lasttime::UInt64
+end
+TimeTracker() = TimeTracker(0)
+function Base.wait(timetracker::TimeTracker, seconds)
+    while time_ns() - timetracker.lasttime < seconds*1e9
+    end
+    timetracker.lasttime = time_ns()
+end
+
+
+Base.wait(args::NamedTuple, ) = Base.wait(args.timetracker)
+add_timetracker(args::NamedTuple) = (;args..., timetracker = TimeTracker())
+
+
+
+
 
 

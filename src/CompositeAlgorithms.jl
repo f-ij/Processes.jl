@@ -40,6 +40,8 @@ get_intervals(ca::C) where {C<:CompositeAlgorithm} = C.parameters[2]
 tupletype_to_tuple(t) = (t.parameters...,)
 get_intervals(ct::Type{<:CompositeAlgorithm}) = ct.parameters[2]
 
+
+
 @inline function getvals(ca::CompositeAlgorithm{FT, Is}) where {FT, Is}
     return Val.(Is)
 end
@@ -55,6 +57,10 @@ numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
 @inline getfunc(::CompositeAlgorithm{T,I}, idx) where {T,I} = T.parameters[idx]
 @inline getinterval(::CompositeAlgorithm{T,I}, idx) where {T,I} = I[idx]
 
+algo_loopidx(args) = loopidx(args.proc) ÷ args.interval
+export algo_loopidx
+
+
 
 function prepare(f::CompositeAlgorithm, args)
     (;lifetime) = args
@@ -62,7 +68,7 @@ function prepare(f::CompositeAlgorithm, args)
     _num_funcs = num_funcs(f)
 
     #Trick to get the number of the function currently being prepared
-    args = (;args..., algotracker = AlgoTracker(_num_funcs), smack = Ref(1))
+    args = (;args..., func = f, algotracker = AlgoTracker(_num_funcs))
 
     # Get the type insances, such that the prepare functions can be defined
     # as prepare(::TypeName, args)
@@ -116,7 +122,8 @@ Dispatch on a composite function
     Made such that the functions will be completely inlined at compile time
 """
 @inline function comp_dispatch(@specialize(func::CompositeAlgorithm{Fs,I}), args) where {Fs,I}
-    @inline _comp_dispatch(typehead(Fs), headval(I), typetail(Fs), gettail(I), args)
+    algoidx = 1
+    @inline _comp_dispatch(typehead(Fs), headval(I), typetail(Fs), gettail(I), (;args..., algoidx, interval = gethead(I)))
 end
 
 function _comp_dispatch(@specialize(thisfunc), interval::Val{I}, @specialize(funcs), intervals, args) where I
@@ -131,7 +138,7 @@ function _comp_dispatch(@specialize(thisfunc), interval::Val{I}, @specialize(fun
     if haskey(args, :algotracker)
         nextalgo!(args)
     end
-    @inline _comp_dispatch(typehead(funcs), headval(intervals), typetail(funcs), gettail(intervals), args)
+    @inline _comp_dispatch(typehead(funcs), headval(intervals), typetail(funcs), gettail(intervals), (;args..., algoidx = args.algoidx + 1, interval = gethead(intervals)))
 end
 
 _comp_dispatch(::Nothing, ::Any, ::Any, ::Any, args) = nothing
