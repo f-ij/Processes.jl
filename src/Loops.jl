@@ -1,5 +1,5 @@
 function before_while(p::Process)
-    println("Running indefinitely on thread $(Threads.threadid())")
+    # println("Running indefinitely on thread $(Threads.threadid())")
     set_starttime!(p)
     start.(get_linked_processes(p))
 end

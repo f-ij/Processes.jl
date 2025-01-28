@@ -91,7 +91,7 @@ end
 Dispatch on a composite function
     Made such that the functions will be completely inlined at compile time
 """
-@inlline function comp_dispatch(@specialize(func::CompositeAlgorithm{Fs,I}), args) where {Fs,I}
+@inline function comp_dispatch(@specialize(func::CompositeAlgorithm{Fs,I}), args) where {Fs,I}
     @inline _comp_dispatch(typehead(Fs), headval(I), typetail(Fs), gettail(I), args)
 end
 
@@ -142,6 +142,17 @@ end
 @inline gettail(::Tuple{}) = nothing
 
 
-
+##
+function compute_triggers(ca::CompositeAlgorithm{F, Intervals}, ::Repeat{repeats}) where {F, Intervals, repeats}
+    triggers = ((InitTriggerList(interval) for interval in Intervals)...,)
+    for i in 1:repeats
+        for (i_idx, interval) in enumerate(Intervals)
+            if i % interval == 0
+                push!(triggers[i_idx].triggers, i)
+            end
+        end
+    end
+    return CompositeTriggers(triggers)
+end
 
 

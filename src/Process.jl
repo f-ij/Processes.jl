@@ -1,3 +1,5 @@
+export Process, getallocator
+
 mutable struct Process
     id::UUID
     taskfunc::Union{Nothing,TaskFunc}
@@ -12,11 +14,14 @@ mutable struct Process
     linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
     retval::Any ## Todo, this one neccesary?
     errorlog::Any
-    algorithm::Any #Ref to the algorithm being run TODO:: Remove this one?
+    allocator::Allocator #Ref to the algorithm being run TODO:: Remove this one?
 end
 export Process
 
-Base.:==(p1::Process, p2::Process) = p1.id == p2.id
+import Base: ==
+==(p1::Process, p2::Process) = p1.id == p2.id
+
+getallocator(p::Process) = p.allocator
 
 getinputargs(p::Process) = p.taskfunc.args
 getargs(p::Process) = p.taskfunc.prepared_args
@@ -69,7 +74,7 @@ function Process(func = nothing; lifetime = Indefinite(), overrides = (;), args.
     end
     # tf = TaskFunc(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
     tf = TaskFunc(func; args, lifetime, overrides...)
-    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], nothing, nothing, nothing)
+    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], nothing, nothing, Arena())
     register_process!(p)
     return p
 end

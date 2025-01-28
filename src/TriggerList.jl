@@ -46,15 +46,3 @@ skiplist!(ct::CompositeTriggers) = ct.listidx = mod1(ct.listidx + 1, length(ct.l
 thislist(ct::CompositeTriggers) = ct.lists[ct.listidx]
 maxtriggers(ct::CompositeTriggers) = length(thislist(ct))
 triggeridx(ct::CompositeTriggers) = thislist(ct).idx
-
-function compute_triggers(ca::CompositeAlgorithm{F, Intervals}, ::Repeat{repeats}) where {F, Intervals, repeats}
-    triggers = ((InitTriggerList(interval) for interval in Intervals)...,)
-    for i in 1:repeats
-        for (i_idx, interval) in enumerate(Intervals)
-            if i % interval == 0
-                push!(triggers[i_idx].triggers, i)
-            end
-        end
-    end
-    return CompositeTriggers(triggers)
-end
