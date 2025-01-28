@@ -73,7 +73,7 @@ function Process(func = nothing; lifetime = Indefinite(), overrides = (;), args.
         lifetime = Repeat{lifetime}()
     end
     # tf = TaskFunc(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
-    tf = TaskFunc(func; args, lifetime, overrides...)
+    tf = TaskFunc(func; lifetime, overrides, args...)
     p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], nothing, nothing, Arena())
     register_process!(p)
     return p
