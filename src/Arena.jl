@@ -1,5 +1,5 @@
-export Arena, ArenaVector, resizeblock!, growblock!, resizefor!, getblock, 
-    ArenaZeros, ArenaAlloc
+export Arena, AVec, resizeblock!, growblock!, resizefor!, getblock, 
+    AVecAlloc, AVecAlloc
 
 """
 Values of block i are stored in data[blocks[i]:blocks[i+1]-1]
@@ -15,7 +15,7 @@ abstract type Allocator end
 struct Arena <: Allocator
     data::Vector{UInt8} # Data of the arena is allocated per 8 bits
     blocks::Vector{Int} # Indexes where the blocks start
-    refs::Vector{ArenaVector}
+    refs::Vector{AVec}
 end
 
 blockstart(a::Arena, block::Int) = a.blocks[block]
@@ -25,7 +25,7 @@ number_of_type(a::Arena, block::Int) = blocklength(a, block) ÷ sizeof(eltype(a.
 Base.length(a::Arena) = length(a.data)
 
 function Arena()
-    return Arena(Vector{UInt8}(), [1], ArenaVector[])
+    return Arena(Vector{UInt8}(), [1], AVec[])
 end
 
 function Base.resize!(a::Arena, newsize::Int)
@@ -77,7 +77,7 @@ end
 
 # Arena vector that works just like a normal vector,
 # but which moves data in the arena when pushing etc
-mutable struct ArenaVector{T, BoundsCheck} <: AbstractVector{T}
+mutable struct AVec{T, BoundsCheck} <: AbstractVector{T}
     arena::Arena
     pos::Int
     ptr::Ptr{T}
@@ -85,31 +85,39 @@ mutable struct ArenaVector{T, BoundsCheck} <: AbstractVector{T}
     alloc::Int
 end
 
-function ArenaZeros(type, a::Arena, len; boundscheck = true)
+function AVecZeros(type, a::Arena, len; boundscheck = true)
     original_len = length(a.data)
     alloc_size = max(len, min_size)
     addblock!(a, type, alloc_size)
     push!(a.blocks, length(a.data))
-    ptr = pointer(a.data, original_len)
-    av = ArenaVector{type, boundscheck}(a, original_len, ptr, len, len)
+    ptr = pointer(a.data, original_len+1)
+    av = AVec{type, boundscheck}(a, original_len+1, ptr, len, len)
     push!(a.refs, av)
     return av
 end
 
-function ArenaAlloc(type, a::Arena, len; boundscheck = true)
+function AVecAlloc(type, a::Arena, len; boundscheck = true)
     original_len = length(a.data)
     alloc_size = max(len, min_size)
     
     addblock!(a, type, alloc_size)
 
     push!(a.blocks, length(a.data))
-    ptr = pointer(a.data, original_len)
-    av = ArenaVector{type, boundscheck}(a, original_len, ptr, 0, alloc_size)
+    ptr = pointer(a.data, original_len+1)
+    av = AVec{type, boundscheck}(a, original_len+1, ptr, 0, alloc_size)
     push!(a.refs, av)
     return av
 end
 
-function Base.getindex(a::ArenaVector{T, BC}, i::Int) where {T, BC}
+function AVecInit(a, initvalues::AbstractVector; boundscheck = true)
+    av = AVecAlloc(eltype(initvalues), a.arena, length(initvalues) + 8)
+    for val in initvalues
+        push!(av, val)
+    end
+    return av
+end
+
+function Base.getindex(a::AVec{T, BC}, i::Int) where {T, BC}
     if BC
         @assert 1 <= i <= length(a)
     end
@@ -117,7 +125,7 @@ function Base.getindex(a::ArenaVector{T, BC}, i::Int) where {T, BC}
     unsafe_load(a.ptr, i)
 end
 
-function Base.setindex!(a::ArenaVector{T, BC}, val, i::Int) where {T, BC}
+function Base.setindex!(a::AVec{T, BC}, val, i::Int) where {T, BC}
     if BC
         @assert 1 <= i <= length(a)
     end
@@ -125,15 +133,15 @@ function Base.setindex!(a::ArenaVector{T, BC}, val, i::Int) where {T, BC}
     unsafe_store!(a.ptr, val, i)
 end
 
-@inline Base.length(a::ArenaVector) = a.used
-@inline Base.size(a::ArenaVector) = (a.used,)
-@inline Base.eltype(a::ArenaVector{T}) where T = T
-Base.IteratorSize(::Type{<:ArenaVector}) = Base.HasLength()
-Base.IteratorEltype(::Type{<:ArenaVector}) = Base.eltype
-Base.iterate(a::ArenaVector, i::Int=1) = i > length(a) ? nothing : (a[i], i+1)
-getblock(a::ArenaVector) = findfirst(x -> x === a, a.arena.refs)
+@inline Base.length(a::AVec) = a.used
+@inline Base.size(a::AVec) = (a.used,)
+@inline Base.eltype(a::AVec{T}) where T = T
+Base.IteratorSize(::Type{<:AVec}) = Base.HasLength()
+Base.IteratorEltype(::Type{<:AVec}) = Base.eltype
+Base.iterate(a::AVec, i::Int=1) = i > length(a) ? nothing : (a[i], i+1)
+getblock(a::AVec) = findfirst(x -> x === a, a.arena.refs)
 
-function Base.sizehint!(a::ArenaVector{T, BC}, newsize::Int) where {T, BC}
+function Base.sizehint!(a::AVec{T, BC}, newsize::Int) where {T, BC}
     if newsize > a.alloc
         block = getblock(a)
         resizeblock!(a.arena, block, newsize - length(a))
@@ -141,7 +149,7 @@ function Base.sizehint!(a::ArenaVector{T, BC}, newsize::Int) where {T, BC}
     end
 end
 
-@inline function Base.push!(a::ArenaVector{T, BC}, val::T) where {T, BC}
+@inline function Base.push!(a::AVec{T, BC}, val::T) where {T, BC}
     if length(a) == a.alloc
         block = getblock(a)
         growblock!(a.arena, block)
@@ -151,7 +159,7 @@ end
     @inline unsafe_store!(a.ptr, val, length(a))
 end
 
-function Base.append!(a::ArenaVector{T, BC}, vals::AbstractVector{T}) where {T, BC}
+function Base.append!(a::AVec{T, BC}, vals::AbstractVector{T}) where {T, BC}
     sizehint!(a, length(a) + length(vals))
     for val in vals
         push!(a, val)

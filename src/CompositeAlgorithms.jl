@@ -1,12 +1,33 @@
+#AlgoTracker
+export AlgoTracker, inc!, algoidx, nextalgo!
 export CompositeAlgorithm, prepare, loopexp
 
+mutable struct AlgoTracker{N}
+    num::Int
+end
+AlgoTracker(N) = AlgoTracker{N}(1)
+
+inc!(at::AlgoTracker{N}) where N = at.num = mod1(at.num + 1, N)
+algoidx(at::AlgoTracker) = at.num
+
+nextalgo!(args::NamedTuple) = inc!(args.algotracker)
+algoidx(args::NamedTuple) = algoidx(args.algotracker)
 struct CompositeAlgorithm{FT, Intervals, T} 
     funcs::T
+    flags::Set{Symbol}
 end
 
-CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Int}) where {N} = CompositeAlgorithm{Tuple{funcs...}, (intervals), typeof(funcs)}(funcs)
+function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Int}, flags::Symbol...) where {N}
+    set = isempty(flags) ? Set{Symbol}() : Set(flags)
+    CompositeAlgorithm{Tuple{funcs...}, (intervals), typeof(funcs)}(funcs, set)
+end
+
+hasflag(ca::CompositeAlgorithm, flag) = flag in ca.flags
+track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
 
 export CompositeAlgorithm, CompositeAlgorithmPA, CompositeAlgorithmFuncType
+
+num_funcs(ca::CompositeAlgorithm{FA}) where FA = fieldcount(FA)
 
 type_instances(::CompositeAlgorithm{FT}) where FT = call_all(FT.parameters)
 # type_instances(::CompositeAlgorithm{FT, I, T}) where {FT, I, T} = T
@@ -26,9 +47,9 @@ end
 """
 Get the number of the function currently being prepared
 """
-prepare_number(args) = args.preparing_algo_num[]
+algoidx(args) = algoidx(args.algotracker)
 
-get_this_interval(args) = getinterval(getfunc(args.proc), prepare_number(args))
+get_this_interval(args) = getinterval(getfunc(args.proc), algoidx(args))
 
 numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
 @inline getfunc(::CompositeAlgorithm{T,I}, idx) where {T,I} = T.parameters[idx]
@@ -38,8 +59,10 @@ numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
 function prepare(f::CompositeAlgorithm, args)
     (;lifetime) = args
 
+    _num_funcs = num_funcs(f)
+
     #Trick to get the number of the function currently being prepared
-    args = (;args..., preparing_algo_num = Ref(1))
+    args = (;args..., algotracker = AlgoTracker(_num_funcs), smack = Ref(1))
 
     # Get the type insances, such that the prepare functions can be defined
     # as prepare(::TypeName, args)
@@ -52,11 +75,12 @@ function prepare(f::CompositeAlgorithm, args)
             args = (;args..., getargs...)
         end
 
-        args.preparing_algo_num[] += 1
+        @inline nextalgo!(args)
     end
 
-    # Delete the preparing_algo_num key
-    args = deletekeys(args, :preparing_algo_num)
+    if !hasflag(f, :trackalgo)
+        args = deletekeys(args, :algotracker)
+    end
 
     return args
 end
@@ -64,12 +88,12 @@ end
 
 function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), rp::Repeat{repeats}) where {F,I,repeats}
     before_while(p)
-    for _ in 1:repeats
+    for _ in loopidx(p):repeats
         if !run(p)
             break
         end
         @inline comp_dispatch(func, args)
-        inc!(p)
+        @inline inc!(p)
         GC.safepoint()
     end
     after_while(p)
@@ -103,6 +127,9 @@ function _comp_dispatch(@specialize(thisfunc), interval::Val{I}, @specialize(fun
         if loopidx(proc) % I == 0
             @inline thisfunc(args)
         end
+    end
+    if haskey(args, :algotracker)
+        nextalgo!(args)
     end
     @inline _comp_dispatch(typehead(funcs), headval(intervals), typetail(funcs), gettail(intervals), args)
 end

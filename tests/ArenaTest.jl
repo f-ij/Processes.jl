@@ -8,9 +8,10 @@ function Fib(args)
 end
 
 function Processes.prepare(::Fib, args)
-    arena = getallocator(args)
-    fiblist = ArenaAlloc(Int, arena, 2+recommendsize(args))
+    arena = newallocator(args)
+    fiblist = AVecAlloc(Int, arena, 2+recommendsize(args))
     append!(fiblist, [0, 1])
+    # return (;fiblist, arena)
     return (;fiblist)
 end
 
@@ -22,13 +23,13 @@ function Luc(args)
 end
 
 function Processes.prepare(::Luc, args)
-    arena = getallocator(args)
-    luclist = ArenaAlloc(Int, arena, 2+recommendsize(args))
+    arena = newallocator(args)
+    luclist = AVecAlloc(Int, arena, 2+recommendsize(args))
     append!(luclist, [2, 1])
     return (;luclist)
 end
 
-FibLuc = CompositeAlgorithm( (Fib, Luc), (1,2) )
+FibLuc = CompositeAlgorithm( (Fib, Luc), (1,2))
 
 benchmark(FibLuc, 1000000)
 # p = Process(FibLuc; lifetime = 1000000)

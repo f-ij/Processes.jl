@@ -13,7 +13,7 @@ module Processes
     include("Functions.jl")
     include("ExpressionTools.jl")
 
-    @ForwardDeclare ArenaVector ""
+    @ForwardDeclare AVec ""
     include("Arena.jl")
     @ForwardDeclare Process ""
 

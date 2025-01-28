@@ -1,4 +1,4 @@
-export processsizehint!, recommendsize
+export processsizehint!, recommendsize, newallocator
 
 """
 For a proess with a limited lifetime,
@@ -38,5 +38,14 @@ end
 Get the allocator directly from the args
 """
 getallocator(args) = getallocator(args.proc)
+function newallocator(args)
+    if haskey(args, :algotracker)
+        if algoidx(args.algotracker) == 1
+            return args.proc.allocator = Arena()
+        else
+            return getallocator(args)
+        end
+    end
+end
 
 

@@ -1,4 +1,4 @@
-export Process, getallocator
+export Process, getallocator, getnewallocator
 
 mutable struct Process
     id::UUID
