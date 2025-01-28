@@ -66,7 +66,6 @@ function Base.wait(timetracker::TimeTracker, seconds)
     timetracker.lasttime = time_ns()
 end
 
-
 Base.wait(args::NamedTuple, ) = Base.wait(args.timetracker)
 add_timetracker(args::NamedTuple) = (;args..., timetracker = TimeTracker())
 

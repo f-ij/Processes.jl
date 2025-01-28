@@ -158,6 +158,11 @@ Increments the loop index of a process
 """
 @inline inc!(p::Process) = p.loopidx += 1
 
+## Prepare
+function prepare(p::Process)
+    p.taskfunc = preparedargs(p.taskfunc, prepare(p.taskfunc.func, p.taskfunc.args))
+    return p
+end
 
 
 ### LINKING

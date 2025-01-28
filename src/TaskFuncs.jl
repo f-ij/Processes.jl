@@ -19,12 +19,12 @@ import Base./
 """
 Struct with all information to create the function within a process
 """
-struct TaskFunc
-    func::Any
+struct TaskFunc{F}
+    func::F
     prepare::Any # Appropriate function to prepare the arguments
     cleanup::Any
-    args::Union{NamedTuple, Base.Pairs}
-    prepared_args::Union{NamedTuple, Base.Pairs}
+    args::Union{NamedTuple, Base.Pairs} # Args that are given as the process is created
+    prepared_args::Union{NamedTuple, Base.Pairs} # Args after prepare
     overrides::Any # Given as kwargs
     lifetime::Lifetime
     timeout::Float64 # Timeout in seconds
@@ -33,6 +33,14 @@ end
 TaskFunc(func; prepare = nothing, cleanup = nothing, overrides::NamedTuple = (;), lifetime = Indefinite(), args...) = 
     TaskFunc(func, prepare, cleanup, args, (;), overrides, lifetime, 1.0)
 
+function newargs(tf::TaskFunc; args...)
+    TaskFunc(tf.func, tf.prepare, tf.cleanup, args, tf.prepared_args, tf.overrides, tf.lifetime, tf.timeout)
+end
+
+function preparedargs(tf::TaskFunc, args)
+    TaskFunc(tf.func, tf.prepare, tf.cleanup, tf.args, args, tf.overrides, tf.lifetime, tf.timeout)
+end
+
 getfunc(p::Process) = p.taskfunc.func
 getprepare(p::Process) = p.taskfunc.prepare
 getcleanup(p::Process) = p.taskfunc.cleanup
@@ -40,6 +48,10 @@ args(p::Process) = p.taskfunc.args
 overrides(p::Process) = p.taskfunc.overrides
 tasklifetime(p::Process) = p.taskfunc.lifetime
 timeout(p::Process) = p.taskfunc.timeout
+
+#TODO: This should be somewhere visible
+newargs!(p::Process; args...) = p.taskfunc = newargs(p.taskfunc, args...)
+export newargs!
 
 
 define_processloop_task(@specialize(p), @specialize(func), @specialize(args), @specialize(lifetime)) = @task processloop(p, func, args, lifetime)
