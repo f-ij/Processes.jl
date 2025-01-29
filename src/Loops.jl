@@ -30,7 +30,6 @@ Run a single function in a loop for a given number of times
 """
 function processloop(@specialize(p), @specialize(func), @specialize(args), ::Repeat{repeats}) where repeats
     before_while(p)
-    println("Running for a number of repeats: ", repeats)
     for _ in loopidx(p):repeats
         if !run(p)
             break
