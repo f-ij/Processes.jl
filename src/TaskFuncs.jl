@@ -37,6 +37,13 @@ function newargs(tf::TaskFunc; args...)
     TaskFunc(tf.func, tf.prepare, tf.cleanup, args, tf.prepared_args, tf.overrides, tf.lifetime, tf.timeout)
 end
 
+"""
+Overwrite the old args with the new args
+"""
+function editargs(tf::TaskFunc; args...)
+    TaskFunc(tf.func, tf.prepare, tf.cleanup, (;tf.args..., args...), tf.prepared_args, tf.overrides, tf.lifetime, tf.timeout)
+end
+
 function preparedargs(tf::TaskFunc, args)
     TaskFunc(tf.func, tf.prepare, tf.cleanup, tf.args, args, tf.overrides, tf.lifetime, tf.timeout)
 end
