@@ -1,5 +1,4 @@
 function before_while(p::Process)
-    # println("Running indefinitely on thread $(Threads.threadid())")
     set_starttime!(p)
     start.(get_linked_processes(p))
 end
@@ -31,6 +30,7 @@ Run a single function in a loop for a given number of times
 """
 function processloop(@specialize(p), @specialize(func), @specialize(args), ::Repeat{repeats}) where repeats
     before_while(p)
+    println("Running for a number of repeats: ", repeats)
     for _ in loopidx(p):repeats
         if !run(p)
             break
