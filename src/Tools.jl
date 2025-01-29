@@ -11,10 +11,10 @@ give the array a size hint based on the lifetime and the number of updates per s
 
     if this_func isa CompositeAlgorithm
         this_interval = get_this_interval(args)
-        rpts = ceil(Int,lifetime(p)/this_interval)
+        rpts = ceil(Int,repeats(lifetime(p))/this_interval)
         sizehint!(array, startsize + rpts * updates_per_step)
     else 
-        rpts = lifetime(p)
+        rpts = repeats(lifetime(p))
         sizehint!(array, startsize + rpts * updates_per_step)
     end
 end
