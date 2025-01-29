@@ -2,7 +2,7 @@
 export start, restart, quit, pause, close, syncclose, refresh
 
 function start(p::Process, sticky = false)
-    @assert isfree(p) "Process is already in use"
+    # @assert isfree(p) "Process is already in use" # Wrong check?
     @assert !isnothing(p.taskfunc) "No task to run"
     if isdone(p)
         reset!(p)
