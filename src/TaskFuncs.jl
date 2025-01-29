@@ -95,7 +95,6 @@ function createtask!(process, @specialize(func); lifetime = Indefinite(), prepar
         end
         # Prepare always has access to process and lifetime
         if isnothing(prepare) # If prepare is nothing, then the user didn't specify a prepare function
-            println("args: $args")
             prepared_args = Processes.prepare(calledobject, (;proc = process, lifetime, args...))
         else
             prepared_args = prepare(calledobject, (;proc = process, lifetime, args...))
