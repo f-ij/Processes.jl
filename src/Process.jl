@@ -168,6 +168,8 @@ function changeargs!(p::Process; args...)
     p.taskfunc = editargs(p.taskfunc; args...)
 end
 
+export changeargs!
+
 
 ### LINKING
 
