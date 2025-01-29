@@ -12,6 +12,8 @@ struct Repeat{Num} <: Lifetime
 end
 
 repeats(r::Repeat{N}) where N = N
+repeats(p::Process) = repeats(lifetime(p))
+export repeats
 
 import Base./
 (/)(::Repeat{N}, r) where N = N/r
