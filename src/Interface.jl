@@ -1,5 +1,5 @@
 
-export start, restart, quit, pause, close, refresh
+export start, restart, quit, pause, close, syncclose, refresh
 
 function start(p::Process, sticky = false)
     # @assert isfree(p) "Process is already in use"
