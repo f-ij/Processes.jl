@@ -71,7 +71,10 @@ end
 function Process(func = nothing; lifetime = Indefinite(), overrides = (;), args...)
     if lifetime isa Integer
         lifetime = Repeat{lifetime}()
+    elseif isnothing(lifetime)
+        lifetime = Indefinite()
     end
+
     # tf = TaskFunc(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
     tf = TaskFunc(func; lifetime, overrides, args...)
     p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], nothing, nothing, Arena())
