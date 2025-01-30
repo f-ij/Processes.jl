@@ -94,7 +94,7 @@ end
 function cleanup(f::CompositeAlgorithm, args)
     functions = type_instances(f)
     for func in functions
-        args = (;args..., cleanup(func, args))
+        args = (;args..., cleanup(func, args)...)
     end
     return args
 end
