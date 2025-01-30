@@ -91,6 +91,15 @@ function prepare(f::CompositeAlgorithm, args)
     return args
 end
 
+function cleanup(::CompositeAlgorithm, args)
+    functions = type_instances(F)
+    for func in functions
+        calledobject = func()
+        args = (args..., cleanup(calledobject, args))
+    end
+    return args
+end
+
 
 function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), rp::Repeat{repeats}) where {F,I,repeats}
     before_while(p)
