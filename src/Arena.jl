@@ -187,7 +187,7 @@ function Base.length(a::ARef)
     1
 end
 
-Base.size(a::ARef) = (,)
+Base.size(a::ARef) = tuple()
 
 function ARef(arena, val::T) where T
     add_to_size!(arena, T, 1)
