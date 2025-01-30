@@ -17,7 +17,7 @@ struct CompositeAlgorithm{FT, Intervals, T}
     flags::Set{Symbol}
 end
 
-function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Int}, flags::Symbol...) where {N}
+function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Int} = ntuple(_ -> 1, N), flags::Symbol...) where {N}
     set = isempty(flags) ? Set{Symbol}() : Set(flags)
     CompositeAlgorithm{Tuple{funcs...}, (intervals), typeof(funcs)}(funcs, set)
 end
