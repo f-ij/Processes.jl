@@ -91,11 +91,10 @@ function prepare(f::CompositeAlgorithm, args)
     return args
 end
 
-function cleanup(::CompositeAlgorithm, args)
-    functions = type_instances(F)
+function cleanup(f::CompositeAlgorithm, args)
+    functions = type_instances(f)
     for func in functions
-        calledobject = func()
-        args = (args..., cleanup(calledobject, args))
+        args = (args..., cleanup(func, args))
     end
     return args
 end
