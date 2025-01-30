@@ -1,5 +1,8 @@
-export Arena, AVec, resizeblock!, growblock!, resizefor!, getblock, 
+export Arena, AVec, resizeblock!, growblock!, add_to_size!, getblock, 
     AVecAlloc, AVecAlloc
+
+#Ref
+export ARef
 
 """
 Values of block i are stored in data[blocks[i]:blocks[i+1]-1]
@@ -66,9 +69,10 @@ function growblock!(a::Arena, block::Int)
     @inline resizeblock!(a, block, new_block_size)
 end
 
-function resizefor!(a::Arena, datatype, newsize::Int)
+function add_to_size!(a::Arena, datatype, newsize::Int)
+    oldlength = length(a.data)
     _sizeof = sizeof(datatype)
-    resize!(a.data, newsize * _sizeof)
+    resize!(a.data, oldlength + newsize * _sizeof)
 end
 
 @inline function Base.size(a::Arena)
@@ -164,4 +168,33 @@ function Base.append!(a::AVec{T, BC}, vals::AbstractVector{T}) where {T, BC}
     for val in vals
         push!(a, val)
     end
+end
+
+mutable struct ARef{T} <: Ref{T}
+    ptr::Ptr{T}
+    pos::Int
+end
+
+function Base.getindex(a::ARef{T}) where T
+    unsafe_load(a.ptr, i)
+end
+
+function Base.setindex!(a::ARef{T}, val) where T
+    unsafe_store!(a.ptr, val, i)
+end
+
+function Base.length(a::ARef)
+    1
+end
+
+Base.size(a::ARef) = (,)
+
+function ARef(arena, val::T) where T
+    add_to_size!(arena, T, 1)
+    ptr = pointer(arena.data, length(arena.data)+1)
+    push!(arena.blocks, length(arena.data)+1)
+    unsafe_store!(ptr, val)
+    ref = ARef(ptr, length(arena.data))
+    push!(arena.refs, ref)
+    return ref
 end
