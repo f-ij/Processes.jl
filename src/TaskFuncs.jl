@@ -58,6 +58,18 @@ overrides(p::Process) = p.taskfunc.overrides
 tasklifetime(p::Process) = p.taskfunc.lifetime
 timeout(p::Process) = p.taskfunc.timeout
 
+function sametask(t1,t2)
+    checks = (t1.func == t2.func,
+    t1.prepare == t2.prepare,
+    t1.cleanup == t2.cleanup,
+    t1.args == t2.args,
+    t1.overrides == t2.overrides,
+    t1.lifetime == t2.lifetime,
+    t1.timeout == t2.timeout)
+    return all(checks)
+end
+export sametask
+
 #TODO: This should be somewhere visible
 newargs!(p::Process; args...) = p.taskfunc = newargs(p.taskfunc, args...)
 export newargs!
