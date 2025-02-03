@@ -10,6 +10,8 @@ module Processes
     abstract type ProcessAlgorithm end
     export ProcessAlgorithm
 
+    const DEBUG_MODE = @load_preference("debug", false)
+
     include("Functions.jl")
     include("ExpressionTools.jl")
 

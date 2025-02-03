@@ -96,9 +96,10 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
         if isnothing(get(overrides, :prepare, nothing)) # If prepare is nothing, then the user didn't specify a prepare function
             try
                 prepared_args = prepare(calledobject, (;proc = process, lifetime, args...))
-            catch
+            catch(err)
                 # println("No prepare function defined for:")
-                @warn "No prepare function defined for $func, no args are prepared"
+                @warn "No prepare function defined for $func, or prepare failed no args are prepared"
+                display(err)
                 prepared_args = (;)
             end
         else

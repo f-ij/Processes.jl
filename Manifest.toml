@@ -2,10 +2,15 @@
 
 julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "bb132c9701dd8d4807e4a941c280e8e769718c4d"
+project_hash = "ece5f1c305948a2a229232268fb8fbc2cea21c3b"
 
 [[deps.Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+version = "1.11.0"
+
+[[deps.Dates]]
+deps = ["Printf"]
+uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
 version = "1.11.0"
 
 [[deps.InteractiveUtils]]
@@ -18,6 +23,17 @@ deps = ["Base64"]
 uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
 version = "1.11.0"
 
+[[deps.Preferences]]
+deps = ["TOML"]
+git-tree-sha1 = "9306f6085165d270f7e3db02af26a400d580f5c6"
+uuid = "21216c6a-2e73-6563-6e65-726566657250"
+version = "1.4.3"
+
+[[deps.Printf]]
+deps = ["Unicode"]
+uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+version = "1.11.0"
+
 [[deps.Random]]
 deps = ["SHA"]
 uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
@@ -27,7 +43,16 @@ version = "1.11.0"
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 version = "0.7.0"
 
+[[deps.TOML]]
+deps = ["Dates"]
+uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+version = "1.0.3"
+
 [[deps.UUIDs]]
 deps = ["Random", "SHA"]
 uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+version = "1.11.0"
+
+[[deps.Unicode]]
+uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 version = "1.11.0"
