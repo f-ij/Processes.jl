@@ -3,7 +3,7 @@ module Processes
 
     export getargs, Process, start, quit
 
-    using UUIDs
+    using UUIDs, Preferences
     import Base: Threads.SpinLock, lock, unlock
     const wait_timeout = .5
 
