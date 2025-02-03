@@ -104,7 +104,7 @@ end
 
 function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), rp::Repeat{repeats}) where {F,I,repeats}
     @static if DEBUG_MODE
-        prinltn("Running process loop for $repeats times from thread $(Threads.threadid())")
+        println("Running process loop for $repeats times from thread $(Threads.threadid())")
     end
     before_while(p)
     for _ in loopidx(p):repeats
@@ -121,7 +121,7 @@ end
 
 function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), ::Indefinite) where {F,I}
     @static if DEBUG_MODE
-        prinltn("Running process loop indefinitely from thread $(Threads.threadid())")
+        println("Running process loop indefinitely from thread $(Threads.threadid())")
     end
     before_while(p)
     while run(p)

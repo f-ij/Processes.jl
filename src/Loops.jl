@@ -16,7 +16,7 @@ Run a single function in a loop indefinitely
 """
 function processloop(@specialize(p), @specialize(func), @specialize(args), ::Indefinite)
     @static if DEBUG_MODE
-        prinltn("Running process loop indefinitely from thread $(Threads.threadid())")
+        println("Running process loop indefinitely from thread $(Threads.threadid())")
     end
 
     before_while(p)
@@ -34,7 +34,7 @@ Run a single function in a loop for a given number of times
 """
 function processloop(@specialize(p), @specialize(func), @specialize(args), ::Repeat{repeats}) where repeats
     @static if DEBUG_MODE
-        prinltn("Running process loop for $repeats times from thread $(Threads.threadid())")
+        println("Running process loop for $repeats times from thread $(Threads.threadid())")
     end
     before_while(p)
     for _ in loopidx(p):repeats
