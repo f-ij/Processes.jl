@@ -12,7 +12,7 @@ module Processes
 
     const DEBUG_MODE = @load_preference("debug", false)
     function debug_mode(bool)
-        @set_preference("debug", bool)
+        @set_preferences!("debug" => bool)
     end
 
     include("Functions.jl")
