@@ -76,6 +76,10 @@ prepare_args(p::Process) = prepare_args(p, p.taskfunc.func; lifetime = tasklifet
 prepare_args!(p::Process) = p.taskfunc = preparedargs(p.taskfunc, prepare_args(p))
 
 function prepare_args(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, args...)
+
+    @static if DEBUG_MODE
+        println("Preparing args for process $(process.id)")
+    end
     # If prepare is skipped, then the prepared arguments are already stored in the process
     prepared_args = nothing
     if skip_prepare
@@ -123,11 +127,23 @@ createtask!(p::Process; loopfunction = nothing) = createtask!(p, p.taskfunc.func
 
 # function createtask!(process, @specialize(func); lifetime = Indefinite(), prepare = nothing, cleanup = nothing, overrides = (;), skip_prepare = false, define_task = define_processloop_task, args...)  
 function createtask!(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, inputargs...)   
+    @static if DEBUG_MODE
+        println("Creating task for process $(process.id)")
+    end
+
     timeouttime = get(overrides, :timeout, 1.0)
 
     loopfunction = getloopfunc(process)
 
+    @static if DEBUG_MODE
+        println("Loopfunction is $loopfunction")
+    end
+
     prepared_args = prepare_args(process, func; lifetime, prepare, cleanup, overrides, skip_prepare, inputargs...)
+
+    @static if DEBUG_MODE
+        println("Prepared args are $prepared_args")
+    end
 
     # Create new taskfunc
     process.taskfunc = TaskFunc(func, inputargs, prepared_args, overrides, lifetime, timeouttime)
@@ -144,6 +160,10 @@ function createtask!(process, @specialize(func); lifetime = Indefinite(), overri
         loopfunction = overrides[:loopfunction]
     end
     process.task = define_task(process, func, task_args, lifetime; loopfunction)
+
+    @static if DEBUG_MODE
+        println("Task created: $(process.task)")
+    end
 
 end
 
