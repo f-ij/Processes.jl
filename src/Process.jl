@@ -1,4 +1,4 @@
-export Process, getallocator, getnewallocator
+export Process, getallocator, getnewallocator, threadid
 
 mutable struct Process
     id::UUID
@@ -12,11 +12,24 @@ mutable struct Process
     starttime ::Union{Nothing, Float64, UInt64}
     endtime::Union{Nothing, Float64, UInt64}
     linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
-    loopfunc::Any ## Todo, this one neccesary?
-    errorlog::Any
     allocator::Allocator
+    threadid::Union{Nothing,Int64}
 end
 export Process
+
+function Process(func = nothing; lifetime = Indefinite(), overrides = (;), args...)
+    if lifetime isa Integer
+        lifetime = Repeat{lifetime}()
+    elseif isnothing(lifetime)
+        lifetime = Indefinite()
+    end
+
+    # tf = TaskFunc(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
+    tf = TaskFunc(func; lifetime, overrides, args...)
+    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), nothing)
+    register_process!(p)
+    return p
+end
 
 import Base: ==
 ==(p1::Process, p2::Process) = p1.id == p2.id
@@ -31,6 +44,13 @@ lifetime(p::Process) = p.taskfunc.lifetime
 set_starttime!(p::Process) = p.starttime = time_ns()
 set_endtime!(p::Process) = p.endtime = time_ns()
 reset_times!(p::Process) = (p.starttime = nothing; p.endtime = nothing)
+
+"""
+different loopfunction can be passed to the process through overrides
+"""
+function getloopfunc(p::Process)
+    get(p.taskfunc.overrides, :loopfunc, processloop)
+end
 
 get_linked_processes(p::Process) = p.linked_processes
 
@@ -68,19 +88,7 @@ function Process(func, repeats::Int; overrides = (;), args...)
     return Process(func; lifetime, overrides, args...)
 end
 
-function Process(func = nothing; lifetime = Indefinite(), overrides = (;), processloop = processloop, args...)
-    if lifetime isa Integer
-        lifetime = Repeat{lifetime}()
-    elseif isnothing(lifetime)
-        lifetime = Indefinite()
-    end
 
-    # tf = TaskFunc(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
-    tf = TaskFunc(func; lifetime, overrides, args...)
-    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], processloop, nothing, Arena())
-    register_process!(p)
-    return p
-end
 @setterGetter Process lock run
 
 function Base.show(io::IO, p::Process)

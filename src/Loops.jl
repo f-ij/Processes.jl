@@ -1,4 +1,5 @@
 function before_while(p::Process)
+    p.threadid = Threads.threadid()
     set_starttime!(p)
     start.(get_linked_processes(p))
 end

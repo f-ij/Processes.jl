@@ -72,7 +72,7 @@ export sametask
 newargs!(p::Process; args...) = p.taskfunc = newargs(p.taskfunc, args...)
 export newargs!
 
-prepare_args(p::Process) = prepare_args(p, p.taskfunc.func; lifetime = tasklifetime(p), overrides = overrides(p), loopfunction = nothing, args(p)...)
+prepare_args(p::Process) = prepare_args(p, p.taskfunc.func; lifetime = tasklifetime(p), overrides = overrides(p), args(p)...)
 prepare_args!(p::Process) = p.taskfunc = preparedargs(p.taskfunc, prepare_args(p))
 
 function prepare_args(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, args...)
@@ -99,8 +99,8 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
             catch(err)
                 # println("No prepare function defined for:")
                 @warn "No prepare function defined for $func, or prepare failed no args are prepared"
-                display(err)
-                prepared_args = (;)
+                # display(err)
+                prepared_args = (;args...)
             end
         else
             prepared_args = overrides.prepare(calledobject, (;proc = process, lifetime, args...))
@@ -122,16 +122,12 @@ end
 createtask!(p::Process; loopfunction = nothing) = createtask!(p, p.taskfunc.func; lifetime = tasklifetime(p), overrides = overrides(p), loopfunction, args(p)...)
 
 # function createtask!(process, @specialize(func); lifetime = Indefinite(), prepare = nothing, cleanup = nothing, overrides = (;), skip_prepare = false, define_task = define_processloop_task, args...)  
-function createtask!(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, loopfunction = nothing, inputargs...)   
+function createtask!(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, inputargs...)   
     timeouttime = get(overrides, :timeout, 1.0)
 
-    if isnothing(loopfunction)
-        loopfunction = processloop
-    else
-        overrides = (;overrides..., loopfunction = loopfunction)
-    end
+    loopfunction = getloopfunc(process)
 
-    prepared_args = prepare_args(process, func; lifetime, prepare, cleanup, overrides, skip_prepare, loopfunction, inputargs...)
+    prepared_args = prepare_args(process, func; lifetime, prepare, cleanup, overrides, skip_prepare, inputargs...)
 
     # Create new taskfunc
     process.taskfunc = TaskFunc(func, inputargs, prepared_args, overrides, lifetime, timeouttime)
