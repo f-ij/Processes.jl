@@ -142,7 +142,7 @@ function createtask!(process, @specialize(func); lifetime = Indefinite(), overri
     prepared_args = prepare_args(process, func; lifetime, prepare, cleanup, overrides, skip_prepare, inputargs...)
 
     @static if DEBUG_MODE
-        println("Prepared args are $prepared_args")
+        display("Prepared args are $prepared_args")
     end
 
     # Create new taskfunc
