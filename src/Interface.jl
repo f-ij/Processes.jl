@@ -18,7 +18,10 @@ function start(p::Process; prevent_hanging = true)
 
 
     ## Only run one start at a time to prevent hanging
-    while !start_finished[]
+    if prevent_hanging
+        while !start_finished[]
+            yield()
+        end
     end
     start_finished[] = false
 

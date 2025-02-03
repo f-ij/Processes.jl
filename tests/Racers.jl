@@ -22,6 +22,8 @@ function _racing(data)
     data[i] = -data[i]*rand() + rand()
 end
 
-ps = [Process(Racing; raceme) for i in 1:8]
+p1 = Process(Racing; raceme)
+start(p1; prevent_hanging = true)
+# ps = [Process(Racing; raceme) for i in 1:8]
 
-start.(ps)
+# start.(ps)
