@@ -175,13 +175,6 @@ function preparedata!(process, @specialize(func); lifetime = Indefinite(), overr
     if haskey(overrides, :loopfunction)
         loopfunction = overrides[:loopfunction]
     end
-
-    # process.task = define_task(process, func, task_args, lifetime; loopfunction)
-
-    @static if DEBUG_MODE
-        println("Task created: $(process.task)")
-    end
-
 end
 
 export preparedata!
