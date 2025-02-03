@@ -1,4 +1,7 @@
+const start_finished = Ref(false)
+
 function before_while(p::Process)
+    start_finished[] = true
     p.threadid = Threads.threadid()
     set_starttime!(p)
     start.(get_linked_processes(p))
