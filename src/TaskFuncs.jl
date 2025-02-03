@@ -98,7 +98,14 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
 
         # Prepare always has access to process and lifetime
         if isnothing(get(overrides, :prepare, nothing)) # If prepare is nothing, then the user didn't specify a prepare function
+            @static if DEBUG_MODE
+                println("No prepare function override for process $(process.id)")
+            end
+
             try
+                @static if DEBUG_MODE
+                    println("Trying to prepare args for process $(process.id)")
+                end
                 prepared_args = prepare(calledobject, (;proc = process, lifetime, args...))
             catch(err)
                 # println("No prepare function defined for:")
@@ -112,6 +119,9 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
         if isnothing(prepared_args)
             prepared_args = (;)
         end
+    end
+    @static if DEBUG_MODE
+        println("Just prepared args for process $(process.id)")
     end
         
     # Add the process and lifetime
@@ -136,7 +146,7 @@ function createtask!(process, @specialize(func); lifetime = Indefinite(), overri
     loopfunction = getloopfunc(process)
 
     @static if DEBUG_MODE
-        println("Loopfunction is $loopfunction")
+        println("Loopfunction is $loopfunction for process $(process.id)")
     end
 
     prepared_args = prepare_args(process, func; lifetime, prepare, cleanup, overrides, skip_prepare, inputargs...)
