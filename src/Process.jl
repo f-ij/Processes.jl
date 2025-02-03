@@ -149,6 +149,10 @@ function runtask!(p::Process; threaded = true)
     end
     schedule(p.task)
 
+    while !istaskstarted(p.task)
+        #TODO: add timeout?
+    end
+
     return p
 end
 export runtask!
