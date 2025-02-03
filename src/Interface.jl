@@ -69,6 +69,7 @@ end
 Redefine task without preparing again
 """
 function unpause(p::Process)
+    @atomic p.run = true
     p.task = spawntask(p, getfunc(p), getargs(p), lifetime(p))
 end
 
