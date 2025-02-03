@@ -11,6 +11,9 @@ module Processes
     export ProcessAlgorithm
 
     const DEBUG_MODE = @load_preference("debug", false)
+    function debug_mode(bool)
+        @set_preference("debug", bool)
+    end
 
     include("Functions.jl")
     include("ExpressionTools.jl")
