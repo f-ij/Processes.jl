@@ -27,7 +27,7 @@ end
 
 FibLuc = CompositeAlgorithm( (Fib, Luc), (1,2) )
 
-# benchmark(FibLuc, 1000000)
-p1 = Process(FibLuc; lifetime = 1000000)
-start(p1)
+benchmark(FibLuc, 1000000)
+# p1 = Process(FibLuc; lifetime = 1000000)
+# start(p1)
 

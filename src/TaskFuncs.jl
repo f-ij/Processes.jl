@@ -132,14 +132,17 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
 end
 
 # Function barrier to create task from taskfunc so that the task is properly precompiled
-function define_task(p, @specialize(func), args, loopdispatch; loopfunction = processloop)
-    @task loopfunction(p, func, args, loopdispatch)
+# function define_task(p, @specialize(func), args, loopdispatch; loopfunction = processloop)
+#     @task loopfunction(p, func, args, loopdispatch)
+# end
+
+function spawntask(p, @specialize(func), args, loopdispatch; loopfunction = processloop)
+    Threads.@spawn loopfunction(p, func, args, loopdispatch)
 end
 
-createtask!(p::Process; loopfunction = nothing) = createtask!(p, p.taskfunc.func; lifetime = tasklifetime(p), overrides = overrides(p), loopfunction, args(p)...)
+preparedata!(p::Process; loopfunction = nothing) = preparedata!(p, p.taskfunc.func; lifetime = tasklifetime(p), overrides = overrides(p), loopfunction, args(p)...)
 
-# function createtask!(process, @specialize(func); lifetime = Indefinite(), prepare = nothing, cleanup = nothing, overrides = (;), skip_prepare = false, define_task = define_processloop_task, args...)  
-function createtask!(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, inputargs...)   
+function preparedata!(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, inputargs...)   
     @static if DEBUG_MODE
         println("Creating task for process $(process.id)")
     end
@@ -172,7 +175,8 @@ function createtask!(process, @specialize(func); lifetime = Indefinite(), overri
     if haskey(overrides, :loopfunction)
         loopfunction = overrides[:loopfunction]
     end
-    process.task = define_task(process, func, task_args, lifetime; loopfunction)
+
+    # process.task = define_task(process, func, task_args, lifetime; loopfunction)
 
     @static if DEBUG_MODE
         println("Task created: $(process.task)")
@@ -180,5 +184,5 @@ function createtask!(process, @specialize(func); lifetime = Indefinite(), overri
 
 end
 
-export createtask!
+export preparedata!
 

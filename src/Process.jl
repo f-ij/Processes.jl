@@ -79,7 +79,7 @@ export runtime_ns, runtime
 
 function createfrom!(p1::Process, p2::Process)
     p1.taskfunc = p2.taskfunc
-    createtask!(p1)
+    preparedata!(p1)
 end
 
 # Process() = Process(nothing, 0, Threads.SpinLock(), (true, :Nothing))
@@ -119,43 +119,45 @@ function timedwait(p, timeout = wait_timeout)
     return isdone(p)
 end
 
-function makeprocess(@specialize(func), lifetime::RT = Indefinite(); prepare = nothing, overrides = (;), args...) where RT <: Lifetime
-    println("Making a new process with lifetime $lifetime")
-    newp = Process(func; lifetime, args...)
-    register_process!(newp)
-    args = (;proc = newp, args...)
-    createtask!(newp, func; lifetime, prepare, overrides, args...)
+# function makeprocess(@specialize(func), lifetime::RT = Indefinite(); prepare = nothing, overrides = (;), args...) where RT <: Lifetime
+#     println("Making a new process with lifetime $lifetime")
+#     newp = Process(func; lifetime, args...)
+#     register_process!(newp)
+#     args = (;proc = newp, args...)
+#     preparedata!(newp, func; lifetime, prepare, overrides, args...)
     
-    return newp
-end
+#     return newp
+# end
 
-makeprocess(func, repeats::Int; overrides...) = let rt = repeats == 0 ? Indefinite() : Repeat{repeats}(); makeprocess(func, rt; overrides...); end
-export makeprocess
+# makeprocess(func, repeats::Int; overrides...) = let rt = repeats == 0 ? Indefinite() : Repeat{repeats}(); makeprocess(func, rt; overrides...); end
+# export makeprocess
 
-newprocess(func, repeats::Int = 0; overrides...) = let rt = repeats == 0 ? Indefinite() : Repeat{repeats}(); newprocess(func, rt; overrides...); end
+# newprocess(func, repeats::Int = 0; overrides...) = let rt = repeats == 0 ? Indefinite() : Repeat{repeats}(); newprocess(func, rt; overrides...); end
 
 export newprocess
 
 """
 Runs the prepared task of a process on a thread
 """
-function runtask!(p::Process; threaded = true) 
+function spawntask!(p::Process; threaded = true) 
     @atomic p.run = true
     @atomic p.paused = false
 
-    p.task.sticky = false
-    if threaded
-        Threads._spawn_set_thrpool(p.task, :default)
-    end
-    schedule(p.task)
+    p.task = spawntask(p, p.taskfunc.func, p.taskfunc.prepared_args, lifetime(p))
 
-    while !istaskstarted(p.task)
-        @static if DEBUG_MODE
-            println("Waiting for task to start")
-            sleep(0.1)
-        end
-        #TODO: add timeout?
-    end
+    # p.task.sticky = false
+    # if threaded
+    #     Threads._spawn_set_thrpool(p.task, :default)
+    # end
+    # schedule(p.task)
+
+    # while !istaskstarted(p.task)
+    #     @static if DEBUG_MODE
+    #         println("Waiting for task to start")
+    #         sleep(0.1)
+    #     end
+    #     #TODO: add timeout?
+    # end
 
     return p
 end

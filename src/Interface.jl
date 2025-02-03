@@ -12,8 +12,8 @@ function start(p::Process)
         unpause(p)
     else # If not paused, then start from scratch
         reset!(p)
-        createtask!(p)
-        runtask!(p)
+        preparedata!(p)
+        spawntask!(p)
     end
 
     return true
@@ -89,8 +89,8 @@ function restart(p::Process, sticky = false)
         close(p)
         
         if timedwait(p, p.taskfunc.timeout)
-            createtask!(p)
-            runtask!(p)
+            preparedata!(p)
+            spawntask!(p)
             return true
         else
             println("Task timed out")
