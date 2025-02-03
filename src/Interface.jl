@@ -5,7 +5,7 @@ export start, restart, quit, pause, close, syncclose, refresh
 Start a process that is not running or unpause a paused process
 """
 function start(p::Process)
-    # @assert isfree(p) "Process is already in use" # Wrong check?
+    
     @assert isidle(p) "Process is already in use"
 
     if ispaused(p) # If paused, then just unpause

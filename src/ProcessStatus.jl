@@ -26,7 +26,7 @@ isdone(p::Process) = !isnothing(p.task) && istaskdone(p.task) && !ispaused(p)
 """
 P is done or paused, i.e. not doing anyghing
 """
-isidle(p::Process) = isdone(p) || ispaused(p)
+isidle(p::Process) = isdone(p) || ispaused(p) || !isstarted(p)
 
 """
 Can be used for a new process
