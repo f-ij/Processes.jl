@@ -150,8 +150,10 @@ function runtask!(p::Process; threaded = true)
     schedule(p.task)
 
     while !istaskstarted(p.task)
-        println("Waiting for task to start")
-        sleep(0.1)
+        @static if DEBUG_MODE
+            println("Waiting for task to start")
+            sleep(0.1)
+        end
         #TODO: add timeout?
     end
 
