@@ -12,9 +12,9 @@ mutable struct Process
     starttime ::Union{Nothing, Float64, UInt64}
     endtime::Union{Nothing, Float64, UInt64}
     linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
-    retval::Any ## Todo, this one neccesary?
+    loopfunc::Any ## Todo, this one neccesary?
     errorlog::Any
-    allocator::Allocator #Ref to the algorithm being run TODO:: Remove this one?
+    allocator::Allocator
 end
 export Process
 
@@ -68,7 +68,7 @@ function Process(func, repeats::Int; overrides = (;), args...)
     return Process(func; lifetime, overrides, args...)
 end
 
-function Process(func = nothing; lifetime = Indefinite(), overrides = (;), args...)
+function Process(func = nothing; lifetime = Indefinite(), overrides = (;), processloop = processloop, args...)
     if lifetime isa Integer
         lifetime = Repeat{lifetime}()
     elseif isnothing(lifetime)
@@ -77,7 +77,7 @@ function Process(func = nothing; lifetime = Indefinite(), overrides = (;), args.
 
     # tf = TaskFunc(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
     tf = TaskFunc(func; lifetime, overrides, args...)
-    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], nothing, nothing, Arena())
+    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], processloop, nothing, Arena())
     register_process!(p)
     return p
 end
@@ -128,13 +128,17 @@ newprocess(func, repeats::Int = 0; overrides...) = let rt = repeats == 0 ? Indef
 
 export newprocess
 
-function runtask!(p::Process) 
+"""
+Runs the prepared task of a process on a thread
+"""
+function runtask!(p::Process; threaded = true) 
     @atomic p.run = true
     @atomic p.paused = false
 
     p.task.sticky = false
-    Threads._spawn_set_thrpool(p.task, :default)
-    # p.starttime = time()
+    if threaded
+        Threads._spawn_set_thrpool(p.task, :default)
+    end
     schedule(p.task)
 
     return p
@@ -145,7 +149,12 @@ export runtask!
 @inline lock(f, p::Process) = lock(f, p.lock)
 @inline unlock(p::Process) =  unlock(p.lock)
 
-reset!(p::Process) = (p.loopidx = 1; p.retval = nothing; p.task = nothing; @atomic p.run = false)
+function reset!(p::Process)
+    p.loopidx = 1
+    @atomic p.run = true
+    @atomic p.paused = false
+    reset_times!(p)
+end
 
 """
 Get value of run of a process, denoting wether it should run or not

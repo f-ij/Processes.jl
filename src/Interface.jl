@@ -1,19 +1,27 @@
 
 export start, restart, quit, pause, close, syncclose, refresh
 
-function start(p::Process, sticky = false)
+"""
+Start a process that is not running or unpause a paused process
+"""
+function start(p::Process)
     # @assert isfree(p) "Process is already in use" # Wrong check?
-    @assert !isnothing(p.taskfunc) "No task to run"
-    if isdone(p)
+    @assert isidle(p) "Process is already in use"
+
+    if ispaused(p) # If paused, then just unpause
+        unpause(p)
+    else # If not paused, then start from scratch
         reset!(p)
+        createtask!(p)
+        runtask!(p)
     end
 
-    reset_times!(p)
-    createtask!(p)
-    runtask!(p)
     return true
 end   
 
+"""
+Close a process, stopping it from running
+"""
 function Base.close(p::Process)
     @atomic p.run = false
     @atomic p.paused = false
@@ -21,36 +29,55 @@ function Base.close(p::Process)
     return true
 end
 
+"""
+Close and wait for a process to finish
+"""
 function syncclose(p::Process)
     close(p)
     timedwait(p)
 end
 
+"""
+Close and remove a process from the process list
+"""
 function quit(p::Process)
     close(p)
     delete!(processlist, p.id)
     return true
 end
 
+
+"""
+Pause a process, allowing it to be unpaused later
+"""
 function pause(p::Process)
     @atomic p.run = false
     @atomic p.paused = true
-    @sync p.task
-    try 
-        p.retval = fetch(p)
-    catch e
-        p.errorlog = e
-    end
     return true
 end
 
+"""
+Redefine task without preparing again
+"""
 function unpause(p::Process)
-    start(p)
+    task = define_task(p, getfunc(p), getargs(p), lifetime(p))
+    p.task = task
+    runtask!(p)
 end
 
+"""
+Pause, re-prepare and unpause a process
+This is useful mostly for processes that run indefinitely,
+where the args prepared are computed properties of the args.
+
+This will cause the computed properties to re-compute. 
+This may be used also to levarge the dispatch system, if the types of the data change
+so that the new loop function is newly compiled
+"""
 function refresh(p::Process)
     @assert !isnothing(p.taskfunc) "No task to run"
     pause(p)
+    prepare_args!(p)
     unpause(p)
     return true
 end

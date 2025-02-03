@@ -74,27 +74,10 @@ export sametask
 newargs!(p::Process; args...) = p.taskfunc = newargs(p.taskfunc, args...)
 export newargs!
 
+prepare_args(p::Process) = prepare_args(p, p.taskfunc.func; lifetime = tasklifetime(p), prepare = p.taskfunc.prepare, cleanup = p.taskfunc.cleanup, overrides = overrides(p), loopfunction = nothing, args(p)...)
+prepare_args!(p::Process) = p.taskfunc = preparedargs(p.taskfunc, prepare_args(p))
 
-define_processloop_task(@specialize(p), @specialize(func), @specialize(args), @specialize(lifetime)) = @task processloop(p, func, args, lifetime)
-
-# Function barrier to create task from taskfunc so that the task is properly precompiled
-function define_task_func(p, ploop, @specialize(func), args, lifetime)
-    @task ploop(p, func, args, lifetime)
-end
-
-
-createtask!(p::Process; loopfunction = nothing) = createtask!(p, p.taskfunc.func; lifetime = tasklifetime(p), prepare = p.taskfunc.prepare, overrides = overrides(p), loopfunction, args(p)...)
-
-# function createtask!(process, @specialize(func); lifetime = Indefinite(), prepare = nothing, cleanup = nothing, overrides = (;), skip_prepare = false, define_task_func = define_processloop_task, args...)  
-function createtask!(process, @specialize(func); lifetime = Indefinite(), prepare = nothing, cleanup = nothing, overrides = (;), skip_prepare = false, loopfunction = nothing, args...)   
-    timeouttime = get(overrides, :timeout, 1.0)
-
-    if isnothing(loopfunction)
-        loopfunction = processloop
-    else
-        overrides = (;overrides..., loopfunction = loopfunction)
-    end
-
+function prepare_args(process, @specialize(func); lifetime = Indefinite(), prepare = nothing, cleanup = nothing, overrides = (;), skip_prepare = false, loopfunction = nothing, args...)
     # If prepare is skipped, then the prepared arguments are already stored in the process
     prepared_args = nothing
     if skip_prepare
@@ -123,10 +106,30 @@ function createtask!(process, @specialize(func); lifetime = Indefinite(), prepar
     end
         
     # Add the process and lifetime
-    algo_args = (;proc = process, lifetime, prepared_args...)
+    return algo_args = (;proc = process, lifetime, prepared_args...)
+end
+
+# Function barrier to create task from taskfunc so that the task is properly precompiled
+function define_task(p, @specialize(func), args, lifetime; loopfunction = processloop)
+    @task loopfunction(p, func, args, lifetime)
+end
+
+createtask!(p::Process; loopfunction = nothing) = createtask!(p, p.taskfunc.func; lifetime = tasklifetime(p), prepare = p.taskfunc.prepare, overrides = overrides(p), loopfunction, args(p)...)
+
+# function createtask!(process, @specialize(func); lifetime = Indefinite(), prepare = nothing, cleanup = nothing, overrides = (;), skip_prepare = false, define_task = define_processloop_task, args...)  
+function createtask!(process, @specialize(func); lifetime = Indefinite(), prepare = nothing, cleanup = nothing, overrides = (;), skip_prepare = false, loopfunction = nothing, inputargs...)   
+    timeouttime = get(overrides, :timeout, 1.0)
+
+    if isnothing(loopfunction)
+        loopfunction = processloop
+    else
+        overrides = (;overrides..., loopfunction = loopfunction)
+    end
+
+    final_args = prepare_args(process, func; lifetime, prepare, cleanup, overrides, skip_prepare, loopfunction, inputargs...)
 
     # Create new taskfunc
-    process.taskfunc = TaskFunc(func, prepare, cleanup, args, algo_args, overrides, lifetime, timeouttime)
+    process.taskfunc = TaskFunc(func, prepare, cleanup, inputargs, final_args, overrides, lifetime, timeouttime)
 
     # Add the overrides
     # They are not stored in the args of the taskfunc but separately
@@ -135,12 +138,13 @@ function createtask!(process, @specialize(func); lifetime = Indefinite(), prepar
     task_args = (;algo_args..., overrides...)
     
     # Make the task
-    # process.task = define_task_func(process, func, task_args, lifetime)
+    # process.task = define_task(process, func, task_args, lifetime)
     if haskey(overrides, :loopfunction)
         loopfunction = overrides[:loopfunction]
     end
-    process.task = define_task_func(process, loopfunction, func, task_args, lifetime)
+    process.task = define_task(process, func, task_args, lifetime; loopfunction)
 
 end
+
 export createtask!
 
