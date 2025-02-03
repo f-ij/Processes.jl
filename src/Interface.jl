@@ -60,9 +60,7 @@ end
 Redefine task without preparing again
 """
 function unpause(p::Process)
-    task = define_task(p, getfunc(p), getargs(p), lifetime(p))
-    p.task = task
-    runtask!(p)
+    p.task = spawntask(p, getfunc(p), getargs(p), lifetime(p))
 end
 
 """
