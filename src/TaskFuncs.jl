@@ -107,6 +107,9 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
                     println("Trying to prepare args for process $(process.id)")
                 end
                 prepared_args = prepare(calledobject, (;proc = process, lifetime, args...))
+                @static if DEBUG_MODE
+                    println("Just called the prepare function for process $(process.id)")
+                end
             catch(err)
                 # println("No prepare function defined for:")
                 @warn "No prepare function defined for $func, or prepare failed no args are prepared"
