@@ -55,6 +55,8 @@ args(p::Process) = p.taskfunc.args
 overrides(p::Process) = p.taskfunc.overrides
 tasklifetime(p::Process) = p.taskfunc.lifetime
 timeout(p::Process) = p.taskfunc.timeout
+loopdispatch(p::Process) = loopdispatch(p.taskfunc)
+loopdispatch(tf::TaskFunc) = tf.lifetime
 
 function sametask(t1,t2)
     checks = (t1.func == t2.func,

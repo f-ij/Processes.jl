@@ -8,9 +8,14 @@ function before_while(p::Process)
     start.(get_linked_processes(p))
 end
 
-function after_while(p::Process)
+function after_while(p::Process, args)
     set_endtime!(p)
     close.(get_linked_processes(p))
+    if run(p) || lifetime(p) isa Indefinite
+        return cleanup(p, args)
+    else
+        return args
+    end
 end
 
 cleanup(::Any, args) = args
@@ -30,8 +35,7 @@ function processloop(@specialize(p), @specialize(func), @specialize(args), ::Ind
         inc!(p) 
         GC.safepoint()
     end
-    after_while(p)
-    return cleanup(func, args)
+    return after_while(p, args)
 end
 
 """
@@ -50,8 +54,7 @@ function processloop(@specialize(p), @specialize(func), @specialize(args), ::Rep
         inc!(p)
         GC.safepoint()
     end
-    after_while(p)
-    return cleanup(func, args)
+    return after_while(p, args)
 end
 
 

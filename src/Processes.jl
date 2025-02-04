@@ -32,6 +32,7 @@ module Processes
     include("Interface.jl")
     include("Loops.jl")
     include("CompositeAlgorithms.jl")
+    include("Routines.jl")
     include("Tools.jl")
 
 end

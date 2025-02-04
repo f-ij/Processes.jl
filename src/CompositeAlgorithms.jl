@@ -12,7 +12,7 @@ algoidx(at::AlgoTracker) = at.num
 
 nextalgo!(args::NamedTuple) = inc!(args.algotracker)
 algoidx(args::NamedTuple) = algoidx(args.algotracker)
-struct CompositeAlgorithm{FT, Intervals, T} 
+struct CompositeAlgorithm{T, Intervals} 
     funcs::T
     flags::Set{Symbol}
 end
@@ -21,7 +21,11 @@ CompositeAlgorithm(f, interval::Int, flags...) = CompositeAlgorithm((f,), (inter
 
 function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Int} = ntuple(_ -> 1, N), flags::Symbol...) where {N}
     set = isempty(flags) ? Set{Symbol}() : Set(flags)
-    CompositeAlgorithm{Tuple{funcs...}, (intervals), typeof(funcs)}(funcs, set)
+    funcs = tuple((
+        let obj = funcs[i] isa Type ? funcs[i]() : funcs[i]
+            obj end for i in 1:N)...
+        )
+    CompositeAlgorithm{typeof(funcs), (intervals)}(funcs, set)
 end
 
 hasflag(ca::CompositeAlgorithm, flag) = flag in ca.flags
@@ -31,18 +35,15 @@ export CompositeAlgorithm, CompositeAlgorithmPA, CompositeAlgorithmFuncType
 
 num_funcs(ca::CompositeAlgorithm{FA}) where FA = fieldcount(FA)
 
-type_instances(::CompositeAlgorithm{FT}) where FT = call_all(FT.parameters)
+type_instances(ca::CompositeAlgorithm{FT}) where FT = ca.funcs
 # type_instances(::CompositeAlgorithm{FT, I, T}) where {FT, I, T} = T
-get_funcs(ca::CompositeAlgorithm) = ca.funcs
-
+get_funcs(ca::CompositeAlgorithm{FT}) where FT = FT.parameters 
 
 CompositeAlgorithm{FS, Intervals}() where {FS, Intervals} = CompositeAlgorithm{FS, Intervals}(call_all(FS)) 
 get_intervals(ca::C) where {C<:CompositeAlgorithm} = C.parameters[2]
 
 tupletype_to_tuple(t) = (t.parameters...,)
 get_intervals(ct::Type{<:CompositeAlgorithm}) = ct.parameters[2]
-
-
 
 @inline function getvals(ca::CompositeAlgorithm{FT, Is}) where {FT, Is}
     return Val.(Is)
@@ -102,46 +103,47 @@ function cleanup(f::CompositeAlgorithm, args)
 end
 
 
-function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), rp::Repeat{repeats}) where {F,I,repeats}
-    @static if DEBUG_MODE
-        println("Running process loop for $repeats times from thread $(Threads.threadid())")
-    end
-    before_while(p)
-    for _ in loopidx(p):repeats
-        if !run(p)
-            break
-        end
-        @inline comp_dispatch(func, args)
-        @inline inc!(p)
-        GC.safepoint()
-    end
-    after_while(p)
-    return cleanup(func, args)
-end
+# function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), rp::Repeat{repeats}) where {F,I,repeats}
+#     @static if DEBUG_MODE
+#         println("Running process loop for $repeats times from thread $(Threads.threadid())")
+#     end
+#     before_while(p)
+#     for _ in loopidx(p):repeats
+#         if !run(p)
+#             break
+#         end
+#         @inline comp_dispatch(func, args)
+#         @inline inc!(p)
+#         GC.safepoint()
+#     end
+#     after_while(p)
+#     return cleanup(func, args)
+# end
 
-function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), ::Indefinite) where {F,I}
-    @static if DEBUG_MODE
-        println("Running process loop indefinitely from thread $(Threads.threadid())")
-    end
-    before_while(p)
-    while run(p)
-        @inline comp_dispatch(func, args)
-        inc!(p)
-        GC.safepoint()
-    end
-    after_while(p)
-    return cleanup(func, args)
+# function processloop(@specialize(p), @specialize(func::CompositeAlgorithm{F,I}), @specialize(args), ::Indefinite) where {F,I}
+#     @static if DEBUG_MODE
+#         println("Running process loop indefinitely from thread $(Threads.threadid())")
+#     end
+#     before_while(p)
+#     while run(p)
+#         @inline comp_dispatch(func, args)
+#         inc!(p)
+#         GC.safepoint()
+#     end
+#     after_while(p)
+#     return cleanup(func, args)
+# end
+
+
+@inline function (::CompositeAlgorithm{Fs,I})(@specialize(args)) where {Fs,I}
+    algoidx = 1
+    @inline _comp_dispatch(typehead(Fs), headval(I), typetail(Fs), gettail(I), (;args..., algoidx, interval = gethead(I)))
 end
 
 """
 Dispatch on a composite function
     Made such that the functions will be completely inlined at compile time
 """
-@inline function comp_dispatch(@specialize(func::CompositeAlgorithm{Fs,I}), args) where {Fs,I}
-    algoidx = 1
-    @inline _comp_dispatch(typehead(Fs), headval(I), typetail(Fs), gettail(I), (;args..., algoidx, interval = gethead(I)))
-end
-
 function _comp_dispatch(@specialize(thisfunc), interval::Val{I}, @specialize(funcs), intervals, args) where I
     if I == 1
         @inline thisfunc(args)
@@ -158,39 +160,6 @@ function _comp_dispatch(@specialize(thisfunc), interval::Val{I}, @specialize(fun
 end
 
 _comp_dispatch(::Nothing, ::Any, ::Any, ::Any, args) = nothing
-
-
-
-@inline function typehead(t::Type{T}) where T<:Tuple
-    Base.tuple_type_head(T)
-end
-
-@inline typehead(::Type{Tuple{}}) = nothing
-
-@inline function typeheadval(t::Type{T}) where T<:Tuple
-    Val(typehead(t))
-end
-
-@inline typeheadval(::Type{Tuple{}}) = nothing
-
-@inline function typetail(t::Type{T}) where T<:Tuple
-    Base.tuple_type_tail(T)
-end
-
-@inline typetail(t::Type{Tuple{}}) = nothing
-
-@inline function headval(t::Tuple)
-    Val(Base.first(t))
-end
-
-@inline headval(::Tuple{}) = nothing
-
-@inline gethead(t::Tuple) = Base.first(t)
-@inline gethead(::Tuple{}) = nothing
-
-@inline gettail(t::Tuple) = Base.tail(t)
-@inline gettail(::Tuple{}) = nothing
-
 
 ##
 function compute_triggers(ca::CompositeAlgorithm{F, Intervals}, ::Repeat{repeats}) where {F, Intervals, repeats}

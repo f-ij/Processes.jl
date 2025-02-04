@@ -1,4 +1,6 @@
 using Processes
+import Processes as P
+
 struct Fib <: ProcessAlgorithm end
 
 function Fib(args)
@@ -25,10 +27,11 @@ function Processes.prepare(::Luc, args)
     return (;luclist)
 end
 
-FibLuc = CompositeAlgorithm( (Fib, Luc, identity), (1,2,3) )
 
-pcomp = Process(FibLuc; lifetime = 1000000)
-start(pcomp)
-benchmark(FibLuc, 1000000)
+r = Routine((Fib,Luc), (1000000, 1000000 ÷ 2))
+pr = Process(r, lifetime = 1)
+prepare(r, (;proc = pr))
 
+start(pr)
+benchmark(r, 1)
 

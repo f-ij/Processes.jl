@@ -145,20 +145,6 @@ function spawntask!(p::Process; threaded = true)
 
     p.task = spawntask(p, p.taskfunc.func, p.taskfunc.prepared_args, lifetime(p))
 
-    # p.task.sticky = false
-    # if threaded
-    #     Threads._spawn_set_thrpool(p.task, :default)
-    # end
-    # schedule(p.task)
-
-    # while !istaskstarted(p.task)
-    #     @static if DEBUG_MODE
-    #         println("Waiting for task to start")
-    #         sleep(0.1)
-    #     end
-    #     #TODO: add timeout?
-    # end
-
     return p
 end
 export runtask!
