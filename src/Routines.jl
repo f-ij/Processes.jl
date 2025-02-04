@@ -32,7 +32,7 @@ end
 
 function Routine(funcs::NTuple{N, Any}, lifetimes::NTuple{N, Int}, repeat = 1) where {N}
     srs = tuple((
-        let obj = funcs[i] isa funcs[i] isa Type ? funcs[i]() : funcs[i]
+        let obj = funcs[i] isa Type ? funcs[i]() : funcs[i]
             SubRoutine{typeof(obj), lifetimes[i]}(obj) end for i in 1:N)...
         )
     return Routine{typeof(srs), repeat}(srs)
@@ -58,11 +58,12 @@ routinelifetime(args) = routinelifetime(args.routinetracker)
 function prepare(r::Routine, args = (;))
     args = (;args..., routinetracker = RoutineTracker(r))
     for sr in r.subrountines
-        try
-            args = (;args..., prepare(sr, args)...)
-        catch
-            @warn "Error preparing routine $sr, possibly no prepare function defined"
-        end
+        args = (;args..., prepare(sr, args)...)
+        # try
+            # args = (;args..., prepare(sr, args)...)
+        # catch
+        #     @warn "Error preparing routine $sr, possibly no prepare function defined"
+        # end
         next!(args.routinetracker)
     end
     return args
@@ -105,6 +106,9 @@ end
 # If tail is empty, return acc
 _construct_routineidx_tuple(i, acc, lifetimes::Tuple{}, v::Val) = acc
 
+"""
+For pausing and resuming
+"""
 function subroutine_idxs(p::Process, routine::Routine{F,R}) where {F,R}
     _lifetimes = lifetimes(routine)
     incs_per_step = sum(_lifetimes)
@@ -131,8 +135,8 @@ function unroll_subroutines(@specialize(func::Routine{FT, R}), sr_idxs, args) wh
     @inline _unroll_subroutines(gethead(func.subrountines), gettail(func.subrountines), lifetimes(func), sr_idxs, args)
 end
 
-function _unroll_subroutines(@specialize(subroutine::SubRoutine), tail, lifetimes, sr_idxs, args) 
-    if isempty(tail)
+function _unroll_subroutines(@specialize(subroutine::Union{Nothing,SubRoutine}), tail, lifetimes, sr_idxs, args) 
+    if isnothing(subroutine)
         return
     else
         (;proc) = args

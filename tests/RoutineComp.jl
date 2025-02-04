@@ -25,10 +25,12 @@ function Processes.prepare(::Luc, args)
     return (;luclist)
 end
 
-FibLuc = CompositeAlgorithm2( (Fib, Luc), (1,2) )
+FibLuc = CompositeAlgorithm( (Fib, Luc), (1,2) )
+FibLucRoutine = Routine(tuple(FibLuc), tuple(1000000))
+FLR = FibLucRoutine
 
-pcomp2 = Process(FibLuc; lifetime = 1000000)
-start(pcomp2)
-benchmark(FibLuc, 1000000)
+pcomp = Process(FibLucRoutine, lifetime = 1)
+start(pcomp)
+benchmark(FibLucRoutine, 1)
 
 

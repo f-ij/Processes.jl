@@ -2,6 +2,22 @@
 export AlgoTracker, inc!, algoidx, nextalgo!
 export CompositeAlgorithm, prepare, loopexp
 
+struct SubComposite{F}
+    func::F
+end
+
+@inline function (::SubComposite{F})(args) where F
+    return F(args)
+end
+
+@inline function (sc::SubComposite{<:Function})(args)
+    return sc.func(args)
+end
+
+function prepare(sc::SubComposite{F}, args) where F
+    return prepare(sc.func, args)
+end
+
 mutable struct AlgoTracker{N}
     num::Int
 end
@@ -22,7 +38,7 @@ CompositeAlgorithm(f, interval::Int, flags...) = CompositeAlgorithm((f,), (inter
 function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Int} = ntuple(_ -> 1, N), flags::Symbol...) where {N}
     set = isempty(flags) ? Set{Symbol}() : Set(flags)
     funcs = tuple((
-        let obj = funcs[i] isa Type ? funcs[i]() : funcs[i]
+        let obj = funcs[i] isa Type ? SubComposite(funcs[i]()) : SubComposite(funcs[i])
             obj end for i in 1:N)...
         )
     CompositeAlgorithm{typeof(funcs), (intervals)}(funcs, set)
@@ -65,9 +81,7 @@ export algo_loopidx
 
 
 
-function prepare(f::CompositeAlgorithm, args)
-    (;lifetime) = args
-
+function prepare(f::CompositeAlgorithm, args::NamedTuple)
     _num_funcs = num_funcs(f)
 
     #Trick to get the number of the function currently being prepared
@@ -77,12 +91,9 @@ function prepare(f::CompositeAlgorithm, args)
     # as prepare(::TypeName, args)
     functions = type_instances(f)
 
-    args = (;args...)
+    args = (;args..., algotracker = AlgoTracker(_num_funcs))
     for func in functions
-        getargs = prepare(func, args)
-        if !isnothing(getargs)
-            args = (;args..., getargs...)
-        end
+        args = (;args..., prepare(func, args)...)
 
         @inline nextalgo!(args)
     end
@@ -135,9 +146,14 @@ end
 # end
 
 
-@inline function (::CompositeAlgorithm{Fs,I})(@specialize(args)) where {Fs,I}
+# @inline function (::CompositeAlgorithm{Fs,I})(@specialize(args)) where {Fs,I}
+#     algoidx = 1
+#     @inline _comp_dispatch(typehead(Fs), headval(I), typetail(Fs), gettail(I), (;args..., algoidx, interval = gethead(I)))
+# end
+
+@inline function (ca::CompositeAlgorithm{Fs,I})(@specialize(args)) where {Fs,I}
     algoidx = 1
-    @inline _comp_dispatch(typehead(Fs), headval(I), typetail(Fs), gettail(I), (;args..., algoidx, interval = gethead(I)))
+    @inline _comp_dispatch(gethead(ca.funcs), headval(I), gettail(ca.funcs), gettail(I), (;args..., algoidx, interval = gethead(I)))
 end
 
 """
@@ -156,7 +172,7 @@ function _comp_dispatch(@specialize(thisfunc), interval::Val{I}, @specialize(fun
     if haskey(args, :algotracker)
         nextalgo!(args)
     end
-    @inline _comp_dispatch(typehead(funcs), headval(intervals), typetail(funcs), gettail(intervals), (;args..., algoidx = args.algoidx + 1, interval = gethead(intervals)))
+    @inline _comp_dispatch(gethead(funcs), headval(intervals), gettail(funcs), gettail(intervals), (;args..., algoidx = args.algoidx + 1, interval = gethead(intervals)))
 end
 
 _comp_dispatch(::Nothing, ::Any, ::Any, ::Any, args) = nothing
