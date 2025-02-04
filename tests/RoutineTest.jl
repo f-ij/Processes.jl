@@ -27,7 +27,7 @@ function Processes.prepare(::Luc, args)
     return (;luclist)
 end
 
-
+SubRoutine()
 r = Routine((Fib,Luc), (1000000, 1000000 ÷ 2))
 pr = Process(r, lifetime = 1)
 prepare(r, (;proc = pr))

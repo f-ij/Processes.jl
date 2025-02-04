@@ -1,8 +1,10 @@
-export Routine
+export Routine, SubRoutine
 
 struct SubRoutine{F, Lifetime}
     func::F # Func, or composite algorithnm
 end
+
+SubRoutine(func, repeats = 1) = SubRoutine{typeof(func), repeats}(func)
 
 function (sr::SubRoutine{F,L})(args) where {F,L}
     return F(args)
@@ -30,10 +32,14 @@ end
 
 function Routine(funcs::NTuple{N, Any}, lifetimes::NTuple{N, Int}, repeat = 1) where {N}
     srs = tuple((
-        let obj = funcs[i] isa Type ? funcs[i]() : funcs[i]
+        let obj = funcs[i] isa funcs[i] isa Type ? funcs[i]() : funcs[i]
             SubRoutine{typeof(obj), lifetimes[i]}(obj) end for i in 1:N)...
         )
     return Routine{typeof(srs), repeat}(srs)
+end
+
+function Routine(sr::SubRoutine...; repeat = 1)
+    return Routine{Tuple{typeof(sr)...}, repeat}(tuple(sr...))
 end
 
 mutable struct RoutineTracker{R}
