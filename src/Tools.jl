@@ -73,6 +73,28 @@ Base.wait(args::NamedTuple, seconds) = Base.wait(args.timetracker, seconds)
 add_timetracker(args::NamedTuple) = (;args..., timetracker = TimeTracker())
 
 
+# Check Progress
+function progress(p::Process)
+    _loopidx = loopidx(p)
+    _progress(p.taskfunc, _loopidx, lifetime(p))
+end
+
+function _progress(::Any, lidx, lifetime::Repeat{repeats}) where repeats
+    lidx / repeats * 100
+end
+
+function _progress(tf::TaskFunc{<:Routine}, lidx, lifetime::Repeat{repeats}) where repeats
+    lidx / (total_routinesteps(tf.func)*repeats) * 100
+end
+
+function est_remaining(p::Process)
+    prog = progress(p)
+    rt = runtime(p)
+    rt / prog
+end
+
+
+
 
 
 

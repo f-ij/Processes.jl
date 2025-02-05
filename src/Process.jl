@@ -70,9 +70,7 @@ end
 
 function runtime(p::Process)
     @assert !isnothing(p.starttime) "Process has not started"
-    timens = isnothing(p.endtime) ? time() - p.starttime : p.endtime - p.starttime
-    times = timens / 1e9
-    return times
+    return runtime_ns(p) / 1e9
 end
 
 function runtime_ns(p::Process)

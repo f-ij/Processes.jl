@@ -20,7 +20,6 @@ function setTuple(tuple, idx, val)
         return (tuple[1:(idx-1)]...,val,tuple[(idx+1):end]...)
     end
 end
-export setTuple
 
 """
 Checks if methods exist for the given name
@@ -152,7 +151,6 @@ macro setterGetterAnnotated(strct, deleted...)
     return esc(funcs)
 
 end
-export setterGetter
 
 macro createArgStruct(name, args...)
     startstr = "struct $name{"
@@ -172,7 +170,6 @@ macro createArgStruct(name, args...)
     return esc(Meta.parse(startstr))
 end
 
-export createArgStruct
 
 macro registerStructVars(varname, structname)
     vars = quote end
@@ -363,17 +360,6 @@ macro rtime(n, expr)
         println("The repetitions took $(tf-ti) seconds")
     end)
 end
-export @rtime
-
-macro enumeratelayers(layers, length)
-    expr = quote end
-
-    for idx in 1:length
-        push!(expr.args, Meta.parse("l$idx = $layers[$idx]"))
-    end
-    esc(expr)
-end
-export @enumeratelayers
 
 macro tryLockPause(sim, expr, blockpause = false, blockunpause = false)
     fexp = quote end
@@ -410,7 +396,6 @@ function getMBytes(x)
       return total;
     end
 end
-export getMBytes
 
 function printnz(v)
     for (val_idx, val) in enumerate(v)
@@ -419,7 +404,6 @@ function printnz(v)
         end
     end
 end
-export printnz
 
 """
 Sleep with lower minimum sleeptime

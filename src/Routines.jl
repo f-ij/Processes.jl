@@ -63,6 +63,7 @@ mutable struct RoutineTracker{R}
 end
 
 RoutineTracker(r::Routine) = RoutineTracker(r, 1)
+total_routinesteps(r::Routine) = sum(lifetimes(r))
 
 next!(rt::RoutineTracker) = rt.idx = mod1(rt.idx + 1, length(rt.routine.subrountines))
 this_subroutine(rt::RoutineTracker) = rt.routine.subrountines[rt.idx]
