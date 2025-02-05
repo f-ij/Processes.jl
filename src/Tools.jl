@@ -9,6 +9,11 @@ give the array a size hint based on the lifetime and the number of updates per s
     this_func = getfunc(p)
     startsize = length(array)
 
+    if lifetime(p) isa Indefinite
+        sizehint!(array, 100000)
+        return
+    end
+
     if this_func isa CompositeAlgorithm
         this_interval = get_this_interval(args)
         rpts = ceil(Int,repeats(lifetime(p))/this_interval)
@@ -98,7 +103,7 @@ function est_remaining(p::Process)
     hours = floor(Int, remaining_sec / 3600)
     minutes = floor(Int, mod(remaining_sec, 3600) / 60)
     seconds = floor(Int, mod(remaining_sec, 60))
-    println("Estimated time to completion: $total_hours:$total_minutes:$total_seconds hours")
+    println("Estimated time to completion: $total_hours:$total_minutes:$total_seconds")
     println("Of which remaining: $hours:$minutes:$seconds")
 end
 
