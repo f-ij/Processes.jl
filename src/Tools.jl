@@ -1,4 +1,4 @@
-export processsizehint!, recommendsize, newallocator
+export processsizehint!, recommendsize, newallocator, progress, est_remaining
 
 """
 For a proess with a limited lifetime,
@@ -80,17 +80,26 @@ function progress(p::Process)
 end
 
 function _progress(::Any, lidx, lifetime::Repeat{repeats}) where repeats
-    lidx / repeats * 100
+    lidx / repeats
 end
 
 function _progress(tf::TaskFunc{<:Routine}, lidx, lifetime::Repeat{repeats}) where repeats
-    lidx / (total_routinesteps(tf.func)*repeats) * 100
+    lidx / (total_routinesteps(tf.func)*repeats) 
 end
 
 function est_remaining(p::Process)
     prog = progress(p)
     rt = runtime(p)
-    rt / prog
+    total_time = rt / prog
+    remaining_sec = total_time - rt
+    total_hours = floor(Int, total_time / 3600)
+    total_minutes = floor(Int, mod(total_time, 3600) / 60)
+    total_seconds = floor(Int, mod(total_time, 60))
+    hours = floor(Int, remaining_sec / 3600)
+    minutes = floor(Int, mod(remaining_sec, 3600) / 60)
+    seconds = floor(Int, mod(remaining_sec, 60))
+    println("Estimated time to completion: $total_hours:$total_minutes:$total_seconds hours")
+    println("Of which remaining: $hours:$minutes:$seconds")
 end
 
 
