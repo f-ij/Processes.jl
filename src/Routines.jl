@@ -5,6 +5,7 @@ struct SubRoutine{F, Lifetime}
 end
 
 SubRoutine(func, repeats = 1) = SubRoutine{typeof(func), repeats}(func)
+SubRoutine(func::Type, repeats = 1) = SubRoutine{func, repeats}(func())
 
 function (sr::SubRoutine{F,L})(args) where {F,L}
     return F(args)
@@ -68,11 +69,6 @@ function prepare(r::Routine, args = (;))
     args = (;args..., routinetracker = RoutineTracker(r))
     for sr in r.subrountines
         args = (;args..., prepare(sr, args)...)
-        # try
-            # args = (;args..., prepare(sr, args)...)
-        # catch
-        #     @warn "Error preparing routine $sr, possibly no prepare function defined"
-        # end
         next!(args.routinetracker)
     end
     return args
@@ -131,6 +127,10 @@ default_subroutine_idxs(routine::Routine{F,R}) where {F,R} = tuple_type_property
 export subroutine_idxs
 
 function processloop(p::Process, @specialize(func::Routine), args, lifetime::Repeat{r}) where r
+    println("HERE")
+    @static if DEBUG_MODE
+        println("Running processloop for Routines")
+    end
     sr_idxs = @inline subroutine_idxs(p, func)
     before_while(p)
     for _ in routinestep(p,func):r

@@ -35,4 +35,6 @@ benchmark(r, 1)
 SFib = SubRoutine(Fib, 1000000)
 SLuc = SubRoutine(Luc, 1000000 ÷ 2)
 RFibLuc = Routine(SFib, SLuc)
+p = Process(RFibLuc, lifetime = 1)
+start(p)
 
