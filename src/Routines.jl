@@ -43,7 +43,6 @@ function Routine(funcs::NTuple{N, Any}, lifetimes::NTuple{N, Int}, repeat = 1) w
 end
 
 function Routine(sr::SubRoutine...; repeat = 1)
-    println("HERE")
     return Routine{Tuple{typeof.(sr)...}, repeat}(tuple(sr...))
 end
 
