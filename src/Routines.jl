@@ -51,6 +51,9 @@ end
 Standard lifetime for a routine is 1
 """
 function Process(r::Routine; lifetime = 1, args...)
+    if isnothing(lifetime) # Standard is one for routines if nothing is passed
+        lifetime = 1
+    end
     invoke(Process, Tuple{Any}, r; lifetime, args...)
 end
 
