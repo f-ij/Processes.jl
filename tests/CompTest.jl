@@ -25,7 +25,7 @@ function Processes.prepare(::Luc, args)
     return (;luclist)
 end
 
-FibLuc = CompositeAlgorithm( (Fib, Luc, identity), (1,1,1) )
+FibLuc = CompositeAlgorithm( (Fib, Luc, identity), (1,2,1) )
 
 pcomp = Process(FibLuc; lifetime = 1000000)
 start(pcomp)

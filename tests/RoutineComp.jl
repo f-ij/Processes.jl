@@ -29,8 +29,8 @@ FibLuc = CompositeAlgorithm( (Fib, Luc), (1,2) )
 FibLucRoutine = Routine(tuple(FibLuc), tuple(1000000))
 FLR = FibLucRoutine
 
-pcomp = Process(FibLucRoutine, lifetime = 1)
-start(pcomp)
+pr = Process(FibLucRoutine, lifetime = 1)
+start(pr)
 benchmark(FibLucRoutine, 1)
 
 

@@ -31,6 +31,11 @@ function Process(func = nothing; lifetime = Indefinite(), overrides = (;), args.
     return p
 end
 
+function Process(func, repeats::Int; overrides = (;), args...) 
+    lifetime = repeats == 0 ? Indefinite() : Repeat{repeats}()
+    return Process(func; lifetime, overrides, args...)
+end
+
 import Base: ==
 ==(p1::Process, p2::Process) = p1.id == p2.id
 
@@ -80,12 +85,6 @@ export runtime_ns, runtime
 function createfrom!(p1::Process, p2::Process)
     p1.taskfunc = p2.taskfunc
     preparedata!(p1)
-end
-
-# Process() = Process(nothing, 0, Threads.SpinLock(), (true, :Nothing))
-function Process(func, repeats::Int; overrides = (;), args...) 
-    lifetime = repeats == 0 ? Indefinite() : Repeat{repeats}()
-    return Process(func; lifetime, overrides, args...)
 end
 
 

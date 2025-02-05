@@ -14,6 +14,10 @@ function (sr::SubRoutine{<:Function,L})(args) where L
     return sr.func(args)
 end
 
+function (sr::SubRoutine{<:CompositeAlgorithm,L})(args) where L
+    return sr.func(args)
+end
+
 lifetime(sub::SubRoutine{F,L}) where {F,L} = L
 lifetime(::Type{SubRoutine{F,L}}) where {F,L} = L
 
@@ -41,6 +45,11 @@ end
 function Routine(sr::SubRoutine...; repeat = 1)
     return Routine{Tuple{typeof(sr)...}, repeat}(tuple(sr...))
 end
+
+"""
+Standard lifetime for a routine is 1
+"""
+Process(r::Routine, lifetime = 1) = Process(r; lifetime)
 
 mutable struct RoutineTracker{R}
     routine::R
