@@ -50,7 +50,7 @@ end
 """
 Standard lifetime for a routine is 1
 """
-Process(r::Routine; lifetime = 1) = Process(r, lifetime)
+Process(r::Routine; lifetime = 1, args...) = Process(r; lifetime, args...)
 
 mutable struct RoutineTracker{R}
     routine::R
