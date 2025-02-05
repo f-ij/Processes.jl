@@ -1,4 +1,4 @@
-export Process, getallocator, getnewallocator, threadid
+export Process, getallocator, getnewallocator, threadid, getlidx
 
 mutable struct Process
     id::UUID
@@ -40,6 +40,7 @@ import Base: ==
 ==(p1::Process, p2::Process) = p1.id == p2.id
 
 getallocator(p::Process) = p.allocator
+getlidx(p::Process) = Int(p.loopidx)
 
 getinputargs(p::Process) = p.taskfunc.args
 getargs(p::Process) = p.taskfunc.prepared_args
