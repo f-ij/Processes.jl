@@ -24,7 +24,7 @@ cleanup(::Any, args) = args
 """
 Run a single function in a loop indefinitely
 """
-function processloop(@specialize(p), @specialize(func), @specialize(args), ::Indefinite)
+function processloop(@specialize(p::Process), @specialize(func), @specialize(args), ::Indefinite)
     @static if DEBUG_MODE
         println("Running process loop indefinitely from thread $(Threads.threadid())")
     end
@@ -41,7 +41,7 @@ end
 """
 Run a single function in a loop for a given number of times
 """
-function processloop(@specialize(p), @specialize(func), @specialize(args), ::Repeat{repeats}) where repeats
+function processloop(@specialize(p::Process), @specialize(func), @specialize(args), ::Repeat{repeats}) where repeats
     @static if DEBUG_MODE
         println("Running process loop for $repeats times from thread $(Threads.threadid())")
     end

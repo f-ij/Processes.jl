@@ -50,7 +50,7 @@ end
 """
 Standard lifetime for a routine is 1
 """
-Process(r::Routine, lifetime = 1) = Process(r; lifetime)
+Process(r::Routine; lifetime = 1) = Process(r, lifetime)
 
 mutable struct RoutineTracker{R}
     routine::R
@@ -127,7 +127,6 @@ default_subroutine_idxs(routine::Routine{F,R}) where {F,R} = tuple_type_property
 export subroutine_idxs
 
 function processloop(p::Process, @specialize(func::Routine), args, lifetime::Repeat{r}) where r
-    println("HERE")
     @static if DEBUG_MODE
         println("Running processloop for Routines")
     end
