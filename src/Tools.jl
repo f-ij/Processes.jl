@@ -17,14 +17,16 @@ give the array a size hint based on the lifetime and the number of updates per s
     if this_func isa CompositeAlgorithm
         this_interval = get_this_interval(args)
         rpts = ceil(Int,repeats(lifetime(p))/this_interval)
-        sizehint!(array, startsize + rpts * updates_per_step)
     elseif haskey(args, :routinetracker)
         rpts = routinelifetime(args)
-        sizehint!(array, startsize + rpts * updates_per_step)
     else 
         rpts = repeats(lifetime(p))
-        sizehint!(array, startsize + rpts * updates_per_step)
     end
+    sizehint = startsize + rpts * updates_per_step
+    @static if DEBUG_MODE
+        println("Sizehint is $sizehint")
+    end
+    sizehint!(array, sizehint)
 end
 
 """

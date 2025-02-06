@@ -118,20 +118,6 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
 
             prepared_args = prepare(calledobject, (;proc = process, lifetime, args...))
 
-            # try
-            #     @static if DEBUG_MODE
-            #         println("Trying to prepare args for process $(process.id)")
-            #     end
-            #     prepared_args = prepare(calledobject, (;proc = process, lifetime, args...))
-            #     @static if DEBUG_MODE
-            #         println("Just called the prepare function for process $(process.id)")
-            #     end
-            # catch(err)
-            #     # println("No prepare function defined for:")
-            #     @warn "No prepare function defined for $func, or prepare failed no args are prepared"
-            #     # display(err)
-            #     prepared_args = (;args...)
-            # end
         else
             prepared_args = overrides.prepare(calledobject, (;proc = process, lifetime, args...))
         end
@@ -147,10 +133,6 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
     return algo_args = (;proc = process, lifetime, prepared_args...)
 end
 
-# Function barrier to create task from taskfunc so that the task is properly precompiled
-# function define_task(p, @specialize(func), args, loopdispatch; loopfunction = processloop)
-#     @task loopfunction(p, func, args, loopdispatch)
-# end
 
 function spawntask(p, @specialize(func), args, loopdispatch; loopfunction = processloop)
     Threads.@spawn loopfunction(p, func, args, loopdispatch)

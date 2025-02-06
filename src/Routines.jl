@@ -38,7 +38,7 @@ end
 function Routine(funcs::NTuple{N, Any}, lifetimes::NTuple{N, Int}, repeat = 1) where {N}
     srs = tuple((
         let obj = funcs[i] isa Type ? funcs[i]() : funcs[i]
-            SubRoutine{typeof(obj), lifetimes[i]}(obj) end for i in 1:N)...
+            SubRoutine{typeof(obj), Int(lifetimes[i])}(obj) end for i in 1:N)...
         )
     return Routine{typeof(srs), repeat}(srs)
 end
@@ -75,9 +75,19 @@ function prepare(r::Routine, args = (;))
     args = (;args..., routinetracker = RoutineTracker(r))
     for sr in r.subrountines
         args = (;args..., prepare(sr, args)...)
-        next!(args.routinetracker)
+        # Routine tracker so that prepare knows which subroutine it is in
+        # This is neccesary to do sizehint
+        next!(args.routinetracker) 
     end
     return args
+end
+
+function cleanup(r::Routine, args)
+    for sr in r.subrountines
+        args = (args..., cleanup(sr, args))
+        next!(args.routinetracker)
+    end
+    args
 end
 
 processsizehint!(args, r::Routine) = processsizehint!(args, prepare(r))
