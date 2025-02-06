@@ -38,7 +38,7 @@ end
 function Routine(funcs::NTuple{N, Any}, lifetimes::NTuple{N, Int}, repeat = 1) where {N}
     srs = tuple((
         let obj = funcs[i] isa Type ? funcs[i]() : funcs[i]
-            SubRoutine{typeof(obj), Int(lifetimes[i])}(obj) end for i in 1:N)...
+            SubRoutine{typeof(obj), lifetimes[i]}(obj) end for i in 1:N)...
         )
     return Routine{typeof(srs), repeat}(srs)
 end
