@@ -3,7 +3,7 @@ module Processes
 
     export getargs, Process, start, quit
 
-    using UUIDs, Preferences
+    using UUIDs, Preferences, JLD2
     import Base: Threads.SpinLock, lock, unlock
     const wait_timeout = .5
 
@@ -40,6 +40,7 @@ module Processes
     include("Trackers.jl")
     include("TotalInc.jl")
     include("Tools.jl")
+    include("Saving.jl")
 
 
 end

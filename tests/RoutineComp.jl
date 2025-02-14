@@ -1,7 +1,7 @@
 include("FibLucDef.jl")
 
 FibLuc = CompositeAlgorithm( (Fib, Luc), (1,2) )
-FibLucRoutine = Routine((FibLuc,), (10000000000,))
+FibLucRoutine = Routine((FibLuc,), (100000,))
 FLR = FibLucRoutine
 
 pr = Process(FibLucRoutine, lifetime = 1)
