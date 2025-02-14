@@ -1,0 +1,25 @@
+struct SimpleAlgo{T} <: ProcessLoopAlgorithm
+    func::T
+
+    function SimpleAlgo(f)
+        if F isa Type
+            return new{F}(f())
+        else
+            return new{typeof(f)}(f)
+        end
+    end
+end
+
+"""
+Wrapper for functions to ensure proper semantics with the task system
+"""
+@inline function (sf::SimpleAlgo)(args)
+    (;proc) = args
+    sf.func(args)
+    inc!(proc)
+    GC.safepoint()
+end
+
+function prepare(sa::SimpleAlgo, args)
+    prepare(sa.func, args)
+end

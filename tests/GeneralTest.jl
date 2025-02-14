@@ -113,13 +113,16 @@ runtime_ns(p1)
 const outerargs = (;fiblist = [0, 1], luclist = [2, 1])
 function testloop(args)
     loopidx = 1
+    modtracker = 1
     init_time = time_ns()
     for _ in 1:1000000
         push!(args.fiblist, args.fiblist[end] + args.fiblist[end-1])
-        if loopidx % 2 == 0
+        # if loopidx % 2 == 0
+        if modtracker == 2
             push!(args.luclist, args.luclist[end] + args.luclist[end-1])
         end
-        loopidx += 1
+        
+        loopidx += 2
     end
     runtime_ns = Int(time_ns() - init_time)
     return runtime_ns
@@ -129,10 +132,13 @@ function test_testloop()
     runtimes = []
     for _ in 1:100
         outerargs = (;fiblist = [0, 1], luclist = [2, 1])
-        sizehint!(outerargs.fiblist, 1000000)
-        sizehint!(outerargs.luclist, 1000000)
-        push!(runtimes, testloop(outerargs))
+        sizehint!(outerargs.fiblist, 1000002)
+        sizehint!(outerargs.luclist, 500002)
+        push!(runtimes, fetch(Threads.@spawn testloop(outerargs)))
     end
     runtimes ./= 1e9
     return sum(runtimes) / 100
 end
+
+
+test_testloop()

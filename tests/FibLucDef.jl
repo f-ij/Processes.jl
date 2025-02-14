@@ -1,7 +1,7 @@
 using Processes
 struct Fib <: ProcessAlgorithm end
 
-function Fib(args)
+function (::Fib)(args)
     (;fiblist) = args
     push!(fiblist, fiblist[end] + fiblist[end-1])
 end
@@ -14,7 +14,7 @@ end
 
 struct Luc <: ProcessAlgorithm end
 
-function Luc(args)
+function (::Luc)(args)
     (;luclist) = args
     push!(luclist, luclist[end] + luclist[end-1])
 end
@@ -24,13 +24,3 @@ function Processes.prepare(::Luc, args)
     processsizehint!(args, luclist)
     return (;luclist)
 end
-
-FibLuc = CompositeAlgorithm( (Fib, Luc), (1,2) )
-FibLucRoutine = Routine(FibLuc, 1000000)
-FLR = FibLucRoutine
-
-pr = Process(FibLucRoutine, lifetime = 1)
-start(pr)
-benchmark(FibLucRoutine, 1)
-
-

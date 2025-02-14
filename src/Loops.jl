@@ -11,10 +11,11 @@ end
 function after_while(p::Process, args)
     set_endtime!(p)
     close.(get_linked_processes(p))
-    if run(p) || lifetime(p) isa Indefinite
-        return cleanup(p, args)
-    else
+    if !run(p) || lifetime(p) isa Indefinite # If user interrupted, or lifetime is indefinite
         return args
+    else
+        # return cleanup(getfunc(p), args)
+        return cleanup(p)
     end
 end
 
@@ -51,8 +52,8 @@ function processloop(@specialize(p::Process), @specialize(func), @specialize(arg
             break
         end
         @inline func(args)
-        inc!(p)
-        GC.safepoint()
+        # inc!(p)
+        # GC.safepoint()
     end
     return after_while(p, args)
 end

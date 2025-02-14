@@ -2,7 +2,7 @@ export Process, getallocator, getnewallocator, threadid, getlidx
 
 mutable struct Process
     id::UUID
-    taskfunc::Union{Nothing,TaskFunc}
+    taskdata::Union{Nothing,TaskData}
     task::Union{Nothing, Task}
     loopidx::UInt   
     # To make sure other processes don't interfere
@@ -17,17 +17,22 @@ mutable struct Process
 end
 export Process
 
-function Process(func = nothing; lifetime = Indefinite(), overrides = (;), args...)
+function Process(func; lifetime = Indefinite(), overrides = (;), args...)
     if lifetime isa Integer
         lifetime = Repeat{lifetime}()
     elseif isnothing(lifetime)
         lifetime = Indefinite()
     end
 
-    # tf = TaskFunc(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
-    tf = TaskFunc(func; lifetime, overrides, args...)
+    if !(func isa ProcessLoopAlgorithm)
+        func = SimpleAlgo(func)
+    end
+
+    # tf = TaskData(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
+    tf = TaskData(func; lifetime, overrides, args...)
     p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), nothing)
     register_process!(p)
+    preparedata!(p)
     return p
 end
 
@@ -42,20 +47,28 @@ import Base: ==
 getallocator(p::Process) = p.allocator
 getlidx(p::Process) = Int(p.loopidx)
 
-getinputargs(p::Process) = p.taskfunc.args
-getargs(p::Process) = p.taskfunc.prepared_args
-getargs(p::Process, args) = p.taskfunc.prepared_args[args]
-lifetime(p::Process) = p.taskfunc.lifetime
+getinputargs(p::Process) = p.taskdata.args
+function getargs(p::Process)
+    if !isdone(p)   
+        return p.taskdata.prepared_args
+    else
+        return fetch(p)
+    end
+end
+getargs(p::Process, args) = getargs(p)[args]
+lifetime(p::Process) = p.taskdata.lifetime
 
 set_starttime!(p::Process) = p.starttime = time_ns()
 set_endtime!(p::Process) = p.endtime = time_ns()
 reset_times!(p::Process) = (p.starttime = nothing; p.endtime = nothing)
+loopint(p::Process) = Int(p.loopidx)
+export loopint
 
 """
 different loopfunction can be passed to the process through overrides
 """
 function getloopfunc(p::Process)
-    get(p.taskfunc.overrides, :loopfunc, processloop)
+    get(p.taskdata.overrides, :loopfunc, processloop)
 end
 
 get_linked_processes(p::Process) = p.linked_processes
@@ -82,7 +95,7 @@ end
 export runtime_ns, runtime
 
 function createfrom!(p1::Process, p2::Process)
-    p1.taskfunc = p2.taskfunc
+    p1.taskdata = p2.taskdata
     preparedata!(p1)
 end
 
@@ -138,10 +151,10 @@ export newprocess
 Runs the prepared task of a process on a thread
 """
 function spawntask!(p::Process; threaded = true) 
-    @atomic p.run = true
     @atomic p.paused = false
+    @atomic p.run = true
 
-    p.task = spawntask(p, p.taskfunc.func, p.taskfunc.prepared_args, lifetime(p))
+    p.task = spawntask(p, p.taskdata.func, p.taskdata.prepared_args, lifetime(p))
 
     return p
 end
@@ -153,8 +166,8 @@ export runtask!
 
 function reset!(p::Process)
     p.loopidx = 1
-    @atomic p.run = true
     @atomic p.paused = false
+    @atomic p.run = true
     reset_times!(p)
 end
 
@@ -174,12 +187,12 @@ Increments the loop index of a process
 
 ## Prepare
 function prepare(p::Process)
-    p.taskfunc = preparedargs(p.taskfunc, prepare(p.taskfunc.func, p.taskfunc.args))
+    p.taskdata = preparedargs(p.taskdata, prepare(p.taskdata.func, p.taskdata.args))
     return p
 end
 
 function changeargs!(p::Process; args...)
-    p.taskfunc = editargs(p.taskfunc; args...)
+    p.taskdata = editargs(p.taskdata; args...)
 end
 
 export changeargs!

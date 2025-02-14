@@ -7,7 +7,11 @@ module Processes
     import Base: Threads.SpinLock, lock, unlock
     const wait_timeout = .5
 
+    import DataStructures: Queue, dequeue!, enqueue!
+
     abstract type ProcessAlgorithm end
+    abstract type ProcessLoopAlgorithm <: ProcessAlgorithm end # Algorithms that can be inlined in processloop
+
     export ProcessAlgorithm
 
     const DEBUG_MODE = @load_preference("debug", false)
@@ -22,8 +26,9 @@ module Processes
     include("Arena.jl")
     @ForwardDeclare Process ""
 
- 
-    include("TaskFuncs.jl")
+    
+    include("Lifetime.jl")
+    include("TaskDatas.jl")
     include("TriggerList.jl")
     include("Benchmark.jl")
     include("Debugging.jl")
@@ -31,8 +36,10 @@ module Processes
     include("ProcessStatus.jl")
     include("Interface.jl")
     include("Loops.jl")
-    include("CompositeAlgorithms.jl")
-    include("Routines.jl")
+    include("ProcessAlgorithms/ProcessAlgorithms.jl")
+    include("Trackers.jl")
+    include("TotalInc.jl")
     include("Tools.jl")
+
 
 end

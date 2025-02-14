@@ -32,8 +32,8 @@ end
 Close a process, stopping it from running
 """
 function Base.close(p::Process)
-    @atomic p.run = false
     @atomic p.paused = false
+    @atomic p.run = false
     p.loopidx = 1
     return true
 end
@@ -60,8 +60,8 @@ end
 Pause a process, allowing it to be unpaused later
 """
 function pause(p::Process)
-    @atomic p.run = false
     @atomic p.paused = true
+    @atomic p.run = false
     return true
 end
 
@@ -83,7 +83,7 @@ This may be used also to levarge the dispatch system, if the types of the data c
 so that the new loop function is newly compiled
 """
 function refresh(p::Process)
-    @assert !isnothing(p.taskfunc) "No task to run"
+    @assert !isnothing(p.taskdata) "No task to run"
     pause(p)
     prepare_args!(p)
     unpause(p)
@@ -91,12 +91,12 @@ function refresh(p::Process)
 end
 
 function restart(p::Process, sticky = false)
-    @assert !isnothing(p.taskfunc) "No task to run"
+    @assert !isnothing(p.taskdata) "No task to run"
     #Acquire spinlock so that process can not be started twice
     return lock(p.lock) do 
         close(p)
         
-        if timedwait(p, p.taskfunc.timeout)
+        if timedwait(p, p.taskdata.timeout)
             preparedata!(p)
             spawntask!(p)
             return true
