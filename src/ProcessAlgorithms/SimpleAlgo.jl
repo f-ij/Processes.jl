@@ -3,7 +3,7 @@ struct SimpleAlgo{T} <: ProcessLoopAlgorithm
 
     function SimpleAlgo(f)
         if f isa Type
-            return new{f}(f())
+            return new{F}(f())
         else
             return new{typeof(f)}(f)
         end
