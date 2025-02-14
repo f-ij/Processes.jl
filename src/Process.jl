@@ -170,12 +170,6 @@ Increments the loop index of a process
 """
 @inline inc!(p::Process) = p.loopidx += 1
 
-## Prepare
-function prepare(p::Process)
-    p.taskdata = preparedargs(p.taskdata, prepare(p.taskdata.func, p.taskdata.args))
-    return p
-end
-
 function changeargs!(p::Process; args...)
     p.taskdata = editargs(p.taskdata; args...)
 end
