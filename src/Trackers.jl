@@ -161,12 +161,12 @@ repeated
 mutable struct UniqueAlgoTracker{PA}
     const pa::PA
     const counts::Dict{Any, Int}
-    const repeats::Dict{Any, Real}
+    const repeats::Dict{Any, Float64}
     current::Int
 end
 
 function UniqueAlgoTracker(pa::ProcessLoopAlgorithm)
-    ua = UniqueAlgoTracker(pa, Dict{Any, Int}(), Dict{Any, Real}(), 1)
+    ua = UniqueAlgoTracker(pa, Dict{Any, Int}(), Dict{Any, Float64}(), 1)
     for i in 1:num_leafs(pa)
         add_algorithm!(ua, getleaf(pa, i), getrepeats(pa, i))
     end
