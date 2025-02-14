@@ -130,21 +130,6 @@ function timedwait(p, timeout = wait_timeout)
     return isdone(p)
 end
 
-# function makeprocess(@specialize(func), lifetime::RT = Indefinite(); prepare = nothing, overrides = (;), args...) where RT <: Lifetime
-#     println("Making a new process with lifetime $lifetime")
-#     newp = Process(func; lifetime, args...)
-#     register_process!(newp)
-#     args = (;proc = newp, args...)
-#     preparedata!(newp, func; lifetime, prepare, overrides, args...)
-    
-#     return newp
-# end
-
-# makeprocess(func, repeats::Int; overrides...) = let rt = repeats == 0 ? Indefinite() : Repeat{repeats}(); makeprocess(func, rt; overrides...); end
-# export makeprocess
-
-# newprocess(func, repeats::Int = 0; overrides...) = let rt = repeats == 0 ? Indefinite() : Repeat{repeats}(); newprocess(func, rt; overrides...); end
-
 export newprocess
 
 """
