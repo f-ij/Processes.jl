@@ -30,7 +30,7 @@ function reset!(r::Routine)
 end
 
 
-function Routine(funcs::NTuple{N, Any}, repeats::NTuple{N, Int} = ntuple(x -> 1, N), flags::Symbol...) where {N}
+function Routine(funcs::NTuple{N, Any}, repeats::NTuple{N, Real} = ntuple(x -> 1, N), flags::Symbol...) where {N}
     set = isempty(flags) ? Set{Symbol}() : Set(flags)
     savedfuncs = []
     savedrepeats = []

@@ -69,7 +69,7 @@ export algo_loopidx
 
 CompositeAlgorithm(f, interval::Int, flags...) = CompositeAlgorithm((f,), (interval,), flags...)
 
-function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Int} = ntuple(_ -> 1, N), flags::Symbol...) where {N}
+function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Real} = ntuple(_ -> 1, N), flags::Symbol...) where {N}
     set = isempty(flags) ? Set{Symbol}() : Set(flags)
     allfuncs = Any[]
     allintervals = Int[]
@@ -96,7 +96,7 @@ function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Int} = n
         end
     end
     tfuncs = tuple(allfuncs...)
-    allintervals = tuple(Int.(allintervals)...)
+    allintervals = tuple(floor.(Int, allintervals)...)
     CompositeAlgorithm{typeof(tfuncs), allintervals}(tfuncs, 1, set)
 end
 
