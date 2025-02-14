@@ -66,7 +66,15 @@ end
 Routines will call inc! multuple times per loop
 """
 function inc_multiplier(pa::ProcessAlgorithm)
-    
+    if pa isa Routine
+        return sum(repeats(pa))
+    else 
+        return 1
+    end
+end
+
+function maximum_loopidx(p::Process)
+    return repeats(p)*inc_multiplier(getfunc(p))
 end
 
 """
@@ -104,16 +112,7 @@ add_timetracker(args::NamedTuple) = (;args..., timetracker = TimeTracker())
 
 # Check Progress
 function progress(p::Process)
-    _loopidx = loopidx(p)
-    _progress(p.taskdata, _loopidx, lifetime(p))
-end
-
-function _progress(::Any, lidx, lifetime::Repeat{repeats}) where repeats
-    lidx / repeats
-end
-
-function _progress(tf::TaskData{<:Routine}, lidx, lifetime::Repeat{repeats}) where repeats
-    lidx / (repeats * call) 
+    loopidx(p) / maximum_loopidx(p)
 end
 
 function est_remaining(p::Process)

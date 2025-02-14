@@ -64,8 +64,8 @@ function unroll_subroutines(@specialize(r::Routine), @specialize(funcs), start_i
     @inline _unroll_subroutines(r, gethead(funcs), gettail(funcs), gethead(repeats(r)), gettail(repeats(r)), gethead(start_idxs), gettail(start_idxs), (;args..., algoidx = 1))
 end
 
-function _unroll_subroutines(r::Routine, @specialize(subroutine), tail, this_repeat, repeats, startidx, start_idxs, args) 
-    if isnothing(subroutine)
+function _unroll_subroutines(r::Routine, @specialize(func), tail, this_repeat, repeats, startidx, start_idxs, args) 
+    if isnothing(func)
         reset!(r)
         return
     else
@@ -75,8 +75,9 @@ function _unroll_subroutines(r::Routine, @specialize(subroutine), tail, this_rep
                 save_starts!(r, args.algoidx, i)
                 break
             end
-            @inline subroutine(args)
-            if !(subroutine isa CompositeAlgorithm || subroutine isa SimpleAlgo)
+            @inline func(args)
+            # TODO: Make this a trait? Maybe "countsincrements"
+            if !(func isa CompositeAlgorithm || func isa SimpleAlgo || func isa Routine)
                 inc!(proc)
             end
             GC.safepoint()
