@@ -76,7 +76,9 @@ function _unroll_subroutines(r::Routine, @specialize(subroutine), tail, this_rep
                 break
             end
             @inline subroutine(args)
-            inc!(proc)
+            if !(subroutine isa CompositeAlgorithm || subroutine isa SimpleAlgo)
+                inc!(proc)
+            end
             GC.safepoint()
         end
         @inline _unroll_subroutines(r, gethead(tail), gettail(tail), gethead(repeats), gettail(repeats), gethead(start_idxs), gettail(start_idxs), (;args..., algoidx = args.algoidx + 1))

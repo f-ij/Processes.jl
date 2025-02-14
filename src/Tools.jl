@@ -63,6 +63,13 @@ function num_calls(p::Process, algo)
 end
 
 """
+Routines will call inc! multuple times per loop
+"""
+function inc_multiplier(pa::ProcessAlgorithm)
+    
+end
+
+"""
 Get the allocator directly from the args
 """
 getallocator(args) = getallocator(args.proc)
@@ -106,7 +113,7 @@ function _progress(::Any, lidx, lifetime::Repeat{repeats}) where repeats
 end
 
 function _progress(tf::TaskData{<:Routine}, lidx, lifetime::Repeat{repeats}) where repeats
-    lidx / (total_routinesteps(tf.func)*repeats) 
+    lidx / (repeats * call) 
 end
 
 function est_remaining(p::Process)
