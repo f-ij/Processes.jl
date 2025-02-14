@@ -18,10 +18,15 @@ end
 export Process
 
 function Process(func; lifetime = Indefinite(), overrides = (;), args...)
+    
     if lifetime isa Integer
         lifetime = Repeat{lifetime}()
     elseif isnothing(lifetime)
-        lifetime = Indefinite()
+        if func isa Routine # Standard lifetime for routines is 1
+            lifetime = Repeat{1}()
+        else
+            lifetime = Indefinite()
+        end
     end
 
     if !(func isa ProcessLoopAlgorithm)
