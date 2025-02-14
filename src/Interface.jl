@@ -34,6 +34,7 @@ Close a process, stopping it from running
 function Base.close(p::Process)
     @atomic p.paused = false
     @atomic p.run = false
+    wait(p)
     p.loopidx = 1
     return true
 end

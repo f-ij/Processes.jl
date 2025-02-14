@@ -130,6 +130,10 @@ function est_remaining(p::Process)
     println("Of which remaining: $hours:$minutes:$seconds")
 end
 
+function incs_per_sec(p::Process)
+    loopidx(p) / runtime(p)
+end
+
 
 
 

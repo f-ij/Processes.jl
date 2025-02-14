@@ -100,40 +100,6 @@ function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Real} = 
     CompositeAlgorithm{typeof(tfuncs), allintervals}(tfuncs, 1, set)
 end
 
-
-
-# function prepare(f::CompositeAlgorithm, args::NamedTuple)
-#     _num_funcs = num_funcs(f)
-
-#     #Trick to get the number of the function currently being prepared
-#     args = (;args..., func = f, algotracker = AlgoTracker(_num_funcs))
-
-#     # Get the type insances, such that the prepare functions can be defined
-#     # as prepare(::TypeName, args)
-#     functions = type_instances(f)
-
-#     args = (;args..., algotracker = AlgoTracker(_num_funcs))
-#     for func in functions
-#         args = (;args..., prepare(func, args)...)
-
-#         @inline nextalgo!(args)
-#     end
-
-#     if !hasflag(f, :trackalgo)
-#         args = deletekeys(args, :algotracker)
-#     end
-
-#     return args
-# end
-
-# function cleanup(f::CompositeAlgorithm, args)
-#     functions = type_instances(f)
-#     for func in functions
-#         args = (;args..., cleanup(func, args)...)
-#     end
-#     return args
-# end
-
 @inline function (ca::CompositeAlgorithm{Fs,I})(@specialize(args)) where {Fs,I}
     algoidx = 1
     @inline _comp_dispatch(ca, gethead(ca.funcs), headval(I), gettail(ca.funcs), gettail(I), (;args..., algoidx, interval = gethead(I)))
@@ -158,7 +124,9 @@ function _comp_dispatch(ca::CompositeAlgorithm, @specialize(thisfunc), interval:
 end
 
 function _comp_dispatch(ca::CompositeAlgorithm, ::Nothing, ::Any, ::Any, ::Any, args)
+    (;proc) = args
     inc!(ca)
+    inc!(proc)
     GC.safepoint()
     return nothing
 end
