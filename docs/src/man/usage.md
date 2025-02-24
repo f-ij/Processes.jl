@@ -41,3 +41,5 @@ p = Process(Fib, 1000)  # Calculates a thousand numbers
 start(p)                # Starts the calculation
 fetch(p)                # Waits for the process to finish and fetches the arguments (or the cleaned up namedtuple)
 ```
+
+We will explain these elements further.
