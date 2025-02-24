@@ -16,3 +16,4 @@ makedocs(
         "General Usage" => "man/usage.md"
     ]
 )
+
