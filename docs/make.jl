@@ -3,6 +3,10 @@ push!(LOAD_PATH,"../src/")
 using Documenter
 using Processes
 
+deploydocs(
+    repo = "github.com/f-ij/Processes.jl.git",
+)
+
 makedocs(
     sitename = "Processes",
     format = Documenter.HTML(),
@@ -13,9 +17,7 @@ makedocs(
     ]
 )
 
-# deploydocs(
-#     repo = "github.com/rug-minds/InteractiveIsing.jl.git",
-# )
+
 
 
 # Documenter can also automatically deploy documentation to gh-pages.
