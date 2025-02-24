@@ -12,7 +12,6 @@ makedocs(
     format = Documenter.HTML(),
     modules = [Processes],
     checkdocs=:exports,
-    strict = false,
     pages = [
         "Index" => "index.md",
         "General Usage" => "man/usage.md"
