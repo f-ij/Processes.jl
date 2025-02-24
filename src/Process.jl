@@ -99,6 +99,15 @@ function runtime_ns(p::Process)
 end
 export runtime_ns, runtime
 
+# Exact time the process stopped in hh:mm:ss
+function stop_time(p::Process)
+    if isdone(p)
+        return Dates.format(Dates.DateTime(p.endtime), "HH:MM:SS")
+    else
+        return nothing
+    end
+end
+
 function createfrom!(p1::Process, p2::Process)
     p1.taskdata = p2.taskdata
     preparedata!(p1)
