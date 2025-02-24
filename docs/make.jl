@@ -6,7 +6,7 @@ using Processes
 makedocs(
     sitename = "Processes",
     format = Documenter.HTML(),
-    modules = [Processes]
+    modules = [Processes],
     pages = [
         "Index" => "index.md",
         "General Usage" => man/usage.md"
