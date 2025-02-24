@@ -9,7 +9,8 @@ makedocs(
     modules = [Processes],
     pages = [
         "Index" => "index.md",
-        "General Usage" => man/usage.md"
+        "General Usage" => "man/usage.md"
+    ]
 )
 
 # deploydocs(
