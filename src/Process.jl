@@ -154,7 +154,12 @@ function spawntask!(p::Process; threaded = true)
     @atomic p.run = true
 
     actual_args = (;p.taskdata.prepared_args..., overrides(p)...)
-    p.task = spawntask(p, p.taskdata.func, p.taskdata.prepared_args, lifetime(p))
+    if threaded
+        p.task = spawntask(p, p.taskdata.func, actual_args, lifetime(p))
+    else
+        return # TODO IMPLEMENT
+    end
+    
 
     return p
 end
