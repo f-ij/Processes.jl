@@ -153,13 +153,6 @@ function preparedata!(process, @specialize(func); lifetime = Indefinite(), overr
 
     # Create new taskdata
     process.taskdata = TaskData(func, inputargs, prepared_args, overrides, lifetime, timeouttime)
-
-    # Add the overrides
-    # They are not stored in the args of the taskdata but separately
-    # They are mostly for debugging or testing, so that the user can pass in the arguments to the function
-    # These overrides should be removed at a restart, but not a refresh or pause
-    task_args = (;prepared_args..., overrides...)
-
 end
 
 function cleanup(p::Process)
