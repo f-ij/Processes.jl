@@ -192,6 +192,7 @@ Base.getindex(ua::UniqueAlgoTracker, idx) = collect(keys(ua.counts))[idx]
 unique_algorithms(ua::UniqueAlgoTracker) = keys(ua.counts)
 total_repeats(ua::UniqueAlgoTracker) = ua.repeats
 getalgo(ua::UniqueAlgoTracker, idx) = getindex(ua, idx)
+this_algo(args) = getalgo(args.algotracker, algoidx(args))
 
 function next!(ua::UniqueAlgoTracker)
     ua.current += 1
@@ -207,13 +208,13 @@ iterate(ua::UniqueAlgoTracker, state = 1) = state > length(unique_algorithms(ua)
 
 function prepare(ua::UniqueAlgoTracker, args)
     for a in unique_algorithms(ua)
-        newargs = prepare(a, (;args..., ua))
-        overlap = intersect(keys(args), keys(newargs))
+        newargs = prepare(a, (;args..., ua))            # Add algo tracker to args
+        overlap = intersect(keys(args), keys(newargs))  # Find wether there are overlapping keys between the algorithms
         if !isempty(overlap)
             @warn "Multiple algorithms define the same arguments: $overlap. \n Only one of them will be used with a random order."
         end
-        args = (;args..., newargs...)
-        next!(ua)
+        args = (;args..., newargs...)                  # Add the new arguments to the existing ones
+        next!(ua)                                      # Move to the next algorithm  
     end
     return deletekeys(args, :ua)
 end

@@ -63,6 +63,15 @@ function num_calls(p::Process, algo)
 end
 
 """
+Get the number of times an algorithm will be called in a process
+This is to be used in the prepare function
+"""
+function num_calls(args)
+    _this_algo = this_algo(args.proc)
+    num_calls(args.proc, _this_algo)
+end
+
+"""
 Routines will call inc! multuple times per loop
 """
 function inc_multiplier(pa::ProcessAlgorithm)
