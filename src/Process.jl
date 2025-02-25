@@ -13,7 +13,8 @@ mutable struct Process
     endtime::Union{Nothing, Float64, UInt64}
     linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
     allocator::Allocator
-    threadid::Union{Nothing,Int64}
+    rls::RuntimeListeners
+    threadid::Union{Nothing, Int}
 end
 export Process
 
@@ -35,7 +36,7 @@ function Process(func; lifetime = Indefinite(), overrides = (;), args...)
 
     # tf = TaskData(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
     tf = TaskData(func; lifetime, overrides, args...)
-    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), nothing)
+    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), nothing)
     register_process!(p)
     preparedata!(p)
     return p
@@ -68,6 +69,8 @@ set_endtime!(p::Process) = p.endtime = time_ns()
 reset_times!(p::Process) = (p.starttime = nothing; p.endtime = nothing)
 loopint(p::Process) = Int(p.loopidx)
 export loopint
+
+runtimelisteners(p::Process) = p.rls
 
 """
 different loopfunction can be passed to the process through overrides
@@ -155,12 +158,10 @@ function spawntask!(p::Process; threaded = true)
 
     actual_args = (;p.taskdata.prepared_args..., overrides(p)...)
     if threaded
-        p.task = spawntask(p, p.taskdata.func, actual_args, lifetime(p))
+        p.task = spawntask(p, p.taskdata.func, actual_args, runtimelisteners(p), lifetime(p))
     else
         return # TODO IMPLEMENT
     end
-    
-
     return p
 end
 export runtask!

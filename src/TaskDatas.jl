@@ -119,8 +119,8 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
 end
 
 
-function spawntask(p, @specialize(func), args, loopdispatch; loopfunction = processloop)
-    Threads.@spawn loopfunction(p, func, args, loopdispatch)
+function spawntask(p, @specialize(func), args, runtimelisteners, loopdispatch; loopfunction = processloop)
+    Threads.@spawn loopfunction(p, func, args, runtimelisteners, loopdispatch)
 end
 
 preparedata!(p::Process; loopfunction = nothing) = preparedata!(p, p.taskdata.func; lifetime = tasklifetime(p), overrides = overrides(p), loopfunction, args(p)...)

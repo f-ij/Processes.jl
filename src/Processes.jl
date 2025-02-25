@@ -32,6 +32,7 @@ module Processes
     include("TriggerList.jl")
     include("Benchmark.jl")
     include("Debugging.jl")
+    include("Listeners.jl")
     include("Process.jl")
     include("ProcessStatus.jl")
     include("Interface.jl")
