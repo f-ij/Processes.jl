@@ -94,8 +94,13 @@ end
 """
 Close and restart a process
 """
-function restart(p::Process)
+function restart(p::Process; args...)
     @assert !isnothing(p.taskdata) "No task to run"
+    
+    if !isempty(args)
+        changeargs!(p, args...)
+    end
+
     #Acquire spinlock so that process can not be started twice
     return lock(p.lock) do 
         close(p)
