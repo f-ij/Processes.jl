@@ -192,7 +192,7 @@ Base.getindex(ua::UniqueAlgoTracker, idx) = collect(keys(ua.counts))[idx]
 unique_algorithms(ua::UniqueAlgoTracker) = keys(ua.counts)
 total_repeats(ua::UniqueAlgoTracker) = ua.repeats
 getalgo(ua::UniqueAlgoTracker, idx) = getindex(ua, idx)
-this_algo(args) = getalgo(args.algotracker, algoidx(args))
+this_algo(args) = getalgo(args.ua, algoidx(args))
 
 function next!(ua::UniqueAlgoTracker)
     ua.current += 1
