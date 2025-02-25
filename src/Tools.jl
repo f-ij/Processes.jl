@@ -67,7 +67,7 @@ Get the number of times an algorithm will be called in a process
 This is to be used in the prepare function
 """
 function num_calls(args)
-    _this_algo = this_algo(args.proc)
+    _this_algo = this_algo(args)
     num_calls(args.proc, _this_algo)
 end
 
