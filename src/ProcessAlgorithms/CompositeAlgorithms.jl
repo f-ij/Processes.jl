@@ -1,17 +1,6 @@
 #AlgoTracker
-export AlgoTracker, inc!, algoidx, nextalgo!
+export inc!, nextalgo!
 export CompositeAlgorithm, prepare, loopexp
-
-mutable struct AlgoTracker{N}
-    num::Int
-end
-AlgoTracker(N) = AlgoTracker{N}(1)
-
-inc!(at::AlgoTracker{N}) where N = at.num = mod1(at.num + 1, N)
-algoidx(at::AlgoTracker) = at.num
-
-nextalgo!(args::NamedTuple) = inc!(args.algotracker)
-algoidx(args::NamedTuple) = algoidx(args.algotracker)
 mutable struct CompositeAlgorithm{T, Intervals} <: ProcessLoopAlgorithm
     const funcs::T
     inc_tracker::Int
@@ -24,6 +13,9 @@ getfunc(ca::CompositeAlgorithm, idx) = ca.funcs[idx]
 getfuncs(ca::CompositeAlgorithm) = ca.funcs
 hasflag(ca::CompositeAlgorithm, flag) = flag in ca.flags
 track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
+"""
+Increment the stepidx for the composite algorithm
+"""
 inc!(ca::CompositeAlgorithm) = ca.inc_tracker += 1
 function reset!(ca::CompositeAlgorithm)
     ca.inc_tracker = 1
@@ -51,11 +43,6 @@ get_intervals(ct::Type{<:CompositeAlgorithm}) = ct.parameters[2]
 end
 
 inc_tracker(ca::CompositeAlgorithm) = ca.inc_tracker
-
-"""
-Get the number of the function currently being prepared
-"""
-algoidx(args) = algoidx(args.algotracker)
 
 get_this_interval(args) = getinterval(getfunc(args.proc), algoidx(args))
 
@@ -116,9 +103,6 @@ function _comp_dispatch(ca::CompositeAlgorithm, @specialize(thisfunc), interval:
         if inc_tracker(ca) % I == 0
             @inline thisfunc(args)
         end
-    end
-    if haskey(args, :algotracker)
-        nextalgo!(args)
     end
     @inline _comp_dispatch(ca, gethead(funcs), headval(intervals), gettail(funcs), gettail(intervals), (;args..., algoidx = args.algoidx + 1, interval = gethead(intervals)))
 end

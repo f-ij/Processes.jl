@@ -39,7 +39,8 @@ end
 # Create the process object
 p = Process(Fib, 1000)  # Calculates a thousand numbers
 start(p)                # Starts the calculation
-fetch(p)                # Waits for the process to finish and fetches the arguments (or the cleaned up namedtuple)
+result = fetch(p)                # Waits for the process to finish and fetches the arguments (or the cleaned up namedtuple)
 ```
 
-We will explain these elements further.
+The general structure is as follows, first we create a new type, in this case `Fib`. For this type, we extend the function `prepare` that is defined in Processes. The function's first agrument is an object of the type, and the second is a namedtuple, which we name args, holding all the variables that will be passed to the main algorithm.
+

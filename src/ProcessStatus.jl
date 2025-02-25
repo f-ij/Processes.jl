@@ -1,6 +1,8 @@
-export isfree, isused, isrunning, ispaused, isdone, isidle, status, message
-status(p::Process) = isrunning(p) ? :Running : :Quit
-message(p::Process) = run(p) ? :Run : :Quit
+export isfree, isused, isrunning, ispaused, isdone, isidle, status
+"""
+Is it running or not
+"""
+status(p::Process) = isrunning(p) ? :Running : :Idle
 
 """
 P has a task and it is currently running
@@ -24,7 +26,7 @@ isdone(p::Process) = !isnothing(p.task) && istaskdone(p.task) && !ispaused(p)
 
 
 """
-P is done or paused, i.e. not doing anyghing
+P is done or paused, i.e. not doing anything
 """
 isidle(p::Process) = isdone(p) || ispaused(p) || !isstarted(p)
 

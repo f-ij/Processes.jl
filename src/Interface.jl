@@ -91,15 +91,17 @@ function refresh(p::Process)
     return true
 end
 
-function restart(p::Process, sticky = false)
+"""
+Close and restart a process
+"""
+function restart(p::Process)
     @assert !isnothing(p.taskdata) "No task to run"
     #Acquire spinlock so that process can not be started twice
     return lock(p.lock) do 
         close(p)
         
         if timedwait(p, p.taskdata.timeout)
-            preparedata!(p)
-            spawntask!(p)
+            start(p)
             return true
         else
             println("Task timed out")
