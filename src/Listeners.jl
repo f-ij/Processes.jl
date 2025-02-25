@@ -28,7 +28,7 @@ struct RuntimeListeners{ST, CT}
 end
 
 start(rl::RuntimeListeners) = _exec_listeners(gethead(rl.start), gettail(rl.start))
-close(rl::RuntimeListeners) = _exec_listeners(gethead(rl.close), gettail(rl.close))
+Base.close(rl::RuntimeListeners) = _exec_listeners(gethead(rl.close), gettail(rl.close))
 
 
 RuntimeListeners() = RuntimeListeners((), ())
