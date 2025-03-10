@@ -124,3 +124,10 @@ Wait for a process to finish
 Fetch the return value of a process
 """
 @inline Base.fetch(p::Process) = if !isnothing(p.task) fetch(p.task) else nothing end
+
+function quitall()
+    for p in values(processlist)
+        quit(p)
+    end
+end
+export quitall

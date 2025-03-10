@@ -2,7 +2,8 @@ export processsizehint!, recommendsize, newallocator, progress, est_remaining,
     num_calls
 
 """
-For a proess with a limited lifetime,
+Use within prepare function
+For a process with a limited lifetime,
 give the array a size hint based on the lifetime and the number of updates per step.
 """
 @inline function processsizehint!(args, array, updates_per_step = 1)
@@ -124,6 +125,9 @@ function progress(p::Process)
     loopidx(p) / maximum_loopidx(p)
 end
 
+"""
+Gives an estimate of the remaining time for the process
+"""
 function est_remaining(p::Process)
     prog = progress(p)
     rt = runtime(p)
