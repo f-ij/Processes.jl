@@ -56,8 +56,14 @@ iterate(ua::UniqueAlgoTracker, state = 1) = state > length(unique_algorithms(ua)
 
 function prepare(ua::UniqueAlgoTracker, args)
     for a in unique_algorithms(ua)
+        
         newargs = prepare(a, (;args..., ua))            # Add algo tracker to args
         overlap = intersect(keys(args), keys(newargs))  # Find wether there are overlapping keys between the algorithms
+        @static if DEBUG_MODE
+            println("Preparing arguments using the UniqueAlgoTracker for algorithm $a")
+            println("Keys of args are: $(keys(args))")
+            println("Keys of new args are: $(keys(newargs))")
+        end
         if !isempty(overlap)
             @warn "Multiple algorithms define the same arguments: $overlap. \n Only one of them will be used with a random order."
         end
