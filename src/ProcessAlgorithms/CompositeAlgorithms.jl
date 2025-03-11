@@ -89,7 +89,7 @@ end
 
 @inline function (ca::CompositeAlgorithm{Fs,I})(@specialize(args)) where {Fs,I}
     algoidx = 1
-    @inline _comp_dispatch(ca, gethead(ca.funcs), headval(I), gettail(ca.funcs), gettail(I), (;args..., algoidx, interval = gethead(I)))
+    return (;args..., (@inline _comp_dispatch(ca, gethead(ca.funcs), headval(I), gettail(ca.funcs), gettail(I), (;args..., algoidx, interval = gethead(I))))...)
 end
 
 """
@@ -101,10 +101,10 @@ function _comp_dispatch(ca::CompositeAlgorithm, @specialize(thisfunc), interval:
         @inline thisfunc(args)
     else
         if inc_tracker(ca) % I == 0
-            @inline thisfunc(args)
+            args = (;args..., (@inline thisfunc(args))...)
         end
     end
-    @inline _comp_dispatch(ca, gethead(funcs), headval(intervals), gettail(funcs), gettail(intervals), (;args..., algoidx = args.algoidx + 1, interval = gethead(intervals)))
+    return (;args..., (@inline _comp_dispatch(ca, gethead(funcs), headval(intervals), gettail(funcs), gettail(intervals), (;args..., algoidx = args.algoidx + 1, interval = gethead(intervals))))...)
 end
 
 function _comp_dispatch(ca::CompositeAlgorithm, ::Nothing, ::Any, ::Any, ::Any, args)
@@ -112,7 +112,7 @@ function _comp_dispatch(ca::CompositeAlgorithm, ::Nothing, ::Any, ::Any, ::Any, 
     inc!(ca)
     inc!(proc)
     GC.safepoint()
-    return nothing
+    return (;)
 end
 
 ##

@@ -9,8 +9,9 @@ include("FibLucDef.jl")
 # end
 
 FibLuc = CompositeAlgorithm( (Fib, Luc), (1,2) )
-p = Process(FibLuc; lifetime = 1000000)
+p = Process(FibLuc; lifetime = 10000000)
 start(p)
-# benchmark(FibLuc, 1000000)
+benchmark(FibLuc, 10000000)
 
  
+

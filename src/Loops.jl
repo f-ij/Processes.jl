@@ -34,7 +34,7 @@ function processloop(@specialize(p::Process), @specialize(func), @specialize(arg
 
     before_while(p, runtimelisteners)
     while run(p) 
-        @inline func(args)
+        args = (;args..., (@inline func(args))...)
         inc!(p) 
         GC.safepoint()
     end

@@ -4,6 +4,7 @@ struct Fib <: ProcessAlgorithm end
 function (::Fib)(args)
     (;fiblist) = args
     push!(fiblist, fiblist[end] + fiblist[end-1])
+    return (;)
 end
 
 function Processes.prepare(::Fib, args)
@@ -17,6 +18,7 @@ struct Luc <: ProcessAlgorithm end
 function (::Luc)(args)
     (;luclist) = args
     push!(luclist, luclist[end] + luclist[end-1])
+    return (;)
 end
 
 function Processes.prepare(::Luc, args)
