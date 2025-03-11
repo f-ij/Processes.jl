@@ -21,5 +21,5 @@ Wrapper for functions to ensure proper semantics with the task system
 end
 
 function prepare(sa::SimpleAlgo, args)
-    prepare(sa.func, args)
+    (;args..., prepare(sa.func, args)...)
 end

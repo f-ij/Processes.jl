@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.2"
+julia_version = "1.11.4"
 manifest_format = "2.0"
-project_hash = "3287bfe6db6f3327a28715761f1cb33ba9d632cd"
+project_hash = "2c143450d4a6b854dafe92f02b6dfdcc954b2f6f"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
