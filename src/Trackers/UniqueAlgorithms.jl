@@ -67,9 +67,14 @@ function prepare(ua::UniqueAlgoTracker, args)
         if !isempty(overlap)
             @warn "Multiple algorithms define the same arguments: $overlap. \n Only one of them will be used with a random order."
         end
-        returnargs = (;args..., newargs...)                  # Add the new arguments to the existing ones
+        returnargs = (;returnargs..., newargs...)                  # Add the new arguments to the existing ones
         next!(ua)                                      # Move to the next algorithm  
     end
+    inputoverlap = intersect(keys(args), keys(returnargs))
+    if !isempty(inputoverlap)
+        @warn "An algorithm is providing arguments that are already defined in the input arguments: $inputoverlap. \n The algorithm arguments will be used."
+    end
+    returnargs = (;args..., returnargs...)
     return deletekeys(returnargs, :ua)
 end
 
