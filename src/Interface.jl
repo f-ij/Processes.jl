@@ -39,7 +39,14 @@ Close a process, stopping it from running
 function Base.close(p::Process)
     @atomic p.paused = false
     @atomic p.run = false
-    wait(p)
+    try
+        wait(p)
+    catch(err)
+        println("Process with error closed:")
+        Base.showerror(stderr, err)
+        p.task = nothing
+        preparedata!(p)
+    end
     p.loopidx = 1
     return true
 end

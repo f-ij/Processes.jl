@@ -3,13 +3,13 @@ struct TestAlgo end
 
 function (::TestAlgo)(args)
     @hasarg if ja
-        println("Ja")
+        println(ja)
     end
     @hasarg if nej
-        println("Nej")
+        println(nej)
     end
     return
 end
 
 p = Process(TestAlgo, ja = 1)
-start(p)
+start(p).,/
