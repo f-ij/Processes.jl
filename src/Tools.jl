@@ -156,6 +156,18 @@ if a certain argument is present
 This would commonly be used when an argument is passed in the creating of the process
 This was a user can configure conditional parts in algorithms that only execute if a user passes
 data with a certain name
+
+Syntax is:
+
+@hasarg if argname
+    body
+end
+
+or
+
+@hasarg if argname isa Type
+    body
+end
 """
 macro hasarg(ex)
     argname = nothing
