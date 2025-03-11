@@ -53,7 +53,7 @@ function processloop(@specialize(p::Process), @specialize(func), @specialize(arg
         if !run(p)
             break
         end
-        @inline func(args)
+        args = (;args...,(@inline func(args))...)
         # inc!(p)
         # GC.safepoint()
     end
