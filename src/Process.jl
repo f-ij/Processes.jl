@@ -39,6 +39,7 @@ function Process(func; lifetime = Indefinite(), overrides = (;), args...)
     p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), nothing)
     register_process!(p)
     preparedata!(p)
+    finalizer(remove_process!, p)
     return p
 end
 
@@ -84,11 +85,15 @@ get_linked_processes(p::Process) = p.linked_processes
 # List of processes in use
 const processlist = Dict{UUID, WeakRef}()
 register_process!(p) = let id = uuid1(); processlist[id] = WeakRef(p); id end
-
-function Base.finalizer(p::Process)
+function remove_process!(p::Process)
     quit(p)
     delete!(processlist, p.id)
 end
+
+# function Base.finalizer(p::Process)
+#     quit(p)
+#     delete!(processlist, p.id)
+# end
 
 function runtime(p::Process)
     @assert !isnothing(p.starttime) "Process has not started"

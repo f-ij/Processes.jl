@@ -7,29 +7,30 @@ struct TaskData{F}
     prepared_args::Union{NamedTuple, Base.Pairs} # Args after prepare
     overrides::Any # Given as kwargs
     lifetime::Lifetime
+    consumed::Ref{Bool} # Check wether a task has already been spawned for this taskdata
     timeout::Float64 # Timeout in seconds
 end
 
 TaskData(func; overrides::NamedTuple = (;), lifetime = Indefinite(), args...) = 
-    TaskData(func, args, (;), overrides, lifetime, 1.0)
+    TaskData(func, args, (;), overrides, lifetime, Ref(true), 1.0)
 
 function newargs(tf::TaskData; args...)
-    TaskData(tf.func, args, tf.prepared_args, tf.overrides, tf.lifetime, tf.timeout)
+    TaskData(tf.func, args, tf.prepared_args, tf.overrides, tf.lifetime, tf.consumed, tf.timeout)
 end
 
 function newfunc(tf::TaskData, func)
-    TaskData(func, tf.args, tf.prepared_args, tf.overrides, tf.lifetime, tf.timeout)
+    TaskData(func, tf.args, tf.prepared_args, tf.overrides, tf.lifetime, tf.consumed, tf.timeout)
 end
 
 """
 Overwrite the old args with the new args
 """
 function editargs(tf::TaskData; args...)
-    TaskData(tf.func, (;tf.args..., args...), tf.prepared_args, tf.overrides, tf.lifetime, tf.timeout)
+    TaskData(tf.func, (;tf.args..., args...), tf.prepared_args, tf.overrides, tf.lifetime, tf.consumed, tf.timeout)
 end
 
 function preparedargs(tf::TaskData, args)
-    TaskData(tf.func, tf.args, args, tf.overrides, tf.lifetime, tf.timeout)
+    TaskData(tf.func, tf.args, args, tf.overrides, tf.lifetime, tf.consumed, tf.timeout)
 end
 
 getfunc(p::Process) = p.taskdata.func
@@ -41,6 +42,14 @@ tasklifetime(p::Process) = p.taskdata.lifetime
 timeout(p::Process) = p.taskdata.timeout
 loopdispatch(p::Process) = loopdispatch(p.taskdata)
 loopdispatch(tf::TaskData) = tf.lifetime
+consumed(tf::TaskData) = tf.consumed[]
+function consume!(tf::TaskData)
+    old_status = tf.consumed[]
+    tf.consumed[] = true
+    return old_status
+end
+consumed(p::Process) = consumed(p.taskdata)
+consume!(p::Process) = consumed(p.taskdata)
 
 function sametask(t1,t2)
     checks = (t1.func == t2.func,
@@ -152,7 +161,7 @@ function preparedata!(process, @specialize(func); lifetime = Indefinite(), overr
     end
 
     # Create new taskdata
-    process.taskdata = TaskData(func, inputargs, prepared_args, overrides, lifetime, timeouttime)
+    process.taskdata = TaskData(func, inputargs, prepared_args, overrides, lifetime, Ref(true) ,timeouttime)
 end
 
 function cleanup(p::Process)

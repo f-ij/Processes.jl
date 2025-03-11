@@ -11,13 +11,18 @@ function start(p::Process; prevent_hanging = true)
     if ispaused(p) # If paused, then just unpause
         unpause(p)
     else # If not paused, then start from scratch
-        reset!(p)
-        preparedata!(p)
+        if !consume!(p)
+            reset!(p)
+            preparedata!
+        end
+        # preparedata!(p)
         spawntask!(p)
     end
 
 
     ## Only run one start at a time to prevent hanging
+    ## Some processes may hang if the main thread continues executing
+    ## while the process is starting on a new thread
     if prevent_hanging
         while !start_finished[]
             yield()
