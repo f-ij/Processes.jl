@@ -189,6 +189,7 @@ macro hasarg(ex)
         end
     end
     global hasarg_exp = (quote
+        Base.@assume_effects :foldable
         if $condition
             $(body)
         end
