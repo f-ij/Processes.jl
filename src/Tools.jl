@@ -150,20 +150,19 @@ end
 # CONDITIONAL PARTS
 hasarg_exp = nothing
 macro hasarg(ex)
-    @capture(ex, if argname_ body__ end)
+    @capture(ex, if argname_ body_ end)
     body = MacroTools.postwalk(body) do x
         if x == argname
-            return :(args.argname)
+            return :(args.$argname)
         else
             return x
         end
     end
-    hasarg_exp = (quote
+    global hasarg_exp = (quote
         if haskey(args, ($(QuoteNode(argname))))
-            $(body...)
+            $(body)
         end
     end)
-    println(hasarg_exp)
     return esc(hasarg_exp)
 end
 export @hasarg
