@@ -149,8 +149,26 @@ end
 
 # CONDITIONAL PARTS
 hasarg_exp = nothing
+"""
+Macro to easily do write conditional parts in algorithms to only execute
+if a certain argument is present
+
+This would commonly be used when an argument is passed in the creating of the process
+This was a user can configure conditional parts in algorithms that only execute if a user passes
+data with a certain name
+"""
 macro hasarg(ex)
-    @capture(ex, if argname_ body_ end)
+    argname = nothing
+    body = nothing
+    type = nothing
+    condition = nothing 
+    if @capture(ex, if argname_ isa type_ body_ end)
+        condition = :(haskey(args, ($(QuoteNode(argname)))) && args.$argname isa $type)
+    else @capture(ex, if argname_ body_ end)
+        condition = :(haskey(args, ($(QuoteNode(argname)))))
+    end
+
+    
     body = MacroTools.postwalk(body) do x
         if x == argname
             return :(args.$argname)
@@ -159,7 +177,7 @@ macro hasarg(ex)
         end
     end
     global hasarg_exp = (quote
-        if haskey(args, ($(QuoteNode(argname))))
+        if $condition
             $(body)
         end
     end)
