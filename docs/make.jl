@@ -10,8 +10,8 @@ deploydocs(
 makedocs(
     sitename = "Processes",
     format = Documenter.HTML(),
-    modules = [Processes],
-    checkdocs=:exports,
+    # modules = [Processes],
+    # checkdocs=:exports,
     pages = [
         "Index" => "index.md",
         "General Usage" => "man/usage.md"
