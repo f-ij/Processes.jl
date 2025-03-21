@@ -59,7 +59,11 @@ function getargs(p::Process)
     if !isdone(p)   
         return p.taskdata.prepared_args
     else
-        return fetch(p)
+        try
+            return fetch(p)
+        catch # if error state, just return args
+            return p.taskdata.prepared_args
+        end
     end
 end
 getargs(p::Process, args) = getargs(p)[args]
