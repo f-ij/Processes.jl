@@ -20,6 +20,7 @@ module Processes
     end
 
     include("Functions.jl")
+    include("Printing.jl")
     include("ExpressionTools.jl")
 
     @ForwardDeclare AVec ""
