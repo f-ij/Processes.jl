@@ -86,7 +86,7 @@ function unpause(p::Process; threaded = true)
     if threaded
         p.task = spawntask(p, getfunc(p), getargs(p), runtimelisteners(p), loopdispatch(p))
     else
-        p.task = runtask(p, getfunc(p), getargs(p), runtimelisteners(p), loopdispatch(p))
+        p.task = @async runtask(p, getfunc(p), getargs(p), runtimelisteners(p), loopdispatch(p))
     end
     return true
 end

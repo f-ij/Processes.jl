@@ -169,7 +169,7 @@ function spawntask!(p::Process; threaded = true)
     if threaded
         p.task = spawntask(p, p.taskdata.func, actual_args, runtimelisteners(p), lifetime(p))
     else
-        p.task = runloop(p, p.taskdata.func, actual_args, runtimelisteners(p), lifetime(p))
+        p.task = @async runloop(p, p.taskdata.func, actual_args, runtimelisteners(p), lifetime(p))
     end
     return p
 end
