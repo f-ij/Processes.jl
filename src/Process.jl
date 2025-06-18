@@ -169,11 +169,10 @@ function spawntask!(p::Process; threaded = true)
     if threaded
         p.task = spawntask(p, p.taskdata.func, actual_args, runtimelisteners(p), lifetime(p))
     else
-        return # TODO IMPLEMENT
+        p.task = runloop(p, p.taskdata.func, actual_args, runtimelisteners(p), lifetime(p))
     end
     return p
 end
-export runtask!
 
 @inline lock(p::Process) = lock(p.lock)
 @inline lock(f, p::Process) = lock(f, p.lock)

@@ -128,8 +128,12 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
 end
 
 
-function spawntask(p, @specialize(func), args, runtimelisteners, loopdispatch; loopfunction = processloop)
+function spawntask(p, func::F, args, runtimelisteners, loopdispatch; loopfunction = processloop) where F
     Threads.@spawn loopfunction(p, func, args, runtimelisteners, loopdispatch)
+end
+
+function runloop(p, func::F, args, runtimelisteners, loopdispatch; loopfunction = processloop) where F
+    loopfunction(p, func, args, runtimelisteners, loopdispatch)
 end
 
 preparedata!(p::Process; loopfunction = nothing) = preparedata!(p, p.taskdata.func; lifetime = tasklifetime(p), overrides = overrides(p), loopfunction, args(p)...)

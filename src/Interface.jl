@@ -4,19 +4,19 @@ export start, restart, quit, pause, close, syncclose, refresh
 """
 Start a process that is not running or unpause a paused process
 """
-function start(p::Process; prevent_hanging = true)
+function start(p::Process; prevent_hanging = true, threaded = true)
     
     @assert isidle(p) "Process is already in use"
 
     if ispaused(p) # If paused, then just unpause
-        unpause(p)
+        unpause(p; threaded)
     else # If not paused, then start from scratch
-        if !consume!(p)
+        if !consume!(p) # TODO: Explain this
             reset!(p)
             preparedata!
         end
         # preparedata!(p)
-        spawntask!(p)
+        spawntask!(p; threaded)
     end
 
 
@@ -81,9 +81,14 @@ end
 """
 Redefine task without preparing again
 """
-function unpause(p::Process)
+function unpause(p::Process; threaded = true)
     @atomic p.run = true
-    p.task = spawntask(p, getfunc(p), getargs(p), runtimelisteners(p), loopdispatch(p))
+    if threaded
+        p.task = spawntask(p, getfunc(p), getargs(p), runtimelisteners(p), loopdispatch(p))
+    else
+        p.task = runtask(p, getfunc(p), getargs(p), runtimelisteners(p), loopdispatch(p))
+    end
+    return true
 end
 
 """
