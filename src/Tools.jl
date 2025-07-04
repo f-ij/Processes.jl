@@ -16,7 +16,6 @@ give the array a size hint based on the lifetime and the number of updates per s
     sizehint!(array, sizehint)
 end
 
-
 """
 Recommend a size for an array based on the lifetime of the process and the number of updates per step.
 """
