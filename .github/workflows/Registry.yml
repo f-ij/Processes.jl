@@ -19,18 +19,19 @@ jobs:
 
       - name: Register in private registry
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.REGISTRY_DEPLOY }}
+          SSH_PRIVATE_KEY: ${{ secrets.REGISTRY_DEPLOY_KEY }}
         run: |
-          # ----------------- give CI write access -----------------
           mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/fij_deploy
+          chmod 600 ~/.ssh/fij_deploy
           git config --global user.name "${{ github.actor }}"
           git config --global user.email "${{ github.actor }}@users.noreply.github.com"
-          # ----------------- do the registration ------------------
+
+          # Use the key explicitly by setting SSH command
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/fij_deploy -o StrictHostKeyChecking=no"
+
           julia -e '
               using Pkg; Pkg.add("LocalRegistry")
               using LocalRegistry
-              register(registry = "git@github.com:f-ij/FIJRegistry.git",
-                       push     = true)   # clones, edits, commits, pushes
+              register(registry = "git@github.com:f-ij/FIJRegistry.git", push = true)
           '
