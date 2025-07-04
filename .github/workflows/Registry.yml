@@ -17,6 +17,16 @@ jobs:
         with:
           version: '1.10'           # or whatever you use
 
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "$REGISTRY_DEPLOY_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Debug SSH key auth
+        run: ssh -T git@github.com
+
       - name: Register in private registry
         env:
           SSH_PRIVATE_KEY: ${{ secrets.REGISTRY_DEPLOY_KEY }}
