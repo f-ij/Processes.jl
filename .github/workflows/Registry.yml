@@ -29,4 +29,13 @@ jobs:
           ssh-keyscan github.com >> ~/.ssh/known_hosts
 
       - name: Register in private registry
-        run
+        run: |
+          git config --global user.name "${{ github.actor }}"
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no"
+
+          julia -e '
+            using Pkg; Pkg.add("LocalRegistry")
+            using LocalRegistry
+            register(registry = "git@github.com:f-ij/FIJRegistry.git", push = true)
+          '
