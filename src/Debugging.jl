@@ -7,7 +7,7 @@ function process_warntype(p)
     mainloop_warntype(p, func, args, lifetime)
 end
 export process_warntype
-import InteractiveUtils: @code_warntype
+# import InteractiveUtils: @code_warntype
 
 function mainloop_warntype(@specialize(p), @specialize(func), @specialize(args), ::Lifetime)
     Base.code_typed(func, Tuple{typeof(args)}; optimize=true)
