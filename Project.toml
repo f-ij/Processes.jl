@@ -12,12 +12,12 @@ Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [compat]
-DataStructures = "0.18.20"
-Documenter = "1.8.1"
-JLD2 = "0.5.11"
-MacroTools = "0.5.15"
-Preferences = "1.4.3"
-UUIDs = "1.11.0"
+DataStructures = "~0.18.22"
+Documenter = "~1.14.1"
+JLD2 = "~0.5.15"
+MacroTools = "~0.5.16"
+Preferences = "~1.4.3"
+UUIDs = "~1.11.0"
 
 [extras]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
