@@ -15,7 +15,7 @@ end
 
 function get_example_process(func, rt; loopfunction = nothing)
     p = Process(func; lifetime = rt)
-    preparedata!(p; loopfunction)
+    preparedata!(p)
     return p
 end
 

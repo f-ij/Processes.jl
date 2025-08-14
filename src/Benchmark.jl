@@ -1,6 +1,6 @@
 function benchmark(func, rt, trials = 100; loopfunction = nothing, progress = false) 
     p = Process(func; lifetime = rt)
-    preparedata!(p; loopfunction)
+    preparedata!(p)
     times = []
     for t_idx in 1:trials
         if progress

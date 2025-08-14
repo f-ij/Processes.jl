@@ -127,7 +127,7 @@ function prepare_args(process, @specialize(func); lifetime = Indefinite(), overr
     return algo_args
 end
 
-
+# TODO: Add a loopfunction to taskdata?
 function spawntask(p, func::F, args, runtimelisteners, loopdispatch; loopfunction = processloop) where F
     Threads.@spawn loopfunction(p, func, args, runtimelisteners, loopdispatch)
 end
@@ -136,7 +136,7 @@ function runloop(p, func::F, args, runtimelisteners, loopdispatch; loopfunction 
     loopfunction(p, func, args, runtimelisteners, loopdispatch)
 end
 
-preparedata!(p::Process; loopfunction = nothing) = preparedata!(p, p.taskdata.func; lifetime = tasklifetime(p), overrides = overrides(p), loopfunction, args(p)...)
+preparedata!(p::Process) = preparedata!(p, p.taskdata.func; lifetime = tasklifetime(p), overrides = overrides(p), args(p)...)
 
 
 function preparedata!(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, inputargs...)   
@@ -144,19 +144,19 @@ function preparedata!(process, @specialize(func); lifetime = Indefinite(), overr
         println("Creating task for process $(process.id)")
     end
 
-    reset!(func)
+    reset!(func) # Reset the loop counters for Routines and CompositeAlgorithms
 
     timeouttime = get(overrides, :timeout, 1.0)
 
-    if haskey(overrides, :loopfunction)
-        loopfunction = overrides[:loopfunction]
-    else
-        loopfunction = getloopfunc(process)
-    end
+    # if haskey(overrides, :loopfunction)
+    #     loopfunction = overrides[:loopfunction]
+    # else
+    #     loopfunction = getloopfunc(process)
+    # end
 
-    @static if DEBUG_MODE
-        println("Loopfunction is $loopfunction for process $(process.id)")
-    end
+    # @static if DEBUG_MODE
+    #     println("Loopfunction is $loopfunction for process $(process.id)")
+    # end
 
     # prepared_args = prepare_args(process, func; lifetime, overrides, skip_prepare, inputargs...)
     prepared_args = prepare(process; lifetime, overrides, skip_prepare, inputargs...)
