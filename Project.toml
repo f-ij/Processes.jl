@@ -1,7 +1,7 @@
 name = "Processes"
 uuid = "6a369836-0793-447d-b7ee-625716f2d05b"
-authors = ["Fabian IJpelaar <87425229+f-ij@users.noreply.github.com>"]
 version = "0.1.2"
+authors = ["Fabian IJpelaar <87425229+f-ij@users.noreply.github.com>"]
 
 [deps]
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
@@ -9,6 +9,7 @@ Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [compat]
@@ -17,6 +18,7 @@ Documenter = "~1.14.1"
 JLD2 = "~0.5.15"
 MacroTools = "~0.5.16"
 Preferences = "~1.4.3"
+Revise = "3.10.0"
 UUIDs = "~1.11.0"
 
 [extras]

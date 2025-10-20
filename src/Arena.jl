@@ -15,10 +15,11 @@ const max_growth = 1024
 
 abstract type Allocator end
 
+
 struct Arena <: Allocator
     data::Vector{UInt8} # Data of the arena is allocated per 8 bits
     blocks::Vector{Int} # Indexes where the blocks start
-    refs::Vector{AVec}
+    refs::Vector{AbstractAVec}
 end
 
 blockstart(a::Arena, block::Int) = a.blocks[block]

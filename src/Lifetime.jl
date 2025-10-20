@@ -12,7 +12,7 @@ struct Repeat{Num} <: Lifetime
 end
 
 repeats(r::Repeat{N}) where N = N
-repeats(p::Process) = repeats(lifetime(p))
+repeats(p::AbstractProcess) = repeats(lifetime(p))
 export repeats
 
 import Base./

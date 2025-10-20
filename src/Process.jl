@@ -1,6 +1,6 @@
 export Process, getallocator, getnewallocator, threadid, getlidx
 
-mutable struct Process
+mutable struct Process <: AbstractProcess
     id::UUID
     taskdata::Union{Nothing,TaskData}
     task::Union{Nothing, Task}
@@ -16,6 +16,7 @@ mutable struct Process
     rls::RuntimeListeners
     threadid::Union{Nothing, Int}
 end
+
 export Process
 
 function Process(func; lifetime = Indefinite(), overrides = (;), args...)

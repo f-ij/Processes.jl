@@ -1,6 +1,6 @@
 struct StartCloseListener{F}
     f::F
-    proc::Process
+    procAbstractProcess
     weak::Bool
     type::Symbol
     function StartCloseListener(f, proc, type, weak = false)
@@ -33,7 +33,7 @@ Base.close(rl::RuntimeListeners) = _exec_listeners(gethead(rl.close), gettail(rl
 
 RuntimeListeners() = RuntimeListeners((), ())
 
-function on(f, ::typeof(start), proc::Process)
+function on(f, ::typeof(start), procAbstractProcess)
     sl = StartListener(f, proc)
     runtimelisteners = proc.rl
     newstart = (f, runtimelisteners.start...)
@@ -41,7 +41,7 @@ function on(f, ::typeof(start), proc::Process)
     return sl
 end
 
-function on(f, ::typeof(close), proc::Process)
+function on(f, ::typeof(close), procAbstractProcess)
     sl = CloseListener(f, proc)
     runtimelisteners = proc.rl
     newclose = (f, runtimelisteners.close...)

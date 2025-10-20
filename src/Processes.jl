@@ -23,10 +23,12 @@ module Processes
     include("Printing.jl")
     include("ExpressionTools.jl")
 
-    @ForwardDeclare AVec ""
+    # @ForwardDeclare AVec ""
+    abstract type AbstractAVec{T} <: AbstractVector{T} end
     include("Arena.jl")
-    @ForwardDeclare Process ""
-
+    # @ForwardDeclare Process ""
+    # struct Process end
+    abstract type AbstractProcess end
     
     include("Lifetime.jl")
     include("TaskDatas.jl")

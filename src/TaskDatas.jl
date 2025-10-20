@@ -33,14 +33,14 @@ function preparedargs(tf::TaskData, args)
     TaskData(tf.func, tf.args, args, tf.overrides, tf.lifetime, tf.consumed, tf.timeout)
 end
 
-getfunc(p::Process) = p.taskdata.func
-# getprepare(p::Process) = p.taskdata.prepare
-# getcleanup(p::Process) = p.taskdata.cleanup
-args(p::Process) = p.taskdata.args
-overrides(p::Process) = p.taskdata.overrides
-tasklifetime(p::Process) = p.taskdata.lifetime
-timeout(p::Process) = p.taskdata.timeout
-loopdispatch(p::Process) = loopdispatch(p.taskdata)
+getfunc(p::AbstractProcess) = p.taskdata.func
+# getprepare(p::AbstractProcess) = p.taskdata.prepare
+# getcleanup(p::AbstractProcess) = p.taskdata.cleanup
+args(p::AbstractProcess) = p.taskdata.args
+overrides(p::AbstractProcess) = p.taskdata.overrides
+tasklifetime(p::AbstractProcess) = p.taskdata.lifetime
+timeout(p::AbstractProcess) = p.taskdata.timeout
+loopdispatch(p::AbstractProcess) = loopdispatch(p.taskdata)
 loopdispatch(tf::TaskData) = tf.lifetime
 consumed(tf::TaskData) = tf.consumed[]
 function consume!(tf::TaskData)
@@ -48,8 +48,8 @@ function consume!(tf::TaskData)
     tf.consumed[] = true
     return old_status
 end
-consumed(p::Process) = consumed(p.taskdata)
-consume!(p::Process) = consumed(p.taskdata)
+consumed(p::AbstractProcess) = consumed(p.taskdata)
+consume!(p::AbstractProcess) = consumed(p.taskdata)
 
 function sametask(t1,t2)
     checks = (t1.func == t2.func,
@@ -64,11 +64,11 @@ end
 export sametask
 
 #TODO: This should be somewhere visible
-newargs!(p::Process; args...) = p.taskdata = newargs(p.taskdata, args...)
+newargs!(p::AbstractProcess; args...) = p.taskdata = newargs(p.taskdata, args...)
 export newargs!
 
-prepare_args(p::Process) = prepare_args(p, p.taskdata.func; lifetime = tasklifetime(p), overrides = overrides(p), args(p)...)
-prepare_args!(p::Process) = p.taskdata = preparedargs(p.taskdata, prepare_args(p))
+prepare_args(p::AbstractProcess) = prepare_args(p, p.taskdata.func; lifetime = tasklifetime(p), overrides = overrides(p), args(p)...)
+prepare_args!(p::AbstractProcess) = p.taskdata = preparedargs(p.taskdata, prepare_args(p))
 
 """
 Fallback prepare
@@ -82,7 +82,7 @@ function prepare(::T, ::Any) where T
     (;)
 end
 
-prepare(p::Process; args...) = prepare_args(p, getfunc(p); args...)
+prepare(p::AbstractProcess; args...) = prepare_args(p, getfunc(p); args...)
 
 function prepare_args(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, args...)
 
@@ -136,7 +136,7 @@ function runloop(p, func::F, args, runtimelisteners, loopdispatch; loopfunction 
     loopfunction(p, func, args, runtimelisteners, loopdispatch)
 end
 
-preparedata!(p::Process) = preparedata!(p, p.taskdata.func; lifetime = tasklifetime(p), overrides = overrides(p), args(p)...)
+preparedata!(p::AbstractProcess) = preparedata!(p, p.taskdata.func; lifetime = tasklifetime(p), overrides = overrides(p), args(p)...)
 
 
 function preparedata!(process, @specialize(func); lifetime = Indefinite(), overrides = (;), skip_prepare = false, inputargs...)   
@@ -169,7 +169,7 @@ function preparedata!(process, @specialize(func); lifetime = Indefinite(), overr
     process.taskdata = TaskData(func, inputargs, prepared_args, overrides, lifetime, Ref(true) ,timeouttime)
 end
 
-function cleanup(p::Process)
+function cleanup(p::AbstractProcess)
     returnargs = cleanup(getfunc(p), getargs(p))
     return deletekeys(returnargs, :proc, :lifetime)
 end
