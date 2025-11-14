@@ -231,9 +231,9 @@ end
 function interpolate!(outer, inners...)
     remove_line_number_nodes!(outer)
     # Find @$
-    println("Outer: ", outer)
+    # println("Outer: ", outer)
     found = find_macrocalls(outer, Symbol("@\$"))
-    println("Found: ", found)
+    # println("Found: ", found)
 
     @assert !(length(found) < length(inners)) "Not enough @\$ to interpolate"
     @assert !(length(found) > length(inners)) "Too many @\$ to interpolate"
