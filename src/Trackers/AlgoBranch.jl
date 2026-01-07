@@ -62,5 +62,6 @@ end
 
 """
 Get the number of times an algorithm will be repeated
+Can be a fraction for Composite algorithms (I think..) TODO: Check this
 """
-getrepeats(f::ProcessAlgorithm, linearidx) = algo_num_executions(f, linearidx)
+getrepeats(f::ProcessAlgorithm, linearidx) = Float64(algo_num_executions(f, linearidx))::Float64

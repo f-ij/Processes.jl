@@ -27,6 +27,7 @@ struct RuntimeListeners{ST, CT}
     close::CT
 end
 
+start(::Nothing) = nothing
 start(rl::RuntimeListeners) = _exec_listeners(gethead(rl.start), gettail(rl.start))
 Base.close(rl::RuntimeListeners) = _exec_listeners(gethead(rl.close), gettail(rl.close))
 

@@ -7,60 +7,51 @@ For a process with a limited lifetime,
 give the array a size hint based on the lifetime and the number of updates per step.
 """
 @inline function processsizehint!(args, array, updates_per_step = 1)
+    if !haskey(args, :_instance) || !haskey(args, :lifetime)
+        @warn("Cannot give a sizehint, prepare is not called from a process")
+        return nothing
+    end
+
+    lifetime = args.lifetime
+    if lifetime isa Indefinite
+        return sizehint!(array, 2^16)
+    end
+
+    multiplier = getmultiplier(args.algo, args._instance)
     startsize = length(array)
-    recommended_extra = recommendsize(args, updates_per_step)
+
+    recommended_extra = ceil(Int, repeats(lifetime)*multiplier*updates_per_step)
+    # @show recommended_extra
+    # recommended_extra = recommendsize(args, updates_per_step)
     sizehint = startsize + recommended_extra
+    # println("Recommended sizehint: $sizehint")
     @static if DEBUG_MODE
         println("Sizehint is $sizehint")
     end
     sizehint!(array, sizehint)
 end
-
-"""
-Recommend a size for an array based on the lifetime of the process and the number of updates per step.
-"""
-@inline function recommendsize(args, updates_per_step = 1) 
-    p = args.proc
-
-    if lifetime(p) isa Indefinite # If it just runs, allocate some amount of memory
-        return 2^16
-    end
-
-    this_func = getfunc(p)
-
-    if this_func isa SimpleAlgo
-        return repeats(p) * updates_per_step
-    else
-        _currentalgo = currentalgo(args.ua)
-        allrepeats = num_calls(p, _currentalgo)
-        return allrepeats * updates_per_step
-    end
-
-end
-
 """
 Given an algorithm, return the number of times it will be called per loop of the process
 """
-function call_ratio(pa::ProcessAlgorithm, algo)
-    ua = UniqueAlgoTracker(pa)
+function call_ratio(ph::PrepereHelper, algo)
     if algo isa Type
         algo = algo()
     end
-    if !haskey(ua.counts, algo)
+    if !haskey(ph.counts, algo)
         return 0
     end
-    ua.repeats[algo]
+    ph.repeats[algo]
 end
 
 """
 Get the number of times an algorithm will be called in a process
 """
-function num_calls(p::Process, algo)
-    pa = getfunc(p)
+function num_calls(ph::PrepereHelper, algo)
+    # pa = getfunc(p)
     if algo isa Type
         algo = algo()
     end
-    floor(Int, repeats(p)*call_ratio(pa, algo))
+    floor(Int, repeats(ph)*call_ratio(ph, algo))
 end
 
 """
@@ -69,7 +60,7 @@ This is to be used in the prepare function
 """
 function num_calls(args)
     _this_algo = this_algo(args)
-    num_calls(args.proc, _this_algo)
+    num_calls(args.ph, _this_algo)
 end
 
 """
@@ -83,6 +74,9 @@ function inc_multiplier(pa::ProcessAlgorithm)
     end
 end
 
+"""
+Gives the maximum loop index for a process
+"""
 function maximum_loopidx(p::Process)
     return repeats(p)*inc_multiplier(getfunc(p))
 end

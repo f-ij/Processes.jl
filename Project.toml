@@ -10,6 +10,7 @@ JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [compat]
@@ -19,10 +20,12 @@ JLD2 = "~0.5.15"
 MacroTools = "~0.5.16"
 Preferences = "~1.4.3"
 Revise = "3.10.0"
+StaticArrays = "1.9.16"
 UUIDs = "~1.11.0"
 
 [extras]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 
 [targets]
-tests = ["BenchmarkTools"]
+tests = ["BenchmarkTools", "JET"]

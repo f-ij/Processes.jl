@@ -11,11 +11,8 @@ function start(p::Process; prevent_hanging = true, threaded = true)
     if ispaused(p) # If paused, then just unpause
         unpause(p; threaded)
     else # If not paused, then start from scratch
-        if !consume!(p) # TODO: Explain this
-            reset!(p)
-            preparedata!
-        end
-        # preparedata!(p)
+        reset!(p)
+        preparedata!(p)
         spawntask!(p; threaded)
     end
 
@@ -84,9 +81,9 @@ Redefine task without preparing again
 function unpause(p::Process; threaded = true)
     @atomic p.run = true
     if threaded
-        p.task = spawntask(p, getfunc(p), getargs(p), runtimelisteners(p), loopdispatch(p))
+        p.task = spawntask(p, getfunc(p), getargs(p), runtimelisteners(p))
     else
-        p.task = @async runtask(p, getfunc(p), getargs(p), runtimelisteners(p), loopdispatch(p))
+        p.task = @async runtask(p, getfunc(p), getargs(p), runtimelisteners(p))
     end
     return true
 end

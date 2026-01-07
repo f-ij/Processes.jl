@@ -153,7 +153,7 @@ Remove args from the total expression tree where the function f evaluates to tru
 """
 function remove_args(f, exp)
     expr = deepcopy(exp)
-    _remove_args!(f, expr)
+    remove_args!(f, expr)
     return expr
 end
 

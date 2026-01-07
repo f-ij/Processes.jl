@@ -1,8 +1,9 @@
-export Process, getallocator, getnewallocator, threadid, getlidx
+export Process, getallocator, getnewallocator
 
-mutable struct Process <: AbstractProcess
+mutable struct Process{F} <: AbstractProcess
     id::UUID
-    taskdata::Union{Nothing,TaskData}
+    args::NamedTuple
+    taskdata::TaskData{F}
     task::Union{Nothing, Task}
     loopidx::UInt   
     # To make sure other processes don't interfere
@@ -14,7 +15,7 @@ mutable struct Process <: AbstractProcess
     linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
     allocator::Allocator
     rls::RuntimeListeners
-    threadid::Union{Nothing, Int}
+    threadid::Int
 end
 
 export Process
@@ -22,10 +23,10 @@ export Process
 function Process(func; lifetime = Indefinite(), overrides = (;), args...)
     
     if lifetime isa Integer
-        lifetime = Repeat{lifetime}()
+        lifetime = Repeat(lifetime)
     elseif isnothing(lifetime)
         if func isa Routine # Standard lifetime for routines is 1
-            lifetime = Repeat{1}()
+            lifetime = Repeat(1)
         else
             lifetime = Indefinite()
         end
@@ -37,15 +38,18 @@ function Process(func; lifetime = Indefinite(), overrides = (;), args...)
 
     # tf = TaskData(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
     tf = TaskData(func; lifetime, overrides, args...)
-    p = Process(uuid1(), tf, nothing, 1, Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), nothing)
+    p = Process(uuid1(), (;), tf, nothing, UInt(1), Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), 0)
     register_process!(p)
+    @static if DEBUG_MODE
+        println("Created process with id $(p.id), now preparing data")
+    end
     preparedata!(p)
     finalizer(remove_process!, p)
     return p
 end
 
 function Process(func, repeats::Int; overrides = (;), args...) 
-    lifetime = repeats == 0 ? Indefinite() : Repeat{repeats}()
+    lifetime = repeats == 0 ? Indefinite() : Repeat(repeats)
     return Process(func; lifetime, overrides, args...)
 end
 
@@ -53,29 +57,28 @@ import Base: ==
 ==(p1::Process, p2::Process) = p1.id == p2.id
 
 getallocator(p::Process) = p.allocator
-getlidx(p::Process) = Int(p.loopidx)
 
 getinputargs(p::Process) = p.taskdata.args
 function getargs(p::Process)
     if !isdone(p)   
-        return p.taskdata.prepared_args
+        return p.args
     else
         try
             return fetch(p)
         catch # if error state, just return args
-            return p.taskdata.prepared_args
+            return p.args
         end
     end
 end
 getargs(p::Process, args) = getargs(p)[args]
+setargs!(p::Process, args::NamedTuple) = (p.args = args)
 lifetime(p::Process) = p.taskdata.lifetime
 
 set_starttime!(p::Process) = p.starttime = time_ns()
 set_endtime!(p::Process) = p.endtime = time_ns()
 reset_times!(p::Process) = (p.starttime = nothing; p.endtime = nothing)
-loopint(p::Process) = Int(p.loopidx)
-export loopint
 
+runtimelisteners(::Any) = nothing
 runtimelisteners(p::Process) = p.rls
 
 """
@@ -166,11 +169,11 @@ function spawntask!(p::Process; threaded = true)
     @atomic p.paused = false
     @atomic p.run = true
 
-    actual_args = (;p.taskdata.prepared_args..., overrides(p)...)
+    actual_args = (;proc = p, p.args..., overrides(p)...)
     if threaded
-        p.task = spawntask(p, p.taskdata.func, actual_args, runtimelisteners(p), lifetime(p))
+        p.task = spawntask(p, p.taskdata.func, actual_args, lifetime(p))
     else
-        p.task = @async runloop(p, p.taskdata.func, actual_args, runtimelisteners(p), lifetime(p))
+        p.task = @async runloop(p, p.taskdata.func, actual_args, lifetime(p))
     end
     return p
 end
@@ -180,7 +183,7 @@ end
 @inline unlock(p::Process) =  unlock(p.lock)
 
 function reset!(p::Process)
-    p.loopidx = 1
+    reset_loopidx!(p)
     @atomic p.paused = false
     @atomic p.run = true
     reset_times!(p)
@@ -198,13 +201,18 @@ run(p::Process, val) = @atomic p.run = val
 """
 Increments the loop index of a process
 """
-@inline inc!(p::Process) = p.loopidx += 1
-
 function changeargs!(p::Process; args...)
     p.taskdata = editargs(p.taskdata; args...)
 end
 
 export changeargs!
+
+## Running
+
+# Run the loop without preparing data
+function (p::Process)(threaded = true)
+    spawntask!(p; threaded)
+end
 
 
 ### LINKING

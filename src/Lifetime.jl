@@ -4,19 +4,18 @@ Is a struct so that dispatch can be used to choose the appropriate loop during c
 """
 abstract type Lifetime end
 struct Indefinite <: Lifetime end
-struct Repeat{Num} <: Lifetime 
-    function Repeat{Num}() where Num 
-        @assert Num isa Real "Repeats must be an integer" 
-        new{Num}()
-    end
+struct Repeat <: Lifetime 
+    repeats::Int
 end
 
-repeats(r::Repeat{N}) where N = N
+
+repeats(r::Repeat) = r.repeats
+repeats(::Indefinite) = Inf
 repeats(p::AbstractProcess) = repeats(lifetime(p))
 export repeats
 
 import Base./
-(/)(::Repeat{N}, r) where N = N/r
+(/)(r::Repeat, n) = r.repeats / n
 
 # Get the lifetime within a prepare step of a process
 mutable struct LifetimeTracker
@@ -24,7 +23,7 @@ mutable struct LifetimeTracker
 end
 
 
-function lifetime(args)
+function lifetime(args::NamedTuple)
     if args.lifetime isa Indefinite
         return args.lifetime
     end

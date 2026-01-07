@@ -3,7 +3,7 @@ module Processes
 
     export getargs, Process, start, quit
 
-    using UUIDs, Preferences, JLD2, MacroTools
+    using UUIDs, Preferences, JLD2, MacroTools, StaticArrays
     import Base: Threads.SpinLock, lock, unlock
     const wait_timeout = .5
 
@@ -11,10 +11,12 @@ module Processes
 
     abstract type ProcessAlgorithm end
     abstract type ProcessLoopAlgorithm <: ProcessAlgorithm end # Algorithms that can be inlined in processloop
+    abstract type ComplexLoopAlgorithm <: ProcessLoopAlgorithm end # Algorithms that have multiple functions and intervals
 
     export ProcessAlgorithm
 
     const DEBUG_MODE = @load_preference("debug", false)
+    debug_mode() = @load_preference("debug", false)
     function debug_mode(bool)
         @set_preferences!("debug" => bool)
     end
@@ -28,15 +30,19 @@ module Processes
     include("Arena.jl")
     # @ForwardDeclare Process ""
     # struct Process end
-    abstract type AbstractProcess end
+    include("AbstractProcesses.jl")
     
     include("Lifetime.jl")
     include("TaskDatas.jl")
+    include("Prepare.jl")
+    include("Running.jl")
     include("TriggerList.jl")
     include("Benchmark.jl")
     include("Debugging.jl")
     include("Listeners.jl")
     include("Process.jl")
+    include("InlineProcess.jl")
+
     include("ProcessStatus.jl")
     include("Interface.jl")
     include("Loops.jl")

@@ -512,9 +512,19 @@ end
 """
 From kwargs delete a key
 """
-function deletekeys(ps::NamedTuple, ks...)
-    leftover_keys = filter(x -> !(x in ks), collect(keys(ps)))
-    return ps[leftover_keys]
+@inline deletekeys(ps::NamedTuple, ks::Symbol...) = deletekeys(ps, Val.(ks)...)
+@inline @generated function deletekeys(ps::NamedTuple, ks::Val...)
+    names = ps.parameters[1]
+    drop_syms = isempty(ks) ? () : Tuple(k.parameters[1] for k in ks)
+    keep_syms = Tuple(name for name in names if !(name in drop_syms))
+
+    if isempty(keep_syms)
+        return :(NamedTuple())
+    end
+
+    value_exprs = [:(getfield(ps, $(QuoteNode(name)))) for name in keep_syms]
+    pairs = [:( $(QuoteNode(name)) => $(value_exprs[idx]) ) for (idx, name) in enumerate(keep_syms)]
+    return :(; $(pairs...))
 end
 
 function deletevalues(ps::NamedTuple, vs...)

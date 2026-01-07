@@ -3,88 +3,118 @@ export Routine
 """
 Struct to create routines
 """
-mutable struct Routine{T, Repeats, NT} <: ProcessLoopAlgorithm
+mutable struct Routine{T, Repeats, NT, NSR} <: ComplexLoopAlgorithm
     const funcs::T
-    starts::NT
+    incs::MVector # Maybe remove this and make it computed from the process lidx
     const flags::Set{Symbol}
+    const registry::NSR
 end
 
+function Routine(funcs...; repeats::NTuple{N, Real} = ntuple(x -> 1, N), flags...) where {N}
+    set = isempty(flags) ? Set{Symbol}() : Set(flags)
+    allfuncs = []
+    savedrepeats = []
+    registry = NameSpaceRegistry()
+
+
+    for (fidx, func) in enumerate(funcs)
+
+        if func isa Type
+            func = func()
+        end
+
+        if func isa CompositeAlgorithm || func isa Routine # So that they track their own incs/incs
+            func = deepcopy(func)
+        end
+
+
+        multiplier = Float64(repeats[fidx])
+        if needsname(func) 
+            registry, func = get_named_instance(registry, func, multiplier)
+        end
+
+        push!(allfuncs, func)
+        push!(savedrepeats, repeats[fidx])
+    end
+
+    registries = getregistry.(allfuncs)
+    registries = scale_multipliers.(registries, repeats)
+
+    func_replacements = Vector{Vector{Pair{Symbol,Symbol}}}(undef, length(allfuncs))
+    # Merging registries pairwise so replacements propagate down the right branch
+    for (idx, subregistry) in enumerate(registries)
+        registry, repl = merge_registries(registry, subregistry)
+        func_replacements[idx] = repl
+    end
+    # Updating names downwards
+    allfuncs = update_loopalgorithm_names.(allfuncs, func_replacements)
+    
+    funcstuple = tuple(allfuncs...)
+    savedrepeats = tuple(floor.(Int, savedrepeats)...)
+    sidxs = MVector{length(funcstuple),Int}(ones(length(funcstuple)))
+    return Routine{typeof(funcstuple), savedrepeats, typeof(sidxs), typeof(registry)}(funcstuple, sidxs, set, registry)
+end
+
+# Routine(r::Routine, funcs = r.funcs) = Routine(funcs, r.incs, flags = r.flags)
+# newfuncs(r::Routine, funcs) = Routine(funcs, r.incs, flags = r.flags)
+function newfuncs(r::Routine, funcs)
+    nsr = NameSpaceRegistry(funcs)
+    Routine{typeof(funcs), repeats(r), typeof(r.incs), typeof(nsr)}(funcs, r.incs, r.flags, nsr)
+end
+
+subalgorithms(r::Routine) = r.funcs
+subalgotypes(r::Routine{FT}) where FT = FT.parameters
+subalgotypes(rT::Type{<:Routine{FT}}) where FT = FT.parameters
+
+# getnames(r::Routine{T, R, NT, N}) where {T, R, NT, N} = N
 Base.length(r::Routine) = length(r.funcs)
-repeats(::Type{Routine{F,R,NT}}) where {F,R,NT} = R
+repeats(::Type{<:Routine{F,R}}) where {F,R} = R
 repeats(r::Routine{F,R}) where {F,R} = R
-# repeats(r::Routine{FT, R}) where {FT, R} = tuple_type_property(repeat, FT)
+multipliers(r::Routine) = repeats(r)
+multipliers(rT::Type{<:Routine}) = repeats(rT)
 
 repeats(r::Routine{F,R}, idx) where {F,R} = getindex(repeats(r), idx)
 getfuncs(r::Routine) = r.funcs
-function save_starts!(r::Routine{T,Repeats}, routineidx, loopidx) where {T, Repeats}
-    num = length(Repeats)
-    t = tuple(Repeats[1:routineidx-1]..., loopidx, (1 for _ in routineidx+1:num)...)
-    r.starts = t
-end
-get_starts(r::Routine) = r.starts
 
-reset!(a::Any) = nothing
+inc!(r::Routine, idx) = r.incs[idx] += 1
+
 function reset!(r::Routine)
-    r.starts = ntuple(x -> 1, length(r.funcs))
+    r.incs = MVector{length(r.funcs),Int}(ones(length(r.funcs)))
     reset!.(r.funcs)
 end
 
-
-function Routine(funcs::NTuple{N, Any}, repeats::NTuple{N, Real} = ntuple(x -> 1, N), flags::Symbol...) where {N}
-    set = isempty(flags) ? Set{Symbol}() : Set(flags)
-    savedfuncs = []
-    savedrepeats = []
-
-    for fidx in eachindex(funcs)
-        thisfunc = funcs[fidx]
-        if thisfunc isa Type
-            thisfunc = thisfunc()
-        end
-
-        if thisfunc isa CompositeAlgorithm || thisfunc isa Routine # So that they track their own starts/incs
-            thisfunc = deepcopy(thisfunc)
-        end
-
-        push!(savedfuncs, thisfunc)
-        push!(savedrepeats, repeats[fidx])
-    end
-    savedfuncs = tuple(savedfuncs...)
-    savedrepeats = tuple(floor.(Int, savedrepeats)...)
-    stype = typeof(savedfuncs)
-    sidxs = ntuple(x->1, length(funcs))
-
-    return Routine{stype, savedrepeats, typeof(sidxs)}(savedfuncs, sidxs , set)
-end
-
-@inline function (r::Routine{T,R})(args) where {T, R}
-    @inline unroll_subroutines(r, r.funcs, get_starts(r), args)
+### STEP
+"""
+Routines unroll their subroutines and execute them in order.
+"""
+@inline function step!(r::Routine, args::As) where {As<:NamedTuple}
+    @inline unroll_subroutines(r, r.funcs, get_incs(r), args)
 end
 
 function unroll_subroutines(@specialize(r::Routine), @specialize(funcs), start_idxs, args)
-    @inline _unroll_subroutines(r, gethead(funcs), gettail(funcs), gethead(repeats(r)), gettail(repeats(r)), gethead(start_idxs), gettail(start_idxs), (;args..., algoidx = 1))
+    a_idx = 1
+    @inline _unroll_subroutines(r, gethead(funcs), a_idx, gettail(funcs), gethead(repeats(r)), gettail(repeats(r)), args,)
 end
 
-function _unroll_subroutines(r::Routine, @specialize(func), tail, this_repeat, repeats, startidx, start_idxs, args) 
+@inline function _unroll_subroutines(r::Routine, a_idx, func::F, tail, this_repeat, repeats, args) where F
+    (;proc) = args
     if isnothing(func)
         reset!(r)
-        return
+        return args
     else
-        (;proc) = args
-        for i in startidx:this_repeat
+        a_idx = args.algoidx
+        start = r.incs[a_idx]
+        for i in start:this_repeat
             if !run(proc)
-                save_starts!(r, args.algoidx, i)
-                break
+                return args
             end
-            @inline func(args)
-            # TODO: Make this a trait? Maybe "countsincrements"
-            if !(func isa CompositeAlgorithm || func isa SimpleAlgo || func isa Routine)
-                inc!(proc)
-            end
+            returnval = @inline step!(func, args)
+            args = mergeargs(args, returnval)
+            inc!(r, a_idx)
             GC.safepoint()
         end
-        @inline _unroll_subroutines(r, gethead(tail), gettail(tail), gethead(repeats), gettail(repeats), gethead(start_idxs), gettail(start_idxs), (;args..., algoidx = args.algoidx + 1))
+        @inline _unroll_subroutines(r, a_idx + 1, gethead(tail), gettail(tail), gethead(repeats), gettail(repeats), args)
     end
-        
 end
 
 
@@ -99,6 +129,7 @@ function Base.show(io::IO, r::Routine)
             invoke(show, Tuple{IO, typeof(thisfunc)}, next(indentio), thisfunc)
         else
             invoke(show, Tuple{IndentIO, Any}, next(indentio), thisfunc)
+            # show(next(indentio), thisfunc)
         end
     end
 end
