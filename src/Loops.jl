@@ -45,8 +45,9 @@ function processloop(p::AbstractProcess, func::F, args::As, ::Indefinite) where 
 
     before_while(p)
     while run(p) 
-        returnval = @inline step!(func, args)
-        args = mergeargs(args, returnval)
+        # returnval = @inline step!(func, args)
+        # args = mergeargs(args, returnval)
+        @inline step!(func, args)
         inc!(p) 
         GC.safepoint()
     end
@@ -65,8 +66,9 @@ function processloop(p::AbstractProcess, func::F, args::As, r::Repeat) where {F,
         if !run(p)
             break
         end
-        returnval = @inline step!(func, args)
-        args = mergeargs(args, returnval)
+        # returnval = @inline step!(func, args)
+        # args = mergeargs(args, returnval)
+        @inline step!(func, args)
         inc!(p)
         GC.safepoint()
     end

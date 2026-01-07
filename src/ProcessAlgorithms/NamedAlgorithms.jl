@@ -18,7 +18,7 @@ isinstance(obj, na::NamedAlgorithm) = na.func === obj
 
 @inline function step!(na::NamedAlgorithm{F, Name}, args) where {F, Name}
     args = (;getproperty(args, Name)..., args)
-    step!(na.func, args)
+    @inline step!(na.func, args)
 end
 
 function mergereturn(na::NamedAlgorithm{F, Name}, args, returnval) where {F, Name}

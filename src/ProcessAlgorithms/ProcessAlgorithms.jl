@@ -50,7 +50,7 @@ macro ProcessAlgorithm(ex)
     q = quote
             struct $FFunction <: ProcessAlgorithm end
 
-            function Processes.step!(f::$FFunction, args::NT) where NT <: NamedTuple
+            @inline function Processes.step!(f::$FFunction, args::NT) where NT <: NamedTuple
                 (;$(splatnames...)) = args
                 @inline $FSymbol($(args...))
             end

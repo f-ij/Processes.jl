@@ -16,9 +16,9 @@ mutable struct InlineProcess{TD, As, Threaded} <: AbstractProcess
 end
 
 function InlineProcess(func::F; threaded = false, lifetime = 1, args...) where F
-    if !(func isa ProcessLoopAlgorithm)
-        func = SimpleAlgo(func)
-    end
+    # if !(func isa ProcessLoopAlgorithm)
+    #     func = SimpleAlgo(func)
+    # end
 
     nrepeats = Repeat(lifetime)
     # tf = PreparedData(func; lifetime = nrepeats, args...)

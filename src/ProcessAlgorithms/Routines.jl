@@ -108,8 +108,9 @@ end
             if !run(proc)
                 return args
             end
-            returnval = @inline step!(func, args)
-            args = mergeargs(args, returnval)
+            # returnval = @inline step!(func, args)
+            # args = mergeargs(args, returnval)
+            @inline step!(func, args)
             inc!(r, a_idx)
             GC.safepoint()
         end

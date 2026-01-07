@@ -32,9 +32,9 @@ function Process(func; lifetime = Indefinite(), overrides = (;), args...)
         end
     end
 
-    if !(func isa ProcessLoopAlgorithm)
-        func = SimpleAlgo(func)
-    end
+    # if !(func isa ProcessLoopAlgorithm)
+    #     func = SimpleAlgo(func)
+    # end
 
     # tf = TaskData(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
     tf = TaskData(func; lifetime, overrides, args...)

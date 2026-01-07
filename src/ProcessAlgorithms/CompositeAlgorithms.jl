@@ -147,13 +147,13 @@ Dispatch on a composite function
     returnval = nothing
     (;proc) = args
     if I == 1
-        returnval = @inline step!(thisfunc, args)
+        step!(thisfunc, args)
     else
         if inc(ca) % I == 0
-            returnval = @inline step!(thisfunc, args)
+            step!(thisfunc, args)
         end
     end
-    args = mergeargs(args, returnval)
+    # args = mergeargs(args, returnval)
     return @inline _comp_dispatch(ca, gethead(funcs), headval(intervals), gettail(funcs), gettail(intervals), (;args..., algoidx = args.algoidx + 1, interval = gethead(intervals)))
 end
 
@@ -163,7 +163,8 @@ Last dispatch function when all functions have been called
 @inline function _comp_dispatch(ca::CompositeAlgorithm, ::Nothing, ::Any, ::Any, ::Any, args)
     inc!(ca)
     GC.safepoint()
-    return args
+    # return args
+    return
 end
 
 # SHOWING
