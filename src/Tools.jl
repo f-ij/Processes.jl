@@ -94,6 +94,12 @@ function newallocator(args)
     end
 end
 
+"""
+Get the current loop index for a process
+"""
+loopidx(args::NamedTuple) = loopidx(args.proc)
+
+
 ####
 export TimeTracker, wait, add_timetracker
 """

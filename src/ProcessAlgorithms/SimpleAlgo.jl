@@ -78,7 +78,7 @@ function unroll_funcs(sf::SimpleAlgo, a_idx, funcs::T, args) where T<:Tuple
         return args
     end
     if a_idx == sf.inc # For pausing/resuming
-        returnval = @inline step!(gethead(funcs), args)
+        returnval = @inline namedstep!(gethead(funcs), args)
         inc!(sf)
     end
     args = mergeargs(args, returnval)

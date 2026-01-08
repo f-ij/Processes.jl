@@ -13,8 +13,9 @@ function Processes.prepare(::Fib, args)
     return (;fiblist)
 end
 
-@NamedProcessAlgorithm FibLuc function Luc(luclist)
+@NamedProcessAlgorithm FibLuc function Luc(luclist, args)
     push!(luclist, luclist[end] + luclist[end-1])
+    println(args)
     return (;)
 end
 
@@ -25,4 +26,5 @@ function Processes.prepare(::Luc, args)
 end
 
 FibLuc = CompositeAlgorithm( (Fib, Luc), (1,1) )
-p = Process(FibLuc; lifetime = 1000000)
+p = Process(FibLuc; lifetime = 1)
+start(p)

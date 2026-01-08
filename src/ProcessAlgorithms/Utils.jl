@@ -27,4 +27,14 @@ function update_loopalgorithm_names(a::Any, ::Any)
     return a
 end
 
-mergeargs(args::NamedTuple, returnval) = isnothing(returnval) ? args : (;args..., returnval...)
+@inline mergeargs(args::NamedTuple, returnval) = isnothing(returnval) ? args : (;args..., returnval...)
+@inline function invert_namespace(args, name)
+    (;getproperty(args, name)..., globalargs = args)
+end
+
+@inline function namedstep!(namedalgo, args)
+    if hasname(namedalgo)
+        args = invert_namespace(args, getname(namedalgo))
+    end
+    @inline step!(namedalgo, args)
+end

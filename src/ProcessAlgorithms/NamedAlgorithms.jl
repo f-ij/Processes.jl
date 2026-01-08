@@ -21,8 +21,13 @@ end
 isinstance(na::NamedAlgorithm, obj) = na.func === obj
 isinstance(obj, na::NamedAlgorithm) = na.func === obj
 
+@inline function namedstep!(na::NamedAlgorithm{F, Name}, args) where {F, Name}
+    args = (;getproperty(args, Name)..., globalargs = args)
+    @inline step!(na.func, args)
+end
+
 @inline function step!(na::NamedAlgorithm{F, Name}, args) where {F, Name}
-    args = (;getproperty(args, Name)..., args)
+    # args = (;getproperty(args, Name)..., args)
     @inline step!(na.func, args)
 end
 

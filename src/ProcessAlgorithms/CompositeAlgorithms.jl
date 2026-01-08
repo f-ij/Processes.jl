@@ -129,8 +129,8 @@ numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
 @inline getinterval(::CompositeAlgorithm{T,I}, idx) where {T,I} = I[idx]
 iterval(ca::CompositeAlgorithm, idx) = getinterval(ca, idx)
 
-algo_loopidx(args) = loopidx(args.proc) ÷ args.interval
-export algo_loopidx
+algo_call_number(args) = loopidx(args.globalargs.proc) ÷ args.interval
+export algo_call_number
 
 # CompositeAlgorithm(f, interval::Int, flags...) = CompositeAlgorithm((f,), (interval,), flags...)
 
@@ -154,11 +154,11 @@ Dispatch on a composite function
     returnval = nothing
     (;proc) = args
     if I == 1
-        returnval = step!(thisfunc, args)
+        returnval = namedstep!(thisfunc, args)
 
     else
         if inc(ca) % I == 0
-            returnval = step!(thisfunc, args)
+            returnval = namedstep!(thisfunc, args)
         end
     end
     args = mergeargs(args, returnval)
