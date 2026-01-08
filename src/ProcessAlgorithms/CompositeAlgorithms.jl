@@ -75,8 +75,8 @@ track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
 Increment the stepidx for the composite algorithm
 """
 @generated function inc!(ca::CompositeAlgorithm)
-    max = max(ca.parameters[2]...)
-    return :(ca.inc = mod1(ca.inc + 1, max))
+    _max = max(ca.parameters[2]...)
+    return :(ca.inc = mod1(ca.inc + 1, $_max))
 end
 function reset!(ca::CompositeAlgorithm)
     ca.inc = 1
@@ -134,16 +134,16 @@ export algo_loopidx
 Running a composite algorithm allows for static unrolling and inlining of all sub-algorithms through 
     recursive calls
 """
-@inline function step!(ca::CompositeAlgorithm{T, I}, args::As) where {T,I,As<:NamedTuple}
+@inline function step!(ca::CompositeAlgorithm{T, Is}, args::As) where {T,Is,As<:NamedTuple}
     algoidx = 1
-    return @inline _comp_dispatch(ca, gethead(ca.funcs), headval(I), gettail(ca.funcs), gettail(I), (;args..., algoidx, interval = gethead(I)))
+    return @inline _comp_dispatch(ca, gethead(ca.funcs), headval(Is), gettail(ca.funcs), gettail(Is), (;args..., algoidx, interval = gethead(Is)))
 end
 
 """
 Dispatch on a composite function
     Made such that the functions will be completely inlined at compile time
 """
-@inline function _comp_dispatch(ca::CompositeAlgorithm{T, I}, thisfunc::TF, interval::Val{I}, funcs, intervals, args) where {T,I,TF}
+@inline function _comp_dispatch(ca::CompositeAlgorithm, thisfunc::TF, interval::Val{I}, funcs, intervals, args) where {I,TF}
     returnval = nothing
     (;proc) = args
     if I == 1
