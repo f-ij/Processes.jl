@@ -143,7 +143,7 @@ end
 Dispatch on a composite function
     Made such that the functions will be completely inlined at compile time
 """
-@inline function _comp_dispatch(ca::CompositeAlgorithm, thisfunc::TF, interval::Val{I}, @specialize(funcs), intervals, args) where {TF,I}
+@inline function _comp_dispatch(ca::CompositeAlgorithm{T, I}, thisfunc::TF, interval::Val{I}, @specialize(funcs), intervals, args) where {T,I,TF}
     returnval = nothing
     (;proc) = args
     if I == 1
