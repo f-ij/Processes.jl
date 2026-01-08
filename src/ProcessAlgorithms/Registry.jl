@@ -115,6 +115,42 @@ function get_named_instance(reg::NameSpaceRegistry, obj, count = 1.)
     return add_instance(reg, obj, count)
 end
 
+function add_named_instance(reg::NameSpaceRegistry{T}, obj::ProcessAlgorithm, count = 1.) where {T}
+    @assert hasname(obj)
+    all_instances = reg.instances
+    all_multipliers = reg.multipliers
+    obj_type = algotype(obj)
+    for (first_idx, instances_of_type) in enumerate(all_instances)
+        multipliers_by_type = all_multipliers[first_idx]
+        if algotype(instances_of_type[1]) == obj_type
+            for (second_idx, inst) in enumerate(instances_of_type)
+                if inst.func === obj.func
+                    new_multipliers_by_type = Base.setindex(multipliers_by_type, multipliers_by_type[second_idx] + count, second_idx)
+                    new_multipliers = Base.setindex(all_multipliers, new_multipliers_by_type, first_idx)
+                    newreg = NameSpaceRegistry(all_instances, new_multipliers)
+                    return newreg, inst
+                end
+            end
+            for inst in instances_of_type
+                if getname(inst) == getname(obj)
+                    error("Name collision: $(getname(obj)) already exists for type $(obj_type)")
+                end
+            end
+            new_instances_of_type = (instances_of_type..., obj)
+            new_all_instances = Base.setindex(all_instances, new_instances_of_type, first_idx)
+            new_multipliers_by_type = (multipliers_by_type..., count)
+            new_multipliers = Base.setindex(all_multipliers, new_multipliers_by_type, first_idx)
+            newreg = NameSpaceRegistry(new_all_instances, new_multipliers)
+            return newreg, obj
+        end
+    end
+
+    new_all_instances = (all_instances..., (obj,))
+    new_all_multipliers = (all_multipliers..., (count,))
+    newreg = NameSpaceRegistry(new_all_instances, new_all_multipliers)
+    return newreg, obj
+end
+
 """
 Scale every multiplier in the registry by a constant factor.
 """
@@ -208,14 +244,18 @@ function NameSpaceRegistry(items_tuple::Tuple)
 end
 
 function NameSpaceRegistry(item::Any)
-    if needsname(item)
-        if !hasname(item)
-            error("Item of type $(typeof(item)) needs a name but has none")
-        end
+    if item isa NamedAlgorithm
         return NameSpaceRegistry(((item,),), ((1,),))
-    else
-        return NameSpaceRegistry()
     end
+    name = getname(item)
+    if !isnothing(name)
+        named = NamedAlgorithm(item, name)
+        return NameSpaceRegistry(((named,),), ((1,),))
+    end
+    if needsname(item)
+        error("Item of type $(typeof(item)) needs a name but has none")
+    end
+    return NameSpaceRegistry()
 end
 
 function Base.iterate(flat::Iterators.Flatten{<:NameSpaceRegistry}, state = (1, 1))

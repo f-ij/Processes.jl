@@ -8,10 +8,15 @@ end
 NamedAlgorithm(f, name) = NamedAlgorithm{typeof(f), name}(f)
 
 hasname(::NamedAlgorithm) = true
-hasname(::Any) = false
+hasname(obj::Any) = !isnothing(getname(obj))
 
 getname(na::NamedAlgorithm{F, Name}) where {F, Name} = Name
 getalgorithm(na::NamedAlgorithm{F, Name}) where {F, Name} = na.func
+
+@generated function has_generated_name(na::NamedAlgorithm{F, Name}) where {F, Name}
+    is_auto = string(Name)[1] == '_'
+    return :($is_auto)
+end
 
 isinstance(na::NamedAlgorithm, obj) = na.func === obj
 isinstance(obj, na::NamedAlgorithm) = na.func === obj

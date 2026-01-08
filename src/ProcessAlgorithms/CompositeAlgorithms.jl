@@ -25,7 +25,14 @@ function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Real} = 
             func = deepcopy(func)
         end
 
-        if needsname(func) 
+        name = getname(func)
+        if !isnothing(name) && !(func isa NamedAlgorithm)
+            func = NamedAlgorithm(func, name)
+        end
+
+        if !needsname(func)
+            registry, func = add_named_instance(registry, func, multipliers[func_idx])
+        elseif needsname(func)
             registry, func = get_named_instance(registry, func, multipliers[func_idx])
         end
 

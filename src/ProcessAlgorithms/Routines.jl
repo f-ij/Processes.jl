@@ -29,7 +29,14 @@ function Routine(funcs...; repeats::NTuple{N, Real} = ntuple(x -> 1, N), flags..
 
 
         multiplier = Float64(repeats[fidx])
-        if needsname(func) 
+        name = getname(func)
+        if !isnothing(name) && !(func isa NamedAlgorithm)
+            func = NamedAlgorithm(func, name)
+        end
+
+        if func isa NamedAlgorithm
+            registry, func = add_named_instance(registry, func, multiplier)
+        elseif needsname(func)
             registry, func = get_named_instance(registry, func, multiplier)
         end
 
@@ -134,4 +141,3 @@ function Base.show(io::IO, r::Routine)
         end
     end
 end
-

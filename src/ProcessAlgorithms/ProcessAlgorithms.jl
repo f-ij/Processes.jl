@@ -10,7 +10,13 @@ export getname, step!, @ProcessAlgorithm, @NamedProcessAlgorithm, prepare
 """
 Can be used to set a name
 """
-@inline getname(::Any) = nothing
+@inline function getname(a::Any)
+    if !(a isa Type)
+        a = typeof(a)
+        return getname(a)
+    end
+    nothing
+end
 
 @inline function needsname(a::Any)
     isnothing(getname(a))
@@ -27,6 +33,11 @@ end
     else
         return getproperty(args, thisname)
     end
+end
+
+@inline function mergenamespace(args::NamedTuple, newargs, name)
+    namespaced_args = get(args, name, (;))
+    (;args..., name => (;namespaced_args..., newargs...))
 end
 
 
@@ -102,7 +113,7 @@ macro NamedProcessAlgorithm(name, ex)
                 @inline $FSymbol($(args...))
             end
 
-            getname(::$FFunction) = $name
+            Processes.getname(::Type{$FFunction}) = $(QuoteNode(name))
 
             $ex
         end
@@ -181,19 +192,28 @@ function prepare(nsr::NameSpaceRegistry, inputargs)
     runtimeargs = _prepare(inputargs, named_algos...)
 end
 
-function _prepare(inputargs, named_algohead::NamedAlgorithm, tail::Any...)
+function _prepare(inputargs::NamedTuple, named_algohead::ProcessAlgorithm, tail::Any...)
+    @assert hasname(named_algohead)
+
     temp_prepare_args = (;_instance = getalgorithm(named_algohead), inputargs...)
     prepared_args_algo = prepare(getalgorithm(named_algohead), temp_prepare_args)
 
-    runtimeargs = (;inputargs..., getname(named_algohead) => (;_instance = named_algohead, prepared_args_algo...))
-    (;runtimeargs..., _prepare(inputargs, tail...)...)
+    namespace_name = getname(named_algohead)
+    runtime_args = mergenamespace(inputargs, prepared_args_algo, namespace_name)
+
+    _prepare(runtime_args, tail...)
 end
 
-function _prepare(inputargs, na::NamedAlgorithm)
-    temp_prepare_args = (;_instance = getalgorithm(na), inputargs...)
+function _prepare(args::NamedTuple, na::ProcessAlgorithm)
+    @assert hasname(na)
+    
+    temp_prepare_args = (;_instance = getalgorithm(na), args...)
     prepared_args_algo = prepare(getalgorithm(na), temp_prepare_args)
 
-    (;inputargs..., getname(na) => (;_instance = na, prepared_args_algo...))
+    namespace_name = getname(na)
+    runtime_args = mergenamespace(args, prepared_args_algo, namespace_name)
+
+    return runtime_args
 end
 # function cleanup(pa::Union{CompositeAlgorithm, Routine}, args)
 #     prepare_helper = PrepereHelper(pa, args)
