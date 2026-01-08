@@ -30,28 +30,25 @@ give the array a size hint based on the lifetime and the number of updates per s
     end
     sizehint!(array, sizehint)
 end
-"""
-Given an algorithm, return the number of times it will be called per loop of the process
-"""
-function call_ratio(ph::PrepereHelper, algo)
-    if algo isa Type
-        algo = algo()
-    end
-    if !haskey(ph.counts, algo)
-        return 0
-    end
-    ph.repeats[algo]
-end
+# """
+# Given an algorithm, return the number of times it will be called per loop of the process
+# """
+# function call_ratio(ph::PrepereHelper, algo)
+#     if algo isa Type
+#         algo = algo()
+#     end
+#     if !haskey(ph.counts, algo)
+#         return 0
+#     end
+#     ph.repeats[algo]
+# end
 
 """
 Get the number of times an algorithm will be called in a process
 """
-function num_calls(ph::PrepereHelper, algo)
-    # pa = getfunc(p)
-    if algo isa Type
-        algo = algo()
-    end
-    floor(Int, repeats(ph)*call_ratio(ph, algo))
+function num_calls(algo, lifetime, instance)
+    multiplier = getmultiplier(algo, instance)
+    floor(Int, repeats(lifetime)*multiplier)
 end
 
 """
@@ -59,8 +56,10 @@ Get the number of times an algorithm will be called in a process
 This is to be used in the prepare function
 """
 function num_calls(args)
-    _this_algo = this_algo(args)
-    num_calls(args.ph, _this_algo)
+    algo = args.algo
+    lifetime = args.lifetime
+    instance = args._instance
+    num_calls(args.algo, lifetime, instance)
 end
 
 """
