@@ -134,7 +134,7 @@ export algo_loopidx
 Running a composite algorithm allows for static unrolling and inlining of all sub-algorithms through 
     recursive calls
 """
-@inline function step!(ca::CompositeAlgorithm, args::As) where {As<:NamedTuple}
+@inline function step!(ca::CompositeAlgorithm{T, I}, args::As) where {T,I,As<:NamedTuple}
     algoidx = 1
     return @inline _comp_dispatch(ca, gethead(ca.funcs), headval(I), gettail(ca.funcs), gettail(I), (;args..., algoidx, interval = gethead(I)))
 end
