@@ -147,13 +147,14 @@ Dispatch on a composite function
     returnval = nothing
     (;proc) = args
     if I == 1
-        step!(thisfunc, args)
+        returnval = step!(thisfunc, args)
+
     else
         if inc(ca) % I == 0
-            step!(thisfunc, args)
+            returnval = step!(thisfunc, args)
         end
     end
-    # args = mergeargs(args, returnval)
+    args = mergeargs(args, returnval)
     return @inline _comp_dispatch(ca, gethead(funcs), headval(intervals), gettail(funcs), gettail(intervals), (;args..., algoidx = args.algoidx + 1, interval = gethead(intervals)))
 end
 

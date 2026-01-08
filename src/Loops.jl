@@ -47,7 +47,8 @@ function processloop(p::AbstractProcess, func::F, args::As, ::Indefinite) where 
     while run(p) 
         # returnval = @inline step!(func, args)
         # args = mergeargs(args, returnval)
-        @inline step!(func, args)
+        returnval = @inline step!(func, args)
+        args = mergeargs(args, returnval)
         inc!(p) 
         GC.safepoint()
     end

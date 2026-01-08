@@ -10,15 +10,25 @@ export getname, step!, @ProcessAlgorithm, @NamedProcessAlgorithm, prepare
 """
 Can be used to set a name
 """
-getname(::Any) = nothing
+@inline getname(::Any) = nothing
 
-function needsname(a::Any)
+@inline function needsname(a::Any)
     isnothing(getname(a))
 end
 
-needsname(::CompositeAlgorithm) = false
-needsname(::Routine) = false
-needsname(::SimpleAlgo) = false
+@inline needsname(::CompositeAlgorithm) = false
+@inline needsname(::Routine) = false
+@inline needsname(::SimpleAlgo) = false
+
+@inline function getnamespace(args::NamedTuple, obj)
+    thisname = @inline getname(obj)
+    if isnothing(thisname)
+        return args
+    else
+        return getproperty(args, thisname)
+    end
+end
+
 
 """
 Macro to define a ProcessAlgorithm from a function definition.
@@ -63,13 +73,42 @@ end
 
 
 macro NamedProcessAlgorithm(name, ex)
-    # Expand the ProcessAlgorithm macro in the calling module's context
-    newex = macroexpand(__module__, :(@ProcessAlgorithm($ex)))
-    push!(newex.args, quote 
-        getname(::$FFunction) = $name
-    end)
-    println(newex)
-    return esc(newex)
+    @capture(ex, function F_(args__) body_ end )
+    # Get the function name from the expression
+    Fname = F
+    FFunction = F
+    FSymbol = F
+
+    
+
+    ## Handle type annotated functions
+    if F isa Expr && F.head == :(::)
+        Fname = F.args[1]
+        FFunction = Expr(:(::), :f, Fname)
+        FSymbol = :f
+    end
+
+    hasargs = :args in args
+    splatnames = args
+    if hasargs
+        splatnames = filter(x -> x != :args, args) # These are the splat args
+    end
+
+    q = quote
+            struct $FFunction <: ProcessAlgorithm end
+
+            @inline function Processes.step!(f::$FFunction, args::NT) where NT <: NamedTuple
+                (;$(splatnames...)) = args
+                @inline $FSymbol($(args...))
+            end
+
+            getname(::$FFunction) = $name
+
+            $ex
+        end
+    println(q)
+    esc(q)
+
 end
 
 # macro ProcessAlgorithm(ex)
