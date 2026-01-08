@@ -59,7 +59,7 @@ function num_calls(args)
     algo = args.algo
     lifetime = args.lifetime
     instance = args._instance
-    num_calls(args.algo, lifetime, instance)
+    num_calls(algo, lifetime, instance)
 end
 
 """
