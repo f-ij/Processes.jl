@@ -152,7 +152,6 @@ Dispatch on a composite function
 """
 @inline function _comp_dispatch(ca::CompositeAlgorithm, thisfunc::TF, interval::Val{I}, funcs, intervals, args) where {I,TF}
     returnval = nothing
-    (;proc) = args
     if I == 1
         returnval = namedstep!(thisfunc, args)
 
