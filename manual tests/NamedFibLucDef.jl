@@ -15,7 +15,7 @@ end
 
 @NamedProcessAlgorithm FibLuc function Luc(luclist, args)
     push!(luclist, luclist[end] + luclist[end-1])
-    println(args)
+    algo_call_number(args)
     return (;)
 end
 

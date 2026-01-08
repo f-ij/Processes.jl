@@ -129,7 +129,7 @@ numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
 @inline getinterval(::CompositeAlgorithm{T,I}, idx) where {T,I} = I[idx]
 iterval(ca::CompositeAlgorithm, idx) = getinterval(ca, idx)
 
-algo_call_number(args) = loopidx(args.globalargs.proc) ÷ args.interval
+algo_call_number(args) = loopidx(args.globalargs.proc) ÷ args.globalargs.interval
 export algo_call_number
 
 # CompositeAlgorithm(f, interval::Int, flags...) = CompositeAlgorithm((f,), (interval,), flags...)
