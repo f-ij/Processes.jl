@@ -15,46 +15,27 @@ function Routine(funcs...; repeats::NTuple{N, Real} = ntuple(x -> 1, N), flags..
     allfuncs = []
     savedrepeats = []
     registry = NameSpaceRegistry()
+    multipliers = Float64.(repeats)
 
-
-    for (fidx, func) in enumerate(funcs)
-
-        if func isa Type
-            func = func()
-        end
-
-        if func isa CompositeAlgorithm || func isa Routine # So that they track their own incs/incs
+    for (func_idx, func) in enumerate(funcs)
+        if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
             func = deepcopy(func)
+        else
+            registry, namedfunc = add_instance(registry, func, multipliers[func_idx])
         end
-
-
-        multiplier = Float64(repeats[fidx])
-        name = getname(func)
-        if !isnothing(name) && !(func isa NamedAlgorithm)
-            func = NamedAlgorithm(func, name)
-        end
-
-        if func isa NamedAlgorithm
-            registry, func = add_named_instance(registry, func, multiplier)
-        elseif needsname(func)
-            registry, func = get_named_instance(registry, func, multiplier)
-        end
-
-        push!(allfuncs, func)
-        push!(savedrepeats, repeats[fidx])
+        I = intervals[func_idx]
+        push!(allfuncs, namedfunc)
+        push!(allintervals, I)
     end
 
     registries = getregistry.(allfuncs)
-    registries = scale_multipliers.(registries, repeats)
-
-    func_replacements = Vector{Vector{Pair{Symbol,Symbol}}}(undef, length(allfuncs))
-    # Merging registries pairwise so replacements propagate down the right branch
+    registries = scale_multipliers.(registries, multipliers)
+    # Merging registries pairwise so replacement direction is explicit
     for (idx, subregistry) in enumerate(registries)
-        registry, repl = merge_registries(registry, subregistry)
-        func_replacements[idx] = repl
+        registry = merge(registry, subregistry)
     end
-    # Updating names downwards
-    allfuncs = update_loopalgorithm_names.(allfuncs, func_replacements)
+    # Updating names downwards (each branch only needs its own replacements)
+    allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
     
     funcstuple = tuple(allfuncs...)
     savedrepeats = tuple(floor.(Int, savedrepeats)...)

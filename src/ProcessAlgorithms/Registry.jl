@@ -1,274 +1,355 @@
+struct ValueEntry{T}
+    value::T
+    multiplier::Float64
+end
 
 getmultiplier(cla::ComplexLoopAlgorithm, obj) = getmultiplier(getregistry(cla), obj)
 getname(cla::ComplexLoopAlgorithm, obj) = getname(getregistry(cla), obj)
+
+struct RegistryTypeEntry{T,DE,S,D}
+    default::DE  # Default instance and its multiplier
+    static::S   # isbits(x) == true
+    dynamic::D  # isbits(x) == false
+    # default::Td
+    # default_mult::Float64
+    # auto::Ti
+    # auto_mults::Tim
+    # explicit::Tie
+    # explicit_mults::Tiem
+end
+
+function RegistryTypeEntry(obj::T) where T
+    if obj isa Type
+        return RegistryTypeEntry{obj}(nothing, 0., (), (), (), ())
+    else
+        return RegistryTypeEntry{T}(nothing, 0., (), (), (), ())
+    end
+end
+RegistryTypeEntry{T}() where {T} = RegistryTypeEntry{T,Nothing,Tuple{},Tuple{},Tuple{},Tuple{}}(nothing, 0., (), (), (), ())
+RegistryTypeEntry{T}(default::Td, dmult::Float64, instances::Ti, auto_mults::Tim, explicit::Tie, explicit_mults::Tiem) where {T,Td,Ti,Tim,Tie,Tiem} = RegistryTypeEntry{T,Td,Ti,Tim,Tie,Tiem}(default, dmult, instances, auto_mults, explicit, explicit_mults)
+# RegistryTypeEntry{T}(default::Td, instances::Ti) where {T,Td,Ti} = RegistryTypeEntry{T,Td,Ti}(default, instances)
+
+same_entry(rte1::RegistryTypeEntry{T1}, rte2::RegistryTypeEntry{T2}) where {T1,T2} = T1 == T2
+
+gettype(rte::Type{<:RegistryTypeEntry{T}}) where T = T
+gettype(rte::RegistryTypeEntry) = gettype(typeof(rte))
+
+hasdefault(rte::RegistryTypeEntry{T,Td}) where {T,Td} = !(Td <: Nothing)
+getdefault(rte::RegistryTypeEntry{T,Td}) where {T,Td} = rte.default
+
+getindex_auto(rte::RegistryTypeEntry{T,Td,Ti}, idx::Int) where {T,Td,Ti} = rte.auto[idx]
+getindex_explicit(rte::RegistryTypeEntry{T,Td,Ti,Tie}, idx::Int) where {T,Td,Ti,Tie} = rte.explicit[idx]
+
+function scale_multipliers(rte::RegistryTypeEntry{T}, factor) where T
+    new_dmult = rte.default_mult * factor
+    new_auto_mults = map(x -> x * factor, rte.auto_mults)
+    new_explicit_mults = map(x -> x * factor, rte.explicit_mults)
+    return RegistryTypeEntry{T}(rte.default, new_dmult, rte.auto, new_auto_mults, rte.explicit, new_explicit_mults)
+end
+
+function getinstance(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int = nothing) where {T}
+    if location == :default
+        return getdefault(rte)
+    elseif location == :auto
+        return getindex_auto(rte, idx)
+    elseif location == :explicit
+        return getindex_explicit(rte, idx)
+    else
+        error("Unknown location symbol: $location")
+    end
+end
+
+function getmultiplier(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int = nothing) where {T}
+    if location == :default
+        return rte.default_mult
+    elseif location == :auto
+        return rte.auto_mults[idx]
+    elseif location == :explicit
+        return rte.explicit_mults[idx]
+    else
+        error("Unknown location symbol: $location")
+    end
+end
+
+"""
+Instances that need an automatic name
+"""
+function add_auto(rte::RegistryTypeEntry{T}, val, multiplier) where {T}
+    fidx = findinstance_auto(rte, val)
+    if isnothing(fidx) # New instance, give it a name
+        named_val = Autoname(val, length(rte.auto) + 2) # +2 because 1 is reserved for default
+        newauto = (rte.auto..., named_val)
+        newmults = (rte.auto_mults..., multiplier)
+        return RegistryTypeEntry{T}(rte.default, rte.default_mult, newauto, newmults, rte.explicit, rte.explicit_mults), val
+    else # Existing instance, bump multiplier
+        newmults = Base.setindex(rte.auto_mults, rte.auto_mults[fidx] + multiplier, fidx)
+        return RegistryTypeEntry{T}(rte.default, rte.default_mult, rte.auto, newmults, rte.explicit, rte.explicit_mults), getindex_auto(rte, fidx)
+    end
+end
+
+"""
+Instances that already have a name
+"""
+function add_explicit(rte::RegistryTypeEntry{T}, val, multiplier = 1.) where {T}
+    fidx = findinstance_explicit(rte, val)
+    if isnothing(fidx) # New instance, add to end
+        newexplicit = (rte.explicit..., val)
+        newmults = (rte.explicit_mults..., multiplier)
+        return RegistryTypeEntry{T}(rte.default, rte.default_mult, rte.auto, rte.auto_mults, newexplicit, newmults), val
+    else
+        newmults = Base.setindex(rte.explicit_mults, rte.explicit_mults[fidx] + multiplier, fidx)
+        return RegistryTypeEntry{T}(rte.default, rte.default_mult, rte.auto, rte.auto_mults, rte.explicit, newmults), getindex_explicit(rte, fidx)
+    end
+end
+
+
+function add_default(rte::RegistryTypeEntry{T,Td}, val, multiplier = 1.) where {T,Td}
+    if isnothing(rte.default)
+        named_val = Autoname(val, 1)
+        return RegistryTypeEntry{T}(named_val, multiplier, rte.auto, rte.auto_mults, rte.explicit, rte.explicit_mults), val
+    else
+        new_dmult = rte.default_mult + multiplier
+        return RegistryTypeEntry{T}(rte.default, new_dmult, rte.auto, rte.auto_mults, rte.explicit, rte.explicit_mults), getdefault(rte)
+    end
+end
+
+function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.) where {T}
+    if obj isa Type
+        val = obj()
+        return add_default(rte, val, multiplier)
+    elseif hasname(obj)
+        return add_explicit(rte, obj, multiplier)
+    else
+        return add_auto(rte, obj, multiplier)
+    end
+end
+
+
+function multiply_multiplier(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int, factor::Number) where {T}
+    if location == :default
+        new_dmult = rte.default_mult * factor
+        return RegistryTypeEntry{T}(rte.default, new_dmult, rte.auto, rte.auto_mults, rte.explicit, rte.explicit_mults)
+    elseif location == :auto
+        new_auto_mults = Base.setindex(rte.auto_mults, rte.auto_mults[idx] * factor, idx)
+        return RegistryTypeEntry{T}(rte.default, rte.default_mult, rte.auto, new_auto_mults, rte.explicit, rte.explicit_mults)
+    elseif location == :explicit
+        new_explicit_mults = Base.setindex(rte.explicit_mults, rte.explicit_mults[idx] * factor, idx)
+        return RegistryTypeEntry{T}(rte.default, rte.default_mult, rte.auto, rte.auto_mults, rte.explicit, new_explicit_mults)
+    else
+        error("Unknown location symbol: $location")
+    end
+end
+
+function multiply_multiplier(rte::RegistryTypeEntry{T}, obj, factor::Number) where {T}
+    if obj isa Type # Multiply default
+        return RegistryTypeEntry{T}(rte.default, rte.default_mult * factor, rte.auto, rte.auto_mults, rte.explicit, rte.explicit_mults)
+    end
+
+    fidx, location = findinstance(rte, obj)
+    if isnothing(fidx)
+        error("Object not found in registry")
+    end
+    return multiply_multiplier(rte, location, fidx, factor)
+end
+
+"""
+match only instance
+"""
+function findinstance_auto(rte::RegistryTypeEntry{T}, obj) where {T}
+    for (idx, inst) in enumerate(rte.auto)
+        if isinstance(inst, obj)
+            return idx
+        end
+    end
+    return nothing
+end
+
+"""
+match instance and name
+"""
+function findinstance_explicit(rte::RegistryTypeEntry{T}, obj) where {T}
+    for (idx, inst) in enumerate(rte.explicit)
+        if isinstance(inst, obj) && getname(inst) == getname(obj)
+                 return idx
+        end
+    end
+    return nothing
+end
+
+function findinstance(rte::RegistryTypeEntry{T}, obj) where {T}
+    if hasname(obj)
+        return findinstance_explicit(rte, obj), :explicit
+    else
+        return findinstance_auto(rte, obj), :auto
+    end
+end
+
+function Base.merge(entry1::RegistryTypeEntry, entry2::RegistryTypeEntry)
+    @assert gettype(entry1) == gettype(entry2)
+
+    # Merge default, prefer default of 1 if both exist
+    newdefault = entry1.default
+    if isnothing(newdefault) && !isnothing(entry2.default)
+        newdefault = entry2.default
+    end
+    newdefault_mult = entry1.default_mult + entry2.default_mult
+
+    # Merge auto and dedupe by instance. If instances match, take name of the furst and add multipliers
+    newauto = entry1.auto
+    newauto_mults = entry1.auto_mults
+    for (idx, inst) in enumerate(entry2.auto)
+        fidx = findinstance_auto(entry1, inst)
+        if isnothing(fidx) # New instance
+            newauto = (newauto..., inst)
+            newauto_mults = (newauto_mults..., entry2.auto_mults[idx])
+        else # Existing instance, bump multiplier
+            newauto_mults = Base.setindex(newauto_mults, newauto_mults[fidx] + entry2.auto_mults[idx], fidx)
+        end
+    end
+
+    # Merge explicit and dedupe by instance+name. If instances match, take name of the first and add multipliers
+    newexplicit = entry1.explicit
+    newexplicit_mults = entry1.explicit_mults
+    for (idx, inst) in enumerate(entry2.explicit)
+        fidx = findinstance_explicit(entry1, inst)
+        if isnothing(fidx) # New instance
+            newexplicit = (newexplicit..., inst)
+            newexplicit_mults = (newexplicit_mults..., entry2.explicit_mults[idx])
+        else # Existing instance, bump multiplier
+            newexplicit_mults = Base.setindex(newexplicit_mults, newexplicit_mults[fidx] + entry2.explicit_mults[idx], fidx)
+        end
+    end
+
+    return RegistryTypeEntry{gettype(entry1)}(newdefault, newdefault_mult, newauto, newauto_mults, newexplicit, newexplicit_mults)
+end
+
+"""
+Take an old RegistryTypeEntry and use all the names of a base RegistryTypeEntry
+"""
+function updatenames(old::RegistryTypeEntry, base::RegistryTypeEntry)
+    newdefault = base.default
+
+    newauto = old.auto
+    for (idx, inst) in enumerate(old.auto)
+        fidx = findinstance_auto(base, inst)
+        if isnothing(fidx)
+            error("Instance in old registry not found in base registry")
+        end
+        newauto = Base.setindex(old.auto, getindex_auto(base, fidx), idx)
+    end
+
+    updated_registry = RegistryTypeEntry{gettype(old)}(newdefault, old.default_mult, newauto, old.auto_mults, old.explicit, old.explicit_mults)
+end
+
+
+########################
+  ##### REGISTRY #####
+########################
 
 """
 Namespace registry but with static type_same instead of dict
     (# Tuple for type 1 (namedinstance1, namedinstance2, ...), # Tuple for type 2 (...), ...)
 """
-struct NameSpaceRegistry{T,TT}
-    instances::T
-    multipliers::TT
+struct NameSpaceRegistry{T}
+    instances::T # Tuple of RegistryTypeEntry
 end
 
-"""
-get the deduped types from the registry
-"""
-@generated function gettypes(reg::Type{NameSpaceRegistry{T,TT}}) where {T,TT}
-    tupletypes = T.parameters
-    typess = getproperty.(tupletypes, :parameters)
-    firsttypes = first.(typess)
-    algtypes = map(ft -> ft <: NamedAlgorithm ? ft.parameters[1] : ft, firsttypes)
-    Tt = Tuple{algtypes...}
+NameSpaceRegistry() = NameSpaceRegistry(tuple())
+
+Base.getindex(reg::NameSpaceRegistry, idx::Int) = reg.instances[idx]
+
+@generated function gettypes(reg::Type{NameSpaceRegistry{T}}) where {T}
+    entrytypes = T.parameters
+    datatypes = gettype.(entrytypes)
+    Tt = Tuple{datatypes...}
     return :($Tt)
 end
 
-@generated function gettypes_iterator(reg::Type{NameSpaceRegistry{T,TT}}) where {T,TT}
-    tupletypes = T.parameters
-    typess = getproperty.(tupletypes, :parameters)
-    firsttypes = first.(typess)
-    algtypes = tuple(map(ft -> ft <: NamedAlgorithm ? ft.parameters[1] : ft, firsttypes)...)
-
-    return :($algtypes)
+@generated function gettypes_iterator(reg::Type{NameSpaceRegistry{T}}) where {T}
+    entrytypes = T.parameters
+    datatypes = gettype.(entrytypes)
+    Tt = tuple(datatypes...)
+    return :($Tt)
 end
-
-gettypes(reg::NameSpaceRegistry) = gettypes(typeof(reg))
 gettypes_iterator(reg::NameSpaceRegistry) = gettypes_iterator(typeof(reg))
 
-findinstance(typeref::Tuple, obj) = findfirst(inst -> isinstance(inst, obj), typeref)
+@generated function _findtype(reg::NameSpaceRegistry{T}, typ::Type{TT}) where {T,TT}
+    it = gettypes_iterator(reg)
+    index = findfirst(t -> TT <: t, it)
+    return :( $index )
+end
+
+findtype(reg::NameSpaceRegistry, obj) = _findtype(reg, typeof(obj))
+findtype(reg::NameSpaceRegistry, typ::Type) = _findtype(reg, typ)
 
 """
-Get the name of a registered object if it's in the registry
+Add an instance and get new registry and a named instance back
 """
-@generated function getname(reg::NameSpaceRegistry{T,TT}, obj::O) where {T,TT,O}
-    types = gettypes_iterator(reg)
-    index = findfirst(typ -> typ == O, types)
-    if index === nothing
-        error("Object of type $(O) not found in registry")
+function add_instance(reg::NameSpaceRegistry{T}, obj, multiplier = 1.) where {T}
+    fidx = findtype(reg, obj)
+    if isnothing(fidx) # New Entry
+ß        newentry = RegistryTypeEntry(obj)
+        newentry, namedobj = add(newentry, obj, multiplier)
+        return NameSpaceRegistry((reg.instances..., newentry)), namedobj
+    else # Type was found
+        entry = reg.instances[fidx]
+        newentry, namedobj = add(entry, obj, multiplier)
+        newinstances = Base.setindex(reg.instances, newentry, fidx)
+        return NameSpaceRegistry(newinstances), namedobj
     end
-    
-    return quote 
-        f_idx = findinstance(reg.instances[$index], obj)
-        if f_idx === nothing
+end
+
+@generated function getnamedinstance(reg::NameSpaceRegistry{T}, obj) where {T}
+    _type_index = findtype(reg, obj)
+    if _isnothing(_type_index)
+        error("Object of type $(obj) not found in registry")
+    end
+
+    return quote
+        f_idx, location = findinstance(reg.instances[$_type_index], obj)
+        if isnothing(f_idx)
             error("Object not found in registry")
         end
-        reg.instances[$index][f_idx] |> getname
+        return getinstance(reg[$_type_index], location, f_idx)
     end
 end
 
-@generated function getmultiplier(reg::NameSpaceRegistry{T,TT}, obj::O) where {T,TT,O}
-    types = gettypes_iterator(reg)
-    index = findfirst(typ -> typ == O, types)
-    if index === nothing
-        error("Object of type $(O) not found in registry")
+getname(reg::NameSpaceRegistry{T}, obj) where {T} = getname(getnamedinstance(reg, obj))
+
+@generated function getmultiplier(reg::NameSpaceRegistry{T}, obj) where {T}
+    _type_index = findtype(reg, obj)
+    if _isnothing(_type_index)
+        error("Object of type $(obj) not found in registry")
     end
-    return quote 
-        f_idx = findinstance(reg.instances[$index], obj)
-        if f_idx === nothing
+
+    return quote
+        f_idx, location = findinstance(reg.instances[$_type_index], obj)
+        if isnothing(f_idx)
             error("Object not found in registry")
         end
-        reg.multipliers[$index][f_idx]
+        return getmultiplier(reg[$_type_index], location, f_idx)
     end
 end
 
-hastype(reg::NameSpaceRegistry{T,TT}, typ) where {T,TT} = typ in gettypes_iterator(reg)
-
-"""
-Expects a non-named object and returns a new registry and the assigned name
-    Can accept a number of multipliers of how many times this instances is added
-"""
-function add_instance(reg::NameSpaceRegistry{T}, obj, count = 1.) where {T}
-    all_instances = reg.instances
-    all_multipliers = reg.multipliers
-    obj_type = typeof(obj)
-    for (first_idx, instances_of_type) in enumerate(all_instances)
-        multipliers_by_type = all_multipliers[first_idx]
-        if algotype(instances_of_type[1]) == obj_type
-            for (second_idx, inst) in enumerate(instances_of_type)
-                if isinstance(inst, obj)
-                    new_multipliers_by_type = Base.setindex(multipliers_by_type, multipliers_by_type[second_idx] + count, second_idx)
-                    new_multipliers = Base.setindex(all_multipliers, new_multipliers_by_type, first_idx)
-                    newreg = NameSpaceRegistry(all_instances, new_multipliers)
-                    return newreg, inst
-                end
-            end
-            inst_name = Symbol(:_, nameof(obj_type), :_, length(instances_of_type) + 1)
-            named_obj = NamedAlgorithm(obj, inst_name)
-            new_instances_of_type = (instances_of_type..., named_obj)
-            new_all_instances = Base.setindex(all_instances, new_instances_of_type, first_idx)
-            new_multipliers_by_type = (multipliers_by_type..., count)
-            new_multipliers = Base.setindex(all_multipliers, new_multipliers_by_type, first_idx)
-            newreg = NameSpaceRegistry(new_all_instances, new_multipliers)
-            return newreg, named_obj
-        end
-    end
-
-    inst_name = Symbol(:_, nameof(obj_type), :_, 1)
-    named_obj = NamedAlgorithm(obj, inst_name)
-    new_all_instances = (all_instances..., (named_obj,))
-    new_all_multipliers = (all_multipliers..., (count,))
-    newreg = NameSpaceRegistry(new_all_instances, new_all_multipliers)
-    return newreg, named_obj
+function scale_multipliers(reg::NameSpaceRegistry{T}, factor::Number) where {T}
+    newinstances = map(entry -> scale_multipliers(entry, factor), reg.instances)
+    return NameSpaceRegistry{typeof(newinstances)}(newinstances)
 end
 
-function get_named_instance(reg::NameSpaceRegistry, obj, count = 1.)
-    return add_instance(reg, obj, count)
-end
+function Base.merge(registry1::NameSpaceRegistry, registry2::NameSpaceRegistry)
+    entries1 = registry1.instances
+    entries2 = registry2.instances
 
-function add_named_instance(reg::NameSpaceRegistry{T}, obj::ProcessAlgorithm, count = 1.) where {T}
-    @assert hasname(obj)
-    all_instances = reg.instances
-    all_multipliers = reg.multipliers
-    obj_type = algotype(obj)
-    for (first_idx, instances_of_type) in enumerate(all_instances)
-        multipliers_by_type = all_multipliers[first_idx]
-        if algotype(instances_of_type[1]) == obj_type
-            for (second_idx, inst) in enumerate(instances_of_type)
-                if inst.func === obj.func
-                    new_multipliers_by_type = Base.setindex(multipliers_by_type, multipliers_by_type[second_idx] + count, second_idx)
-                    new_multipliers = Base.setindex(all_multipliers, new_multipliers_by_type, first_idx)
-                    newreg = NameSpaceRegistry(all_instances, new_multipliers)
-                    return newreg, inst
-                end
-            end
-            for inst in instances_of_type
-                if getname(inst) == getname(obj)
-                    error("Name collision: $(getname(obj)) already exists for type $(obj_type)")
-                end
-            end
-            new_instances_of_type = (instances_of_type..., obj)
-            new_all_instances = Base.setindex(all_instances, new_instances_of_type, first_idx)
-            new_multipliers_by_type = (multipliers_by_type..., count)
-            new_multipliers = Base.setindex(all_multipliers, new_multipliers_by_type, first_idx)
-            newreg = NameSpaceRegistry(new_all_instances, new_multipliers)
-            return newreg, obj
-        end
-    end
-
-    new_all_instances = (all_instances..., (obj,))
-    new_all_multipliers = (all_multipliers..., (count,))
-    newreg = NameSpaceRegistry(new_all_instances, new_all_multipliers)
-    return newreg, obj
-end
-
-"""
-Scale every multiplier in the registry by a constant factor.
-"""
-function scale_multipliers(reg::NameSpaceRegistry, factor::Number)
-    factor == 1 && return reg
-    scaled_groups = map(reg.multipliers) do group
-        map(mult -> mult * factor, group)
-    end
-    return NameSpaceRegistry(reg.instances, scaled_groups)
-end
-
-"""
-Merge two registries, returning a combined registry and the name replacements that must be applied
-    to the objects coming from `reg2` so their namespaces agree with `reg1`.
-"""
-function merge_registries(reg1::NameSpaceRegistry, reg2::NameSpaceRegistry)
-    replacements = Pair{Symbol,Symbol}[]
-    base_instances = reg1.instances
-    base_multipliers = reg1.multipliers
-    type_positions = Dict{Any,Int}()
-    for (idx, typ) in enumerate(gettypes_iterator(reg1))
-        type_positions[typ] = idx
-    end
-
-    reg_instances = reg2.instances
-    reg_multipliers = reg2.multipliers
-    types = gettypes_iterator(reg2)
-    for (type_idx, typ) in enumerate(types)
-        existing_idx = get(type_positions, typ, 0)
-        if existing_idx == 0
-            base_instances = (base_instances..., reg_instances[type_idx])
-            base_multipliers = (base_multipliers..., reg_multipliers[type_idx])
-            type_positions[typ] = length(base_instances)
+    newentries = deepcopy(entries1)
+    for entry2 in entries2
+        fidx = findfirst(x -> same_entry(x, entry2), newentries)
+        if isnothing(fidx) # New entry
+            newentries = (newentries..., entry2)
         else
-            type_instances1 = base_instances[existing_idx]
-            type_instances2 = reg_instances[type_idx]
-            multipliers_by_type1 = base_multipliers[existing_idx]
-            multipliers_by_type2 = reg_multipliers[type_idx]
-            new_type_instances, new_multipliers_by_type, repls = merge_by_type(type_instances1, type_instances2, multipliers_by_type1, multipliers_by_type2)
-            base_instances = Base.setindex(base_instances, new_type_instances, existing_idx)
-            base_multipliers = Base.setindex(base_multipliers, new_multipliers_by_type, existing_idx)
-            append!(replacements, repls)
+            entry1 = registry1.instances[fidx]
+            mergedentry = merge(entry1, entry2)
+            newentries = Base.setindex(newentries, mergedentry, fidx)
         end
     end
-
-    newreg = NameSpaceRegistry(base_instances, base_multipliers)
-    return newreg, replacements
-end
-
-"""
-Already found that instances1 and instances2 are of the same types
-    Merge them and return the new instances and multipliers
-
-    I.e. take the names out of instances 2 and add them to instances1 with new names if needed
-"""
-function merge_by_type(instances1, instances2, multipliers1, multipliers2)
-    new_instances = instances1
-    new_multipliers = multipliers1
-    replacements = Pair{Symbol,Symbol}[]
-    for (inst2_idx, inst2) in enumerate(instances2)
-        count2 = multipliers2[inst2_idx]
-        match_idx = findfirst(inst1 -> inst1 === inst2, new_instances)
-        if match_idx === nothing
-            inst_name = Symbol(:_, nameof(algotype(inst2)), :_, length(new_instances) + 1)
-            renamed = changename(inst2, inst_name)
-            new_instances = (new_instances..., renamed)
-            new_multipliers = (new_multipliers..., count2)
-            push!(replacements, getname(inst2) => inst_name)
-        else
-            new_multipliers = Base.setindex(new_multipliers, new_multipliers[match_idx] + count2, match_idx)
-        end
-    end
-    return new_instances, new_multipliers, replacements
-end
-
-
-#### CONSTRUCTORS #####
-NameSpaceRegistry() = NameSpaceRegistry(tuple(), tuple())
-
-"""
-Should only be used if all items that need a name are already named
-"""
-function NameSpaceRegistry(items_tuple::Tuple)
-    regs = NameSpaceRegistry.(items_tuple)
-    isempty(regs) && return NameSpaceRegistry()
-    reg = regs[1]
-    for next_reg in regs[2:end]
-        reg, _ = merge_registries(reg, next_reg)
-    end
-    return reg
-end
-
-function NameSpaceRegistry(item::Any)
-    if item isa NamedAlgorithm
-        return NameSpaceRegistry(((item,),), ((1,),))
-    end
-    name = getname(item)
-    if !isnothing(name)
-        named = NamedAlgorithm(item, name)
-        return NameSpaceRegistry(((named,),), ((1,),))
-    end
-    if needsname(item)
-        error("Item of type $(typeof(item)) needs a name but has none")
-    end
-    return NameSpaceRegistry()
-end
-
-function Base.iterate(flat::Iterators.Flatten{<:NameSpaceRegistry}, state = (1, 1))
-    outer_idx, inner_state = state
-    if outer_idx > length(flat.it.instances)
-        return nothing
-    end
-    current_iter = flat.it.instances[outer_idx]
-    next_item = iterate(current_iter, inner_state)
-    if next_item === nothing
-        return iterate(flat, (outer_idx + 1, 1))
-    else
-        item, new_inner_state = next_item
-        return item, (outer_idx, new_inner_state)
-    end
+    return NameSpaceRegistry(newentries)
 end

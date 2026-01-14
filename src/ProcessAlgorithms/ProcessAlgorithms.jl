@@ -166,7 +166,7 @@ end
 #     # Reuse the ProcessAlgorithm macro to define the function
 #     newex = @ProcessAlgorithm(ex)
 #     push!(newex.args, quote function $FFunction() 
-#                 return NamedAlgorithm($name, $FFunction())
+#                 return ScopedAlgorithm($name, $FFunction())
 #             end
 #         end)
 #     println(newex)
@@ -219,4 +219,3 @@ end
 #     prepare_helper = PrepereHelper(pa, args)
 #     cleanup(prepare_helper, args)
 # end
-

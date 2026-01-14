@@ -23,22 +23,25 @@ function _build_simplealgo(funcs::Tuple)
     registry = NameSpaceRegistry()
     multipliers = fill(1.0, num_funcs)
 
-    for (idx, func) in enumerate(funcs)
-        member = _materialize_simple_member(func)
-        if needsname(member)
-            registry, member = get_named_instance(registry, member, multipliers[idx])
+    for (func_idx, func) in enumerate(funcs)
+        if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
+            func = deepcopy(func)
+        else
+            registry, namedfunc = add_instance(registry, func, multipliers[func_idx])
         end
-        allfuncs[idx] = member
+        I = intervals[func_idx]
+        push!(allfuncs, namedfunc)
+        push!(allintervals, I)
     end
 
     registries = getregistry.(allfuncs)
     registries = scale_multipliers.(registries, multipliers)
-    func_replacements = Vector{Vector{Pair{Symbol,Symbol}}}(undef, num_funcs)
+    # Merging registries pairwise so replacement direction is explicit
     for (idx, subregistry) in enumerate(registries)
-        registry, repl = merge_registries(registry, subregistry)
-        func_replacements[idx] = repl
+        registry = merge(registry, subregistry)
     end
-    allfuncs = update_loopalgorithm_names.(allfuncs, func_replacements)
+    # Updating names downwards (each branch only needs its own replacements)
+    allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
 
     stored_funcs = tuple(allfuncs...)
     return stored_funcs, registry

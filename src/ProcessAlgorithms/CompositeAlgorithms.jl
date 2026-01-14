@@ -8,6 +8,11 @@ mutable struct CompositeAlgorithm{T, Intervals, NSR} <: ComplexLoopAlgorithm
     const registry::NSR
 end
 
+"""
+Update auto generated names means registry has been overruled, thus we set this to nothing
+"""
+update_auto(ca::CompositeAlgorithm{T,I}, ::Any) where {T,I} = ComplexLoopAlgorithm{T, I, Nothing}(ca.funcs, ca.inc, ca.flags, nothing)
+
 function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Real} = ntuple(_ -> 1, N); names = tuple(), flags...) where {N}
     set = isempty(flags) ? Set{Symbol}() : Set(flags)
     allfuncs = Any[]
@@ -16,46 +21,27 @@ function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Real} = 
     multipliers = 1. ./(Float64.(intervals))
 
     for (func_idx, func) in enumerate(funcs)
-  
-        if func isa Type
-            func = func()
-        end
-
-        if func isa CompositeAlgorithm || func isa Routine # So that they track their own starts/incs
+        if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
             func = deepcopy(func)
+        else
+            registry, namedfunc = add_instance(registry, func, multipliers[func_idx])
         end
-
-        name = getname(func)
-        if !isnothing(name) && !(func isa NamedAlgorithm)
-            func = NamedAlgorithm(func, name)
-        end
-
-        if !needsname(func)
-            registry, func = add_named_instance(registry, func, multipliers[func_idx])
-        elseif needsname(func)
-            registry, func = get_named_instance(registry, func, multipliers[func_idx])
-        end
-
-
         I = intervals[func_idx]
-        push!(allfuncs, func)
+        push!(allfuncs, namedfunc)
         push!(allintervals, I)
     end
 
     registries = getregistry.(allfuncs)
     registries = scale_multipliers.(registries, multipliers)
-    func_replacements = Vector{Vector{Pair{Symbol,Symbol}}}(undef, length(allfuncs))
     # Merging registries pairwise so replacement direction is explicit
     for (idx, subregistry) in enumerate(registries)
-        registry, repl = merge_registries(registry, subregistry)
-        func_replacements[idx] = repl
+        registry = merge(registry, subregistry)
     end
     # Updating names downwards (each branch only needs its own replacements)
-    allfuncs = update_loopalgorithm_names.(allfuncs, func_replacements)
+    allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
 
     tfuncs = tuple(allfuncs...)
     allintervals = tuple(floor.(Int, allintervals)...)
-    _instances = unique_instances(tfuncs)
 
     flags = Set(flags...)
     CompositeAlgorithm{typeof(tfuncs), allintervals, typeof(registry)}(tfuncs, 1, flags, registry)
