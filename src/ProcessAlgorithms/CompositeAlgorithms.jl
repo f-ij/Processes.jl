@@ -11,7 +11,7 @@ end
 """
 Update auto generated names means registry has been overruled, thus we set this to nothing
 """
-update_auto(ca::CompositeAlgorithm{T,I}, ::Any) where {T,I} = ComplexLoopAlgorithm{T, I, Nothing}(ca.funcs, ca.inc, ca.flags, nothing)
+update_instance(ca::CompositeAlgorithm{T,I}, ::Any) where {T,I} = CompositeAlgorithm{T, I, Nothing}(ca.funcs, ca.inc, ca.flags, nothing)
 
 function CompositeAlgorithm(funcs::NTuple{N, Any}, intervals::NTuple{N, Real} = ntuple(_ -> 1, N); names = tuple(), flags...) where {N}
     set = isempty(flags) ? Set{Symbol}() : Set(flags)

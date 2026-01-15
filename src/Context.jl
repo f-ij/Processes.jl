@@ -19,9 +19,6 @@ struct SharedState{name} end
 contextname(st::Type{SharedState{name}}) where {name} = name
 contextname(st::SharedState{name}) where {name} = name
 
-
-
-
 struct SubContext{Name,T<:NamedTuple, S, R, Reg} <: AbstractSubContext
     data::T
     shared::S #Can write to

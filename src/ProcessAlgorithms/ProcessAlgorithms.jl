@@ -1,6 +1,6 @@
 include("Utils.jl")
-include("NamedAlgorithms.jl")
-include("Registry.jl")
+include("ScopedAlgorithms.jl")
+include("Registry/Registry.jl")
 include("SimpleAlgo.jl")
 include("CompositeAlgorithms.jl")
 include("Routines.jl")

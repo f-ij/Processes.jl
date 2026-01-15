@@ -3,17 +3,19 @@ export Routine
 """
 Struct to create routines
 """
-mutable struct Routine{T, Repeats, NT, NSR} <: ComplexLoopAlgorithm
-    const funcs::T
+struct Routine{T, Repeats, NT, NSR} <: ComplexLoopAlgorithm
+    funcs::T
     incs::MVector # Maybe remove this and make it computed from the process lidx
-    const flags::Set{Symbol}
-    const registry::NSR
+    flags::Set{Symbol}
+    registry::NSR
 end
 
-function Routine(funcs...; repeats::NTuple{N, Real} = ntuple(x -> 1, N), flags...) where {N}
+update_instance(ca::Routine{T,R, NT}, ::Any) where {T,R, NT} = Routine{T, R, NT, Nothing}(ca.funcs, ca.incs, ca.flags, nothing)
+
+
+function Routine(funcs...; repeats::NTuple{N, Real} = ntuple(x -> 1, length(funcs)), flags...) where {N}
     set = isempty(flags) ? Set{Symbol}() : Set(flags)
     allfuncs = []
-    savedrepeats = []
     registry = NameSpaceRegistry()
     multipliers = Float64.(repeats)
 
@@ -21,26 +23,24 @@ function Routine(funcs...; repeats::NTuple{N, Real} = ntuple(x -> 1, N), flags..
         if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
             func = deepcopy(func)
         else
-            registry, namedfunc = add_instance(registry, func, multipliers[func_idx])
+            registry, func = add_instance(registry, func, multipliers[func_idx])
         end
-        I = intervals[func_idx]
-        push!(allfuncs, namedfunc)
-        push!(allintervals, I)
+        push!(allfuncs, func)
     end
 
     registries = getregistry.(allfuncs)
     registries = scale_multipliers.(registries, multipliers)
     # Merging registries pairwise so replacement direction is explicit
-    for (idx, subregistry) in enumerate(registries)
+    for subregistry in registries
         registry = merge(registry, subregistry)
     end
     # Updating names downwards (each branch only needs its own replacements)
     allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
     
     funcstuple = tuple(allfuncs...)
-    savedrepeats = tuple(floor.(Int, savedrepeats)...)
+    repeats = tuple(floor.(Int, repeats)...)
     sidxs = MVector{length(funcstuple),Int}(ones(length(funcstuple)))
-    return Routine{typeof(funcstuple), savedrepeats, typeof(sidxs), typeof(registry)}(funcstuple, sidxs, set, registry)
+    return Routine{typeof(funcstuple), repeats, typeof(sidxs), typeof(registry)}(funcstuple, sidxs, set, registry)
 end
 
 # Routine(r::Routine, funcs = r.funcs) = Routine(funcs, r.incs, flags = r.flags)

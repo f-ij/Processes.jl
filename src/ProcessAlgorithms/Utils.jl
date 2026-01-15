@@ -15,17 +15,10 @@ get_registry(a::Any) = NameSpaceRegistry()
 """
 Obtain all the registriees, merge them and update the names downwards in the algorithm accordingly
 """
-# function update_loopalgorithm_names(pa::ComplexLoopAlgorithm, replacements::Vector{Pair{Symbol,Symbol}})
-#     oldsfuncs = getfuncs(pa)
-#     funcs = update_loopalgorithm_names.(oldsfuncs, Ref(replacements)) #Recursive replace ComplexLoopAlgorithm
-#     funcs = replacename.(oldsfuncs, Ref(replacements)) # Rename ScopedAlgorithms
-#     pa_new = newfuncs(pa, funcs)
-#     return pa_new
-# end
 function update_loopalgorithm_names(pa::ComplexLoopAlgorithm, base_registry)
     oldsfuncs = getfuncs(pa)
     funcs = update_loopalgorithm_names.(oldsfuncs, Ref(base_registry)) #Recursive replace ComplexLoopAlgorithm
-    funcs = update_auto.(oldsfuncs, Ref(base_registry)) # Rename ScopedAlgorithms and remove old registries
+    funcs = update_instance.(oldsfuncs, Ref(base_registry)) # Rename ScopedAlgorithms and remove old registries
     pa_new = newfuncs(pa, funcs)
     return pa_new
 end
