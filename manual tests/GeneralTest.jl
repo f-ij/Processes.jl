@@ -97,7 +97,7 @@ benchmark(FibLuc, 1000000)
 # benchmark(FibLucComp, 1000000, loopfunction = Processes.typeloop, progress = true)
 
 
-# p, args = ex_p_and_args(FibLucComp, 1000000, loopfunction = unrollloop)
+# p, context = ex_p_and_context(FibLucComp, 1000000, loopfunction = unrollloop)
 # (;lifetime) = args
 
 # import Processes: _comp_dispatch, gethead, gettail, get_intervals, headval, get_funcs, typeheadval, typetail

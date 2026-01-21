@@ -12,7 +12,7 @@ function start(p::Process; prevent_hanging = true, threaded = true)
         unpause(p; threaded)
     else # If not paused, then start from scratch
         reset!(p)
-        preparedata!(p)
+        # preparedata!(p)
         spawntask!(p; threaded)
     end
 
@@ -81,9 +81,9 @@ Redefine task without preparing again
 function unpause(p::Process; threaded = true)
     @atomic p.run = true
     if threaded
-        p.task = spawntask(p, getfunc(p), getargs(p), runtimelisteners(p))
+        p.task = spawntask(p, getfunc(p), getcontext(p), runtimelisteners(p))
     else
-        p.task = @async runtask(p, getfunc(p), getargs(p), runtimelisteners(p))
+        p.task = @async runtask(p, getfunc(p), getcontext(p), runtimelisteners(p))
     end
     return true
 end
@@ -91,7 +91,7 @@ end
 """
 Pause, re-prepare and unpause a process
 This is useful mostly for processes that run indefinitely,
-where the args prepared are computed properties of the args.
+where the prepared context is computed from the input context.
 
 This will cause the computed properties to re-compute. 
 This may be used also to levarge the dispatch system, if the types of the data change
@@ -108,18 +108,18 @@ end
 """
 Close and restart a process
 """
-function restart(p::Process; args...)
+function restart(p::Process; context...)
     @assert !isnothing(p.taskdata) "No task to run"
     
-    if !isempty(args)
-        changeargs!(p, args...)
+    if !isempty(context)
+        changecontext!(p, context...)
     end
 
     #Acquire spinlock so that process can not be started twice
     return lock(p.lock) do 
         close(p)
         
-        if timedwait(p, p.taskdata.timeout)
+        if timedwait(p, p.timeout)
             start(p)
             return true
         else

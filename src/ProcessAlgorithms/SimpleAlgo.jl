@@ -81,7 +81,7 @@ function unroll_funcs(sf::SimpleAlgo, a_idx, funcs::T, args) where T<:Tuple
         return args
     end
     if a_idx == sf.inc # For pausing/resuming
-        returnval = @inline namedstep!(gethead(funcs), args)
+        returnval = @inline step!(gethead(funcs), args)
         inc!(sf)
     end
     args = mergeargs(args, returnval)
@@ -111,3 +111,24 @@ end
 
 multipliers(sa::SimpleAlgo) = ntuple(_ -> 1, length(sa))
 multipliers(::Type{<:SimpleAlgo{FT}}) where FT = ntuple(_ -> 1, length(FT.parameters))
+
+function Base.show(io::IO, sa::SimpleAlgo)
+    println(io, "SimpleAlgo")
+    funcs = sa.funcs
+    if isempty(funcs)
+        print(io, "  (empty)")
+        return
+    end
+    limit = get(io, :limit, false)
+    for (idx, thisfunc) in enumerate(funcs)
+        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
+        lines = split(func_str, '\n')
+        print(io, "  | ", lines[1])
+        for line in Iterators.drop(lines, 1)
+            print(io, "\n  | ", line)
+        end
+        if idx < length(funcs)
+            print(io, "\n")
+        end
+    end
+end

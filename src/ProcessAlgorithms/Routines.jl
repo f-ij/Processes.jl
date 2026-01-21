@@ -10,7 +10,7 @@ struct Routine{T, Repeats, NT, NSR} <: ComplexLoopAlgorithm
     registry::NSR
 end
 
-update_instance(ca::Routine{T,R, NT}, ::Any) where {T,R, NT} = Routine{T, R, NT, Nothing}(ca.funcs, ca.incs, ca.flags, nothing)
+update_instance(ca::Routine{T,R, NT}, ::NameSpaceRegistry) where {T,R, NT} = Routine{T, R, NT, Nothing}(ca.funcs, ca.incs, ca.flags, nothing)
 
 
 function Routine(funcs...; repeats::NTuple{N, Real} = ntuple(x -> 1, length(funcs)), flags...) where {N}
@@ -29,11 +29,9 @@ function Routine(funcs...; repeats::NTuple{N, Real} = ntuple(x -> 1, length(func
     end
 
     registries = getregistry.(allfuncs)
-    registries = scale_multipliers.(registries, multipliers)
-    # Merging registries pairwise so replacement direction is explicit
-    for subregistry in registries
-        registry = merge(registry, subregistry)
-    end
+    # return registry, registries[1]
+    registry = inherit(registry, registries...; multipliers)
+    # return registry
     # Updating names downwards (each branch only needs its own replacements)
     allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
     
@@ -79,46 +77,69 @@ Routines unroll their subroutines and execute them in order.
     @inline unroll_subroutines(r, r.funcs, get_incs(r), args)
 end
 
-function unroll_subroutines(@specialize(r::Routine), @specialize(funcs), start_idxs, args)
+function unroll_subroutines(r::R, context::C, funcs, start_idxs) where {R<:Routine, C<:AbstractContext}
     a_idx = 1
-    @inline _unroll_subroutines(r, gethead(funcs), a_idx, gettail(funcs), gethead(repeats(r)), gettail(repeats(r)), args,)
+    @inline _unroll_subroutines(r, context, gethead(funcs), a_idx, gettail(funcs), gethead(repeats(r)), gettail(repeats(r)))
 end
 
-@inline function _unroll_subroutines(r::Routine, a_idx, func::F, tail, this_repeat, repeats, args) where F
-    (;proc) = args
+@inline function _unroll_subroutines(r::Routine, context::C, a_idx, func::F, tail, this_repeat, repeats) where {F, C<:AbstractContext}
+    (;proc) = getglobal(context)
     if isnothing(func)
         reset!(r)
-        return args
+        return context
     else
         a_idx = args.algoidx
         start = r.incs[a_idx]
         for i in start:this_repeat
             if !run(proc)
-                return args
+                return context
             end
-            returnval = @inline step!(func, args)
-            args = mergeargs(args, returnval)
+            context = @inline step!(func, context)
             # @inline step!(func, args)
             inc!(r, a_idx)
             GC.safepoint()
         end
-        @inline _unroll_subroutines(r, a_idx + 1, gethead(tail), gettail(tail), gethead(repeats), gettail(repeats), args)
+        @inline _unroll_subroutines(r, context, a_idx + 1, gethead(tail), gettail(tail), gethead(repeats), gettail(repeats))
     end
 end
 
 
 #SHOWING
 
+# function Base.show(io::IO, r::Routine)
+#     indentio = NextIndentIO(io, VLine(), "Routine")
+#     rs = repeats(r)
+#     q_postfixes(indentio, ("\trepeating $rep time(s)" for rep in rs)...)
+#     for thisfunc in r.funcs
+#         if thisfunc isa CompositeAlgorithm || thisfunc isa Routine
+#             invoke(show, Tuple{IO, typeof(thisfunc)}, next(indentio), thisfunc)
+#         else
+#             invoke(show, Tuple{IndentIO, Any}, next(indentio), thisfunc)
+#             # show(next(indentio), thisfunc)
+#         end
+#     end
+# end
+
 function Base.show(io::IO, r::Routine)
-    indentio = NextIndentIO(io, VLine(), "Routine")
-    rs = repeats(r)
-    q_postfixes(indentio, ("\trepeating $rep time(s)" for rep in rs)...)
-    for thisfunc in r.funcs
-        if thisfunc isa CompositeAlgorithm || thisfunc isa Routine
-            invoke(show, Tuple{IO, typeof(thisfunc)}, next(indentio), thisfunc)
-        else
-            invoke(show, Tuple{IndentIO, Any}, next(indentio), thisfunc)
-            # show(next(indentio), thisfunc)
+    println(io, "Routine")
+    funcs = r.funcs
+    if isempty(funcs)
+        print(io, "  (empty)")
+        return
+    end
+    reps = repeats(r)
+    limit = get(io, :limit, false)
+    for (idx, thisfunc) in enumerate(funcs)
+        rep = reps[idx]
+        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
+        lines = split(func_str, '\n')
+        suffix = " (repeats " * string(rep) * " time(s))"
+        print(io, "  [", idx, "] ", lines[1], suffix)
+        for line in Iterators.drop(lines, 1)
+            print(io, "\n  ", line)
+        end
+        if idx < length(funcs)
+            print(io, "\n")
         end
     end
 end

@@ -14,66 +14,66 @@ function before_while(ip::InlineProcess)
     set_starttime!(ip)
 end
 
-function after_while(p::AbstractProcess, args)
+function after_while(p::AbstractProcess, func::F, context) where {F}
     set_endtime!(p)
     _runtimelisteners = runtimelisteners(p)
     close(_runtimelisteners)
     close.(get_linked_processes(p)) # TODO OBSOLETE?
     if !run(p) || lifetime(p) isa Indefinite # If user interrupted, or lifetime is indefinite
-        return args
+        return context
     else
-        # return cleanup(getfunc(p), args)
-        return cleanup(p)
+        # return cleanup(getfunc(p), context)
+        return cleanup(func, context)
     end
 end
 
-function after_while(ip::InlineProcess, args)
+function after_while(ip::InlineProcess, func::F, context) where {F}
     set_endtime!(ip)
-    return cleanup(ip)
+    return cleanup(func, context)
 end
 
-cleanup(::Any, args) = args
+cleanup(::Any, context) = (;)
 
 
 """
 Run a single function in a loop indefinitely
 """
-function processloop(p::AbstractProcess, func::F, args::As, ::Indefinite) where {F, As}
+function processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
     @static if DEBUG_MODE
         println("Running process loop indefinitely from thread $(Threads.threadid())")
     end
 
-    before_while(p)
-    while run(p) 
-        # returnval = @inline step!(func, args)
-        # args = mergeargs(args, returnval)
-        returnval = @inline step!(func, args)
-        args = mergeargs(args, returnval)
+    @inline before_while(p)
+    while run(p)
+        context = @inline step!(func, context)
         inc!(p) 
-        GC.safepoint()
+        if isthreaded(p) || isasync(p)
+            GC.safepoint()
+        end
     end
-    return after_while(p, args)
+    return @inline after_while(p, func, context)
 end
 
 """
 Run a single function in a loop for a given number of times
 """
-function processloop(p::AbstractProcess, func::F, args::As, r::Repeat) where {F, As}
+function processloop(p::AbstractProcess, func::F, context::C, r::Repeat) where {F, C}
     @static if DEBUG_MODE
         println("Running process loop for $repeats times from thread $(Threads.threadid())")
     end
-    before_while(p)
+    @inline before_while(p)
     for _ in loopidx(p):repeats(r)
         if !run(p)
             break
         end
-        # returnval = @inline step!(func, args)
-        # args = mergeargs(args, returnval)
-        @inline namedstep!(func, args)
+        context = @inline step!(func, context)
         inc!(p)
-        GC.safepoint()
+
+        if isthreaded(p) || isasync(p)
+            GC.safepoint()
+        end
     end
-    return after_while(p, args)
+    return @inline after_while(p, func, context)
 end
 
 

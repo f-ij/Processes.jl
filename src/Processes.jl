@@ -1,7 +1,7 @@
 module Processes
     const modulefolder = @__DIR__
 
-    export getargs, Process, start, quit
+    export getcontext, Process, start, quit
 
     using UUIDs, Preferences, JLD2, MacroTools, StaticArrays
     import Base: Threads.SpinLock, lock, unlock
@@ -13,6 +13,9 @@ module Processes
     abstract type ProcessLoopAlgorithm <: ProcessAlgorithm end # Algorithms that can be inlined in processloop
     abstract type ComplexLoopAlgorithm <: ProcessLoopAlgorithm end # Algorithms that have multiple functions and intervals
 
+    abstract type AbstractContext end
+    abstract type AbstractSubContext end
+
     export ProcessAlgorithm
 
     const DEBUG_MODE = @load_preference("debug", false)
@@ -22,6 +25,7 @@ module Processes
     end
 
     include("Functions.jl")
+    include("Unroll.jl")
     include("Printing.jl")
     include("ExpressionTools.jl")
 
@@ -30,8 +34,14 @@ module Processes
     include("Arena.jl")
     # @ForwardDeclare Process ""
     # struct Process end
-    include("AbstractProcesses.jl")
+
     
+
+    include("AbstractProcesses.jl")
+    include("Scoped/Scoped.jl")
+    include("Registry/Registry.jl")
+    include("Context/Context.jl")
+
     include("Lifetime.jl")
     include("TaskDatas.jl")
     include("Prepare.jl")
@@ -41,6 +51,7 @@ module Processes
     include("Debugging.jl")
     include("Listeners.jl")
     include("Process.jl")
+
     include("InlineProcess.jl")
 
     include("ProcessStatus.jl")

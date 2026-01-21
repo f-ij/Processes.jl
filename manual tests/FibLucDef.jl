@@ -39,8 +39,8 @@ function NaiveFibluc(num, trials = 100)
         luclist = Int[2, 1]
         fiblist = Int[0, 1]
 
-        sizehint!(fiblist, num)
-        sizehint!(luclist, num)
+        sizehint!(fiblist, num+2)
+        sizehint!(luclist, num+2)
         t1 = time_ns()
         for iteration in 1:num
             push!(fiblist, fiblist[end] + fiblist[end-1])

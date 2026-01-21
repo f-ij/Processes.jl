@@ -6,18 +6,19 @@ Use within prepare function
 For a process with a limited lifetime,
 give the array a size hint based on the lifetime and the number of updates per step.
 """
-@inline function processsizehint!(args, array, updates_per_step = 1)
-    if !haskey(args, :_instance) || !haskey(args, :lifetime)
+@inline function processsizehint!(context, array, updates_per_step = 1)
+    if !(context isa AbstractContext)
         @warn("Cannot give a sizehint, prepare is not called from a process")
         return nothing
     end
 
-    lifetime = args.lifetime
+    globals = getglobal(context)
+    lifetime = globals.lifetime
     if lifetime isa Indefinite
         return sizehint!(array, 2^16)
     end
 
-    multiplier = getmultiplier(args.algo, args._instance)
+    multiplier = getmultiplier(globals.algo, this_instance(context))
     startsize = length(array)
 
     recommended_extra = ceil(Int, repeats(lifetime)*multiplier*updates_per_step)
@@ -63,41 +64,35 @@ function num_calls(args)
 end
 
 """
-Routines will call inc! multuple times per loop
-"""
-function inc_multiplier(pa::ProcessAlgorithm)
-    if pa isa Routine
-        return sum(repeats(pa))
-    else 
-        return 1
-    end
-end
-
-"""
 Gives the maximum loop index for a process
 """
 function maximum_loopidx(p::Process)
-    return repeats(p)*inc_multiplier(getfunc(p))
-end
-
-"""
-Get the allocator directly from the args
-"""
-getallocator(args) = getallocator(args.proc)
-function newallocator(args)
-    if haskey(args, :algotracker)
-        if algoidx(args.algotracker) == 1
-            return args.proc.allocator = Arena()
-        else
-            return getallocator(args)
-        end
-    end
+    return repeats(p)
 end
 
 """
 Get the current loop index for a process
 """
 loopidx(args::NamedTuple) = loopidx(args.proc)
+
+"""
+TODO: Replace this
+"""
+algo_call_number(args) = loopidx(args.globalargs.proc) ÷ args.globalargs.interval
+export algo_call_number
+# """
+# Get the allocator directly from the args
+# """
+# getallocator(args) = getallocator(args.proc)
+# function newallocator(args)
+#     if haskey(args, :algotracker)
+#         if algoidx(args.algotracker) == 1
+#             return args.proc.allocator = Arena()
+#         else
+#             return getallocator(args)
+#         end
+#     end
+# end
 
 
 ####
@@ -196,3 +191,38 @@ macro hasarg(ex)
     return esc(hasarg_exp)
 end
 export @hasarg
+
+"""
+For a function that will return a viariable number of outputs
+    that is broadcasted over a variable number of inputs,
+    recursively splat the outputs in a tuple
+"""
+@inline function flat_collect_broadcast(f, elements::Tuple)
+    result = (f(gethead(elements))...,)
+    result = (result..., _flat_collect_broadcast(f, gettail(elements))...)
+end
+
+@inline function _flat_collect_broadcast(f, elements::Tuple)
+    if isempty(elements)
+        return ()
+    end
+    return (f(gethead(elements))..., _flat_collect_broadcast(f, gettail(elements))...)
+end
+
+
+"""
+For a function that will return a viariable number of outputs
+    that is broadcasted over a variable number of inputs,
+    recursively splat the outputs in a tuple
+"""
+@inline function named_flat_collect_broadcast(f, elements::Tuple)
+    result = (;f(gethead(elements))...,)
+    result = (;result..., _named_flat_collect_broadcast(f, gettail(elements))...)
+end
+
+@inline function _named_flat_collect_broadcast(f, elements::Tuple)
+    if isempty(elements)
+        return (;)
+    end
+    return (;f(gethead(elements))..., _named_flat_collect_broadcast(f, gettail(elements))...)
+end

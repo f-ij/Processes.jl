@@ -1,17 +1,6 @@
 include("FibLucDef.jl")
+import Processes as ps
 
-FibLuc = Routine(CompositeAlgorithm( (Fib, Luc), (1,1) ), CompositeAlgorithm( (Fib, Luc), (1,2) ), repeats = (20,30))
-# FibLuc = CompositeAlgorithm( (Fib, Luc), (1,1) )
-FL = CompositeAlgorithm( (Fib, Luc), (1,1) )
-# p = Process(FibLuc; lifetime = 1000000)
-
-# preparedata!(p)
-
-# benchmark(FibLuc, 1000000, print_outer = true)
-
-# NaiveFibluc(1000000)
-
-
-# @generated function errortype(t::Type{T}) where {T}
-#     error(T)
-# end
+FibLuc = CompositeAlgorithm( (Fib, Luc), (1,1) )
+p = Process( FibLuc; lifetime = 1000000)
+benchmark(FibLuc, 1000000)

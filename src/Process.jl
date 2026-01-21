@@ -2,8 +2,9 @@ export Process, getallocator, getnewallocator
 
 mutable struct Process{F} <: AbstractProcess
     id::UUID
-    args::NamedTuple
+    context::AbstractContext
     taskdata::TaskData{F}
+    timeout::Float64
     task::Union{Nothing, Task}
     loopidx::UInt   
     # To make sure other processes don't interfere
@@ -20,7 +21,7 @@ end
 
 export Process
 
-function Process(func; lifetime = Indefinite(), overrides = (;), args...)
+function Process(func; lifetime = Indefinite(), overrides = (;), timeout = 1.0, context...)
     
     if lifetime isa Integer
         lifetime = Repeat(lifetime)
@@ -36,21 +37,23 @@ function Process(func; lifetime = Indefinite(), overrides = (;), args...)
     #     func = SimpleAlgo(func)
     # end
 
-    # tf = TaskData(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt, 1.)
-    tf = TaskData(func; lifetime, overrides, args...)
-    p = Process(uuid1(), (;), tf, nothing, UInt(1), Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), 0)
+    # tf = TaskData(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt)
+    td = TaskData(func; lifetime, overrides, context...)
+    context = init_context(td)
+    context = prepare_context(td, context)
+    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), 0)
     register_process!(p)
     @static if DEBUG_MODE
         println("Created process with id $(p.id), now preparing data")
     end
-    preparedata!(p)
+    
     finalizer(remove_process!, p)
     return p
 end
 
-function Process(func, repeats::Int; overrides = (;), args...) 
+function Process(func, repeats::Int; overrides = (;), timeout = 1.0, context...) 
     lifetime = repeats == 0 ? Indefinite() : Repeat(repeats)
-    return Process(func; lifetime, overrides, args...)
+    return Process(func; lifetime, overrides, timeout, context...)
 end
 
 import Base: ==
@@ -58,20 +61,20 @@ import Base: ==
 
 getallocator(p::Process) = p.allocator
 
-getinputargs(p::Process) = p.taskdata.args
-function getargs(p::Process)
+getinputcontext(p::Process) = p.taskdata.inputargs
+function getcontext(p::Process)
     if !isdone(p)   
-        return p.args
+        return p.context
     else
         try
             return fetch(p)
-        catch # if error state, just return args
-            return p.args
+        catch # if error state, just return context
+            return p.context
         end
     end
 end
-getargs(p::Process, args) = getargs(p)[args]
-setargs!(p::Process, args::NamedTuple) = (p.args = args)
+getcontext(p::Process, context) = getcontext(p)[context]
+setcontext!(p::Process, context::NamedTuple) = (p.context = context)
 lifetime(p::Process) = p.taskdata.lifetime
 
 set_starttime!(p::Process) = p.starttime = time_ns()
@@ -80,6 +83,8 @@ reset_times!(p::Process) = (p.starttime = nothing; p.endtime = nothing)
 
 runtimelisteners(::Any) = nothing
 runtimelisteners(p::Process) = p.rls
+
+istheaded(p::Process) = true
 
 """
 different loopfunction can be passed to the process through overrides
@@ -126,6 +131,8 @@ end
 
 function createfrom!(p1::Process, p2::Process)
     p1.taskdata = p2.taskdata
+    p1.timeout = p2.timeout
+    p1.context = p2.context
     preparedata!(p1)
 end
 
@@ -160,6 +167,8 @@ function timedwait(p, timeout = wait_timeout)
     return isdone(p)
 end
 
+# timeout(p::Process) = p.timeout
+
 export newprocess
 
 """
@@ -169,11 +178,12 @@ function spawntask!(p::Process; threaded = true)
     @atomic p.paused = false
     @atomic p.run = true
 
-    actual_args = (;proc = p, p.args..., overrides(p)...)
+    context = merge_into_globals(p.context, (;process = p))
+
     if threaded
-        p.task = spawntask(p, p.taskdata.func, actual_args, lifetime(p))
+        p.task = spawntask(p, p.taskdata.func, context, lifetime(p))
     else
-        p.task = @async runloop(p, p.taskdata.func, actual_args, lifetime(p))
+        p.task = @async runloop(p, p.taskdata.func, context, lifetime(p))
     end
     return p
 end
@@ -198,14 +208,7 @@ Set value of run of a process, denoting wether it should run or not
 """
 run(p::Process, val) = @atomic p.run = val
 
-"""
-Increments the loop index of a process
-"""
-function changeargs!(p::Process; args...)
-    p.taskdata = editargs(p.taskdata; args...)
-end
-
-export changeargs!
+export changecontext!
 
 ## Running
 

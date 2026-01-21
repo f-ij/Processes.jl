@@ -6,7 +6,7 @@ function benchmark(func, rt, trials = 100; loopfunction = nothing, progress = fa
         if progress
             println("Trial $t_idx")
         end
-        preparedata!(p)
+        makecontext!(p)
         ti = time_ns()
         p()
         wait(p)
