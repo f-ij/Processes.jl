@@ -630,3 +630,21 @@ end
 #     end
 # end
 
+
+"""
+Replace a field in a struct by name and return a new instance
+"""
+@inline setproperty(val::V, name::Symbol, value, custom_constructor = nothing) where {V} = setproperty(val, Val(name), value, custom_constructor)
+@generated function setproperty(val::V, name::Val{s}, value, custom_constructor = nothing) where {V,s}
+    fieldnames = Base.fieldnames(V)
+    constructor = nothing
+    if custom_constructor <: Nothing
+        constructor = nameof(V)
+    else
+        constructor = :custom_constructor
+    end
+     
+    exp = Expr(:call, constructor, [field != s ? :(val.$(field)) : :(value) for field in fieldnames]...)
+    return exp
+end
+

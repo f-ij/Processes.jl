@@ -21,7 +21,7 @@ end
 
 export Process
 
-function Process(func; lifetime = Indefinite(), overrides = (;), timeout = 1.0, context...)
+function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1.0)
     
     if lifetime isa Integer
         lifetime = Repeat(lifetime)
@@ -33,12 +33,19 @@ function Process(func; lifetime = Indefinite(), overrides = (;), timeout = 1.0, 
         end
     end
 
+    inputs = filter(x -> x isa Input, inputs_overrides)
+    overrides = filter(x -> x isa Override, inputs_overrides)
+
+    named_inputs = to_named.(Ref(getregistry(func)), inputs)
+    named_overrides = to_named.(Ref(getregistry(func)), overrides)
+
     # if !(func isa ProcessLoopAlgorithm)
     #     func = SimpleAlgo(func)
     # end
 
     # tf = TaskData(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt)
-    td = TaskData(func; lifetime, overrides, context...)
+    td = TaskData(func; lifetime, overrides = named_overrides, inputs = named_inputs)
+
     context = init_context(td)
     context = prepare_context(td, context)
     p = Process(uuid1(), context, td, timeout, nothing, UInt(1), Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), 0)
@@ -84,7 +91,7 @@ reset_times!(p::Process) = (p.starttime = nothing; p.endtime = nothing)
 runtimelisteners(::Any) = nothing
 runtimelisteners(p::Process) = p.rls
 
-istheaded(p::Process) = true
+isthreaded(p::Process) = true
 
 """
 different loopfunction can be passed to the process through overrides

@@ -3,12 +3,12 @@ Struct with all information to create the function within a process
 """
 struct TaskData{F, As, Or, Lt}
     func::F
-    inputargs::As # Input context as the process is created
+    inputs::As # Input context as the process is created
     overrides::Or # Given as kwargs
     lifetime::Lt
 end
 
-function TaskData(algo; overrides::NamedTuple = (;), lifetime = Indefinite(), context...)
+function TaskData(algo; overrides = tuple(), inputs = tuple(), lifetime = Indefinite())
     @static if DEBUG_MODE
         println("Algo: $algo")
     end
@@ -16,24 +16,24 @@ function TaskData(algo; overrides::NamedTuple = (;), lifetime = Indefinite(), co
         algo = algo()
     end
     # TaskData(algo, args, (;), overrides, lifetime, Ref(true))
-    TaskData(algo, context, overrides, lifetime)
+    TaskData(algo, inputs, overrides, lifetime)
 end
 
 getfunc(td::TaskData) = td.func
-getinputargs(td::TaskData) = td.inputargs
+getinputs(td::TaskData) = td.inputs
 getoverrides(td::TaskData) = td.overrides
 getlifetime(td::TaskData) = td.lifetime
 
 
 function newfunc(tf::TaskData, func)
-    TaskData(func, tf.inputargs, tf.overrides, tf.lifetime)
+    TaskData(func, tf.inputs, tf.overrides, tf.lifetime)
 end
 
 # """
 # Overwrite the old input context with the new context
 # """
 # function editcontext(tf::TaskData; context...)
-#     TaskData(tf.func, (;tf.inputargs..., context...), tf.overrides, tf.lifetime)
+#     TaskData(tf.func, (;tf.inputs..., context...), tf.overrides, tf.lifetime)
 # end
 
 function preparedcontext(tf::TaskData, context)
@@ -48,7 +48,7 @@ function sametask(t1,t2)
     checks = (t1.func == t2.func,
     # t1.prepare == t2.prepare,
     # t1.cleanup == t2.cleanup,
-    t1.inputargs == t2.inputargs,
+    t1.inputs == t2.inputs,
     t1.overrides == t2.overrides,
     t1.lifetime == t2.lifetime)
     return all(checks)

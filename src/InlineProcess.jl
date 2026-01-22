@@ -51,7 +51,7 @@ function (p::InlineProcess)()
     algo = p.taskdata.func
     context = p.context
     p.loopidx = 1
-    runtime_context = @inline merge_into_globals(context, (;proc = p))
+    runtime_context = @inline merge_into_globals(context, (;process = p))
 
     if isthreaded(p)
         return Threads.@spawn processloop(p, algo, runtime_context, lifetime(p))

@@ -76,8 +76,8 @@ end
 
 function unroll_funcs(sf::SimpleAlgo, a_idx, funcs::T, args) where T<:Tuple
     returnval = nothing
-    (;proc) = args
-    if !run(proc)
+    (;process) = args
+    if !run(process)
         return args
     end
     if a_idx == sf.inc # For pausing/resuming

@@ -186,6 +186,14 @@ function getmultiplier(reg::NameSpaceRegistry, val)
     return multiplier(entry)
 end
 
+function getname(reg::NameSpaceRegistry, val)
+    entry = static_lookup(reg, val)
+    if isnothing(entry)
+        return nothing
+    end
+    return getname(entry)
+end
+
 #######################
     ##### NAMES #####
 #######################

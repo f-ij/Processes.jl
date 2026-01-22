@@ -3,49 +3,65 @@ export Routine
 """
 Struct to create routines
 """
-struct Routine{T, Repeats, NT, NSR} <: ComplexLoopAlgorithm
+struct Routine{T, Repeats, MV, NSR, S, SV} <: ComplexLoopAlgorithm
     funcs::T
-    incs::MVector # Maybe remove this and make it computed from the process lidx
+    incs::MV
     flags::Set{Symbol}
     registry::NSR
+    shared_contexts::S
+    shared_vars::SV
 end
 
-update_instance(ca::Routine{T,R, NT}, ::NameSpaceRegistry) where {T,R, NT} = Routine{T, R, NT, Nothing}(ca.funcs, ca.incs, ca.flags, nothing)
+update_instance(ca::Routine{T,R, MV}, ::NameSpaceRegistry) where {T,R, MV} = Routine{T, R, MV, Nothing, Nothing, Nothing}(ca.funcs, ca.incs, ca.flags, nothing, nothing, nothing)
+getmultipliers_from_specification_num(::Type{<:Routine}, specification_num) = Float64.(specification_num)
+get_incs(r::Routine) = r.incs
 
 
-function Routine(funcs...; repeats::NTuple{N, Real} = ntuple(x -> 1, length(funcs)), flags...) where {N}
-    set = isempty(flags) ? Set{Symbol}() : Set(flags)
-    allfuncs = []
-    registry = NameSpaceRegistry()
-    multipliers = Float64.(repeats)
+function Routine(funcs::NTuple{N, Any}, 
+                            repeats::NTuple{N, Real} = ntuple(x -> 1, length(funcs)), 
+                            shares_and_routes::Union{Share, Route}...; 
+                            flags...) where {N}
 
-    for (func_idx, func) in enumerate(funcs)
-        if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
-            func = deepcopy(func)
-        else
-            registry, func = add_instance(registry, func, multipliers[func_idx])
-        end
-        push!(allfuncs, func)
-    end
+    (;functuple, flags, registry, shared_contexts, shared_vars) = setup(Routine, funcs, repeats, shares_and_routes...; flags...)
+    sidxs = MVector{length(functuple),Int}(ones(length(functuple)))
+    Routine{typeof(functuple), typeof(repeats), typeof(sidxs), typeof(registry), typeof(shared_contexts), typeof(shared_vars)}(functuple, sidxs, flags, registry, shared_contexts, shared_vars)
+end
 
-    registries = getregistry.(allfuncs)
-    # return registry, registries[1]
-    registry = inherit(registry, registries...; multipliers)
-    # return registry
-    # Updating names downwards (each branch only needs its own replacements)
-    allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
+                    
+
+# function Routine(funcs::NTuple{N, Any}, repeats::NTuple{N, Real} = ntuple(x -> 1, length(funcs)), shares_and_routes::Union{Share, Route}...; flags...) where {N}
+#     set = isempty(flags) ? Set{Symbol}() : Set(flags)
+#     allfuncs = []
+#     registry = NameSpaceRegistry()
+#     multipliers = Float64.(repeats)
+
+#     for (func_idx, func) in enumerate(funcs)
+#         if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
+#             func = deepcopy(func)
+#         else
+#             registry, func = add_instance(registry, func, multipliers[func_idx])
+#         end
+#         push!(allfuncs, func)
+#     end
+
+#     registries = getregistry.(allfuncs)
+#     # return registry, registries[1]
+#     registry = inherit(registry, registries...; multipliers)
+#     # return registry
+#     # Updating names downwards (each branch only needs its own replacements)
+#     allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
     
-    funcstuple = tuple(allfuncs...)
-    repeats = tuple(floor.(Int, repeats)...)
-    sidxs = MVector{length(funcstuple),Int}(ones(length(funcstuple)))
-    return Routine{typeof(funcstuple), repeats, typeof(sidxs), typeof(registry)}(funcstuple, sidxs, set, registry)
-end
+#     funcstuple = tuple(allfuncs...)
+#     repeats = tuple(floor.(Int, repeats)...)
+#     sidxs = MVector{length(funcstuple),Int}(ones(length(funcstuple)))
+#     return Routine{typeof(funcstuple), repeats, typeof(sidxs), typeof(registry), typeof(shares_and_routes)}(funcstuple, sidxs, set, registry, shares_and_routes)
+# end
 
 # Routine(r::Routine, funcs = r.funcs) = Routine(funcs, r.incs, flags = r.flags)
 # newfuncs(r::Routine, funcs) = Routine(funcs, r.incs, flags = r.flags)
 function newfuncs(r::Routine, funcs)
     nsr = NameSpaceRegistry(funcs)
-    Routine{typeof(funcs), repeats(r), typeof(r.incs), typeof(nsr)}(funcs, r.incs, r.flags, nsr)
+    Routine{typeof(funcs), repeats(r), typeof(r.incs), typeof(nsr), typeof(r.shared_contexts), typeof(r.shared_vars)}(funcs, r.incs, r.flags, nsr, r.shared_contexts, r.shared_vars)
 end
 
 subalgorithms(r::Routine) = r.funcs
@@ -65,7 +81,7 @@ getfuncs(r::Routine) = r.funcs
 inc!(r::Routine, idx) = r.incs[idx] += 1
 
 function reset!(r::Routine)
-    r.incs = MVector{length(r.funcs),Int}(ones(length(r.funcs)))
+    r.incs .= 1 
     reset!.(r.funcs)
 end
 
@@ -73,33 +89,32 @@ end
 """
 Routines unroll their subroutines and execute them in order.
 """
-@inline function step!(r::Routine, args::As) where {As<:NamedTuple}
-    @inline unroll_subroutines(r, r.funcs, get_incs(r), args)
+@inline function step!(r::Routine, context::C) where {C<:AbstractContext}
+    @inline unroll_subroutines(r, context, r.funcs)
 end
 
-function unroll_subroutines(r::R, context::C, funcs, start_idxs) where {R<:Routine, C<:AbstractContext}
-    a_idx = 1
-    @inline _unroll_subroutines(r, context, gethead(funcs), a_idx, gettail(funcs), gethead(repeats(r)), gettail(repeats(r)))
+function unroll_subroutines(r::R, context::C, funcs) where {R<:Routine, C<:AbstractContext}
+    unroll_idx = 1
+    @inline _unroll_subroutines(r, context, unroll_idx, gethead(funcs), gettail(funcs), gethead(repeats(r)), gettail(repeats(r)))
 end
 
-@inline function _unroll_subroutines(r::Routine, context::C, a_idx, func::F, tail, this_repeat, repeats) where {F, C<:AbstractContext}
-    (;proc) = getglobal(context)
+@inline function _unroll_subroutines(r::Routine, context::C, unroll_idx, func::F, tail, this_repeat, repeats) where {F, C<:AbstractContext}
+    (;process) = getglobal(context)
     if isnothing(func)
         reset!(r)
         return context
     else
-        a_idx = args.algoidx
-        start = r.incs[a_idx]
+        start = r.incs[unroll_idx]
         for i in start:this_repeat
-            if !run(proc)
+            if !run(process)
                 return context
             end
             context = @inline step!(func, context)
             # @inline step!(func, args)
-            inc!(r, a_idx)
+            inc!(r, unroll_idx)
             GC.safepoint()
         end
-        @inline _unroll_subroutines(r, context, a_idx + 1, gethead(tail), gettail(tail), gethead(repeats), gettail(repeats))
+        @inline _unroll_subroutines(r, context, unroll_idx + 1, gethead(tail), gettail(tail), gethead(repeats), gettail(repeats))
     end
 end
 

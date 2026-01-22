@@ -3,15 +3,15 @@ struct StartCloseListener{F}
     procAbstractProcess
     weak::Bool
     type::Symbol
-    function StartCloseListener(f, proc, type, weak = false)
-        sl = new{typeof(f)}(f, proc, weak)
+    function StartCloseListener(f, process, type, weak = false)
+        sl = new{typeof(f)}(f, process, weak)
         weak && finalizer(off, sl)
         return sl
     end
 end
 
-StartListener(f, proc) = StartCloseListener(f, proc, :start)
-CloseListener(f, proc) = StartCloseListener(f, proc, :close)
+StartListener(f, process) = StartCloseListener(f, process, :start)
+CloseListener(f, process) = StartCloseListener(f, process, :close)
 
 function _exec_listeners(head, fs)
     if isnothing(fs)
@@ -35,24 +35,24 @@ Base.close(rl::RuntimeListeners) = _exec_listeners(gethead(rl.close), gettail(rl
 RuntimeListeners() = RuntimeListeners((), ())
 
 function on(f, ::typeof(start), procAbstractProcess)
-    sl = StartListener(f, proc)
-    runtimelisteners = proc.rl
+    sl = StartListener(f, process)
+    runtimelisteners = process.rl
     newstart = (f, runtimelisteners.start...)
-    proc.rl = RuntimeListeners(newstart, runtimelisteners.close)
+    process.rl = RuntimeListeners(newstart, runtimelisteners.close)
     return sl
 end
 
 function on(f, ::typeof(close), procAbstractProcess)
-    sl = CloseListener(f, proc)
-    runtimelisteners = proc.rl
+    sl = CloseListener(f, process)
+    runtimelisteners = process.rl
     newclose = (f, runtimelisteners.close...)
-    proc.rl = RuntimeListeners(runtimelisteners.start, newclose)
+    process.rl = RuntimeListeners(runtimelisteners.start, newclose)
     return sl
 end
 
 function off(sl::StartCloseListener)
-    proc = sl.proc
-    runtimelisteners = proc.rl
+    process = sl.process
+    runtimelisteners = process.rl
     type = sl.type
     newstarts = runtimelisteners.start
     newcloses = runtimelisteners.close
@@ -62,5 +62,5 @@ function off(sl::StartCloseListener)
         newcloses = filter(x -> x != sl, newcloses)
     end
 
-    proc.rl = RuntimeListeners(newstarts, newcloses)
+    process.rl = RuntimeListeners(newstarts, newcloses)
 end

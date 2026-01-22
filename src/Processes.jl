@@ -44,6 +44,7 @@ module Processes
 
     include("Lifetime.jl")
     include("TaskDatas.jl")
+    include("InputInterface.jl")
     include("Prepare.jl")
     include("Running.jl")
     include("TriggerList.jl")

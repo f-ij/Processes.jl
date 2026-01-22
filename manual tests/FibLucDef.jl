@@ -7,9 +7,9 @@ using Processes
     return (;)
 end
 
-function Processes.prepare(::Fib, args)
+function Processes.prepare(::Fib, context)
     fiblist = Int[0, 1]
-    processsizehint!(args, fiblist)
+    processsizehint!(fiblist, context)
     return (;fiblist)
 end
 
@@ -18,9 +18,9 @@ end
     return (;)
 end
 
-function Processes.prepare(::Luc, args)
+function Processes.prepare(::Luc, context)
     luclist = Int[2, 1]
-    processsizehint!(args, luclist)
+    processsizehint!(luclist,context)
     return (;luclist)
 end
 

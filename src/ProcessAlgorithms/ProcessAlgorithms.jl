@@ -1,14 +1,14 @@
 include("Utils.jl")
-# include("Scoped/ScopedAlgorithms.jl")
+include("ComplexLoopAlgorithms.jl")
 include("SimpleAlgo.jl")
 include("CompositeAlgorithms.jl")
 include("Routines.jl")
+include("Setup.jl")
 include("Prepare.jl")
+include("Showing.jl")
+
 
 export getname, step!, @ProcessAlgorithm, @NamedProcessAlgorithm, prepare
-getmultiplier(cla::ComplexLoopAlgorithm, obj) = getmultiplier(getregistry(cla), obj)
-getname(cla::ComplexLoopAlgorithm, obj) = getname(getregistry(cla), obj)
-get_sharedspecs(cla::CompositeAlgorithm) = cla.shared_specs
 
 """
 Macro to define a ProcessAlgorithm from a function definition.
