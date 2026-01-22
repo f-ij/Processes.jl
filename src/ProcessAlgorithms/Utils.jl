@@ -6,9 +6,6 @@ function replace_name!(pa::ComplexLoopAlgorithm, idx, newname::Symbol)
     pa.names = newnames
 end
 
-getregistry(pa::ComplexLoopAlgorithm) = pa.registry
-getregistry(a::Any) = NameSpaceRegistry()
-
 get_registry(pa::ComplexLoopAlgorithm) = pa.registry
 get_registry(a::Any) = NameSpaceRegistry()
 

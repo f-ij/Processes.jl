@@ -16,10 +16,11 @@ struct NamedInput{Name, NT}
     vars::NT
 end
 
-function Input(target_algo::T, pairs::Pair{Symbol,<:Any}...) where {T}
-    nt = (;pairs...)
+function Input(target_algo::T, pairs::Pair{Symbol,<:Any}...; kwargs...) where {T}
+    nt = (;pairs..., kwargs...)
     Input{T, typeof(nt)}(target_algo, nt)
 end
+
 
 function NamedInput{Name}(vars::NT) where {Name, NT}
     NamedInput{Name, NT}(vars)
@@ -37,8 +38,8 @@ struct NamedOverride{Name, NT}
     vars::NT
 end
 
-function Override(target_algo::T, pairs::Pair{Symbol,<:Any}...) where {T}
-    nt = (;pairs...)
+function Override(target_algo::T, pairs::Pair{Symbol,<:Any}...; kwargs...) where {T}
+    nt = (;pairs..., kwargs...)
     Override{T, typeof(nt)}(target_algo, nt)
 end
 

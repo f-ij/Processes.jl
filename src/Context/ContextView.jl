@@ -1,6 +1,22 @@
 #######################
 ### SUBCONTEXT VIEW ###
 #######################
+
+"""
+Go from a local variable to the location in the full context
+Type can be
+    - :local
+    - :shared
+    - :routed
+"""
+struct VarLocation{Type, subcontextname, originalname} end
+VarLocation{Type}(subcontextname::Symbol, originalname::Symbol) where {Type} = VarLocation{Type, subcontextname, originalname}()
+VarLocation(type, subcontextname::Symbol, originalname::Symbol) = VarLocation{type, subcontextname, originalname}()
+
+@inline get_subcontextname(vl::Union{VarLocation{T, SCN, ON}, Type{<:VarLocation{T, SCN, ON}}}) where {T, SCN, ON} = SCN
+@inline get_originalname(vl::Union{VarLocation{T, SCN, ON}, Type{<:VarLocation{T, SCN, ON}}}) where {T, SCN, ON} = ON
+
+
 struct SubContextView{CType, SubName, T} <: AbstractContext
     context::CType
     instance::T # instance for which the view is created
@@ -66,18 +82,28 @@ end
 
 
 Base.@constprop :aggressive function Base.getproperty(sct::SubContextView, vl::VarLocation)
-    subcontext = @inline getproperty(getcontext(sct), vl.subcontextname)
-    return @inline getproperty(subcontext, vl.originalname)
+    subcontext = @inline getproperty(getcontext(sct), get_subcontextname(vl))
+    return @inline getproperty(subcontext, get_originalname(vl))
 end
 
 Base.@constprop :aggressive function Base.getproperty(sct::SubContextView{CType, SubName}, name::Symbol) where {CType, SubName}
     locations = get_all_locations(sct)
     if hasproperty(locations, name)
         vl = getproperty(locations, name)
-        subcontext = @inline getproperty(getcontext(sct), vl.subcontextname)
-        return @inline getproperty(subcontext, vl.originalname)
+        subcontext = @inline getproperty(getcontext(sct), get_subcontextname(vl))
+        return @inline getproperty(subcontext, get_originalname(vl))
     else
         error("Trying to access unknown variable $(name) from SubContextView $(SubName)")
+    end
+end
+
+@inline function Base.iterate(scv::SubContextView, state = 1)
+    locations = @inline get_all_locations(scv)
+    _keys = keys(locations)
+    if state > length(_keys)
+        return nothing
+    else
+        return ((_keys[state], getproperty(scv, getproperty(locations, _keys[state]))), state + 1)
     end
 end
 
@@ -87,8 +113,13 @@ Get the type of the original subcontext from the view
 @inline subcontext_type(scv::SubContextView{CType, SubName}) where {CType<:ProcessContext, SubName} = subcontext_type(CType, SubName)
 @inline subcontext_type(scvt::Type{<:SubContextView{CType, SubName}}) where {CType<:ProcessContext, SubName} = subcontext_type(CType, SubName)
 
-@inline Base.keys(scv::SubContextView) = propertynames(get_all_locations(scv))
-@inline Base.propertynames(scv::SubContextView) = propertynames(get_all_locations(scv))
+@inline Base.keys(scv::SubContextView) = propertynames(@inline get_all_locations(scv))
+@inline Base.propertynames(scv::SubContextView) = propertynames(@inline get_all_locations(scv))
+
+@inline function Base.haskey(scv::SubContextView, name::Symbol)
+    locations = @inline get_all_locations(scv)
+    return hasproperty(locations, name)
+end
 
 """
 Returns a merged context by merging the provided named tuple into the appropriate subcontexts
@@ -125,7 +156,7 @@ Returns a merged context by merging the provided named tuple into the appropriat
 #         return newcontext
 #     end
 # end
-@generated function Base.merge(scv::SubContextView{CType, SubName}, args::NamedTuple) where {CType<:ProcessContext, SubName}
+@inline @generated function Base.merge(scv::SubContextView{CType, SubName}, args::NamedTuple) where {CType<:ProcessContext, SubName}
     # this_subcontext = subcontext_type(scv)
     keys_to_merge = fieldnames(args)
     
@@ -143,8 +174,9 @@ Returns a merged context by merging the provided named tuple into the appropriat
             
             push!(merge_expressions_by_subcontext[target_subcontext], 
                   Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(localname))))))
-        else
-            error("Trying to merge unknown variable $(localname) from SubContext $(SubName)")
+        else # Just add the variable to the viewing subcontext TODO: CHECK THIS
+            push!(merge_expressions_by_subcontext[SubName], 
+                  Expr(:(=), localname, :(getproperty(args, $(QuoteNode(localname))))))
         end
     end
     
@@ -161,7 +193,7 @@ Returns a merged context by merging the provided named tuple into the appropriat
     end
 end
 
-Base.merge(scv::SubContextView, ::Nothing) = getcontext(scv)
+@inline Base.merge(scv::SubContextView, ::Nothing) = getcontext(scv)
 
 """
 Instead of merging, replace the subcontext entirely with the provided args named tuple
@@ -169,7 +201,7 @@ Returns new context
 
 This is to be used during the prepare phase, where entire subcontexts are replaced
 """
-function Base.replace(scv::SubContextView{CType, SubName}, args::NamedTuple) where {CType<:ProcessContext, SubName}
+@inline function Base.replace(scv::SubContextView{CType, SubName}, args::NamedTuple) where {CType<:ProcessContext, SubName}
     names = propertynames(args)
     # Error if trying to replace any other subcontext than the one in the view
     if any( n -> n != SubName, names)

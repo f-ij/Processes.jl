@@ -48,7 +48,7 @@ end
 #         push!(allintervals, I)
 #     end
 
-#     registry = inherit(registry, getregistry.(allfuncs)...; multipliers)
+#     registry = inherit(registry, get_registry.(allfuncs)...; multipliers)
 #     # Updating names downwards (each branch only needs its own replacements)
 #     allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
 

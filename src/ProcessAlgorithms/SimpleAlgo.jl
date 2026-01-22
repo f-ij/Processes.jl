@@ -1,96 +1,55 @@
 #TODO: Extend this to wrap multiple functions with a 1:1 interval
-mutable struct SimpleAlgo{T, NSR} <: ComplexLoopAlgorithm
-    const funcs::T
-    inc::Int # To track resuming
-    const flags::Set{Symbol}
-    const registry::NSR
+struct SimpleAlgo{T, NSR, S, R} <: ComplexLoopAlgorithm
+    funcs::T
+    inc::Base.RefValue # To track resuming
+    flags::Set{Symbol}
+    registry::NSR
+    shared_contexts::S
+    shared_vars::R
 end
 
-SimpleAlgo(func; flags...) = SimpleAlgo((func,); flags...)
-SimpleAlgo(funcs::Vararg{Any}; flags...) = SimpleAlgo(tuple(funcs...); flags...)
+getmultipliers_from_specification_num(::Type{<:SimpleAlgo}, specification_num) = ntuple(_ -> 1, length(specification_num))
 
-function SimpleAlgo(funcs::Tuple; flags...)
-    isempty(funcs) && throw(ArgumentError("SimpleAlgo requires at least one function"))
-    set = isempty(flags) ? Set{Symbol}() : Set(flags)
-    stored_funcs, registry = _build_simplealgo(funcs)
+function SimpleAlgo(funcs::NTuple{N, Any}, 
+                    shares_and_routes::Union{Share, Route}...; flags...) where {N}
+    (;functuple, flags, registry, shared_contexts, shared_vars) = setup(SimpleAlgo, funcs, ntuple(_ -> 1, N), shares_and_routes...; flags...)
     flags = Set(flags...)
-    return SimpleAlgo{typeof(stored_funcs), typeof(registry)}(stored_funcs, 1, flags, registry)
-end
-
-function _build_simplealgo(funcs::Tuple)
-    num_funcs = length(funcs)
-    allfuncs = Vector{Any}(undef, num_funcs)
-    registry = NameSpaceRegistry()
-    multipliers = fill(1.0, num_funcs)
-
-    for (func_idx, func) in enumerate(funcs)
-        if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
-            func = deepcopy(func)
-        else
-            registry, namedfunc = add_instance(registry, func, multipliers[func_idx])
-        end
-        I = intervals[func_idx]
-        push!(allfuncs, namedfunc)
-        push!(allintervals, I)
-    end
-
-    registries = getregistry.(allfuncs)
-    registries = scale_multipliers.(registries, multipliers)
-    # Merging registries pairwise so replacement direction is explicit
-    for (idx, subregistry) in enumerate(registries)
-        registry = merge(registry, subregistry)
-    end
-    # Updating names downwards (each branch only needs its own replacements)
-    allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
-
-    stored_funcs = tuple(allfuncs...)
-    return stored_funcs, registry
-end
-
-function _materialize_simple_member(func)
-    if func isa Type
-        func = func()
-    end
-    if func isa CompositeAlgorithm || func isa Routine
-        func = deepcopy(func)
-    end
-    return func
+    return SimpleAlgo{typeof(functuple), typeof(registry), typeof(shared_contexts), typeof(shared_vars)}(functuple, Ref(1), flags, registry, shared_contexts, shared_vars)
 end
 
 function reset!(sa::SimpleAlgo)
-    reset!.(getfuncs(sa))
-    sa.inc = 1
+    @inline reset!.(getfuncs(sa))
+    sa.inc[] = 1
 end
 
-inc!(sa::SimpleAlgo) = sa.inc += 1
+inc!(sa::SimpleAlgo) = sa.inc[] += 1
+inc(sa::SimpleAlgo) = sa.inc[]
 
 """
 Wrapper for functions to ensure proper semantics with the task system
 """
-@inline function step!(sf::SimpleAlgo, args)
+@inline function step!(sf::SimpleAlgo, context::C) where C
     a_idx = 1
-    args = @inline unroll_funcs(sf, a_idx, sf.funcs, args)
-    GC.safepoint()
-    return args
+    r_idx = inc(sf)
+    return @inline unroll_funcs(sf, a_idx, r_idx, sf.funcs, context)
 end
 
-function unroll_funcs(sf::SimpleAlgo, a_idx, funcs::T, args) where T<:Tuple
-    returnval = nothing
-    (;process) = args
+function unroll_funcs(sf::SimpleAlgo, a_idx, r_idx, funcs::T, context::C) where {T<:Tuple, C}
+    (;process) = getglobal(context)
     if !run(process)
-        return args
+        return context
     end
-    if a_idx == sf.inc # For pausing/resuming
-        returnval = @inline step!(gethead(funcs), args)
-        inc!(sf)
+    if a_idx == r_idx # For pausing/resuming
+        context = @inline step!(gethead(funcs), context)
+        r_idx += 1
     end
-    args = mergeargs(args, returnval)
-    return @inline unroll_funcs(sf, a_idx+1, gettail(funcs), args)
+    return @inline unroll_funcs(sf, a_idx+1, r_idx, gettail(funcs), context)
 end
 
-function unroll_funcs(sf::SimpleAlgo, a_idx, ::Tuple{}, args)
-    reset!(sf)
-    return args
+@inline function unroll_funcs(sf::SimpleAlgo, a_idx, r_idx, ::Tuple{}, context::C) where C
+    @inline reset!(sf)
+    GC.safepoint()
+    return context
 end
 
 getfuncs(sa::SimpleAlgo) = sa.funcs
@@ -107,7 +66,7 @@ track_algo(sa::SimpleAlgo) = hasflag(sa, :trackalgo)
 function newfuncs(sa::SimpleAlgo, funcs)
     nsr = NameSpaceRegistry(funcs)
     SimpleAlgo{typeof(funcs), typeof(nsr)}(funcs, sa.flags, nsr)
-end
+end 
 
 multipliers(sa::SimpleAlgo) = ntuple(_ -> 1, length(sa))
 multipliers(::Type{<:SimpleAlgo{FT}}) where FT = ntuple(_ -> 1, length(FT.parameters))

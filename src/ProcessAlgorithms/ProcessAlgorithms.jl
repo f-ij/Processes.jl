@@ -31,10 +31,10 @@ macro ProcessAlgorithm(ex)
         FSymbol = :f
     end
 
-    hasargs = :args in args
+    hasargs = :context in args
     splatnames = args
     if hasargs
-        splatnames = filter(x -> x != :args, args) # These are the splat args
+        splatnames = filter(x -> x != :context, args) # These are the splat args
     end
 
     q = quote

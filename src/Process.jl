@@ -22,6 +22,12 @@ end
 export Process
 
 function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1.0)
+
+    # Wrap in a ComplexLoopAlgorithm to get all
+    # features
+    if !(func isa ComplexLoopAlgorithm)
+        func = SimpleAlgo(tuple(func))
+    end
     
     if lifetime isa Integer
         lifetime = Repeat(lifetime)
@@ -36,8 +42,8 @@ function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1
     inputs = filter(x -> x isa Input, inputs_overrides)
     overrides = filter(x -> x isa Override, inputs_overrides)
 
-    named_inputs = to_named.(Ref(getregistry(func)), inputs)
-    named_overrides = to_named.(Ref(getregistry(func)), overrides)
+    named_inputs = to_named.(Ref(get_registry(func)), inputs)
+    named_overrides = to_named.(Ref(get_registry(func)), overrides)
 
     # if !(func isa ProcessLoopAlgorithm)
     #     func = SimpleAlgo(func)

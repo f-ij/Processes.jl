@@ -17,7 +17,7 @@ function setup(cla_target_type::Type{<:ComplexLoopAlgorithm},funcs::NTuple{N, An
         push!(allfuncs, namedfunc)
     end
 
-    registry = inherit(registry, getregistry.(allfuncs)...; multipliers)
+    registry = inherit(registry, get_registry.(allfuncs)...; multipliers)
     allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
 
     functuple = tuple(allfuncs...)

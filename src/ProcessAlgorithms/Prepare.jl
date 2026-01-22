@@ -3,7 +3,7 @@ Set up an empty ProcessContext for a ComplexLoopAlgorithm with given shared spec
 Inputargs are given as a NamedTuple of (;algo_name => (; inputname1 = value1, ...), ...)
 """
 function prepare(algos::ComplexLoopAlgorithm, inputcontext::ProcessContext)
-    registry = getregistry(algos)
+    registry = get_registry(algos)
     named_algos = all_named_algos(registry)
 
     context = UnrollReplace(inputcontext, named_algos...) do context, named_algo # Recursively replace context
@@ -16,7 +16,7 @@ function prepare(algos::ComplexLoopAlgorithm, inputcontext::ProcessContext)
 end
 
 function cleanup(algos::ComplexLoopAlgorithm, context)
-    registry = getregistry(algos)
+    registry = get_registry(algos)
     named_algos = all_named_algos(registry)
 
     context = UnrollReplace(context, named_algos...) do context, named_algo # Recursively replace context
@@ -30,7 +30,7 @@ function prepare(algos::ComplexLoopAlgorithm, input::NamedTuple = (;))
     # If prepared from a namedtuple, create an empty context first
     newcontext = ProcessContext(algos)
     
-    registry = getregistry(algos)
+    registry = get_registry(algos)
     named_algos = all_named_algos(registry)
 
 

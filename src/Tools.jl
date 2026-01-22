@@ -170,15 +170,15 @@ macro hasarg(ex)
     type = nothing
     condition = nothing 
     if @capture(ex, if argname_ isa type_ body_ end)
-        condition = :(haskey(args, ($(QuoteNode(argname)))) && args.$argname isa $type)
+        condition = :(haskey(context, ($(QuoteNode(argname)))) && context.$argname isa $type)
     else @capture(ex, if argname_ body_ end)
-        condition = :(haskey(args, ($(QuoteNode(argname)))))
+        condition = :(haskey(context, ($(QuoteNode(argname)))))
     end
 
     
     body = MacroTools.postwalk(body) do x
         if x == argname
-            return :(args.$argname)
+            return :(context.$argname)
         else
             return x
         end

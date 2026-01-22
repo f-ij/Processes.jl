@@ -36,7 +36,17 @@ function Base.summary(io::IO, ca::CompositeAlgorithm)
     print(io, "CompositeAlgorithm(", join(labels, ", "), ")")
 end
 
-function Base.show(io::IO, ::Type{<:CompositeAlgorithm{FT}}) where {FT}
-    labels = _composite_algo_type_labels(FT.parameters)
+function Base.show(io::IO, caT::Type{<:CompositeAlgorithm})
+    dt = Base.unwrap_unionall(caT)
+    if length(dt.parameters) == 0
+        print(io, "CompositeAlgorithm")
+        return
+    end
+    ft = dt.parameters[1]
+    if ft isa TypeVar
+        print(io, "CompositeAlgorithm")
+        return
+    end
+    labels = _composite_algo_type_labels(ft.parameters)
     print(io, "CompositeAlgorithm(", join(labels, ", "), ")")
 end

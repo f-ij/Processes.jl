@@ -2,7 +2,7 @@
 Set up an empty ProcessContext for a ComplexLoopAlgorithm with given shared specifications
 """
 function ProcessContext(algos::ComplexLoopAlgorithm; globals = (;))
-    registry = getregistry(algos)
+    registry = get_registry(algos)
 
     # shared_specs = get_sharedspecs(algos)
 

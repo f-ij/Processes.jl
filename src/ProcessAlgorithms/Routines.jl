@@ -44,7 +44,7 @@ end
 #         push!(allfuncs, func)
 #     end
 
-#     registries = getregistry.(allfuncs)
+#     registries = get_registry.(allfuncs)
 #     # return registry, registries[1]
 #     registry = inherit(registry, registries...; multipliers)
 #     # return registry

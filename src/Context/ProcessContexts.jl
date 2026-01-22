@@ -104,32 +104,11 @@ end
 """
 Get a subcontext view for a specific subcontext
 """
-@inline Base.view(pc::ProcessContext, instance) = SubContextView{typeof(pc), getname(instance), typeof(instance)}(pc, instance)
-
-
-##########################
-#### Subcontext views ####
-##########################
-"""
-Go from a local variable to the location in the full context
-Type can be
-    - :local
-    - :shared
-    - :routed
-"""
-struct VarLocation{Type}
-    subcontextname::Symbol
-    originalname::Symbol
+@inline Base.view(pc::ProcessContext, instance::ScopedAlgorithm) = SubContextView{typeof(pc), getname(instance), typeof(instance)}(pc, instance)
+@inline function Base.view(pc::ProcessContext, instance)
+    scoped_instance = value(static_lookup(get_registry(pc), instance))
+    return SubContextView{typeof(pc), getname(scoped_instance), typeof(scoped_instance)}(pc, scoped_instance)
 end
-
-function get_subcontextname(vl::VarLocation)
-    return vl.subcontextname
-end
-
-function get_originalname(vl::VarLocation)
-    return vl.originalname
-end
-
 
 
 ########################
