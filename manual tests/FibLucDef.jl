@@ -1,7 +1,4 @@
-using Pkg
-Pkg.activate(joinpath(@__DIR__, ".."))
-using Processes
-
+include("_env.jl")
 @ProcessAlgorithm function Fib(fiblist)
     push!(fiblist, fiblist[end] + fiblist[end-1])
     return (;)

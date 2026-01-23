@@ -44,8 +44,13 @@ function processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) wher
     end
 
     @inline before_while(p)
+    if resuming(p)
+        context = resume_step!(func, context)
+    end
+
     while run(p)
         context = @inline step!(func, context)
+
         @inline inc!(p) 
         if isthreaded(p) || isasync(p)
             GC.safepoint()
@@ -53,6 +58,8 @@ function processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) wher
     end
     return @inline after_while(p, func, context)
 end
+
+resuming(::Any) = false
 
 """
 Run a single function in a loop for a given number of times
@@ -62,7 +69,14 @@ function processloop(p::AbstractProcess, func::F, context::C, r::Repeat) where {
         println("Running process loop for $repeats times from thread $(Threads.threadid())")
     end
     @inline before_while(p)
-    for _ in loopidx(p):repeats(r)
+    start_idx = loopidx(p)
+    
+    if resuming(p)
+        context = resume_step!(func, context)
+        start_idx += 1
+    end
+
+    for _ in start_idx:repeats(r)
         if !run(p)
             break
         end

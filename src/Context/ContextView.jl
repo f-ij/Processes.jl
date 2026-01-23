@@ -63,7 +63,7 @@ Generate a namedtuple of localtuple => VarLocation
         shared_subcontext_type = Processes.subcontext_type(CType, name)
         shared_varnames = fieldnames(shared_subcontext_type)
         sharedt = ntuple(i ->VarLocation{:shared}(name, shared_varnames[i]), length(shared_varnames))
-        sharednt = NamedTuple{(shared_varnames...)}(sharedt)
+        sharednt = NamedTuple{tuple(shared_varnames...)}(sharedt)
         sharedcontexts = (;sharedcontexts..., sharednt...)
     end
 
@@ -82,14 +82,16 @@ Generate a namedtuple of localtuple => VarLocation
     end
     sharedvars = NamedTuple{tuple(sharedvar_names...)}(sharedvar_locations)
 
-    all_vars = (;locals = locals, sharedcontexts = sharedcontexts, sharedvars = sharedvars)
+
+    all_vars = (;sharedcontexts = sharedcontexts, sharedvars = sharedvars, locals = locals)
     # all_vars = (;locals..., shared..., routed...)
     return :( $all_vars )
 end
 
 @inline @generated function get_all_locations(sctv::Type{SCT}) where {SCT<:SubContextView}
     v_l = get_varlocations(SCT)
-    all_locations = (;v_l.locals..., v_l.sharedcontexts..., v_l.sharedvars...)
+    # Locals take precedene over routes which take precedence over shared
+    all_locations = (;v_l.sharedcontexts..., v_l.sharedvars..., v_l.locals...)
     return :( $all_locations )
 end
 
@@ -145,38 +147,6 @@ end
 """
 Returns a merged context by merging the provided named tuple into the appropriate subcontexts
 """
-# @generated function Base.merge(scv::SubContextView{CType, SubName}, args::NamedTuple) where {CType<:ProcessContext, SubName}
-#     # this_subcontext = subcontext_type(scv)
-#     keys_to_merge = fieldnames(args)
-    
-#     locations = get_all_locations(scv)
-
-#     merge_expressions_by_subcontext = NamedTuple()
-#     for localname in keys_to_merge
-#         if hasproperty(locations, localname) # If the local variable exists
-#             target_subcontext = get_subcontextname(getproperty(locations, localname))
-
-#             this_mergetuple = NamedTuple()
-#             if hasproperty(merge_expressions_by_subcontext, target_subcontext) # If subcontext was already targeted, merge into
-#                 this_mergetuple = getproperty(merge_expressions_by_subcontext, target_subcontext)
-#             end
-
-#             targetname = get_originalname( getproperty(locations, localname) )
-#             getvalue_expr = :( getproperty(args, $(QuoteNode(localname))) )
-#             this_mergetuple = (;this_mergetuple..., targetname => getvalue_expr)
-#         else
-#             error("Trying to merge unknown variable $(localname) from SubContext $(SubName)")
-#         end
-#         merge_expressions_by_subcontext = (;merge_expressions_by_subcontext..., target_subcontext => this_mergetuple)
-#     end
-        
-#     return quote
-#         mergetuple = $(merge_expressions_by_subcontext)
-#         newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
-#         return newcontext
-#     end
-# end
-
 @inline @generated function Base.merge(scv::SubContextView{CType, SubName}, args::NamedTuple) where {CType<:ProcessContext, SubName}
     # this_subcontext = subcontext_type(scv)
     keys_to_merge = fieldnames(args)

@@ -13,10 +13,13 @@ module Processes
     abstract type ProcessLoopAlgorithm <: ProcessAlgorithm end # Algorithms that can be inlined in processloop
     abstract type ComplexLoopAlgorithm <: ProcessLoopAlgorithm end # Algorithms that have multiple functions and intervals
 
+    abstract type AbstractOption end
+    abstract type ProcessState <: AbstractOption end
+
     abstract type AbstractContext end
     abstract type AbstractSubContext end
 
-    export ProcessAlgorithm
+    export ProcessAlgorithm, ProcessState
 
     const DEBUG_MODE = @load_preference("debug", false)
     debug_mode() = @load_preference("debug", false)
@@ -58,6 +61,7 @@ module Processes
     include("ProcessStatus.jl")
     include("Interface.jl")
     include("Loops.jl")
+    include("ProcessStates/ProcessStates.jl")
     include("ProcessAlgorithms/ProcessAlgorithms.jl")
     include("Trackers/Trackers.jl")
     include("TotalInc.jl")

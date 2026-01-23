@@ -8,6 +8,7 @@ include("Prepare.jl")
 include("Showing.jl")
 
 
+export SimpleAlgo, CompositeAlgorithm, Routine
 export getname, step!, @ProcessAlgorithm, @NamedProcessAlgorithm, prepare
 
 """
@@ -67,4 +68,3 @@ export @ProcessAlgorithm, @NamedProcessAlgorithm
 #     prepare_helper = PrepereHelper(pa, args)
 #     prepare(prepare_helper, args)
 # end
-

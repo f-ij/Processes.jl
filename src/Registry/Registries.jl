@@ -72,6 +72,23 @@ function add_instance(reg::NameSpaceRegistry{T}, obj, multiplier = 1.) where {T}
     end
 end
 
+"""
+Add multiple objects to the registry with the same multiplier
+"""
+@inline function add(reg::NameSpaceRegistry, objs::Any...; multiplier = 1.)
+    reg = UnrollReplace(reg, objs...) do r, o
+        registry, _ = add_instance(r, o, multiplier)
+        return registry
+    end
+end
+
+
+
+
+
+
+
+
 function find_entry(reg::NameSpaceRegistry, obj::O) where O
     entries = get_type_entries(reg, obj)
 end

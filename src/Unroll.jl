@@ -1,6 +1,8 @@
 """
 For patterns where we have to recursively replace a value from a function apply to a list of arguments,
 we can unroll the recursion with this function
+
+f requires two arguments: the value to be replaced, and the next argument from the list
 """
 @inline function UnrollReplace(f, to_replace, args...)
     if isempty(args)

@@ -4,7 +4,6 @@ export CompositeAlgorithm
 struct CompositeAlgorithm{T, Intervals, NSR, S, R} <: ComplexLoopAlgorithm
     funcs::T
     inc::Base.RefValue{Int} # To track the intervals
-    flags::Set{Symbol}
     registry::NSR
     shared_contexts::S
     shared_vars::R
@@ -13,16 +12,15 @@ end
 """
 Update auto generated names means registry has been overruled, thus we set this to nothing
 """
-update_instance(ca::CompositeAlgorithm{T,I}, ::NameSpaceRegistry) where {T,I} = CompositeAlgorithm{T, I, Nothing, Nothing, Nothing}(ca.funcs, ca.inc, ca.flags, nothing, nothing, nothing)
+update_instance(ca::CompositeAlgorithm{T,I}, ::NameSpaceRegistry) where {T,I} = CompositeAlgorithm{T, I, Nothing, Nothing, Nothing}(ca.funcs, ca.inc, nothing, nothing, nothing)
 getmultipliers_from_specification_num(::Type{<:CompositeAlgorithm}, specification_num) = 1 ./(Float64.(specification_num))
 
 
 function CompositeAlgorithm(funcs::NTuple{N, Any}, 
                             intervals::NTuple{N, Real} = ntuple(_ -> 1, N), 
-                            shares_and_routes::Union{Share, Route}...; 
-                            flags...) where {N}
-    (;functuple, flags, registry, shared_contexts, shared_vars) = setup(CompositeAlgorithm, funcs, intervals, shares_and_routes...; flags...)
-    CompositeAlgorithm{typeof(functuple), intervals, typeof(registry), typeof(shared_contexts), typeof(shared_vars)}(functuple, Ref(1), flags, registry, shared_contexts, shared_vars)
+                            options::Union{Share, Route, ProcessState}...) where {N}
+    (;functuple, registry, shared_contexts, shared_vars) = setup(CompositeAlgorithm, funcs, intervals, options...)
+    CompositeAlgorithm{typeof(functuple), intervals, typeof(registry), typeof(shared_contexts), typeof(shared_vars)}(functuple, Ref(1), registry, shared_contexts, shared_vars)
 end
 
 
@@ -140,70 +138,27 @@ Running a composite algorithm allows for static unrolling and inlining of all su
 """
 @inline function step!(ca::CompositeAlgorithm{T, Is}, context::C) where {T,Is,C<:AbstractContext}
     algoidx = 1
-    return @inline _comp_dispatch(ca, context::C, algoidx, gethead(ca.funcs), headval(Is), gettail(ca.funcs), gettail(Is))
+    this_inc = inc(ca)
+    return @inline _comp_dispatch(ca, context::C, algoidx, this_inc, gethead(ca.funcs), headval(Is), gettail(ca.funcs), gettail(Is))
 end
 
 """
 Dispatch on a composite function
     Made such that the functions will be completely inlined at compile time
 """
-@inline function _comp_dispatch(ca::CompositeAlgorithm, context::C, algoidx::Int, thisfunc::TF, interval::Val{I}, funcs, intervals) where {I,TF,C<:AbstractContext}
-    returnval = nothing
+@inline function _comp_dispatch(ca::CompositeAlgorithm, context::C, algoidx::Int, this_inc::Int, thisfunc::TF, interval::Val{I}, funcs, intervals) where {I,TF,C<:AbstractContext}
+    if isnothing(thisfunc)
+        inc!(ca)
+        GC.safepoint()
+        return context
+    end
+
     if I == 1
         context = step!(thisfunc, context)
     else
-        if inc(ca) % I == 0
+        if this_inc % I == 0
             context = step!(thisfunc, context)
         end
     end
-    return @inline _comp_dispatch(ca, context, algoidx + 1, gethead(funcs), headval(intervals), gettail(funcs), gettail(intervals))
-end
-
-"""
-Last dispatch function when all functions have been called
-"""
-@inline function _comp_dispatch(ca::CompositeAlgorithm, context::C, ::Any, ::Nothing, ::Any, ::Any, ::Any) where {C<:AbstractContext}
-    inc!(ca)
-    GC.safepoint()
-    # return args
-    return context
-end
-
-# SHOWING
-# function Base.show(io::IO, ca::CompositeAlgorithm)
-#     indentio = NextIndentIO(io, VLine(), "Composite Algorithm")
-#     _intervals = intervals(ca)
-#     q_postfixes(indentio, ("\texecuting every $interval time(s)" for interval in _intervals)...)
-#     for thisfunc in ca.funcs
-#         if thisfunc isa CompositeAlgorithm || thisfunc isa Routine
-#             invoke(show, Tuple{IO, typeof(thisfunc)}, next(indentio), thisfunc)
-#         else
-#             invoke(show, Tuple{IndentIO, Any}, next(indentio), thisfunc)
-#             # show(next(indentio), thisfunc)
-#         end
-#     end
-# end
-
-function Base.show(io::IO, ca::CompositeAlgorithm)
-    println(io, "CompositeAlgorithm")
-    funcs = ca.funcs
-    if isempty(funcs)
-        print(io, "  (empty)")
-        return
-    end
-    _intervals = intervals(ca)
-    limit = get(io, :limit, false)
-    for (idx, thisfunc) in enumerate(funcs)
-        interval = _intervals[idx]
-        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
-        lines = split(func_str, '\n')
-        suffix = " (every " * string(interval) * " time(s))"
-        print(io, "  | ", lines[1], suffix)
-        for line in Iterators.drop(lines, 1)
-            print(io, "\n  | ", line)
-        end
-        if idx < length(funcs)
-            print(io, "\n")
-        end
-    end
+    return @inline _comp_dispatch(ca, context, algoidx + 1, this_inc, gethead(funcs), headval(intervals), gettail(funcs), gettail(intervals))
 end

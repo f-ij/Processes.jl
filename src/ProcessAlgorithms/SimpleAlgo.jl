@@ -1,8 +1,7 @@
 #TODO: Extend this to wrap multiple functions with a 1:1 interval
-struct SimpleAlgo{T, NSR, S, R} <: ComplexLoopAlgorithm
+struct SimpleAlgo{T, I, NSR, S, R} <: ComplexLoopAlgorithm
     funcs::T
-    inc::Base.RefValue # To track resuming
-    flags::Set{Symbol}
+    resume_idx::I
     registry::NSR
     shared_contexts::S
     shared_vars::R
@@ -11,52 +10,52 @@ end
 getmultipliers_from_specification_num(::Type{<:SimpleAlgo}, specification_num) = ntuple(_ -> 1, length(specification_num))
 
 function SimpleAlgo(funcs::NTuple{N, Any}, 
-                    shares_and_routes::Union{Share, Route}...; flags...) where {N}
-    (;functuple, flags, registry, shared_contexts, shared_vars) = setup(SimpleAlgo, funcs, ntuple(_ -> 1, N), shares_and_routes...; flags...)
-    flags = Set(flags...)
-    return SimpleAlgo{typeof(functuple), typeof(registry), typeof(shared_contexts), typeof(shared_vars)}(functuple, Ref(1), flags, registry, shared_contexts, shared_vars)
+                    options::AbstractOption...;
+                    resumable = false) where {N}
+    (;functuple, registry, shared_contexts, shared_vars) = setup(SimpleAlgo, funcs, ntuple(_ -> 1, N), options...)
+    resume_idx = resumable ? Ref(1) : nothing
+    return SimpleAlgo{typeof(functuple),  typeof(resume_idx), typeof(registry), typeof(shared_contexts), typeof(shared_vars)}(functuple, resume_idx, registry, shared_contexts, shared_vars)
 end
+
+@inline resumable(sa::SimpleAlgo{T,I}) where {T,I} = I != Nothing
 
 @inline function reset!(sa::SimpleAlgo)
     @inline reset!.(getfuncs(sa))
-    sa.inc[] = 1
+    sa.resume_idx[] = 1
 end
 
-@inline inc!(sa::SimpleAlgo) = sa.inc[] += 1
-@inline inc(sa::SimpleAlgo) = sa.inc[]
+@inline resume_idx!(sa::SimpleAlgo) = sa.resume_idx[] += 1
+@inline resume_idx(sa::SimpleAlgo) = sa.resume_idx[]
 
 """
 Wrapper for functions to ensure proper semantics with the task system
 """
 @inline function step!(sf::SimpleAlgo, context::C) where C
     a_idx = 1
-    # r_idx = @inline inc(sf)
-    r_idx = 1
-    return @inline unroll_funcs(sf, a_idx, r_idx, gethead(sf.funcs), gettail(sf.funcs), context)
+    return @inline unroll_funcs(sf, a_idx, gethead(sf.funcs), gettail(sf.funcs), context)
 end
 
-function unroll_funcs(sf::SimpleAlgo, a_idx, r_idx, headf::F, tailf::T, context::C) where {F, T, C}
+function unroll_funcs(sf::SimpleAlgo, a_idx, headf::F, tailf::T, context::C) where {F, T, C}
     (;process) = @inline getglobal(context)
-    if !run(process)
+
+    if isnothing(headf)
         return context
     end
-    # if a_idx == r_idx # For pausing/resuming
-        context = @inline step!(headf, context)
-        # r_idx += 1
-    # end
-    return @inline unroll_funcs(sf, a_idx+1, r_idx, gethead(tailf), gettail(tailf), context)
-end
 
-@inline function unroll_funcs(sf::SimpleAlgo, ::Any, ::Any, ::Nothing, ::Any, context::C) where C
-    @inline reset!(sf)
-    GC.safepoint()
-    return context
+    if !run(process)
+        if resumable(sf)
+            resume_idx!(sf)
+        end
+        return context
+    end
+    context = @inline step!(headf, context)
+    return @inline unroll_funcs(sf, a_idx+1, gethead(tailf), gettail(tailf), context)
 end
 
 @inline getfuncs(sa::SimpleAlgo) = sa.funcs
 @inline subalgorithms(sa::SimpleAlgo) = sa.funcs
 @inline Base.length(sa::SimpleAlgo) = length(sa.funcs)
-@inline Base.eachindex(sa::SimpleAlgo) = Base.eachindex(sa.funcs)
+@inline Base.eachindex(sa::SimpleAlgo) = eachindex(sa.funcs)
 @inline getfunc(sa::SimpleAlgo, idx) = sa.funcs[idx]
 @inline subalgotypes(sa::SimpleAlgo{FT}) where FT = FT.parameters
 @inline subalgotypes(saT::Type{<:SimpleAlgo{FT}}) where FT = FT.parameters

@@ -1,14 +1,16 @@
 export Share, Route, to_sharedcontext, to_sharedvar
+
+
 """
 Whole name space from A1 to A2, optionally directional
 """
-struct Share{A1,A2}
+struct Share{A1,A2} <: AbstractOption
     algo1::A1
     algo2::A2
     directional::Bool
 end
 
-function Share(algo1::Symbol, algo2::Symbol; directional::Bool=false)
+function Share(algo1, algo2; directional::Bool=false)
     Share{typeof(algo1), typeof(algo2)}(algo1, algo2, directional)
 end
 
@@ -27,7 +29,7 @@ end
 """
 User-facing route from one subcontext to another
 """
-struct Route{F,T,N}
+struct Route{F,T,N} <: AbstractOption
     from::F # From algo
     to::T   # To algo
     varnames::NTuple{N, Symbol}

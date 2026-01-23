@@ -3,7 +3,7 @@ Pkg.activate(joinpath(@__DIR__, "..", ".."))
 using Test
 using Processes
 
-include(joinpath(@__DIR__, "..", "FibLucDef.jl"))
+include(joinpath(@__DIR__, "..", "manual tests", "FibLucDef.jl"))
 
 const LOOP_COUNT = 50_000
 const TRIALS = 5
