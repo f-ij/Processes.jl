@@ -17,51 +17,52 @@ function SimpleAlgo(funcs::NTuple{N, Any},
     return SimpleAlgo{typeof(functuple), typeof(registry), typeof(shared_contexts), typeof(shared_vars)}(functuple, Ref(1), flags, registry, shared_contexts, shared_vars)
 end
 
-function reset!(sa::SimpleAlgo)
+@inline function reset!(sa::SimpleAlgo)
     @inline reset!.(getfuncs(sa))
     sa.inc[] = 1
 end
 
-inc!(sa::SimpleAlgo) = sa.inc[] += 1
-inc(sa::SimpleAlgo) = sa.inc[]
+@inline inc!(sa::SimpleAlgo) = sa.inc[] += 1
+@inline inc(sa::SimpleAlgo) = sa.inc[]
 
 """
 Wrapper for functions to ensure proper semantics with the task system
 """
 @inline function step!(sf::SimpleAlgo, context::C) where C
     a_idx = 1
-    r_idx = inc(sf)
-    return @inline unroll_funcs(sf, a_idx, r_idx, sf.funcs, context)
+    # r_idx = @inline inc(sf)
+    r_idx = 1
+    return @inline unroll_funcs(sf, a_idx, r_idx, gethead(sf.funcs), gettail(sf.funcs), context)
 end
 
-function unroll_funcs(sf::SimpleAlgo, a_idx, r_idx, funcs::T, context::C) where {T<:Tuple, C}
-    (;process) = getglobal(context)
+function unroll_funcs(sf::SimpleAlgo, a_idx, r_idx, headf::F, tailf::T, context::C) where {F, T, C}
+    (;process) = @inline getglobal(context)
     if !run(process)
         return context
     end
-    if a_idx == r_idx # For pausing/resuming
-        context = @inline step!(gethead(funcs), context)
-        r_idx += 1
-    end
-    return @inline unroll_funcs(sf, a_idx+1, r_idx, gettail(funcs), context)
+    # if a_idx == r_idx # For pausing/resuming
+        context = @inline step!(headf, context)
+        # r_idx += 1
+    # end
+    return @inline unroll_funcs(sf, a_idx+1, r_idx, gethead(tailf), gettail(tailf), context)
 end
 
-@inline function unroll_funcs(sf::SimpleAlgo, a_idx, r_idx, ::Tuple{}, context::C) where C
+@inline function unroll_funcs(sf::SimpleAlgo, ::Any, ::Any, ::Nothing, ::Any, context::C) where C
     @inline reset!(sf)
     GC.safepoint()
     return context
 end
 
-getfuncs(sa::SimpleAlgo) = sa.funcs
-subalgorithms(sa::SimpleAlgo) = sa.funcs
-Base.length(sa::SimpleAlgo) = length(sa.funcs)
-Base.eachindex(sa::SimpleAlgo) = Base.eachindex(sa.funcs)
-getfunc(sa::SimpleAlgo, idx) = sa.funcs[idx]
-subalgotypes(sa::SimpleAlgo{FT}) where FT = FT.parameters
-subalgotypes(saT::Type{<:SimpleAlgo{FT}}) where FT = FT.parameters
+@inline getfuncs(sa::SimpleAlgo) = sa.funcs
+@inline subalgorithms(sa::SimpleAlgo) = sa.funcs
+@inline Base.length(sa::SimpleAlgo) = length(sa.funcs)
+@inline Base.eachindex(sa::SimpleAlgo) = Base.eachindex(sa.funcs)
+@inline getfunc(sa::SimpleAlgo, idx) = sa.funcs[idx]
+@inline subalgotypes(sa::SimpleAlgo{FT}) where FT = FT.parameters
+@inline subalgotypes(saT::Type{<:SimpleAlgo{FT}}) where FT = FT.parameters
 
-hasflag(sa::SimpleAlgo, flag) = flag in sa.flags
-track_algo(sa::SimpleAlgo) = hasflag(sa, :trackalgo)
+@inline hasflag(sa::SimpleAlgo, flag) = flag in sa.flags
+@inline track_algo(sa::SimpleAlgo) = hasflag(sa, :trackalgo)
 
 function newfuncs(sa::SimpleAlgo, funcs)
     nsr = NameSpaceRegistry(funcs)

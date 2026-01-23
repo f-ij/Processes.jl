@@ -46,7 +46,7 @@ function processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) wher
     @inline before_while(p)
     while run(p)
         context = @inline step!(func, context)
-        inc!(p) 
+        @inline inc!(p) 
         if isthreaded(p) || isasync(p)
             GC.safepoint()
         end
@@ -67,7 +67,7 @@ function processloop(p::AbstractProcess, func::F, context::C, r::Repeat) where {
             break
         end
         context = @inline step!(func, context)
-        inc!(p)
+        @inline inc!(p)
 
         if isthreaded(p) || isasync(p)
             GC.safepoint()

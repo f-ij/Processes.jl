@@ -21,11 +21,11 @@ struct ProcessContext{D,Reg} <: AbstractContext
     registry::Reg
 end
 
-Base.@constprop :aggressive function Base.getproperty(pc::ProcessContext, name::Symbol)
+@inline Base.@constprop :aggressive function Base.getproperty(pc::ProcessContext, name::Symbol)
     return getproperty(get_subcontexts(pc), name)
 end
 
-Base.@constprop :aggressive function Base.getindex(pc::ProcessContext, name::Symbol)
+@inline Base.@constprop :aggressive function Base.getindex(pc::ProcessContext, name::Symbol)
     return getproperty(get_subcontexts(pc), name)
 end
 
@@ -68,9 +68,9 @@ end
 
 ###
 @inline function merge_into_globals(pc::ProcessContext{D}, args) where {D}
-    merged_globals = merge(getfield(get_subcontexts(pc), :globals), args)
+    merged_globals = @inline merge(getfield(get_subcontexts(pc), :globals), args)
     newsubs = (; get_subcontexts(pc)..., globals = merged_globals)
-    return ProcessContext{typeof(newsubs), typeof(get_registry(pc))}(newsubs, get_registry(pc))
+    return @inline ProcessContext(newsubs, get_registry(pc))
 end
 
 ### BASE EXTENSIONS
@@ -78,22 +78,21 @@ end
 Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), subcontextname2 = (;...), ...)
     Assumes that the subcontext names exist in the context, otherwise it errors
 """
-@inline function merge_into_subcontexts(pc::ProcessContext{D}, args) where {D}
+@inline function merge_into_subcontexts(pc::ProcessContext{D}, args::As) where {D, As}
     subs = subcontexts(pc)
     subnames = propertynames(subs)
-    subvalues = values(subs)
-    merged_subvalues = ntuple(length(subnames)) do i
+    merged_subvalues = @inline ntuple(length(subnames)) do i
         if hasproperty(args, subnames[i])
             return merge(getproperty(subs, subnames[i]), getproperty(args, subnames[i]) )
         else
             return getproperty(subs, subnames[i])
         end
     end
-    for name in propertynames(args)
-        if !(name in subnames)
-            error("Trying to merge into unknown subcontext $(name) in ProcessContext")
-        end
-    end
+    # for name in propertynames(args)
+    #     if !(name in subnames)
+    #         error("Trying to merge into unknown subcontext $(name) in ProcessContext")
+    #     end
+    # end
     newsubs = NamedTuple{subnames}(merged_subvalues)
     return ProcessContext{typeof(newsubs), typeof(get_registry(pc))}(newsubs, get_registry(pc))
 end
@@ -101,14 +100,6 @@ end
 # @inline Base.pairs(pc::ProcessContext) = pairs(pc.subcontexts)
 # @inline Base.getproperty(pc::ProcessContext, name::Symbol) = getproperty(pc.subcontexts, name)
 
-"""
-Get a subcontext view for a specific subcontext
-"""
-@inline Base.view(pc::ProcessContext, instance::ScopedAlgorithm) = SubContextView{typeof(pc), getname(instance), typeof(instance)}(pc, instance)
-@inline function Base.view(pc::ProcessContext, instance)
-    scoped_instance = value(static_lookup(get_registry(pc), instance))
-    return SubContextView{typeof(pc), getname(scoped_instance), typeof(scoped_instance)}(pc, scoped_instance)
-end
 
 
 ########################
