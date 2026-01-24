@@ -351,7 +351,7 @@ scale_multiplier(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int, factor::
 ##### MERGING ENTRIES #####
 ###########################
 
-function Base.merge(entry1::RegistryTypeEntry{T}, entry2::RegistryTypeEntry{T}) where {T}
+@inline function Base.merge(entry1::RegistryTypeEntry{T}, entry2::RegistryTypeEntry{T}) where {T}
     # Merging default entries
     entry1, _ = add_default(entry1, entry2.default)
 

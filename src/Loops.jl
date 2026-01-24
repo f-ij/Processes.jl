@@ -45,11 +45,12 @@ function processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) wher
 
     @inline before_while(p)
     if resuming(p)
-        context = resume_step!(func, context)
+        context = resume_step!(func, context)::C
     end
 
     while run(p)
-        context = @inline step!(func, context)
+        context = (@inline step!(func, context))::C
+        # @inline step!(func, context)::C
 
         @inline inc!(p) 
         if isthreaded(p) || isasync(p)
@@ -80,7 +81,7 @@ function processloop(p::AbstractProcess, func::F, context::C, r::Repeat) where {
         if !run(p)
             break
         end
-        context = @inline step!(func, context)
+        context = @inline step!(func, context)::C
         @inline inc!(p)
 
         if isthreaded(p) || isasync(p)
@@ -89,5 +90,4 @@ function processloop(p::AbstractProcess, func::F, context::C, r::Repeat) where {
     end
     return @inline after_while(p, func, context)
 end
-
 

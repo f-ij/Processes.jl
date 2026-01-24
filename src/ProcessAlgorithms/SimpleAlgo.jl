@@ -39,16 +39,16 @@ function unroll_funcs(sf::SimpleAlgo, a_idx, headf::F, tailf::T, context::C) whe
     (;process) = @inline getglobal(context)
 
     if isnothing(headf)
-        return context
+        return context::C
     end
 
     if !run(process)
         if resumable(sf)
             resume_idx!(sf)
         end
-        return context
+        return context::C
     end
-    context = @inline step!(headf, context)
+    context = @inline step!(headf, context)::C
     return @inline unroll_funcs(sf, a_idx+1, gethead(tailf), gettail(tailf), context)
 end
 

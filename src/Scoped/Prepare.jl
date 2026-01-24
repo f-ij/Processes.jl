@@ -1,7 +1,7 @@
 """
 Get the name from a ScopedAlgorithm and prepare the inputs for it
 """
-function prepare(sa::ScopedAlgorithm, inputcontext::AbstractContext)
+@inline function prepare(sa::ScopedAlgorithm, inputcontext::AbstractContext)
     name = getname(sa)
     inputview = view(inputcontext, sa)
     replace(inputcontext, (;name => prepare(getalgorithm(sa), inputview)))
@@ -10,7 +10,7 @@ end
 """
 Direct prepare running for debugging
 """
-function prepare(sa::ScopedAlgorithm, input::NamedTuple = (;))
+@inline function prepare(sa::ScopedAlgorithm, input::NamedTuple = (;))
     return (;getname(sa) => prepare(getalgorithm(sa), input))
 end
 
