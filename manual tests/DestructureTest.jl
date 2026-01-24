@@ -2,6 +2,8 @@ using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
 using Processes
 
+import Processes as ps
+
 mutable struct Agent
     position::Float64
     velocity::Float64
@@ -25,8 +27,8 @@ destr = Destructure(agent) do fields, context
 end
 
 Runner = SimpleAlgo((Tick,), destr, Share(destr, Tick))
-get_registry(Runner)
+r = get_registry(Runner)
 
 p = Process(Runner)
 @show p.context
-start(p)
+# start(p)

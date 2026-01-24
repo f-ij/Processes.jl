@@ -36,7 +36,7 @@ end
 
 function ProcessContext(func::Any; globals = (;))
     registry = SimpleRegistry(func)
-    name = static_lookup(registry, func)
+    name = getname(static_get(registry, func))
     subcontext = SubContext(name, (;), (;), (;))
     named_subcontexts = NamedTuple{(name,)}((subcontext,))
     (;named_subcontexts..., globals)

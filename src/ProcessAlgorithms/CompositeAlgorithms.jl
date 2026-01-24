@@ -146,19 +146,18 @@ end
 Dispatch on a composite function
     Made such that the functions will be completely inlined at compile time
 """
-@inline function _comp_dispatch(ca::CompositeAlgorithm, context::C, algoidx::Int, this_inc::Int, thisfunc::TF, interval::Val{I}, funcs, intervals) where {I,TF,C<:AbstractContext}
+@inline function _comp_dispatch(ca::CompositeAlgorithm, context::C, algoidx::Int, this_inc::Int, thisfunc::TF, interval, funcs, intervals) where {I,TF,C<:AbstractContext}
     if isnothing(thisfunc)
         inc!(ca)
         GC.safepoint()
         return context
     end
-
-    if I == 1
+    if interval == 1
         context = step!(thisfunc, context)
     else
-        if this_inc % I == 0
+        if this_inc % interval == 0
             context = step!(thisfunc, context)
         end
     end
-    return @inline _comp_dispatch(ca, context, algoidx + 1, this_inc, gethead(funcs), headval(intervals), gettail(funcs), gettail(intervals))
+    return @inline _comp_dispatch(ca, context, algoidx + 1, this_inc, gethead(funcs), gethead(intervals), gettail(funcs), gettail(intervals))
 end

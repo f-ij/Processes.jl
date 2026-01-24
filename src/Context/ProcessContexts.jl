@@ -29,6 +29,11 @@ end
     return getproperty(get_subcontexts(pc), name)
 end
 
+@inline function Base.getindex(pc::ProcessContext, obj)
+    name = getname(get_registry(pc)[obj])
+    return getproperty(get_subcontexts(pc), name)
+end
+
 """
 Args should name subcontext they want to replace, check if all names are in the original context
     since we can only replace existing subcontexts

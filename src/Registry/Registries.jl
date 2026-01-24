@@ -14,8 +14,11 @@ end
 
 NameSpaceRegistry() = NameSpaceRegistry(tuple())
 
-Base.getindex(reg::NameSpaceRegistry, idx::Int) = reg.entries[idx]
 get_type_entries(reg::NameSpaceRegistry{T}) where {T} = reg.entries
+
+
+Base.getindex(reg::NameSpaceRegistry, idx::Int) = reg.entries[idx]
+
 
 """
 Types of entries as a tuple type Tuple{Type1, Type2, ...}
@@ -42,7 +45,7 @@ gettypes_iterator(reg::NameSpaceRegistry) = gettypes_iterator(typeof(reg))
 Find the index in the entries for a given type T
 """
 @generated function _find_typeidx(reg::Type{<:NameSpaceRegistry}, typ::Type{T}) where {T}
-    T_non_scoped = strip_scope(T)
+    T_non_scoped = contained_type(T) # Containers are categorized give the type of the obj inside
     regt = reg.parameters[1]
     it = gettypes_iterator(regt)
     index = findfirst(t -> T_non_scoped <: t, it)
@@ -126,9 +129,11 @@ inherit(e1::NameSpaceRegistry; kwargs...) = e1
     ### ACCESSORS ###
 ########################    
 @generated function get_type_entries(reg::NameSpaceRegistry, typ::Type{T}) where {T}
-    _type_index = find_typeidx(reg, T)
+    find_this_type = contained_type(T) # For containers, get the contained type
+    _type_index = find_typeidx(reg, find_this_type)
     if isnothing(_type_index)
-        error("Type $(typ) not found in registry")
+        error("typ: $typ, T: $T, find_this_type: $find_this_type, reg: $reg")
+        error("Type $(find_this_type) not found in registry")
     end
     return :( reg.entries[$_type_index] )
 end
@@ -166,19 +171,38 @@ end
 #########################
 ### Lookup Utilities ###
 #########################
+
+"""
+Gets the location in the corresponding type dynamically
+"""
 function dynamic_lookup(reg::NameSpaceRegistry, val) 
     entries = get_type_entries(reg, val)
     return dynamic_lookup(entries, val)
 end
 
+"""
+Gets the static lookup in the registry
+"""
 function static_lookup(reg::NameSpaceRegistry, val) 
-    entries = get_type_entries(reg, val)
-    return static_get(entries, val)
+    entries = get_type_entries(reg, val) # Get the entries for the type
+    return static_findfirst(entries, val)
 end
+
 
 #########################
     ##### GETTERS #####
 #########################
+
+function static_get(reg::NameSpaceRegistry, val)
+    entries = get_type_entries(reg, val)
+    return static_get(entries, val)
+end
+
+function dynamic_get(reg::NameSpaceRegistry, val)
+    entries = get_type_entries(reg, val)
+    loc = dynamic_lookup(entries, val)
+    return getentry(entries, loc...)
+end
 
 function Base.iterate(reg::NameSpaceRegistry, state = (1,1))
     type_entries = get_type_entries(reg)
@@ -196,7 +220,7 @@ function Base.iterate(reg::NameSpaceRegistry, state = (1,1))
 end
 
 function getmultiplier(reg::NameSpaceRegistry, val)
-    entry = static_lookup(reg, val)
+    entry = static_get(reg, val)
     if isnothing(entry)
         return nothing
     end
@@ -204,12 +228,24 @@ function getmultiplier(reg::NameSpaceRegistry, val)
 end
 
 function getname(reg::NameSpaceRegistry, val)
-    entry = static_lookup(reg, val)
+    entry = static_get(reg, val)
     if isnothing(entry)
         return nothing
     end
     return getname(entry)
 end
+
+"""
+Get the value from the registry
+"""
+@inline function Base.getindex(reg::NameSpaceRegistry{T}, obj) where {T}
+    if obj isa Type || isbits(obj)
+        return static_get(reg, obj)
+    else
+        return dynamic_get(reg, obj)
+    end
+end
+
 
 #######################
     ##### NAMES #####
@@ -221,6 +257,22 @@ end
 
 function all_names(reg::NameSpaceRegistry)
     flat_collect_broadcast(all_names, reg.entries)
+end
+########################
+##### PREPARING ########
+########################
+"""
+Return all named objects
+    First ProcessStates, then rest
+"""
+@generated function funcs_in_prepare_order(reg::NameSpaceRegistry{T}) where {T}
+    entrytypes = tuple(T.parameters...)
+    _all_types = flat_collect_broadcast(all_types, entrytypes)
+    all_values = getvalue.(_all_types)
+    process_states = filter(x -> getfunc(x) isa ProcessState, all_values)
+    other = filter(x -> !(getfunc(x) isa ProcessState), all_values)
+    all_in_order = (process_states..., other...)
+    return :( $all_in_order )
 end
 
 

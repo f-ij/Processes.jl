@@ -41,6 +41,8 @@ module Processes
     
 
     include("AbstractProcesses.jl")
+
+    include("ThinContainers.jl")
     include("Scoped/Scoped.jl")
     include("Registry/Registry.jl")
     include("Context/Context.jl")

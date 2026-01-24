@@ -26,12 +26,16 @@ struct SubContextView{CType, SubName, T} <: AbstractContext
     instance::T # instance for which the view is created
 end
 
+function Base.show(io::IO, scv::SubContextView{CType, SubName}) where {CType, SubName}
+    print(io, "SubContextView(", SubName, ")")
+end
+
 """
 Get a subcontext view for a specific subcontext
 """
 @inline Base.view(pc::ProcessContext, instance::ScopedAlgorithm) = SubContextView{typeof(pc), getname(instance), typeof(instance)}(pc, instance)
 @inline function Base.view(pc::ProcessContext, instance)
-    scoped_instance = @inline value(static_lookup(get_registry(pc), instance))
+    scoped_instance = @inline value(static_get(get_registry(pc), instance))
     return SubContextView{typeof(pc), getname(scoped_instance), typeof(scoped_instance)}(pc, scoped_instance)
 end
 
@@ -166,6 +170,9 @@ Returns a merged context by merging the provided named tuple into the appropriat
             push!(merge_expressions_by_subcontext[target_subcontext], 
                   Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(localname))))))
         else # Just add the variable to the viewing subcontext TODO: CHECK THIS
+            if !haskey(merge_expressions_by_subcontext, SubName)
+                merge_expressions_by_subcontext[SubName] = Expr[]
+            end
             push!(merge_expressions_by_subcontext[SubName], 
                   Expr(:(=), localname, :(getproperty(args, $(QuoteNode(localname))))))
         end

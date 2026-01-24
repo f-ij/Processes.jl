@@ -56,8 +56,7 @@ getalgorithm(sa::ScopedAlgorithm{F, Name}) where {F, Name} = sa.func
 """
 Remove the scope from the type
 """
-strip_scope(a::Any) = a
-function strip_scope(sat::Type{<:ScopedAlgorithm{F}}) where {F}
+function contained_type(sat::Type{<:ScopedAlgorithm{F}}) where {F}
         return F
 end
 
@@ -93,7 +92,7 @@ function isinstance(sa::ScopedAlgorithm, sa2::ScopedAlgorithm)
     end
     return sa.func === sa2.func
 end
-isinstance(o1::Any, o2::Any) = o1 === o2
+# isinstance(o1::Any, o2::Any) = o1 === o2
 
 
 
@@ -140,6 +139,13 @@ algotype(::ScopedAlgorithm{F, Name}) where {F, Name} = F
 algotype(f::Any) = typeof(f)
 
 scopedalgorithm_label(sa::ScopedAlgorithm) = string(summary(getalgorithm(sa)),"@",getname(sa))
+
+
+### CONTAINER TRAIT ###
+thincontainer(::Type{<:ScopedAlgorithm}) = true
+_contained_type(::Type{<:ScopedAlgorithm{F}}) where {F} = F
+_unwrap_container(sa::ScopedAlgorithm) = getalgorithm(sa)
+
 
 function Base.show(io::IO, sa::ScopedAlgorithm)
     algo_repr = sprint(show, getalgorithm(sa))

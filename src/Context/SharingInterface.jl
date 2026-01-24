@@ -59,11 +59,11 @@ get_aliasname(::Type{<:SharedVars{from_name, varnames, aliases}}) where {from_na
 contextname(sv::Type{<:SharedVars{from_name}}) where {from_name} = from_name
 contextname(sv::SharedVars{from_name}) where {from_name} = from_name
 
-function Base.iterate(r::Union{SharedVars{F,V,A}, Type{SharedVars{F,V,A}}}, state = 1) where {F,V,A}
+function Base.iterate(r::Union{SharedVars{F,V,SharedVarsA}, Type{SharedVars{F,V,SharedVarsA}}}, state = 1) where {F,V,SharedVarsA}
     if state > length(V)
         return nothing
     else
-        return ( (V[state], A[state]), state + 1 )
+        return ( (V[state], SharedVarsA[state]), state + 1 )
     end
 end
 
