@@ -1,3 +1,4 @@
+export viewmerge
 #######################
 ### SUBCONTEXT VIEW ###
 #######################
@@ -34,10 +35,12 @@ end
 Get a subcontext view for a specific subcontext
 """
 @inline Base.view(pc::ProcessContext, instance::ScopedAlgorithm) = SubContextView{typeof(pc), getname(instance), typeof(instance)}(pc, instance)
+
 @inline function Base.view(pc::ProcessContext, instance)
     scoped_instance = @inline value(static_get(get_registry(pc), instance))
     return SubContextView{typeof(pc), getname(scoped_instance), typeof(scoped_instance)}(pc, scoped_instance)
 end
+@inline Base.view(pc::ProcessContext, scv::SubContextView) = @inline view(pc, this_instance(scv))
 
 
 @inline this_instance(scv::SubContextView) = getfield(scv, :instance)
@@ -192,6 +195,8 @@ Returns a merged context by merging the provided named tuple into the appropriat
 end
 
 @inline Base.merge(scv::SubContextView, ::Nothing) = getcontext(scv)
+
+@inline viewmerge(scv::SubContextView, args::NamedTuple) = @inline view(merge(scv, args), this_instance(scv))
 
 """
 Instead of merging, replace the subcontext entirely with the provided args named tuple

@@ -37,18 +37,20 @@ end
 
 function unroll_funcs(sf::SimpleAlgo, a_idx, headf::F, tailf::T, context::C) where {F, T, C}
     (;process) = @inline getglobal(context)
+    # println("Return type of step! for function $a_idx : $return_type")
+    # error("Unrolling not yet implemented for SimpleAlgo")
 
     if isnothing(headf)
-        return context::C
+        return context
     end
 
     if !run(process)
         if resumable(sf)
             resume_idx!(sf)
         end
-        return context::C
+        return context
     end
-    context = @inline step!(headf, context)::C
+    context = @inline step!(headf, context)
     return @inline unroll_funcs(sf, a_idx+1, gethead(tailf), gettail(tailf), context)
 end
 
