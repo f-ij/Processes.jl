@@ -12,7 +12,10 @@ end
 """
 Update auto generated names means registry has been overruled, thus we set this to nothing
 """
-update_instance(ca::CompositeAlgorithm{T,I}, ::NameSpaceRegistry) where {T,I} = CompositeAlgorithm{T, I, Nothing, Nothing, Nothing}(ca.funcs, ca.inc, nothing, nothing, nothing)
+function update_instance(ca::CompositeAlgorithm{T,I}, newreg::NameSpaceRegistry) where {T,I}
+    # updated_reg = updatenames(ca.registry, newreg)
+    CompositeAlgorithm{T, I, Nothing, Nothing, Nothing}(ca.funcs, ca.inc, nothing, nothing, nothing)
+end
 getmultipliers_from_specification_num(::Type{<:CompositeAlgorithm}, specification_num) = 1 ./(Float64.(specification_num))
 
 

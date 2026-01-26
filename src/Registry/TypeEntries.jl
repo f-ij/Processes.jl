@@ -54,12 +54,6 @@ struct RegistryTypeEntry{T,DE,S,D}
 end
 
 function RegistryTypeEntry(obj::T) where T
-    # entrytype = nothing
-    # if obj isa Type
-    #     entrytype = contained_type(obj)
-    # else
-    #     entrytype = contained_type(typeof(obj))
-    # end
     entrytype = contained_type(obj)
     @static if DEBUG_MODE
         println("Creating RegistryTypeEntry for obj: $obj and type: $entrytype")
@@ -92,6 +86,19 @@ function setfield(rte::RegistryTypeEntry, new, location)
     end
 end
 
+function Base.setindex(rte::RegistryTypeEntry, new, idx::Int)
+    location = hasdefault(rte) ? (idx == 1 ? :default : :entries) : :entries
+
+    if location == :default
+        return setdefault(rte, new)
+    end
+
+    entries = rte[idx]
+    entries_idx = idx -1
+    newentries = Base.setindex(entries, new, entries_idx)
+    return setentries(rte, newentries)
+end
+
 
 getdefault(rte::RegistryTypeEntry) = getfield(rte, :default)
 getentries(rte::RegistryTypeEntry) = getfield(rte, :entries)
@@ -111,9 +118,6 @@ function add_dynamic_link!(obj, location::Symbol, idx::Int, rte::RegistryTypeEnt
     for contained in all_contained
         getdynamiclookup(rte)[contained] = (location, idx)
     end
-    # if iscontainer
-    #     get
-    # end
     return nothing
 end
 
@@ -222,6 +226,10 @@ function getmultiplier(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int = n
     end
 end
 
+
+##########################
+##### MATCHING  ##########
+##########################
 """
 Find a match in the entry, either default
     or other entries
@@ -423,6 +431,13 @@ function all_names(te::RegistryTypeEntry)
         names = (getname(te.default),)
     end
     return (names..., getname.(te.entries)...)
+end
+
+
+function findname_idx(te::RegistryTypeEntry, name::Symbol)
+    l = length(te)
+    entry_name = getname(te[idx])
+    return findfirst(==(name), entry_name)
 end
 
 ###############################

@@ -106,6 +106,27 @@ function prepare(d::Destructure, context::AbstractContext)
     return fields
 end
 
+#####
+# Can be set later during processing
+#####
+function DelayedStore(x::Type{T}) where {T}
+    id = (_dynamic_counter[] += 1)
+    DYNAMIC_STORE[id] = WeakRef(nothing)
+    return DynamicStore{id, T}()
+end
+
+function setreference(d::DynamicStore{id,T}, x::DT) where {id,T, DT <: T}
+    DYNAMIC_STORE[id] = WeakRef(x)
+    DYNAMIC_REVERSE[x] = id
+    if !isbitstype(T)
+        finalizer(x) do _
+            delete!(DYNAMIC_STORE, id)
+            delete!(DYNAMIC_REVERSE, x)
+        end
+    end
+    return nothing
+end
+
 ## CONTAINER
 
 thincontainer(::Type{<:Destructure}) = true

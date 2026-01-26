@@ -14,11 +14,15 @@ end
 
 NameSpaceRegistry() = NameSpaceRegistry(tuple())
 
-get_type_entries(reg::NameSpaceRegistry{T}) where {T} = reg.entries
+get_entries(reg::NameSpaceRegistry{T}) where {T} = reg.entries
 
 
 Base.getindex(reg::NameSpaceRegistry, idx::Int) = reg.entries[idx]
-
+function Base.setindex(reg::NameSpaceRegistry{T}, newentry, idx::Int) where {T}
+    old_entries = get_entries(reg)
+    new_entries = Base.setindex(old_entries, newentry, idx)
+    return NameSpaceRegistry{typeof(new_entries)}(new_entries)
+end
 
 """
 Types of entries as a tuple type Tuple{Type1, Type2, ...}
@@ -86,14 +90,8 @@ Add multiple objects to the registry with the same multiplier
 end
 
 
-
-
-
-
-
-
 function find_entry(reg::NameSpaceRegistry, obj::O) where O
-    entries = get_type_entries(reg, obj)
+    return  get_type_entries(reg, obj)
 end
 
 
@@ -204,8 +202,11 @@ function dynamic_get(reg::NameSpaceRegistry, val)
     return getentry(entries, loc...)
 end
 
+"""
+Iterator for NameSpaceRegistry
+"""
 function Base.iterate(reg::NameSpaceRegistry, state = (1,1))
-    type_entries = get_type_entries(reg)
+    type_entries = get_entries(reg)
     lengths = map(length, type_entries)
     if state[1] > length(type_entries) && state[2] > lengths[end]
         return nothing
@@ -257,6 +258,16 @@ end
 
 function all_names(reg::NameSpaceRegistry)
     flat_collect_broadcast(all_names, reg.entries)
+end
+
+function find_location_by_name(reg::NameSpaceRegistry, name::Symbol)
+    for (entry_idx, entry) in enumerate(reg.entries)
+        loc = find_location_by_name(entry, name)
+        if !isnothing(loc)
+            return (entry_idx, loc...)
+        end
+    end
+    return nothing
 end
 ########################
 ##### PREPARING ########
