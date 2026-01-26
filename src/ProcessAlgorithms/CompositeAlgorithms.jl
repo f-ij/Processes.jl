@@ -146,7 +146,7 @@ end
 Dispatch on a composite function
     Made such that the functions will be completely inlined at compile time
 """
-@inline function _comp_dispatch(ca::CompositeAlgorithm, context::C, algoidx::Int, this_inc::Int, thisfunc::TF, interval, funcs, intervals) where {I,TF,C<:AbstractContext}
+@inline function _comp_dispatch(ca::CompositeAlgorithm, context::C, algoidx::Int, this_inc::Int, thisfunc::TF, interval, funcs, intervals) where {TF,C<:AbstractContext}
     if isnothing(thisfunc)
         inc!(ca)
         GC.safepoint()

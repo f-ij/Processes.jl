@@ -40,12 +40,13 @@ end
 """
 Prepare context from TaskData
 """
-function prepare_context(td::TD, c::ProcessContext) where {TD<:TaskData}
+function prepare_context(td::TD) where {TD<:TaskData}
     lifetime = getlifetime(td)
     overrides = getoverrides(td)
     inputs = getinputs(td)
+    empty_c = getcontext(td)
     
-    return prepare_context(td.func, c, overrides..., inputs...; lifetime = lifetime)
+    return prepare_context(td.func, empty_c, overrides..., inputs...; lifetime = lifetime)
 end
 
 @inline function init_context(p::AbstractProcess)

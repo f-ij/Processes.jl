@@ -1,4 +1,4 @@
-export Process, getallocator, getnewallocator
+export Process, getallocator, getnewallocator, getcontext
 
 mutable struct Process{F} <: AbstractProcess
     id::UUID
@@ -52,8 +52,9 @@ function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1
     # tf = TaskData(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt)
     td = TaskData(func; lifetime, overrides = named_overrides, inputs = named_inputs)
 
-    context = init_context(td)
-    context = prepare_context(td, context)
+    # context = init_context(td)
+
+    context = prepare_context(td)
     p = Process(uuid1(), context, td, timeout, nothing, UInt(1), Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), 0)
     register_process!(p)
     @static if DEBUG_MODE
@@ -77,12 +78,12 @@ getallocator(p::Process) = p.allocator
 getinputcontext(p::Process) = p.taskdata.inputargs
 function getcontext(p::Process)
     if !isdone(p)   
-        return p.context
+        return merge_into_globals(p.context, (;process = p))
     else
         try
             return fetch(p)
         catch # if error state, just return context
-            return p.context
+            return merge_into_globals(p.context, (;process = p))
         end
     end
 end

@@ -38,24 +38,26 @@ cleanup(::Any, context) = (;)
 """
 Run a single function in a loop indefinitely
 """
-function processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
+Base.@constprop :aggressive function processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
     @static if DEBUG_MODE
         println("Running process loop indefinitely from thread $(Threads.threadid())")
     end
 
     @inline before_while(p)
     if resuming(p)
-        context = resume_step!(func, context)::C
+        context = @inline resume_step!(func, context)
     end
 
     while run(p)
-        context = (@inline step!(func, context))::C
+    # while true
+    # for _ in 1:100000000
+        context = (@inline step!(func, context))
         # @inline step!(func, context)::C
 
         @inline inc!(p) 
-        if isthreaded(p) || isasync(p)
-            GC.safepoint()
-        end
+        # if isthreaded(p) || isasync(p)
+        #     GC.safepoint()
+        # end
     end
     return @inline after_while(p, func, context)
 end
@@ -81,12 +83,12 @@ function processloop(p::AbstractProcess, func::F, context::C, r::Repeat) where {
         if !run(p)
             break
         end
-        context = @inline step!(func, context)::C
+        context = @inline step!(func, context)
         @inline inc!(p)
 
-        if isthreaded(p) || isasync(p)
-            GC.safepoint()
-        end
+        # if isthreaded(p) || isasync(p)
+        #     GC.safepoint()
+        # end
     end
     return @inline after_while(p, func, context)
 end

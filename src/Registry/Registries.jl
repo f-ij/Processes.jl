@@ -132,7 +132,7 @@ inherit(e1::NameSpaceRegistry; kwargs...) = e1
     find_this_type = contained_type(T) # For containers, get the contained type
     _type_index = find_typeidx(reg, find_this_type)
     if isnothing(_type_index)
-        error("typ: $typ, T: $T, find_this_type: $find_this_type, reg: $reg")
+        # error("typ: $typ, T: $T, find_this_type: $find_this_type, reg: $reg")
         error("Type $(find_this_type) not found in registry")
     end
     return :( reg.entries[$_type_index] )

@@ -68,6 +68,9 @@ function to_named(reg::NameSpaceRegistry, ov::Union{Override, Input})
     return Named(typeof(ov), name, get_vars(ov))
 end
 
+"""
+
+"""
 @inline function construct_context_merge_tuples(named_overrides_inputs::Union{NamedOverride, NamedInput}...; to_all = (;)) 
     if isempty(named_overrides_inputs)
         return (;)
@@ -101,6 +104,6 @@ end
         return context
     end
     # override_nt = construct_context_merge_tuples(context.registry, overrides_or_inputs...; to_all = to_all)
-    override_nt = construct_context_merge_tuples(overrides_or_inputs...; to_all = to_all)
-    merge_into_subcontexts(context, override_nt)
+    override_nt = @inline construct_context_merge_tuples(overrides_or_inputs...; to_all = to_all)
+    @inline merge_into_subcontexts(context, override_nt)
 end

@@ -1,10 +1,11 @@
 """
 Struct with all information to create the function within a process
 """
-struct TaskData{F, As, Or, Lt}
+struct TaskData{F, As, Or, C, Lt}
     func::F
     inputs::As # Input context as the process is created
     overrides::Or # Given as kwargs
+    empty_context::C # Gives the structure of the context for this task
     lifetime::Lt
 end
 
@@ -15,18 +16,20 @@ function TaskData(algo; overrides = tuple(), inputs = tuple(), lifetime = Indefi
     if algo isa Type # For convenience, allow passing types
         algo = algo()
     end
+    c = ProcessContext(algo; globals = (;lifetime, algo))
     # TaskData(algo, args, (;), overrides, lifetime, Ref(true))
-    TaskData(algo, inputs, overrides, lifetime)
+    TaskData(algo, inputs, overrides, c, lifetime)
 end
 
 getfunc(td::TaskData) = td.func
 getinputs(td::TaskData) = td.inputs
 getoverrides(td::TaskData) = td.overrides
 getlifetime(td::TaskData) = td.lifetime
+getcontext(td::TaskData) = td.empty_context
 
 
 function newfunc(tf::TaskData, func)
-    TaskData(func, tf.inputs, tf.overrides, tf.lifetime)
+    TaskData(func, tf.inputs, tf.overrides, tf.empty_context, tf.lifetime)
 end
 
 # """
@@ -37,7 +40,7 @@ end
 # end
 
 function preparedcontext(tf::TaskData, context)
-    TaskData(tf.func, context, tf.overrides, tf.lifetime)
+    TaskData(tf.func, context, tf.overrides, tf.empty_context, tf.lifetime)
 end
 
 # TODO: ???

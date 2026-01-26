@@ -69,12 +69,12 @@ end
 @inline Base.getproperty(sc::SubContext, name::Symbol) = getproperty(getdata(sc), name)
 @inline function Base.merge(sc::SubContext{Name, T, S, R}, args::NamedTuple) where {Name, T, S, R}
     merged = merge(getdata(sc), args)
-    SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
+    @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
 end
 
 @inline function Base.merge(args::NamedTuple, sc::SubContext{Name, T, S, R}) where {Name, T, S, R}
     merged = merge(args, getdata(sc))
-    SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
+    @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
 end
 
 
