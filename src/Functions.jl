@@ -512,7 +512,7 @@ end
 """
 From kwargs delete a key
 """
-@inline deletekeys(ps::NamedTuple, ks::FieldName...) = deletekeys(ps, Val.(ks)...)
+@inline deletekeys(ps::NamedTuple, ks::Symbol...)  = deletekeys(ps, Val.(ks)...)
 @inline @generated function deletekeys(ps::NamedTuple, ks::Val...)
     names = ps.parameters[1]
     drop_syms = isempty(ks) ? () : Tuple(k.parameters[1] for k in ks)
@@ -634,7 +634,7 @@ end
 """
 Replace a field in a struct by name and return a new instance
 """
-@inline setproperty(val::V, name::FieldName, value, custom_constructor = nothing) where {V} = setproperty(val, Val(name), value, custom_constructor)
+@inline setproperty(val::V, name::Symbol, value, custom_constructor = nothing) where {V} = setproperty(val, Val(name), value, custom_constructor)
 @generated function setproperty(val::V, name::Val{s}, value, custom_constructor = nothing) where {V,s}
     fieldnames = Base.fieldnames(V)
     constructor = nothing

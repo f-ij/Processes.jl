@@ -118,9 +118,12 @@ end
 @inline Base.getproperty(sct::SubContextView, v::Symbol) = getproperty(sct, Val(v))
 @inline @generated function Base.getproperty(sct::SubContextView{CType, SubName}, v::Val{name}) where {CType, SubName, name}
     locations = get_all_locations(sct)
-    target_location = getproperty(locations, name)
-
-    return :( @inline getproperty(sct, $target_location) )
+    if haskey(locations, name)
+        target_location = getproperty(locations, name)
+        return :( @inline getproperty(sct, $target_location) )
+    end
+    available = keys(locations)
+    return :(error("Variable $(QuoteNode(name)) requested, but not supplied to context. Available names are: $(available)"))
 end
 
 @inline @generated function Base.iterate(scv::SubContextView, state = 1)
