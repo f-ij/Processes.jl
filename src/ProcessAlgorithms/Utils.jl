@@ -12,34 +12,17 @@ get_registry(a::Any) = NameSpaceRegistry()
 """
 Obtain all the registriees, merge them and update the names downwards in the algorithm accordingly
 """
-function update_loopalgorithm_names(pa::ComplexLoopAlgorithm, base_registry)
+function recursive_update_cla_names(pa::ComplexLoopAlgorithm, base_registry)
     oldsfuncs = getfuncs(pa)
-    funcs = update_loopalgorithm_names.(oldsfuncs, Ref(base_registry)) #Recursive replace ComplexLoopAlgorithm
-    funcs = update_instance.(oldsfuncs, Ref(base_registry)) # Rename ScopedAlgorithms and remove old registries
+
+    funcs = recursive_update_cla_names.(oldsfuncs, Ref(base_registry)) #Recursive replace ComplexLoopAlgorithm
+    funcs = update_scope.(funcs, Ref(base_registry)) # Rename ScopedAlgorithms and remove old registries
     pa_new = newfuncs(pa, funcs)
-    return pa_new
+    update_scope(pa_new, base_registry)
 end
 
-function update_loopalgorithm_names(a::Any, ::Any)
+function recursive_update_cla_names(a::Any, ::Any)
     return a
 end
-
-# @inline function mergeargs(args::NamedTuple, returnval)
-#     if returnval isa NamedTuple
-#         return (;args..., returnval...)
-#     end
-#     return args
-#     # isnothing(returnval) ? args : (;args..., returnval...)
-# end
-# @inline function invert_namespace(args, name)
-#     (;getproperty(args, name)..., globalargs = args)
-# end
-
-# @inline function namedstep!(namedalgo, args)
-#     if hasname(namedalgo)
-#         args = invert_namespace(args, getname(namedalgo))
-#     end
-#     @inline step!(namedalgo, args)
-# end
 
 instantiate(f) = f isa Type ? f() : f

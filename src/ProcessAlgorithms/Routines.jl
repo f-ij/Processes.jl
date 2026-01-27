@@ -3,15 +3,18 @@ export Routine
 """
 Struct to create routines
 """
-struct Routine{T, Repeats, MV, NSR, S, SV} <: ComplexLoopAlgorithm
+struct Routine{T, Repeats, MV, NSR, O, id} <: ComplexLoopAlgorithm
     funcs::T
     resume_idxs::MV
     registry::NSR
-    shared_contexts::S
-    shared_vars::SV
+    options::O
 end
 
-update_instance(ca::Routine{T,R, MV}, ::NameSpaceRegistry) where {T,R, MV} = Routine{T, R, MV, Nothing, Nothing, Nothing}(ca.funcs, ca.resume_idxs, nothing, nothing, nothing)
+# function update_scope(ca::Routine{T,R, MV}, newreg::NameSpaceRegistry) where {T,R, MV}
+#     updated_reg, _ = updatenames(ca.registry, newreg)
+#     # Routine{T, R, MV, typeof(updated_reg), Nothing}(ca.funcs, ca.resume_idxs, updated_reg, nothing)
+#     return setfield(ca, :registry, updated_reg)
+# end
 getmultipliers_from_specification_num(::Type{<:Routine}, specification_num) = Float64.(specification_num)
 get_resume_idxs(r::Routine) = r.resume_idxs
 resumable(r::Routine) = true
@@ -20,14 +23,13 @@ function Routine(funcs::NTuple{N, Any},
                             repeats::NTuple{N, Real} = ntuple(x -> 1, length(funcs)), 
                             shares_and_routes::Union{Share, Route}...) where {N}
 
-    (;functuple, registry, shared_contexts, shared_vars) = setup(Routine, funcs, repeats, shares_and_routes...)
+    (;functuple, registry, options) = setup(Routine, funcs, repeats, shares_and_routes...)
     sidxs = MVector{length(functuple),Int}(ones(length(functuple)))
-    Routine{typeof(functuple), typeof(repeats), typeof(sidxs), typeof(registry), typeof(shared_contexts), typeof(shared_vars)}(functuple, sidxs, registry, shared_contexts, shared_vars)
+    Routine{typeof(functuple), repeats, typeof(sidxs), typeof(registry), typeof(options), uuid4()}(functuple, sidxs, registry, options)
 end
 
 function newfuncs(r::Routine, funcs)
-    nsr = NameSpaceRegistry(funcs)
-    Routine{typeof(funcs), repeats(r), typeof(r.resume_idxs), typeof(nsr), typeof(r.shared_contexts), typeof(r.shared_vars)}(funcs, r.resume_idxs, nsr, r.shared_contexts, r.shared_vars)
+    setfield(r, :funcs, funcs)
 end
 
 subalgorithms(r::Routine) = r.funcs
@@ -40,6 +42,7 @@ repeats(::Type{<:Routine{F,R}}) where {F,R} = R
 repeats(r::Routine{F,R}) where {F,R} = R
 multipliers(r::Routine) = repeats(r)
 multipliers(rT::Type{<:Routine}) = repeats(rT)
+getid(r::Union{Routine{T,R,MV,NSR,O,id}, Type{<:Routine{T,R,MV,NSR,O,id}}}) where {T,R,MV,NSR,O,id} = id
 
 repeats(r::Routine{F,R}, idx) where {F,R} = getindex(repeats(r), idx)
 getfuncs(r::Routine) = r.funcs

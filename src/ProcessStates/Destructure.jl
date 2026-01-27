@@ -12,8 +12,7 @@ const DYNAMIC_STORE = Dict{UInt64, WeakRef}()
 const DYNAMIC_REVERSE = WeakKeyDict{Any, UInt64}()
 const _dynamic_counter = Ref{UInt64}(0)
 
-function DynamicStore(x::T) where {T}
-    id = (_dynamic_counter[] += 1)
+function DynamicStore(x::T, id = (_dynamic_counter[] += 1)) where {T}
     DYNAMIC_STORE[id] = WeakRef(x)
     DYNAMIC_REVERSE[x] = id
     if !isbitstype(T)
@@ -49,7 +48,33 @@ function getdynamicstore_id(x)
     return get(DYNAMIC_REVERSE, x, nothing)
 end
 
+#####
+# Can be set later during processing
+#####
+function DelayedStore(x::Type{T}) where {T}
+    id = (_dynamic_counter[] += 1)
+    DYNAMIC_STORE[id] = WeakRef(nothing)
+    return DynamicStore{id, T}()
+end
+
+function setreference(d::DynamicStore{id,T}, x::DT) where {id,T, DT <: T}
+    DYNAMIC_STORE[id] = WeakRef(x)
+    DYNAMIC_REVERSE[x] = id
+    if !isbitstype(T)
+        finalizer(x) do _
+            delete!(DYNAMIC_STORE, id)
+            delete!(DYNAMIC_REVERSE, x)
+        end
+    end
+    return nothing
+end
+
+## THINCONTAINER
 thincontainer(::Type{<:DynamicStore}) = true
+function (ds::DynamicStore{id,T})(newobj::O) where {id,T,O<:T} # Composition
+    release!(ds)
+    return DynamicStore(newobj, id)
+end
 _contained_type(::Type{<:DynamicStore{id, T}}) where {id, T} = typeof(DYNAMIC_STORE[id].value)
 _unwrap_container(d::DynamicStore) = getvalue(d)
 
@@ -106,29 +131,10 @@ function prepare(d::Destructure, context::AbstractContext)
     return fields
 end
 
-#####
-# Can be set later during processing
-#####
-function DelayedStore(x::Type{T}) where {T}
-    id = (_dynamic_counter[] += 1)
-    DYNAMIC_STORE[id] = WeakRef(nothing)
-    return DynamicStore{id, T}()
-end
-
-function setreference(d::DynamicStore{id,T}, x::DT) where {id,T, DT <: T}
-    DYNAMIC_STORE[id] = WeakRef(x)
-    DYNAMIC_REVERSE[x] = id
-    if !isbitstype(T)
-        finalizer(x) do _
-            delete!(DYNAMIC_STORE, id)
-            delete!(DYNAMIC_REVERSE, x)
-        end
-    end
-    return nothing
-end
-
 ## CONTAINER
-
 thincontainer(::Type{<:Destructure}) = true
+function (d::Destructure{T,F})(newobj::O) where {T,F,O<:T} # Composition rule
+    return Destructure(newobj, d.func)
+end
 _contained_type(::Type{<:Destructure{T, F}}) where {T, F} = contained_type(T)
-_unwrap_container(d::Destructure{T, F}) where {T, F} = d.obj
+_unwrap_container(d::Destructure{T, F}) where {T, F} = getvalue(d)

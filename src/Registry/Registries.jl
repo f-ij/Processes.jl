@@ -121,11 +121,28 @@ function inherit(registry1::NameSpaceRegistry, registry2::NameSpaceRegistry, mul
 end
 inherit(e1::NameSpaceRegistry; kwargs...) = e1
 
+#####################
+#### UPDATING SCOPE ##
+#####################
+"""
+Recursively update the scop of thinwrappers containing a scopedalgorithm
+"""
+function update_scope(func::F, reg::NameSpaceRegistry) where {F}
+    return rebuild_from(x -> x isa ScopedAlgorithm, 
+        x -> begin 
+            ScopedAlgorithm(unwrap_container(x), getname(reg, x), id(x))
+        end,
+        func)
+end
 
 
 ########################
     ### ACCESSORS ###
-########################    
+########################   
+
+"""
+Get entries for a given type T
+"""
 @generated function get_type_entries(reg::NameSpaceRegistry, typ::Type{T}) where {T}
     find_this_type = contained_type(T) # For containers, get the contained type
     _type_index = find_typeidx(reg, find_this_type)
@@ -136,35 +153,10 @@ inherit(e1::NameSpaceRegistry; kwargs...) = e1
     return :( reg.entries[$_type_index] )
 end
 
-get_type_entries(reg::NameSpaceRegistry, obj) = get_type_entries(reg, typeof(obj))
-
-function static_value_get(reg::NameSpaceRegistry, v)
-    entries = get_type_entries(reg, v)
-    return value(static_get(entries, v))
+function get_type_entries(reg::NameSpaceRegistry, obj)
+    ctype = contained_type(obj)
+    get_type_entries(reg, ctype)
 end
-
-function static_find_name(reg::NameSpaceRegistry, val)
-    found_scoped_value = static_value_get(reg, val)
-    if isnothing(found_scoped_value)
-        return nothing
-    else
-        return getname(found_scoped_value)
-    end
-end
-
-########################
-    ### UTILITIES ###
-########################
-function update_instance(func, registry::NameSpaceRegistry)
-    # name = getname(registry, func)
-    scoped_instance = static_value_get(registry, func)
-    if isnothing(scoped_instance)
-        error("No name found for function $(func) in registry")
-    else
-        return scoped_instance
-    end
-end
-
 
 #########################
 ### Lookup Utilities ###
@@ -186,11 +178,26 @@ function static_lookup(reg::NameSpaceRegistry, val)
     return static_findfirst(entries, val)
 end
 
+function static_get_match(reg::NameSpaceRegistry, val)
+    entries = get_type_entries(reg, val)
+    loc, idx = find_match(entries, val)
+    if isnothing(loc)
+        return nothing
+    end
+    return getentry(entries, loc, idx)
+end
+
+function get_default(reg::NameSpaceRegistry, typ)
+    entries = get_type_entries(reg, typ)
+    return getdefault(entries)
+end
 
 #########################
     ##### GETTERS #####
 #########################
-
+"""
+Get the static entry from the registry
+"""
 function static_get(reg::NameSpaceRegistry, val)
     entries = get_type_entries(reg, val)
     return static_get(entries, val)
@@ -202,24 +209,6 @@ function dynamic_get(reg::NameSpaceRegistry, val)
     return getentry(entries, loc...)
 end
 
-"""
-Iterator for NameSpaceRegistry
-"""
-function Base.iterate(reg::NameSpaceRegistry, state = (1,1))
-    type_entries = get_entries(reg)
-    lengths = map(length, type_entries)
-    if state[1] > length(type_entries) && state[2] > lengths[end]
-        return nothing
-    end
-    next_state = state
-    if state[2] > lengths[state[1]]
-        next_state = (state[1] + 1, 1)
-    else
-        next_state = (state[1], state[2] + 1)
-    end
-    return type_entries[state[1]][state[2]], next_state
-end
-
 function getmultiplier(reg::NameSpaceRegistry, val)
     entry = static_get(reg, val)
     if isnothing(entry)
@@ -228,6 +217,9 @@ function getmultiplier(reg::NameSpaceRegistry, val)
     return multiplier(entry)
 end
 
+"""
+Statically Get the name from the registry
+"""
 function getname(reg::NameSpaceRegistry, val)
     entry = static_get(reg, val)
     if isnothing(entry)
@@ -236,27 +228,69 @@ function getname(reg::NameSpaceRegistry, val)
     return getname(entry)
 end
 
+
+#### TODO: Remove either of these and merge
+"""
+Statically Find the name in the registry
+"""
+function static_find_name(reg::NameSpaceRegistry, val)
+    found_scoped_value = static_value_get(reg, val)
+    if isnothing(found_scoped_value)
+        return nothing
+    else
+        return getname(found_scoped_value)
+    end
+end
+
+function static_value_get(reg::NameSpaceRegistry, v::V) where {V}
+    entries = get_type_entries(reg, v)
+    return value(static_get(entries, v))
+end
+
+function dynamic_value_get(reg::NameSpaceRegistry, v::V) where {V}
+    return value(dynamic_get(reg, v))
+end
+
 """
 Get the value from the registry
 """
 @inline function Base.getindex(reg::NameSpaceRegistry{T}, obj) where {T}
     if obj isa Type || isbits(obj)
-        return static_get(reg, obj)
+        return static_value_get(reg, obj)
     else
-        return dynamic_get(reg, obj)
+        return dynamic_value_get(reg, obj)
     end
 end
 
+@inline function Base.get(reg::NameSpaceRegistry, obj, default = nothing)
+    if obj isa Type || isbits(obj)
+        try
+            return static_value_get(reg, obj)
+        catch e
+            return default
+        end
+    else
+        try 
+            return dynamic_value_get(reg, obj)
+        catch e
+            return default
+        end
+    end
+end
 
 #######################
     ##### NAMES #####
 #######################
 
-function all_named_algos(reg::NameSpaceRegistry)
+function all_named_algos(reg::Union{NameSpaceRegistry, Type{<:NameSpaceRegistry}})
     flat_collect_broadcast(all_named_algos, reg.entries)
 end
 
-function all_names(reg::NameSpaceRegistry)
+function all_types(reg::Union{NameSpaceRegistry, Type{<:NameSpaceRegistry}})
+    flat_collect_broadcast(all_types, reg.entries)
+end
+
+function all_names(reg::Union{NameSpaceRegistry, Type{<:NameSpaceRegistry}})
     flat_collect_broadcast(all_names, reg.entries)
 end
 
@@ -269,6 +303,13 @@ function find_location_by_name(reg::NameSpaceRegistry, name::Symbol)
     end
     return nothing
 end
+
+function replacenames(reg::NameSpaceRegistry, changed_names::Dict{Symbol,Symbol})
+    newentries = map(entry -> replacenames(entry, changed_names), reg.entries)
+    return NameSpaceRegistry{typeof(newentries)}(newentries)
+end
+    
+
 ########################
 ##### PREPARING ########
 ########################
@@ -285,7 +326,25 @@ Return all named objects
     all_in_order = (process_states..., other...)
     return :( $all_in_order )
 end
+##########################
+    ##### ITERATING #####
+##########################
 
+"""
+Iterator for NameSpaceRegistry
+"""
+function Base.iterate(reg::NameSpaceRegistry, state = 1)
+    if state > length(reg.entries)
+        return nothing
+    else
+        return (reg[state], state + 1)
+    end
+end
+
+function entries_iterator(reg::NameSpaceRegistry)
+    typeentries = get_entries(reg)
+    return flat_collect_broadcast(entries_iterator, typeentries)
+end
 
 ########################
   ##### SHOW #####

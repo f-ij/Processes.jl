@@ -41,8 +41,12 @@ Args should name subcontext they want to replace, check if all names are in the 
 function Base.replace(pc::ProcessContext{D, Reg}, args::NamedTuple) where {D, Reg}
     names_to_replace = propertynames(args)
     @assert all( n -> hasproperty(get_subcontexts(pc), n), names_to_replace) "Trying to replace unknown subcontext(s) $(setdiff(names_to_replace, propertynames(get_subcontexts(pc)))) in ProcessContext"
-    newcontext = merge_into_subcontexts(pc, args)
-    return newcontext
+    old_subs = get_subcontexts(pc)
+    replaced_gen = (name => 
+            begin haskey(args, name) ? replace(getproperty(old_subs, name), getproperty(args, name)) : getproperty(old_subs, name) end  for name in propertynames(old_subs))
+    newsubs = (;old_subs..., replaced_gen...)
+    
+    return setfield(pc, :subcontexts, newsubs)
 end
 
 @inline get_subcontexts(pc::ProcessContext) = getfield(pc, :subcontexts)
@@ -111,6 +115,21 @@ end
 ### DISPLAY ###
 ########################
 
+@inline _is_input_like(x) = x isa NamedInput || x isa NamedOverride
+
+function _format_inputs_tuple(t::Tuple)
+    isempty(t) && return "Inputs: ∅"
+    items = String[]
+    for it in t
+        if _is_input_like(it)
+            push!(items, string(get_target_name(it), " ", get_vars(it)))
+        else
+            push!(items, sprint(summary, it))
+        end
+    end
+    return "Inputs: " * join(items, ", ")
+end
+
 function _sharedvars_display(sharedvars_types)
     sharedvars_types === Tuple{} && return String[]
     items = String[]
@@ -137,7 +156,11 @@ function _subcontext_var_lines(sc::SubContext)
     else
         for name in data_names
             val = getproperty(data, name)
-            push!(lines, string(name, " = ", summary(val)))
+            if val isa Tuple && all(_is_input_like, val)
+                push!(lines, string(name, " = ", _format_inputs_tuple(val)))
+            else
+                push!(lines, string(name, " = ", summary(val)))
+            end
         end
     end
     sharedvars_items = _sharedvars_display(getsharedvars_types(typeof(sc)))
@@ -155,7 +178,11 @@ function _subcontext_var_lines(sc::NamedTuple)
     else
         for name in data_names
             val = getproperty(sc, name)
-            push!(lines, string(name, " = ", summary(val)))
+            if val isa Tuple && all(_is_input_like, val)
+                push!(lines, string(name, " = ", _format_inputs_tuple(val)))
+            else
+                push!(lines, string(name, " = ", summary(val)))
+            end
         end
     end
     return lines

@@ -3,7 +3,7 @@ Get the name from a ScopedAlgorithm and prepare the inputs for it
 """
 @inline function prepare(sa::ScopedAlgorithm, inputcontext::AbstractContext)
     name = getname(sa)
-    inputview = view(inputcontext, sa)
+    inputview = @inline view(inputcontext, sa)
     @inline replace(inputcontext, (;name => @inline prepare(getalgorithm(sa), inputview)))
 end
 

@@ -1,5 +1,5 @@
 export get_registry, add_instance, add, find_entry, find_typeidx
-
+## BUILDS ON THINCONTAINERS
 include("Utils.jl")
 include("PreferWeakKeyDict.jl")
 

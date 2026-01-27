@@ -12,9 +12,9 @@ function setup(cla_target_type::Type{<:ComplexLoopAlgorithm},funcs::NTuple{N, An
         if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
             func = deepcopy(func)
         else
-            registry, namedfunc = add_instance(registry, func, multipliers[func_idx])
+            registry, func = add_instance(registry, func, multipliers[func_idx])
         end
-        push!(allfuncs, namedfunc)
+        push!(allfuncs, func)
     end
 
 
@@ -23,15 +23,16 @@ function setup(cla_target_type::Type{<:ComplexLoopAlgorithm},funcs::NTuple{N, An
     process_state = filter(x -> x isa ProcessState, options_all)
     registry = add(registry, process_state...)
 
-    allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
+    allfuncs = recursive_update_cla_names.(allfuncs, Ref(registry))
 
     functuple = tuple(allfuncs...)
     specification_num = tuple(floor.(Int, specification_num)...)
 
-    routes = filter(x -> x isa Route, options_all)
-    shares = filter(x -> x isa Share, options_all)
+    # routes = filter(x -> x isa Route, options_all)
+    # shares = filter(x -> x isa Share, options_all)
+    resolved_options = resolve_options(registry, options_all...)
 
-    shared_contexts = resolve_shares(registry, shares...)
-    shared_vars = resolve_routes(registry, routes...)
-    (;functuple, registry, shared_contexts, shared_vars)
+    # shared_contexts = resolve_options(registry, shares...)
+    # shared_vars = resolve_options(registry, routes...)
+    (;functuple, registry, options = resolved_options)
 end

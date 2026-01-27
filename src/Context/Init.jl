@@ -10,7 +10,7 @@ function ProcessContext(algos::ComplexLoopAlgorithm; globals = (;))
     # routes = filter(x -> x isa Route, shared_specs)
 
     # sharedcontexts = resolve_shares(registry, shares...)
-    # sharedvars = resolve_routes(registry, routes...)
+    # sharedvars = resolve_options(registry, routes...)
 
 
 

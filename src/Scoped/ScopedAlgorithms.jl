@@ -14,7 +14,13 @@ end
 """
 Set an explicit name for an algorithm
 """
-ScopedAlgorithm(f, name::Symbol, id::Union{Nothing, UUID} = nothing) = ScopedAlgorithm{typeof(f), name, id}(f)
+function ScopedAlgorithm(f, name::Symbol, id::Union{Nothing, Symbol, UUID} = nothing)
+    if f isa ScopedAlgorithm
+        return ScopedAlgorithm(getalgorithm(f), name, id(f))
+    end
+    f = instantiate(f) # Don't wrap a type
+    ScopedAlgorithm{typeof(f), name, id}(f)
+end
 Autoname(f, i::Int, prefix = "", id = nothing) = ScopedAlgorithm{typeof(f), Symbol(prefix, nameof(typeof(f)),"_",string(i)), id}(f)
 Autoname(f::ScopedAlgorithm, i::Int, prefix = "") = ScopedAlgorithm{typeof(f.func), Symbol(prefix, nameof(typeof(f.func)),"_",string(i)), id(f)}(f.func)
 DefaultScope(f, prefix = "") = ScopedAlgorithm{typeof(f), Symbol(prefix, nameof(typeof(f)),"_", 0), :default}(f) 
@@ -143,6 +149,9 @@ scopedalgorithm_label(sa::ScopedAlgorithm) = string(summary(getalgorithm(sa)),"@
 
 ### CONTAINER TRAIT ###
 thincontainer(::Type{<:ScopedAlgorithm}) = true
+function (sa::ScopedAlgorithm)(newobj::O) where {O} # Composition rule
+    return ScopedAlgorithm(newobj, getname(sa), id(sa))
+end
 _contained_type(::Type{<:ScopedAlgorithm{F}}) where {F} = F
 _unwrap_container(sa::ScopedAlgorithm) = getalgorithm(sa)
 

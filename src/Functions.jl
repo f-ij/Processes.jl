@@ -512,7 +512,7 @@ end
 """
 From kwargs delete a key
 """
-@inline deletekeys(ps::NamedTuple, ks::Symbol...) = deletekeys(ps, Val.(ks)...)
+@inline deletekeys(ps::NamedTuple, ks::FieldName...) = deletekeys(ps, Val.(ks)...)
 @inline @generated function deletekeys(ps::NamedTuple, ks::Val...)
     names = ps.parameters[1]
     drop_syms = isempty(ks) ? () : Tuple(k.parameters[1] for k in ks)
@@ -634,7 +634,7 @@ end
 """
 Replace a field in a struct by name and return a new instance
 """
-@inline setproperty(val::V, name::Symbol, value, custom_constructor = nothing) where {V} = setproperty(val, Val(name), value, custom_constructor)
+@inline setproperty(val::V, name::FieldName, value, custom_constructor = nothing) where {V} = setproperty(val, Val(name), value, custom_constructor)
 @generated function setproperty(val::V, name::Val{s}, value, custom_constructor = nothing) where {V,s}
     fieldnames = Base.fieldnames(V)
     constructor = nothing
@@ -648,3 +648,67 @@ Replace a field in a struct by name and return a new instance
     return exp
 end
 
+"""
+General replacing setfield
+"""
+@inline setfield(s::S, name::Symbol, val::V) where {S,V} = setfield(s, Val(name), val)
+@generated function setfield(s::S, name::Val{FieldName}, val::V) where {S,V, FieldName}
+    fieldnames = Base.fieldnames(S)
+    field_match = findfirst(==(FieldName), fieldnames)
+    if isnothing(field_match)
+        error("Field $(FieldName) not found in struct $(S)\nfieldnames are: $(fieldnames)\nlooking for field of type $(V)")
+    end
+    parameters = S.parameters
+    parameter_match = findfirst(==(fieldtype(S, FieldName)), tuple(parameters...))
+    type_expr = :($S)
+    if !isempty(parameters) && !isnothing(parameter_match) && !(S <: NamedTuple)
+        parameters = (parameters[1:(parameter_match - 1)]..., val, parameters[(parameter_match + 1):end]...)
+        parameters = map(x -> x isa Symbol ? QuoteNode(x) : x, parameters)
+
+        type_expr = Expr(:curly, :($(nameof(S))), parameters...)
+    end    
+
+    getfields = Any[:(getfield(s, $(QuoteNode(field)))) for field in fieldnames]
+    getfields[field_match] = :(val)
+
+    #Namedtuple handling
+    # If it's a namedtuple, we only need the names
+    if S <: NamedTuple
+        parameters = tuple(S.parameters[1]...)
+        type_expr = Expr(:curly, :($(nameof(S))), parameters)
+        getfields = tuple(Expr(:tuple, getfields...))
+    end
+
+    
+    exp = Expr(:call, type_expr, getfields...)
+    # error("Exp: $exp")
+
+
+    ### ERROR:
+        exp_str = sprint(show, exp)
+        type_expr_str = sprint(show, type_expr)
+        getfields_str = repr(getfields)
+        msg = string(
+            "\n--- setfield debug ---\n",
+            "S = ", S, "\n",
+            "FieldName = ", FieldName, "\n",
+            "V = ", V, "\n\n",
+            "fieldnames = ", fieldnames, "\n",
+            "field_match = ", field_match, " (", fieldnames[field_match], ")\n\n",
+            "S.parameters = ", S.parameters, "\n",
+            "parameter_match = ", parameter_match, "\n",
+            "new parameters = ", parameters, "\n\n",
+            "type_expr = ", type_expr_str, "\n",
+            "getfields = ", getfields_str, "\n",
+            "exp = ", exp_str, "\n",
+        )
+
+    return quote
+        try
+            $exp
+        catch e
+            error($msg * "\nOriginal error: " * sprint(showerror, e))
+        end
+    end
+    # return exp
+end

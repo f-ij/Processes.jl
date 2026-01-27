@@ -1,74 +1,47 @@
 #AlgoTracker
 export inc!, nextalgo!
 export CompositeAlgorithm
-struct CompositeAlgorithm{T, Intervals, NSR, S, R} <: ComplexLoopAlgorithm
+struct CompositeAlgorithm{T, Intervals, NSR, O, id} <: ComplexLoopAlgorithm
     funcs::T
     inc::Base.RefValue{Int} # To track the intervals
     registry::NSR
-    shared_contexts::S
-    shared_vars::R
+    options::O
 end
 
-"""
-Update auto generated names means registry has been overruled, thus we set this to nothing
-"""
-function update_instance(ca::CompositeAlgorithm{T,I}, newreg::NameSpaceRegistry) where {T,I}
-    # updated_reg = updatenames(ca.registry, newreg)
-    CompositeAlgorithm{T, I, Nothing, Nothing, Nothing}(ca.funcs, ca.inc, nothing, nothing, nothing)
-end
+# """
+# Update auto generated names means registry has been overruled, thus we set this to nothing
+# """
+# function update_scope(ca::CompositeAlgorithm{T,I}, newreg::NameSpaceRegistry) where {T,I}
+#     updated_reg, _ = updatenames(ca.registry, newreg)
+#     CompositeAlgorithm{T, I, typeof(updated_reg), typeof(getoptions(ca))}(getfuncs(ca), getinc(ca), updated_reg, getoptions(ca))
+# end
+# function update_scope(ca::CompositeAlgorithm, newreg)
+#     updated_reg, _ = updatenames(ca.registry, newreg)
+#     return setfield(ca, :registry, updated_reg)
+# end
+    
 getmultipliers_from_specification_num(::Type{<:CompositeAlgorithm}, specification_num) = 1 ./(Float64.(specification_num))
 
 
 function CompositeAlgorithm(funcs::NTuple{N, Any}, 
                             intervals::NTuple{N, Real} = ntuple(_ -> 1, N), 
                             options::Union{Share, Route, ProcessState}...) where {N}
-    (;functuple, registry, shared_contexts, shared_vars) = setup(CompositeAlgorithm, funcs, intervals, options...)
-    CompositeAlgorithm{typeof(functuple), intervals, typeof(registry), typeof(shared_contexts), typeof(shared_vars)}(functuple, Ref(1), registry, shared_contexts, shared_vars)
+    (;functuple, registry, options) = setup(CompositeAlgorithm, funcs, intervals, options...)
+    CompositeAlgorithm{typeof(functuple), intervals, typeof(registry), typeof(options), uuid4()}(functuple, Ref(1), registry, options)
 end
 
-
-# function CompositeAlgorithm(funcs::NTuple{N, Any}, 
-#                             intervals::NTuple{N, Real} = ntuple(_ -> 1, N), 
-#                             shares_and_routes::Union{Share, Route}...; 
-#                             flags...) where {N}
-
-#     set = isempty(flags) ? Set{Symbol}() : Set(flags)
-#     allfuncs = Any[]
-#     allintervals = Int[]
-#     registry = NameSpaceRegistry()
-#     multipliers = 1. ./(Float64.(intervals))
-
-#     for (func_idx, func) in enumerate(funcs)
-#         if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
-#             func = deepcopy(func)
-#         else
-#             registry, namedfunc = add_instance(registry, func, multipliers[func_idx])
-#         end
-#         I = intervals[func_idx]
-#         push!(allfuncs, namedfunc)
-#         push!(allintervals, I)
-#     end
-
-#     registry = inherit(registry, get_registry.(allfuncs)...; multipliers)
-#     # Updating names downwards (each branch only needs its own replacements)
-#     allfuncs = update_loopalgorithm_names.(allfuncs, Ref(registry))
-
-#     tfuncs = tuple(allfuncs...)
-#     allintervals = tuple(floor.(Int, allintervals)...)
-
-#     flags = Set(flags...)
-#     CompositeAlgorithm{typeof(tfuncs), allintervals, typeof(registry), typeof(shares_and_routes)}(tfuncs, Ref(1), flags, registry, shares_and_routes)
-# end
-
-# CompositeAlgorithm(ca::CompositeAlgorithm, funcs = ca.funcs) = CompositeAlgorithm(funcs, ca.inc, flags = ca.flags)
 function newfuncs(ca::CompositeAlgorithm, funcs)
-    nsr = NameSpaceRegistry(funcs)
-    CompositeAlgorithm{typeof(funcs), intervals(ca), typeof(nsr), typeof(ca.shared_specs)}(funcs, ca.inc, ca.flags, nsr, ca.shared_specs)
+    # CompositeAlgorithm{typeof(funcs), intervals(ca), typeof(ca.registry), typeof(ca.options)}(funcs, ca.inc, ca.registry , ca.options)
+    setfield(ca, :funcs, funcs)
 end
 
 subalgorithms(ca::CompositeAlgorithm) = ca.funcs
 subalgotypes(ca::CompositeAlgorithm{FT}) where FT = FT.parameters
 subalgotypes(caT::Type{<:CompositeAlgorithm{FT}}) where FT = FT.parameters
+
+getinc(ca::CompositeAlgorithm) = ca.inc
+getoptions(ca::CompositeAlgorithm) = ca.options
+getid(ca::Union{CompositeAlgorithm{T,I,NSR,O,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,id}}}) where {T,I,NSR,O,id} = id
 
 # getnames(ca::CompositeAlgorithm{T, I, N}) where {T, I, N} = N
 Base.length(ca::CompositeAlgorithm) = length(ca.funcs)
@@ -128,8 +101,6 @@ numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
 @inline getinterval(::CompositeAlgorithm{T,I}, idx) where {T,I} = I[idx]
 iterval(ca::CompositeAlgorithm, idx) = getinterval(ca, idx)
 
-
-
 # CompositeAlgorithm(f, interval::Int, flags...) = CompositeAlgorithm((f,), (interval,), flags...)
 
 
@@ -142,7 +113,7 @@ Running a composite algorithm allows for static unrolling and inlining of all su
 @inline function step!(ca::CompositeAlgorithm{T, Is}, context::C) where {T,Is,C<:AbstractContext}
     algoidx = 1
     this_inc = inc(ca)
-    return @inline _comp_dispatch(ca, context::C, algoidx, this_inc, gethead(ca.funcs), headval(Is), gettail(ca.funcs), gettail(Is))
+    return @inline _comp_dispatch(ca, context::C, algoidx, this_inc, gethead(ca.funcs), gethead(Is), gettail(ca.funcs), gettail(Is))
 end
 
 """

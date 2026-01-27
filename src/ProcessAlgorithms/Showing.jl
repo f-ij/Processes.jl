@@ -1,4 +1,11 @@
 
+@inline function _algo_label(f)
+    if f isa ScopedAlgorithm
+        return Processes.scopedalgorithm_label(f)
+    end
+    return sprint(summary, f)
+end
+
 function Base.show(io::IO, ca::CompositeAlgorithm)
     println(io, "CompositeAlgorithm")
     funcs = ca.funcs
@@ -6,17 +13,11 @@ function Base.show(io::IO, ca::CompositeAlgorithm)
         print(io, "  (empty)")
         return
     end
-    _intervals = intervals(ca)
-    limit = get(io, :limit, false)
+    _intervals = Processes.intervals(ca)
     for (idx, thisfunc) in enumerate(funcs)
         interval = _intervals[idx]
-        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
-        lines = split(func_str, '\n')
         suffix = " (every " * string(interval) * " time(s))"
-        print(io, "  | ", lines[1], suffix)
-        for line in Iterators.drop(lines, 1)
-            print(io, "\n  | ", line)
-        end
+        print(io, "  | ", _algo_label(thisfunc), suffix)
         if idx < length(funcs)
             print(io, "\n")
         end
@@ -32,16 +33,11 @@ function Base.show(io::IO, r::Routine)
         return
     end
     reps = repeats(r)
-    limit = get(io, :limit, false)
+    reps_is_type = reps isa Type
     for (idx, thisfunc) in enumerate(funcs)
-        rep = reps[idx]
-        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
-        lines = split(func_str, '\n')
-        suffix = " (repeats " * string(rep) * " time(s))"
-        print(io, "  | ", lines[1], suffix)
-        for line in Iterators.drop(lines, 1)
-            print(io, "\n  | ", line)
-        end
+        rep = reps_is_type ? reps : reps[idx]
+        suffix = reps_is_type ? " (repeats " * string(rep) * ")" : " (repeats " * string(rep) * " time(s))"
+        print(io, "  | ", _algo_label(thisfunc), suffix)
         if idx < length(funcs)
             print(io, "\n")
         end
@@ -56,7 +52,7 @@ function _composite_algo_labels(funcs)
     labels = String[]
     for f in funcs
         if f isa ScopedAlgorithm
-            push!(labels, scopedalgorithm_label(f))
+            push!(labels, Processes.scopedalgorithm_label(f))
         else
             push!(labels, summary(f))
         end
@@ -69,7 +65,7 @@ function _composite_algo_type_labels(types::Tuple)
     for t in types
         if t <: ScopedAlgorithm
             algo_type = t.parameters[1]
-            push!(labels, string(nameof(algo_type), "@", getname(t)))
+            push!(labels, string(nameof(algo_type), "@", Processes.getname(t)))
         else
             push!(labels, string(nameof(t)))
         end
@@ -82,8 +78,21 @@ function _composite_algo_type_labels(types::Core.SimpleVector)
 end
 
 function Base.summary(io::IO, ca::CompositeAlgorithm)
-    labels = _composite_algo_labels(ca.funcs)
-    print(io, "CompositeAlgorithm(", join(labels, ", "), ")")
+    funcs = ca.funcs
+    if isempty(funcs)
+        print(io, "CompositeAlgorithm (empty)")
+        return
+    end
+    _intervals = Processes.intervals(ca)
+    println(io, "CompositeAlgorithm")
+    for (idx, f) in enumerate(funcs)
+        interval = _intervals[idx]
+        suffix = " (every " * string(interval) * " time(s))"
+        print(io, "  | ", _algo_label(f), suffix)
+        if idx < length(funcs)
+            print(io, "\n")
+        end
+    end
 end
 
 function Base.show(io::IO, caT::Type{<:CompositeAlgorithm})
@@ -102,8 +111,18 @@ function Base.show(io::IO, caT::Type{<:CompositeAlgorithm})
 end
 
 function Base.summary(io::IO, sa::SimpleAlgo)
-    labels = _composite_algo_labels(sa.funcs)
-    print(io, "SimpleAlgo(", join(labels, ", "), ")")
+    funcs = sa.funcs
+    if isempty(funcs)
+        print(io, "SimpleAlgo (empty)")
+        return
+    end
+    println(io, "SimpleAlgo")
+    for (idx, f) in enumerate(funcs)
+        print(io, "  | ", _algo_label(f))
+        if idx < length(funcs)
+            print(io, "\n")
+        end
+    end
 end
 
 function Base.show(io::IO, saT::Type{<:SimpleAlgo})
@@ -119,4 +138,38 @@ function Base.show(io::IO, saT::Type{<:SimpleAlgo})
     end
     labels = _composite_algo_type_labels(ft.parameters)
     print(io, "SimpleAlgo(", join(labels, ", "), ")")
+end
+
+function Base.summary(io::IO, r::Routine)
+    funcs = r.funcs
+    if isempty(funcs)
+        print(io, "Routine (empty)")
+        return
+    end
+    reps = repeats(r)
+    reps_is_type = reps isa Type
+    println(io, "Routine")
+    for (idx, f) in enumerate(funcs)
+        rep = reps_is_type ? reps : reps[idx]
+        suffix = reps_is_type ? " (repeats " * string(rep) * ")" : " (repeats " * string(rep) * " time(s))"
+        print(io, "  | ", _algo_label(f), suffix)
+        if idx < length(funcs)
+            print(io, "\n")
+        end
+    end
+end
+
+function Base.show(io::IO, rT::Type{<:Routine})
+    dt = Base.unwrap_unionall(rT)
+    if length(dt.parameters) == 0
+        print(io, "Routine")
+        return
+    end
+    ft = dt.parameters[1]
+    if ft isa TypeVar
+        print(io, "Routine")
+        return
+    end
+    labels = _composite_algo_type_labels(ft.parameters)
+    print(io, "Routine(", join(labels, ", "), ")")
 end
