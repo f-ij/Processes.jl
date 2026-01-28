@@ -1,7 +1,6 @@
 const start_finished = Ref(false)
 
 function before_while(p::AbstractProcess)
-    println("HIER")
     start_finished[] = true
     p.threadid = Threads.threadid()
     @atomic p.paused = false
