@@ -25,6 +25,10 @@ VarLocation(type, subcontextname::Symbol, originalname::Symbol) = VarLocation{ty
 struct SubContextView{CType, SubName, T} <: AbstractContext
     context::CType
     instance::T # instance for which the view is created
+
+    function SubContextView{CType, SubName, T}(context::CType, instance::T) where {CType, SubName, T}
+        new{CType, SubName, T}(context, instance)
+    end
 end
 
 function Base.show(io::IO, scv::SubContextView{CType, SubName}) where {CType, SubName}
@@ -36,12 +40,17 @@ Get a subcontext view for a specific subcontext
 """
 @inline Base.view(pc::ProcessContext, instance::ScopedAlgorithm) = SubContextView{typeof(pc), getname(instance), typeof(instance)}(pc, instance)
 
+"""
+Create a view from a non-scoped instance by looking it up in the registry
+"""
 @inline function Base.view(pc::ProcessContext, instance)
     scoped_instance = @inline value(static_get(get_registry(pc), instance))
     return SubContextView{typeof(pc), getname(scoped_instance), typeof(scoped_instance)}(pc, scoped_instance)
 end
+"""
+Regenerate a SubContextView from its type
+"""
 @inline Base.view(pc::ProcessContext, scv::SubContextView) = @inline view(pc, this_instance(scv))
-
 
 @inline this_instance(scv::SubContextView) = getfield(scv, :instance)
 
@@ -58,7 +67,7 @@ Generate a namedtuple of localtuple => VarLocation
     # First get the subcontext type
     subcontext_type = Processes.subcontext_type(CType, SubName)
 
-    local_varnames = fieldnames(get_datatype(subcontext_type))
+    local_varnames = keys(subcontext_type)
 
     localst = ntuple(i ->VarLocation{:local}(SubName, local_varnames[i]), length(local_varnames))
     locals = NamedTuple{(local_varnames...,)}(localst)
@@ -68,7 +77,7 @@ Generate a namedtuple of localtuple => VarLocation
     sharedcontexts = NamedTuple()
     for name in shared_context_names
         shared_subcontext_type = Processes.subcontext_type(CType, name)
-        shared_varnames = fieldnames(shared_subcontext_type)
+        shared_varnames = keys(shared_subcontext_type)
         sharedt = ntuple(i ->VarLocation{:shared}(name, shared_varnames[i]), length(shared_varnames))
         sharednt = NamedTuple{tuple(shared_varnames...)}(sharedt)
         sharedcontexts = (;sharedcontexts..., sharednt...)
@@ -121,9 +130,10 @@ end
     if haskey(locations, name)
         target_location = getproperty(locations, name)
         return :( @inline getproperty(sct, $target_location) )
+    else
+        available = keys(locations)
+        error("Variable $(QuoteNode(name)) requested, but not supplied to context. Available names are: $(available)")
     end
-    available = keys(locations)
-    return :(error("Variable $(QuoteNode(name)) requested, but not supplied to context. Available names are: $(available)"))
 end
 
 @inline @generated function Base.iterate(scv::SubContextView, state = 1)
@@ -192,7 +202,7 @@ Returns a merged context by merging the provided named tuple into the appropriat
     
     return quote
         mergetuple = $mergetuple_expr
-        newcontext = @inline merge_into_subcontexts(getcontext(scv), mergetuple)
+        newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
         return newcontext
     end
 end

@@ -1,90 +1,13 @@
 export Destructure, DynamicStore, destructure, release!, getdestructure_id, getdynamicstore_id
+export DestructureInput
 
-"""
-Thin container that stores a non-isbits value in a dynamic store.
-"""
-struct DynamicStore{id,T}
-end
-
-getid(d::Union{Type{<:DynamicStore{id,T}}, DynamicStore{id,T}}) where {id,T} = id
-
-const DYNAMIC_STORE = Dict{UInt64, WeakRef}()
-const DYNAMIC_REVERSE = WeakKeyDict{Any, UInt64}()
-const _dynamic_counter = Ref{UInt64}(0)
-
-function DynamicStore(x::T, id = (_dynamic_counter[] += 1)) where {T}
-    DYNAMIC_STORE[id] = WeakRef(x)
-    DYNAMIC_REVERSE[x] = id
-    if !isbitstype(T)
-        finalizer(x) do _
-            delete!(DYNAMIC_STORE, id)
-            delete!(DYNAMIC_REVERSE, x)
-        end
-    end
-    return DynamicStore{id, T}()
-end
-
-function getvalue(d::DynamicStore)
-    wref = get(DYNAMIC_STORE, getid(d), nothing)
-    if wref === nothing || wref.value === nothing
-        error("DynamicStore value not found in store for id $(getid(d))")
-    end
-    return wref.value
-end
-
-function release!(d::DynamicStore)
-    wref = get(DYNAMIC_STORE, getid(d), nothing)
-    if wref !== nothing
-        x = wref.value
-        if x !== nothing
-            delete!(DYNAMIC_REVERSE, x)
-        end
-    end
-    delete!(DYNAMIC_STORE, getid(d))
-    return nothing
-end
-
-function getdynamicstore_id(x)
-    return get(DYNAMIC_REVERSE, x, nothing)
-end
-
-#####
-# Can be set later during processing
-#####
-function DelayedStore(x::Type{T}) where {T}
-    id = (_dynamic_counter[] += 1)
-    DYNAMIC_STORE[id] = WeakRef(nothing)
-    return DynamicStore{id, T}()
-end
-
-function setreference(d::DynamicStore{id,T}, x::DT) where {id,T, DT <: T}
-    DYNAMIC_STORE[id] = WeakRef(x)
-    DYNAMIC_REVERSE[x] = id
-    if !isbitstype(T)
-        finalizer(x) do _
-            delete!(DYNAMIC_STORE, id)
-            delete!(DYNAMIC_REVERSE, x)
-        end
-    end
-    return nothing
-end
-
-## THINCONTAINER
-thincontainer(::Type{<:DynamicStore}) = true
-function (ds::DynamicStore{id,T})(newobj::O) where {id,T,O<:T} # Composition
-    release!(ds)
-    return DynamicStore(newobj, id)
-end
-_contained_type(::Type{<:DynamicStore{id, T}}) where {id, T} = typeof(DYNAMIC_STORE[id].value)
-_unwrap_container(d::DynamicStore) = getvalue(d)
-
-
+abstract type AbstractDestructure{T,F} <: ProcessState end
 
 """
 ProcessState wrapper for an arbitrary value that is destructured into its fields
 during prepare.
 """
-struct Destructure{T,F} <: ProcessState
+struct Destructure{T,F} <: AbstractDestructure{T,F}
     obj::T
     func::F
 end
@@ -106,7 +29,11 @@ function getdestructure_id(x)
 end
 
 function getvalue(d::Destructure)
-    return unwrap_container(d)
+    if d.obj isa DynamicStore
+        return getvalue(d.obj)
+    else
+        return d.obj
+    end 
 end
 
 destructure(x::NamedTuple) = x
@@ -138,3 +65,29 @@ function (d::Destructure{T,F})(newobj::O) where {T,F,O<:T} # Composition rule
 end
 _contained_type(::Type{<:Destructure{T, F}}) where {T, F} = contained_type(T)
 _unwrap_container(d::Destructure{T, F}) where {T, F} = getvalue(d)
+# _unwrap_container(d::Destructure{T, F}) where {T, F} = d.obj
+
+
+################################
+####### Destruct an input ######
+################################
+struct DestructureInput{F} <: ProcessState
+    func::F
+
+    function DestructureInput(f::Union{Function, Nothing} = nothing)
+        return new{typeof(f)}(f)
+    end
+end
+
+hasfunc(d::Union{DestructureInput{F}, Type{<:DestructureInput{F}}}) where {F} = !(F <: Nothing)
+
+function prepare(d::DestructureInput, context::AbstractContext)
+    (;structure) = context
+    valuename = Symbol(lowercase(string(nameof(typeof(structure)))))
+    fields = destructure(structure)
+    fields = (;valuename => structure, fields...)
+    if hasfunc(d)
+        fields = d.func(fields, context)
+    end
+    return fields
+end

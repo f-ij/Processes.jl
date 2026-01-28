@@ -46,6 +46,8 @@ function Route(from, to, originalname_or_aliaspairs::Union{Symbol, Pair{Symbol, 
     Route{typeof(from), typeof(to), length(varnames)}(from, to, varnames, aliases)
 end
 
+### SHARED CONTEXT AND VARS ###
+
 struct SharedContext{from_name} end
 contextname(st::Type{SharedContext{name}}) where {name} = name
 contextname(st::SharedContext{name}) where {name} = name

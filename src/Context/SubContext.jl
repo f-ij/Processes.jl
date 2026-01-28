@@ -77,11 +77,14 @@ end
     @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
 end
 
-@inline function Base.replace(sc::SubContext{Name, T, S, R}, args::NamedTuple) where {Name, T, S, R}
+@inline function Base.replace(sc::SubContext{Name, T, S, R}, args::NamedTuple = (;)) where {Name, T, S, R}
+    if isempty(args)
+        @warn "Replacing SubContext: $Name with empty NamedTuple"
+    end
     @inline setfield(sc, :data, args)
 end
 
-@inline Base.propertynames(sct::Type{<:SubContext}) = fieldnames(sct.parameters[2])
+@inline Base.keys(sct::Type{<:SubContext}) = fieldnames(sct.parameters[2])
 @inline Base.keys(sc::SubContext) = propertynames(getdata(sc))
 
 

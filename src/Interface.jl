@@ -4,7 +4,7 @@ export start, restart, quit, pause, close, syncclose, refresh
 """
 Start a process that is not running or unpause a paused process
 """
-function start(p::Process; prevent_hanging = true, threaded = true)
+function start(p::Process; prevent_hanging = false, threaded = true)
     
     @assert isidle(p) "Process is already in use"
 

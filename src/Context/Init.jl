@@ -8,26 +8,20 @@ function ProcessContext(algos::ComplexLoopAlgorithm; globals = (;))
 
     # shares = filter(x -> x isa Share, shared_specs)
     # routes = filter(x -> x isa Route, shared_specs)
+    shares = get_shares(algos)
+    routes = get_routes(algos)
 
-    # sharedcontexts = resolve_shares(registry, shares...)
-    # sharedvars = resolve_options(registry, routes...)
-
-
-
-    shared_contexts = get_sharedcontexts(algos)
-    shared_vars = get_sharedvars(algos)
+    sharedcontexts = resolve_options(registry, shares...)
+    sharedvars = resolve_options(registry, routes...)
 
     # Create Subcontexts from registry
     registered_names = all_names(registry)
     subcontexts = ntuple(length(registered_names)) do i
         algo_name = registered_names[i]
-        SubContext(algo_name, (;), get(shared_contexts, algo_name, ()), get(shared_vars, algo_name, ()))
+        SubContext(algo_name, (;), get(sharedcontexts, algo_name, ()), get(sharedvars, algo_name, ()))
     end
-    
 
     named_subcontexts = NamedTuple{registered_names}(subcontexts)
-
-
 
     # Add globals
     named_subcontexts = (;named_subcontexts..., globals)

@@ -30,9 +30,9 @@ function setup(cla_target_type::Type{<:ComplexLoopAlgorithm},funcs::NTuple{N, An
 
     # routes = filter(x -> x isa Route, options_all)
     # shares = filter(x -> x isa Share, options_all)
-    resolved_options = resolve_options(registry, options_all...)
+    # resolved_options = resolve_options(registry, options_all...)
 
     # shared_contexts = resolve_options(registry, shares...)
     # shared_vars = resolve_options(registry, routes...)
-    (;functuple, registry, options = resolved_options)
+    (;functuple, registry, options)
 end

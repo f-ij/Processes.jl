@@ -41,25 +41,25 @@ end
 """
 Wrapper for functions to ensure proper semantics with the task system
 """
-@inline function step!(sf::SimpleAlgo, context::C) where C
-    a_idx = 1
-    return @inline unroll_funcs(sf, a_idx, gethead(sf.funcs), gettail(sf.funcs), context)
+@inline Base.@constprop :aggressive function step!(sf::SimpleAlgo, context::C) where C
+    # a_idx = 1
+    return @inline unroll_funcs(sf, (@inline gethead(sf.funcs)), (@inline gettail(sf.funcs)), context)
 end
 
-function unroll_funcs(sf::SimpleAlgo, a_idx, headf::F, tailf::T, context::C) where {F, T, C}
+@inline Base.@constprop :aggressive function unroll_funcs(sf::SimpleAlgo, headf::F, tailf::T, context::C) where {F, T, C}
     (;process) = @inline getglobal(context)
-    if isnothing(headf)
+    if @inline isnothing(headf)
         return context
     end
 
     if !run(process)
-        if resumable(sf)
-            resume_idx!(sf)
+        if @inline resumable(sf)
+            @inline resume_idx!(sf)
         end
         return context
     end
     context = @inline step!(headf, context)
-    return @inline unroll_funcs(sf, a_idx+1, gethead(tailf), gettail(tailf), context)
+    return @inline unroll_funcs(sf, (@inline gethead(tailf)), (@inline gettail(tailf)), context)
 end
 
 @inline getid(sa::Union{SimpleAlgo{T,I,NSR,O,id}, Type{<:SimpleAlgo{T,I,NSR,O,id}}}) where {T,I,NSR,O,id} = id
@@ -78,6 +78,11 @@ end
 multipliers(sa::SimpleAlgo) = ntuple(_ -> 1, length(sa))
 multipliers(::Type{<:SimpleAlgo{FT}}) where FT = ntuple(_ -> 1, length(FT.parameters))
 
+
+
+##################
+##### SHOWING #####
+##################
 function Base.show(io::IO, sa::SimpleAlgo)
     println(io, "SimpleAlgo")
     funcs = sa.funcs

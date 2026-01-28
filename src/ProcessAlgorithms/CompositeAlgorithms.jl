@@ -135,3 +135,4 @@ Dispatch on a composite function
     end
     return @inline _comp_dispatch(ca, context, algoidx + 1, this_inc, gethead(funcs), gethead(intervals), gettail(funcs), gettail(intervals))
 end
+
