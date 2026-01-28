@@ -19,6 +19,17 @@ This stores the context of a process
 struct ProcessContext{D,Reg} <: AbstractContext
     subcontexts::D
     registry::Reg
+    function ProcessContext{D,Reg}(subcontexts::D, registry::Reg) where {D,Reg}
+        new{D,Reg}(subcontexts, registry)
+    end
+end
+
+@generated function ProcessContext(subcontexts::D, registry::Reg) where {D,Reg}
+    # Statically Check if all keys except for global are SubContexts
+    sc_names = fieldnames(D)
+    @assert all( n -> fieldtype(D, n) <: SubContext || n == :globals, sc_names) "All fields in ProcessContext subcontexts must be of type SubContext, but found non-SubContext fields: $(filter( n -> !(fieldtype(D, n) <: SubContext) && n != :globals, sc_names))"
+    @assert Reg <: AbstractRegistry "Registry type must be a subtype of AbstractRegistry, got: $Reg"
+    return :(ProcessContext{D,Reg}(subcontexts, registry))
 end
 
 @inline Base.@constprop :aggressive function Base.getproperty(pc::ProcessContext, name::Symbol)

@@ -10,11 +10,18 @@ struct Share{A1,A2} <: AbstractOption
     directional::Bool
 end
 
+get_firstalgo(s::Share) = s.algo1
+get_secondalgo(s::Share) = s.algo2
+is_directional(s::Share) = s.directional
+
+
 function Share(algo1, algo2; directional::Bool=false)
     Share{typeof(algo1), typeof(algo2)}(algo1, algo2, directional)
 end
 
 function to_sharedcontext(reg::NameSpaceRegistry, s::Share)
+    # if get_
+
     names = (static_find_name(reg, s.algo1), static_find_name(reg, s.algo2))
     if any(isnothing, names)
         error("No registered name found for share endpoints $(s.algo1), $(s.algo2)")
@@ -35,6 +42,11 @@ struct Route{F,T,N} <: AbstractOption
     varnames::NTuple{N, Symbol}
     aliases::NTuple{N, Symbol}
 end
+
+getfrom(r::Route) = r.from
+getto(r::Route) = r.to
+getvarnames(r::Route) = r.varnames
+getaliases(r::Route) = r.aliases
 
 function Route(from, to, originalname_or_aliaspairs::Union{Symbol, Pair{Symbol, Symbol}}...)
     completed_pairs = ntuple(length(originalname_or_aliaspairs)) do i
@@ -70,9 +82,18 @@ function Base.iterate(r::Union{SharedVars{F,V,SharedVarsA}, Type{SharedVars{F,V,
 end
 
 function to_sharedvar(reg::NameSpaceRegistry, r::Route)
-    fromname = static_find_name(reg, r.from)
-    toname = static_find_name(reg, r.to)
-    (;toname => SharedVars{fromname, r.varnames, r.aliases}())
+    if getto(r) isa All
+        matches = static_get(reg, getto(r))
+        named_flat_collect_broadcast(matches) do match
+            fromname = static_find_name(reg, r.from)
+            toname = static_find_name(reg, match)
+            (;toname => SharedVars{fromname, r.varnames, r.aliases}())
+        end
+    else
+        fromname = static_find_name(reg, r.from)
+        toname = static_find_name(reg, r.to)
+        (;toname => SharedVars{fromname, r.varnames, r.aliases}())
+    end
 end
 
 function resolve_options(reg::NameSpaceRegistry)
