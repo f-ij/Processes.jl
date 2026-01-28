@@ -53,7 +53,7 @@ end
     td = taskdata(p)
     c = init_context(td)
     @static if DEBUG_MODE
-        display("Prepared context is $prepared_context")
+        display("Prepared context is $c")
     end
     return c
 end
@@ -70,10 +70,11 @@ end
 
 function makecontext(p::AbstractProcess)
     c = init_context(p)
-    prepared_context = prepare_context(p, c)
+    prepare_context(p, c)
 end
 function makecontext!(p::AbstractProcess)
     c = makecontext(p)
+    @show c
     context(p,c)
 end
 

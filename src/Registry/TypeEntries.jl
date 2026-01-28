@@ -312,7 +312,7 @@ function find_match(rte::RegistryTypeEntry{T}, obj) where {T}
     end
 
     #No type, check default
-    if match(getdefault(rte), obj)
+    if hasdefault(rte) && match(getdefault(rte), obj)
         return :default, 0
     end
 

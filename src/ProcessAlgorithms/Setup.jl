@@ -24,6 +24,7 @@ function setup(cla_target_type::Type{<:ComplexLoopAlgorithm},funcs::NTuple{N, An
     registry = add(registry, process_state...)
 
     allfuncs = recursive_update_cla_names.(allfuncs, Ref(registry))
+    @show allfuncs
 
     functuple = tuple(allfuncs...)
     specification_num = tuple(floor.(Int, specification_num)...)
