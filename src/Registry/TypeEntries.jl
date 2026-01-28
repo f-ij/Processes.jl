@@ -60,6 +60,7 @@ match(val, te::Union{ScopedValueEntry,Type{<:ScopedValueEntry}}) = match(te, val
 
 match(::Union{Nothing, Type{<:Nothing}}, ::Any) = false
 match(::Any, ::Union{Nothing, Type{<:Nothing}}) = false
+match(::Union{Nothing, Type{<:Nothing}}, te::Union{ScopedValueEntry,Type{<:ScopedValueEntry}}) = false
 
 multiplier(ve::ScopedValueEntry) = ve.multiplier
 
