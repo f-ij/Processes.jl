@@ -19,11 +19,11 @@ function TaskData(algo; overrides = tuple(), inputs = tuple(), lifetime = Indefi
     c = ProcessContext(algo; globals = (;lifetime, algo))
     # TaskData(algo, args, (;), overrides, lifetime, Ref(true))
     if !(inputs isa Tuple)
-        println("Making inputs a tuple")
+        # println("Making inputs a tuple")
         inputs = (inputs,)
     end
     if !(overrides isa Tuple)
-        println("Making overrides a tuple")
+        # println("Making overrides a tuple")
         overrides = (overrides,)
     end
     TaskData(algo, inputs, overrides, c, lifetime)
