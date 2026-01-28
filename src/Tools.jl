@@ -57,10 +57,10 @@ end
 Get the number of times an algorithm will be called in a process
 This is to be used in the prepare function
 """
-function num_calls(args)
-    algo = args.algo
-    lifetime = args.lifetime
-    instance = args._instance
+function num_calls(context)
+    algo = context.algo
+    lifetime = context.lifetime
+    instance = context._instance
     num_calls(algo, lifetime, instance)
 end
 

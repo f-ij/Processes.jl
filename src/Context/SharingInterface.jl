@@ -82,18 +82,18 @@ function Base.iterate(r::Union{SharedVars{F,V,SharedVarsA}, Type{SharedVars{F,V,
 end
 
 function to_sharedvar(reg::NameSpaceRegistry, r::Route)
-    if getto(r) isa All
-        matches = static_get(reg, getto(r))
-        named_flat_collect_broadcast(matches) do match
-            fromname = static_find_name(reg, r.from)
-            toname = static_find_name(reg, match)
-            (;toname => SharedVars{fromname, r.varnames, r.aliases}())
-        end
-    else
+    # if getto(r) isa All
+    #     matches = static_get(reg, getto(r))
+    #     named_flat_collect_broadcast(matches) do match
+    #         fromname = static_find_name(reg, r.from)
+    #         toname = static_find_name(reg, match)
+    #         (;toname => SharedVars{fromname, r.varnames, r.aliases}())
+    #     end
+    # else
         fromname = static_find_name(reg, r.from)
         toname = static_find_name(reg, r.to)
         (;toname => SharedVars{fromname, r.varnames, r.aliases}())
-    end
+    # end
 end
 
 function resolve_options(reg::NameSpaceRegistry)

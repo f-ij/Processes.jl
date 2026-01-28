@@ -46,6 +46,7 @@ getid(r::Union{Routine{T,R,MV,NSR,O,id}, Type{<:Routine{T,R,MV,NSR,O,id}}}) wher
 
 repeats(r::Routine{F,R}, idx) where {F,R} = getindex(repeats(r), idx)
 getfuncs(r::Routine) = r.funcs
+@inline getfunc(r::Routine, idx) = r.funcs[idx]
 
 function reset!(r::Routine)
     r.resume_idxs .= 1 

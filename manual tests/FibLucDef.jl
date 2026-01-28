@@ -1,16 +1,23 @@
 include("_env.jl")
-@ProcessAlgorithm function Fib(fiblist)
+# @ProcessAlgorithm function Fib(fiblist)
+#     push!(fiblist, fiblist[end] + fiblist[end-1])
+#     return (;)
+# end
+function Processes.step!(::Fib, context)
+    fiblist = context.fiblist
     push!(fiblist, fiblist[end] + fiblist[end-1])
     return (;)
 end
 
 function Processes.prepare(::Fib, context)
+    n_calls = num_calls(context)
     fiblist = Int[0, 1]
     processsizehint!(fiblist, context)
     return (;fiblist)
 end
 
-@ProcessAlgorithm function Luc(luclist)
+function Processes.step!(::Luc, context)
+    luclist = context.luclist
     push!(luclist, luclist[end] + luclist[end-1])
     return (;)
 end
