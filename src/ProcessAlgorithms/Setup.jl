@@ -1,5 +1,5 @@
 
-function setup(cla_target_type::Type{<:ComplexLoopAlgorithm},funcs::NTuple{N, Any}, 
+function setup(cla_target_type::Type{<:LoopAlgorithm},funcs::NTuple{N, Any}, 
                             specification_num::NTuple{N, Real} = ntuple(_ -> 1, N), 
                             options::AbstractOption...) where {N}
 
@@ -9,7 +9,7 @@ function setup(cla_target_type::Type{<:ComplexLoopAlgorithm},funcs::NTuple{N, An
     options_all = options
 
     for (func_idx, func) in enumerate(funcs)
-        if func isa ComplexLoopAlgorithm # Deepcopy to make multiple instances independent
+        if func isa LoopAlgorithm # Deepcopy to make multiple instances independent
             func = deepcopy(func)
         else
             registry, func = add_instance(registry, func, multipliers[func_idx])
@@ -23,8 +23,9 @@ function setup(cla_target_type::Type{<:ComplexLoopAlgorithm},funcs::NTuple{N, An
     process_state = filter(x -> x isa ProcessState, options_all)
     registry = add(registry, process_state...)
 
-    allfuncs = recursive_update_cla_names.(allfuncs, Ref(registry))
-    @show allfuncs
+    # allfuncs = recursive_update_cla_names.(allfuncs, Ref(registry))
+    allfuncs = update_names.(allfuncs, Ref(registry))
+    # @show allfuncs
 
     functuple = tuple(allfuncs...)
     specification_num = tuple(floor.(Int, specification_num)...)

@@ -1,7 +1,7 @@
 """
-Set up an empty ProcessContext for a ComplexLoopAlgorithm with given shared specifications
+Set up an empty ProcessContext for a LoopAlgorithm with given shared specifications
 """
-function ProcessContext(algos::ComplexLoopAlgorithm; globals = (;))
+function ProcessContext(algos::LoopAlgorithm; globals = (;))
     registry = get_registry(algos)
 
     # shared_specs = get_sharedspecs(algos)
@@ -14,6 +14,8 @@ function ProcessContext(algos::ComplexLoopAlgorithm; globals = (;))
     sharedcontexts = resolve_options(registry, shares...)
     sharedvars = resolve_options(registry, routes...)
 
+    @DebugMode "Resolved shared contexts: $sharedcontexts" "Resolved shared vars: $sharedvars"
+
     # Create Subcontexts from registry
     registered_names = all_names(registry)
     subcontexts = ntuple(length(registered_names)) do i
@@ -22,6 +24,8 @@ function ProcessContext(algos::ComplexLoopAlgorithm; globals = (;))
     end
 
     named_subcontexts = NamedTuple{registered_names}(subcontexts)
+
+    @DebugMode "Created subcontexts: $named_subcontexts"
 
     # Add globals
     named_subcontexts = (;named_subcontexts..., globals)

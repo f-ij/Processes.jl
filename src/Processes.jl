@@ -11,7 +11,7 @@ module Processes
 
     abstract type ProcessAlgorithm end
     abstract type ProcessLoopAlgorithm <: ProcessAlgorithm end # Algorithms that can be inlined in processloop
-    abstract type ComplexLoopAlgorithm <: ProcessLoopAlgorithm end # Algorithms that have multiple functions and intervals
+    abstract type LoopAlgorithm <: ProcessLoopAlgorithm end # Algorithms that have multiple functions and intervals
 
     abstract type AbstractOption end
     abstract type ProcessState <: AbstractOption end

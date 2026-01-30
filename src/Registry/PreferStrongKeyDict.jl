@@ -1,19 +1,19 @@
-export PreferWeakKeyDict
+export PreferStrongKeyDict
 
 """
 Dictionary that prefers strong keys for isbits types and weak keys otherwise.
 """
-struct PreferWeakKeyDict{K,V} <: AbstractDict{K,V}
+struct PreferStrongKeyDict{K,V} <: AbstractDict{K,V}
     strong::Dict{K,V}
     weak::WeakKeyDict{Any,V}
 end
 
-PreferWeakKeyDict{K,V}() where {K,V} = PreferWeakKeyDict(Dict{K,V}(), WeakKeyDict{Any,V}())
-PreferWeakKeyDict() = PreferWeakKeyDict{Any,Any}()
+PreferStrongKeyDict{K,V}() where {K,V} = PreferStrongKeyDict(Dict{K,V}(), WeakKeyDict{Any,V}())
+PreferStrongKeyDict() = PreferStrongKeyDict{Any,Any}()
 
 @inline _use_strong(k) = isbitstype(typeof(k))
 
-function Base.setindex!(d::PreferWeakKeyDict{K,V}, v::V, k) where {K,V}
+function Base.setindex!(d::PreferStrongKeyDict{K,V}, v::V, k) where {K,V}
     if _use_strong(k)
         d.strong[k] = v
     else
@@ -22,28 +22,28 @@ function Base.setindex!(d::PreferWeakKeyDict{K,V}, v::V, k) where {K,V}
     return d
 end
 
-function Base.getindex(d::PreferWeakKeyDict, k)
+function Base.getindex(d::PreferStrongKeyDict, k)
     if _use_strong(k)
         return d.strong[k]
     end
     return d.weak[k]
 end
 
-function Base.get(d::PreferWeakKeyDict, k, default)
+function Base.get(d::PreferStrongKeyDict, k, default)
     if _use_strong(k)
         return get(d.strong, k, default)
     end
     return get(d.weak, k, default)
 end
 
-function Base.haskey(d::PreferWeakKeyDict, k)
+function Base.haskey(d::PreferStrongKeyDict, k)
     if _use_strong(k)
         return haskey(d.strong, k)
     end
     return haskey(d.weak, k)
 end
 
-function Base.delete!(d::PreferWeakKeyDict, k)
+function Base.delete!(d::PreferStrongKeyDict, k)
     if _use_strong(k)
         delete!(d.strong, k)
     else
@@ -52,15 +52,15 @@ function Base.delete!(d::PreferWeakKeyDict, k)
     return d
 end
 
-function Base.empty!(d::PreferWeakKeyDict)
+function Base.empty!(d::PreferStrongKeyDict)
     empty!(d.strong)
     empty!(d.weak)
     return d
 end
 
-Base.length(d::PreferWeakKeyDict) = length(d.strong) + length(d.weak)
+Base.length(d::PreferStrongKeyDict) = length(d.strong) + length(d.weak)
 
-function Base.iterate(d::PreferWeakKeyDict, state = (1, nothing))
+function Base.iterate(d::PreferStrongKeyDict, state = (1, nothing))
     which, sub = state
     if which == 1
         nxt = iterate(d.strong, sub)

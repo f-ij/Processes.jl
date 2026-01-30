@@ -173,3 +173,22 @@ function Base.show(io::IO, rT::Type{<:Routine})
     labels = _composite_algo_type_labels(ft.parameters)
     print(io, "Routine(", join(labels, ", "), ")")
 end
+
+"""
+When composite is wrapped by a scope
+"""
+function Base.show(io::IO, sa::ScopedAlgorithm{F, Name, Id, Aliases, AlgoName}) where {F<:CompositeAlgorithm, Name, Id, Aliases, AlgoName}
+    header = isnothing(algoname(sa)) ? "CompositeAlgorithm" : string(algoname(sa))
+    println(io, header, "@", getname(sa))
+    ca = getalgorithm(sa)
+    funcs = getfuncs(ca)
+    _intervals = intervals(ca)
+    for (idx, f) in enumerate(funcs)
+        interval = _intervals[idx]
+        suffix = " (every " * string(interval) * " time(s))"
+        print(io, "  | ", _algo_label(f), suffix)
+        if idx < length(funcs)
+            print(io, "\n")
+        end
+    end
+end

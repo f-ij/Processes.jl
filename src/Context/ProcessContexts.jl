@@ -1,29 +1,3 @@
-
-
-"""
-For every type register possible names and last updated name
-"""
-struct UpdateRegistry{Types, T}
-    entries::T
-end
-
-
-
-#######################################
-############# CONTEXT #################
-#######################################
-"""
-Previously args system
-This stores the context of a process
-"""
-struct ProcessContext{D,Reg} <: AbstractContext
-    subcontexts::D
-    registry::Reg
-    function ProcessContext{D,Reg}(subcontexts::D, registry::Reg) where {D,Reg}
-        new{D,Reg}(subcontexts, registry)
-    end
-end
-
 @generated function ProcessContext(subcontexts::D, registry::Reg) where {D,Reg}
     # Statically Check if all keys except for global are SubContexts
     sc_names = fieldnames(D)
@@ -78,46 +52,48 @@ end
 @inline function merge_into_globals(pc::ProcessContext{D}, args) where {D}
     merged_globals = @inline merge(getfield(get_subcontexts(pc), :globals), args)
     newsubs = (; get_subcontexts(pc)..., globals = merged_globals)
-    return @inline ProcessContext(newsubs, get_registry(pc))
+    # return @inline ProcessContext(newsubs, get_registry(pc))
+    return setfield(pc, :subcontexts, newsubs)
 end
 
 """
 Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), subcontextname2 = (;...), ...)
     Assumes that the subcontext names exist in the context, otherwise it errors
 """
-# @inline @generated function merge_into_subcontexts(pc::ProcessContext{D}, args::As) where {D, As}
-#     sc_names = get_subcontexts_fieldnames(pc)
-#     mergenames = fieldnames(args)
-#     getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(name)))) for name in sc_names]
-#     for (mergeidx, mergname) in enumerate(mergenames)
-#         found_idx = findfirst( n -> n == mergname, sc_names)
-#         if isnothing(found_idx)
-#             error("Trying to merge into unknown subcontext $(QuoteNode(mergname)) in ProcessContext. Available subcontexts are: $(sc_names) and args has names: $(mergenames)")
-#         end
-#         # getproperty_exprs[mergeidx] = :(getproperty(args, $(QuoteNode(mergname))))
-#         getproperty_exprs[found_idx] = :(merge(getproperty(get_subcontexts(pc), $(QuoteNode(mergname))), getproperty(args, $(QuoteNode(mergname)))))
-#     end
-#     ntnames = tuple(sc_names...)
-#     return quote 
-#         new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
-#         @inline setfield(pc, :subcontexts, new_subcontexts)
-#     end
-# end
-
-
-@inline function merge_into_subcontexts(pc::ProcessContext{D}, args::As) where {D, As}
-    subs = subcontexts(pc)
-    subnames = propertynames(subs)
-    merged_subvalues = @inline ntuple(length(subnames)) do i
-        if hasproperty(args, subnames[i])
-            return merge(getproperty(subs, subnames[i]), getproperty(args, subnames[i]) )
-        else
-            return getproperty(subs, subnames[i])
+@inline @generated function merge_into_subcontexts(pc::ProcessContext{D}, args::As) where {D, As}
+    sc_names = get_subcontexts_fieldnames(pc)
+    mergenames = fieldnames(args)
+    getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(name)))) for name in sc_names]
+    for (mergeidx, mergname) in enumerate(mergenames)
+        found_idx = findfirst( n -> n == mergname, sc_names)
+        if isnothing(found_idx)
+            error("Trying to merge into unknown subcontext $(QuoteNode(mergname)) in ProcessContext. Available subcontexts are: $(sc_names) and args has names: $(mergenames)")
         end
+        # getproperty_exprs[mergeidx] = :(getproperty(args, $(QuoteNode(mergname))))
+        getproperty_exprs[found_idx] = :(merge(getproperty(get_subcontexts(pc), $(QuoteNode(mergname))), getproperty(args, $(QuoteNode(mergname)))))
     end
-    newsubs = NamedTuple{subnames}(merged_subvalues)
-    return ProcessContext{typeof(newsubs), typeof(get_registry(pc))}(newsubs, get_registry(pc))
+    ntnames = tuple(sc_names...)
+    return quote 
+        new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
+        @inline setfield(pc, :subcontexts, new_subcontexts)
+    end
 end
+
+
+# @inline function merge_into_subcontexts(pc::ProcessContext{D}, args::As) where {D, As}
+#     subs = subcontexts(pc)
+#     subnames = propertynames(subs)
+#     merged_subvalues = @inline ntuple(length(subnames)) do i
+#         if hasproperty(args, subnames[i])
+#             return merge(getproperty(subs, subnames[i]), getproperty(args, subnames[i]) )
+#         else
+#             return getproperty(subs, subnames[i])
+#         end
+#     end
+#     newsubs = NamedTuple{subnames}(merged_subvalues)
+#     setfield(pc, :subcontexts, newsubs)
+#     # return ProcessContext{typeof(newsubs), typeof(get_registry(pc))}(newsubs, get_registry(pc))
+# end
 
 """
 Args should name subcontext they want to replace, check if all names are in the original context
@@ -130,7 +106,6 @@ function Base.replace(pc::ProcessContext{D, Reg}, args::NamedTuple) where {D, Re
     replaced_gen = (name => 
             begin haskey(args, name) ? replace(getproperty(old_subs, name), getproperty(args, name)) : getproperty(old_subs, name) end  for name in propertynames(old_subs))
     newsubs = (;old_subs..., replaced_gen...)
-    
     return setfield(pc, :subcontexts, newsubs)
 end
 

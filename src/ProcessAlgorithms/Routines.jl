@@ -3,7 +3,7 @@ export Routine
 """
 Struct to create routines
 """
-struct Routine{T, Repeats, MV, NSR, O, id} <: ComplexLoopAlgorithm
+struct Routine{T, Repeats, MV, NSR, O, id} <: LoopAlgorithm
     funcs::T
     resume_idxs::MV
     registry::NSR

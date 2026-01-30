@@ -1,33 +1,9 @@
-using UUIDs
-
-abstract type AbstractScopedAlgorithm end
-export ScopedAlgorithm, Unique
-
-"""
-Algorithm assigned to a namespace in a context
-    Ids can be used te separate two algorithms with the same name and function
-"""
-struct ScopedAlgorithm{F, Name, Id} <: AbstractScopedAlgorithm
-    func::F
+function changename(sa::ScopedAlgorithm{F}, newname::Symbol) where {F}
+    ScopedAlgorithm{F, newname, id(sa), varaliases(sa), algoname(sa)}(sa.func)
 end
 
-"""
-Set an explicit name for an algorithm
-"""
-function ScopedAlgorithm(f, name::Symbol, id::Union{Nothing, Symbol, UUID} = nothing)
-    if f isa ScopedAlgorithm
-        return ScopedAlgorithm(getalgorithm(f), name, id(f))
-    end
-    f = instantiate(f) # Don't wrap a type
-    ScopedAlgorithm{typeof(f), name, id}(f)
-end
-Autoname(f, i::Int, prefix = "", id = nothing) = ScopedAlgorithm{typeof(f), Symbol(prefix, nameof(typeof(f)),"_",string(i)), id}(f)
-Autoname(f::ScopedAlgorithm, i::Int, prefix = "") = ScopedAlgorithm{typeof(f.func), Symbol(prefix, nameof(typeof(f.func)),"_",string(i)), id(f)}(f.func)
-DefaultScope(f, prefix = "") = ScopedAlgorithm{typeof(f), Symbol(prefix, nameof(typeof(f)),"_", 0), :default}(f) 
-
-function Unique(f)
-    f = instantiate(f)
-    ScopedAlgorithm{typeof(f),nothing, uuid4()}(f)
+function changename(a::Any, newname)
+    return a
 end
 
 """
@@ -36,18 +12,30 @@ Scoped Algorithms don't wrap other ScopedAlgorithms
 """
 ScopedAlgorithm(na::ScopedAlgorithm, name::Symbol) = changename(na, name)
 
-hasname(::ScopedAlgorithm) = true
-hasname(obj::Any) = !isnothing(getname(obj))
 
+########################################
+############### Traits #################
+########################################
 id(sa::ScopedAlgorithm{F, Name, Id}) where {F, Name, Id} = Id
 id(sat::Type{<:ScopedAlgorithm{F, Name, Id}}) where {F, Name, Id} = Id
 id(obj::Any) = nothing
+
+setid(sa::SA, newid) where {SA<:ScopedAlgorithm} = setparameter(sa, 3, newid)
+
+hasid(::Any) = false
+hasid(sa::ScopedAlgorithm) = !isnothing(id(sa))
+
+hasname(::ScopedAlgorithm) = true
+hasname(obj::Any) = !isnothing(getname(obj))
+
+algoname(sa::ScopedAlgorithm{F, Name, Id, Aliases, AlgoName}) where {F, Name, Id, Aliases, AlgoName} = AlgoName == Symbol() ? nothing : AlgoName
+
+varaliases(sa::Union{ScopedAlgorithm{F, Name, Id, Aliases}, Type{<:ScopedAlgorithm{F, Name, Id, Aliases}}}) where {F, Name, Id, Aliases} = Aliases
 
 isdefault(sa::ScopedAlgorithm) = id(sa) == :default
 isdefault(sat::Type{<:ScopedAlgorithm}) = id(sat) == :default
 isdefault(obj::Any) = false
 
-hasid(sa::ScopedAlgorithm) = !isnothing(id(sa))
 
 
 @inline getfunc(sa::ScopedAlgorithm{F, Name}) where {F, Name} = sa.func
@@ -57,8 +45,6 @@ hasid(sa::ScopedAlgorithm) = !isnothing(id(sa))
 end
 getalgorithm(sa::ScopedAlgorithm{F, Name}) where {F, Name} = sa.func
 
-
-
 """
 Remove the scope from the type
 """
@@ -66,6 +52,8 @@ function contained_type(sat::Type{<:ScopedAlgorithm{F}}) where {F}
         return F
 end
 
+
+##### MATCHING INSTANCES #####
 
 isinstance(obj, sa::ScopedAlgorithm) = isinstance(sa, obj)
 function isinstance(sa::ScopedAlgorithm, obj)
@@ -106,14 +94,6 @@ function mergereturn(sa::ScopedAlgorithm{F, Name}, args, returnval) where {F, Na
     (;args..., (Name => (;getproperty(returnval, Name)..., returnval...)))
 end
 
-function changename(sa::ScopedAlgorithm{F}, newname::Symbol) where {F}
-    ScopedAlgorithm{F, typeof(newname), id(sa)}(sa.func)
-end
-
-function changename(a::Any, newname)
-    return a
-end
-
 # function update_auto(sa::ScopedAlgorithm{F, Name}, newname::Symbol) where {F, Name}
 #     if has_generated_name(sa)
 #         return changename(sa, newname)
@@ -121,6 +101,9 @@ end
 #     return sa
 # end
 
+"""
+For bulk replacement of names
+"""
 function replacename(a::ScopedAlgorithm{F, OldName}, name_replacement::Pair) where {F, OldName}
     if OldName == name_replacement[1]
         return changename(a, name_replacement[2])
@@ -144,7 +127,7 @@ end
 algotype(::ScopedAlgorithm{F, Name}) where {F, Name} = F
 algotype(f::Any) = typeof(f)
 
-scopedalgorithm_label(sa::ScopedAlgorithm) = string(summary(getalgorithm(sa)),"@",getname(sa))
+scopedalgorithm_label(sa::ScopedAlgorithm) = string((isnothing(algoname(sa)) ? summary(getalgorithm(sa)) : algoname(sa)),"@",getname(sa))
 
 
 ### CONTAINER TRAIT ###
@@ -160,3 +143,4 @@ function Base.show(io::IO, sa::ScopedAlgorithm)
     algo_repr = sprint(show, getalgorithm(sa))
     print(io, scopedalgorithm_label(sa), ": ", algo_repr)
 end
+

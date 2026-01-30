@@ -1,27 +1,17 @@
-abstract type AbstractRegistry end
-########################
-  ##### REGISTRY #####
-########################
-
-"""
-Namespace registry but with static type_same instead of dict
-    (# Tuple for type 1 (namedinstance1, namedinstance2, ...), # Tuple for type 2 (...), ...)
-"""
-struct NameSpaceRegistry{T} <: AbstractRegistry
-    entries::T # Tuple of RegistryTypeEntry
-end
-
-
-NameSpaceRegistry() = NameSpaceRegistry(tuple())
-
 get_entries(reg::NameSpaceRegistry{T}) where {T} = reg.entries
-
 
 Base.getindex(reg::NameSpaceRegistry, idx::Int) = reg.entries[idx]
 function Base.setindex(reg::NameSpaceRegistry{T}, newentry, idx::Int) where {T}
     old_entries = get_entries(reg)
     new_entries = Base.setindex(old_entries, newentry, idx)
     return NameSpaceRegistry{typeof(new_entries)}(new_entries)
+end
+function Base.setindex(reg::NameSpaceRegistry, newentry, T::Type)
+    fidx = find_typeidx(reg, T)
+    if isnothing(fidx)
+        error("Type $T not found in registry")
+    end
+    return Base.setindex(reg, newentry, fidx)
 end
 
 """
@@ -43,6 +33,7 @@ Types of entries as a tuple statically (Type1, type2, ...)
     Tt = tuple(datatypes...)
     return :($Tt)
 end
+
 gettypes_iterator(reg::NameSpaceRegistry) = gettypes_iterator(typeof(reg))
 
 """
@@ -62,6 +53,15 @@ end
 @inline find_typeidx(regt::Type{<:NameSpaceRegistry}, typ::Type) = _find_typeidx(regt, typ)
 @inline find_typeidx(reg::NameSpaceRegistry, obj) = find_typeidx(typeof(reg), obj)
 
+
+########################################
+############## Interface ###############
+########################################
+
+
+#########################
+######### ADDING ########
+#########################
 """
 Add an instance and get new registry and a named instance back
 """
@@ -89,11 +89,16 @@ Add multiple objects to the registry with the same multiplier
     end
 end
 
+#######################
+####### FINDING #######
+#######################
 
 function find_entry(reg::NameSpaceRegistry, obj::O) where O
     return  get_type_entries(reg, obj)
 end
 
+
+########################
 
 function scale_multipliers(reg::NameSpaceRegistry{T}, factor::Number) where {T}
     newentries = map(entry -> scale_multipliers(entry, factor), reg.entries)
@@ -121,19 +126,10 @@ function inherit(registry1::NameSpaceRegistry, registry2::NameSpaceRegistry, mul
 end
 inherit(e1::NameSpaceRegistry; kwargs...) = e1
 
-#####################
-#### UPDATING SCOPE ##
-#####################
-"""
-Recursively update the scop of thinwrappers containing a scopedalgorithm
-"""
-function update_scope(func::F, reg::NameSpaceRegistry) where {F}
-    return rebuild_from(x -> x isa ScopedAlgorithm, 
-        x -> begin 
-            ScopedAlgorithm(unwrap_container(x), getname(reg, x), id(x))
-        end,
-        func)
-end
+##########################
+##### UPDATING NAMES #####
+##########################
+
 
 
 ########################

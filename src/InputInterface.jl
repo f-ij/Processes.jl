@@ -69,10 +69,10 @@ get_target_name(ov::Union{NamedOverride{N, NT}, NamedInput{N, NT}}) where {N, NT
 get_vars(ov::Union{NamedOverride, NamedInput}) = ov.vars
 
 """
-If a ComplexLoopAlgorithm is given, duplicate the Override/Input for all contained algorithms
+If a LoopAlgorithm is given, duplicate the Override/Input for all contained algorithms
 """
-function to_named(cla::ComplexLoopAlgorithm, ov::Union{Override, Input})
-    if target_type(ov) <: ComplexLoopAlgorithm
+function to_named(cla::LoopAlgorithm, ov::Union{Override, Input})
+    if target_type(ov) <: LoopAlgorithm
         target_T = target_type(ov)
         reg = nothing
         if target_T <: typeof(cla)
@@ -80,7 +80,7 @@ function to_named(cla::ComplexLoopAlgorithm, ov::Union{Override, Input})
         else
             find_first_target = getfirst_node(x -> match_cla(target_T, typeof(x)), cla, unwrap = unwrap_cla)
             if isnothing(find_first_target)
-                error("Target algorithm $(target_T) not found in ComplexLoopAlgorithm $(cla)")
+                error("Target algorithm $(target_T) not found in LoopAlgorithm $(cla)")
             end
             reg = get_registry(find_first_target)
         end
@@ -106,11 +106,11 @@ function to_named(reg::NameSpaceRegistry, ov::Union{Override, Input})
     return (Named(typeof(ov), name, get_vars(ov)),)
 end
 
-to_named(cla::ComplexLoopAlgorithm, ovs::Union{Override, Input}...) = flat_collect_broadcast(ovs) do ov
+to_named(cla::LoopAlgorithm, ovs::Union{Override, Input}...) = flat_collect_broadcast(ovs) do ov
     to_named(cla, ov)
 end
 
-to_named(::ComplexLoopAlgorithm) = ()
+to_named(::LoopAlgorithm) = ()
 to_named(::NameSpaceRegistry) = ()
 
 """

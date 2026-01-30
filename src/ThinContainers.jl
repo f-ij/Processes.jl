@@ -17,6 +17,14 @@ thincontainer(a::Any) = thincontainer(typeof(a))
 ##
 contained_type(a::T) where {T} = contained_type(T)
 
+function contains_type(a::T, t::Type) where {T}
+    if thincontainer(T)
+        return contains_type(_contained_type(T), t)
+    else
+        return T <: t
+    end
+end
+
 """
 
 """

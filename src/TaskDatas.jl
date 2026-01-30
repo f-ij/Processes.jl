@@ -10,9 +10,7 @@ struct TaskData{F, As, Or, C, Lt}
 end
 
 function TaskData(algo; overrides = tuple(), inputs = tuple(), lifetime = Indefinite())
-    @static if DEBUG_MODE
-        println("Algo: $algo")
-    end
+    @DebugMode "Algo: $algo"
     if algo isa Type # For convenience, allow passing types
         algo = algo()
     end

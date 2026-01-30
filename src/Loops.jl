@@ -64,9 +64,7 @@ end
 Run a single function in a loop for a given number of times
 """
 Base.@constprop :aggressive function processloop(p::AbstractProcess, func::F, context::C, r::Repeat) where {F, C}
-    @static if DEBUG_MODE
-        println("Running process loop for $repeats times from thread $(Threads.threadid())")
-    end
+    @DebugMode "Running process loop for $repeats times from thread $(Threads.threadid())"
     @inline before_while(p)
     start_idx = loopidx(p)
     

@@ -1,56 +1,7 @@
-export viewmerge
-#######################
-### SUBCONTEXT VIEW ###
-#######################
-
-"""
-Go from a local variable to the location in the full context
-Type can be
-    - :local
-    - :shared
-    - :routed
-"""
-
-"""
-A location of a variable in subcontext: subcontextname and which has the local name there: originalname
-"""
-struct VarLocation{Type, subcontextname, originalname} end
-VarLocation{Type}(subcontextname::Symbol, originalname::Symbol) where {Type} = VarLocation{Type, subcontextname, originalname}()
-VarLocation(type, subcontextname::Symbol, originalname::Symbol) = VarLocation{type, subcontextname, originalname}()
-
-@inline get_subcontextname(vl::Union{VarLocation{T, SCN, ON}, Type{<:VarLocation{T, SCN, ON}}}) where {T, SCN, ON} = SCN
-@inline get_originalname(vl::Union{VarLocation{T, SCN, ON}, Type{<:VarLocation{T, SCN, ON}}}) where {T, SCN, ON} = ON
-
-
-struct SubContextView{CType, SubName, T} <: AbstractContext
-    context::CType
-    instance::T # instance for which the view is created
-
-    function SubContextView{CType, SubName, T}(context::CType, instance::T) where {CType, SubName, T}
-        new{CType, SubName, T}(context, instance)
-    end
-end
-
-function Base.show(io::IO, scv::SubContextView{CType, SubName}) where {CType, SubName}
-    print(io, "SubContextView(", SubName, ")")
-end
-
-"""
-Get a subcontext view for a specific subcontext
-"""
-@inline Base.view(pc::ProcessContext, instance::ScopedAlgorithm) = SubContextView{typeof(pc), getname(instance), typeof(instance)}(pc, instance)
-
-"""
-Create a view from a non-scoped instance by looking it up in the registry
-"""
-@inline function Base.view(pc::ProcessContext, instance)
-    scoped_instance = @inline value(static_get(get_registry(pc), instance))
-    return SubContextView{typeof(pc), getname(scoped_instance), typeof(scoped_instance)}(pc, scoped_instance)
-end
-"""
-Regenerate a SubContextView from its type
-"""
-@inline Base.view(pc::ProcessContext, scv::SubContextView) = @inline view(pc, this_instance(scv))
+#################################
+########## Properties ###########
+#################################
+varaliases(scv::Union{SubContextView{CType, SubName, T, NT, Aliases}, Type{<:SubContextView{CType, SubName, T, NT, Aliases}}}) where {CType, SubName, T, NT, Aliases} = Aliases
 
 @inline this_instance(scv::SubContextView) = getfield(scv, :instance)
 
@@ -60,58 +11,153 @@ Regenerate a SubContextView from its type
 @inline getcontext(scv::SubContextView) = @inline getfield(scv, :context)
 @inline getsubcontext(scv::SubContextView{CType, SubName}) where {CType, SubName} = @inline getproperty(getcontext(scv), SubName)
 
+#################################
+####### CREATING VIEWS ##########
+#################################
+
+"""
+Get a subcontext view for a specific subcontext
+"""
+@inline Base.view(pc::ProcessContext, instance::SA; inject = (;)) where SA <: ScopedAlgorithm = SubContextView{typeof(pc), getname(instance), typeof(instance), typeof(inject)}(pc, instance; inject)
+
+"""
+Create a view from a non-scoped instance by looking it up in the registry
+"""
+@inline function Base.view(pc::ProcessContext, instance::I, inject = (;)) where I
+    scoped_instance = @inline value(static_get(get_registry(pc), instance))
+    return SubContextView{typeof(pc), getname(scoped_instance), typeof(scoped_instance), typeof(inject)}(pc, scoped_instance; inject=inject)
+end
+
+"""
+Regenerate a SubContextView from its type
+"""
+@inline Base.view(pc::PC, scv::CV; inject = (;)) where {PC <: ProcessContext, CV <: SubContextView} = @inline view(pc, this_instance(scv), inject(scv))
+
+"""
+View a view
+"""
+@inline function Base.view(scv::SubContextView{C,SubName}, instance::SA) where {C, SubName, SA <: ScopedAlgorithm}
+    scopename = getname(instance)
+    @assert scopename == SubName "Trying to view SubContextView of subcontext $(SubName) with instance of subcontext $(scopename)"
+    context = getcontext(scv)
+    return view(context, instance)
+end
+
+
+##########################################
+################# TYPES ##################
+##########################################
+
+"""
+Get the type of the original subcontext from the view
+"""
+@inline subcontext_type(scv::Union{SubContextView{CType, SubName}, Type{<:SubContextView{CType, SubName}}}) where {CType<:ProcessContext, SubName} = subcontext_type(CType, SubName)
+
+
+##########################################
+########## Variable Locations ############
+##########################################
+
+# This is the basis for the viewsystem. Variables in and out get mapped to locations in the full context
+
+"""
+Get the names for local variables in the subcontext
+    Applies aliases if present
+"""
+function get_local_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, SubName}} where {CType, SubName}
+    _subcontext_type = subcontext_type(SCT)
+    local_varnames = keys(_subcontext_type)
+
+    localst = ntuple(i ->VarLocation{:local}(SubName, local_varnames[i]), length(local_varnames))
+
+    _aliases = varaliases(SCT)
+
+    # try
+        aliassed_local_varnames = @inline apply_aliases(_aliases, local_varnames)
+    # catch e
+    #     error("Error applying aliases $(_aliases) to local variable names $(local_varnames) in SubContextView $(SCT): \n $(e)")
+    # end
+
+    return NamedTuple{(aliassed_local_varnames...,)}(localst)
+end
+
+function get_shared_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, SubName}} where {CType, SubName}
+    _subcontext_type = subcontext_type(SCT)
+    _aliases = varaliases(SCT)
+
+    shared_context_names = getsharedcontext_names(_subcontext_type)
+
+    sharedvars = named_flat_collect_broadcast(shared_context_names) do name
+        shared_subcontext_type = subcontext_type(CType, name)
+        shared_varnames = keys(shared_subcontext_type)
+        aliased_varnames = @inline apply_aliases(_aliases, shared_varnames)
+        pairs = (aliased_varnames[i] => VarLocation{:shared}(name, shared_varnames[i]) for i in 1:length(shared_varnames))
+        return NamedTuple(pairs)
+    end
+    return sharedvars
+end
+
+function get_routed_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, SubName}} where {CType, SubName}
+    _subcontext_type = subcontext_type(SCT)
+    sharedvars = getsharedvars_types(_subcontext_type)
+    _aliases = varaliases(SCT)
+
+    routedvars = named_flat_collect_broadcast(sharedvars) do sv
+        fromname = get_fromname(sv)
+        varnames = keys(sv)
+        aliased_varnames = @inline apply_aliases(_aliases, varnames)
+        pairs = (aliased_varnames[i] => VarLocation{:routed}(fromname, varnames[i]) for i in 1:length(varnames))
+        return NamedTuple(pairs)
+    end
+
+    return routedvars
+end
+
+
 """
 Generate a namedtuple of localtuple => VarLocation
 """
-@inline @generated function get_varlocations(scv::Union{SubContextView{CType, SubName}, Type{<:SubContextView{CType, SubName}}}) where {CType, SubName}
-    # First get the subcontext type
-    subcontext_type = Processes.subcontext_type(CType, SubName)
-
-    local_varnames = keys(subcontext_type)
-
-    localst = ntuple(i ->VarLocation{:local}(SubName, local_varnames[i]), length(local_varnames))
-    locals = NamedTuple{(local_varnames...,)}(localst)
-
-    ### All shared vars heaped together
-    shared_context_names = getsharedcontext_names(subcontext_type)
-    sharedcontexts = NamedTuple()
-    for name in shared_context_names
-        shared_subcontext_type = Processes.subcontext_type(CType, name)
-        shared_varnames = keys(shared_subcontext_type)
-        sharedt = ntuple(i ->VarLocation{:shared}(name, shared_varnames[i]), length(shared_varnames))
-        sharednt = NamedTuple{tuple(shared_varnames...)}(sharedt)
-        sharedcontexts = (;sharedcontexts..., sharednt...)
-    end
-
-    ### Shared vars resolved separately per subcontext
-    sharedvars = getsharedvars_types(subcontext_type)
-    sharedvar_locations = tuple()
-    sharedvar_names = tuple()
-    for sharedvar in sharedvars
-        sharedvar_from = get_fromname(sharedvar)
-        for var_to_alias in sharedvar
-            alias = last(var_to_alias)
-            varname = first(var_to_alias)
-            sharedvar_locations = (sharedvar_locations..., VarLocation{:routed}(sharedvar_from, varname))
-            sharedvar_names = tuple(sharedvar_names..., alias)
-        end
-    end
-    sharedvars = NamedTuple{tuple(sharedvar_names...)}(sharedvar_locations)
-
-
-    all_vars = (;sharedcontexts = sharedcontexts, sharedvars = sharedvars, locals = locals)
-    # all_vars = (;locals..., shared..., routed...)
+get_varlocations(scv::SubContextView) = @inline get_varlocations(typeof(scv))
+@inline @generated function get_varlocations(scv::Type{C}) where {C<:SubContextView{CType, SubName}} where {CType, SubName}
+    locals = get_local_locations(C)
+    sharedvars = get_shared_locations(C)
+    routedvars = get_routed_locations(C)
+    # Locals take precedene over routes which take precedence over shared if there are name clashes
+    # TODO Allow clashes???
+    all_vars = (;sharedvars..., routedvars..., locals...)
     return :( $all_vars )
 end
 
+@inline get_all_locations(scv::SubContextView) = @inline get_all_locations(typeof(scv))
+"""
+Get a flat named tuple with (;name_of_runtime_var => VarLocation)
+A varlocation is an actual location of the variable in the full context
+"""
 @inline @generated function get_all_locations(sctv::Type{SCT}) where {SCT<:SubContextView}
-    v_l = get_varlocations(SCT)
+    locals = get_local_locations(SCT)
+    sharedvars = get_shared_locations(SCT)
+    routedvars = get_routed_locations(SCT)
     # Locals take precedene over routes which take precedence over shared
-    all_locations = (;v_l.sharedcontexts..., v_l.sharedvars..., v_l.locals...)
+    all_locations = (;sharedvars..., routedvars..., locals...)
     return :( $all_locations )
 end
 
-@inline get_all_locations(scv::SubContextView) = @inline get_all_locations(typeof(scv))
+###########################################
+########### Getting Properties  ###########
+###########################################
+
+
+@inline Base.keys(scv::SubContextView) = propertynames(@inline get_all_locations(scv))
+@inline Base.propertynames(scv::SubContextView) = propertynames(@inline get_all_locations(scv))
+
+@inline Base.haskey(scv::SubContextView, name::Symbol) = haskey(scv, Val(name))
+@inline @generated function Base.haskey(scv::SubContextView, v::Val{name}) where {name}
+    locations = @inline get_all_locations(scv)
+    has_key = hasproperty(locations, name)
+    return :( $has_key )
+end
+
+
 @inline @generated function Base.getproperty(sct::SubContextView, vl::VarLocation)
     target_subcontext = get_subcontextname(vl)
     target_variable = get_originalname(vl)
@@ -120,11 +166,9 @@ end
         subcontext = @inline getproperty(context, $(QuoteNode(target_subcontext)))
         return @inline getproperty(subcontext, $(QuoteNode(target_variable)))
     end
-    # subcontext = @inline getproperty(getcontext(sct), get_subcontextname(vl))
-    # return @inline getproperty(subcontext, get_originalname(vl))
 end
 
-@inline Base.getproperty(sct::SubContextView, v::Symbol) = getproperty(sct, Val(v))
+@inline Base.@constprop :aggressive Base.getproperty(sct::SubContextView, v::Symbol) = getproperty(sct, Val(v))
 @inline @generated function Base.getproperty(sct::SubContextView{CType, SubName}, v::Val{name}) where {CType, SubName, name}
     locations = get_all_locations(sct)
     if haskey(locations, name)
@@ -148,21 +192,10 @@ end
     end
 end
 
-"""
-Get the type of the original subcontext from the view
-"""
-@inline subcontext_type(scv::SubContextView{CType, SubName}) where {CType<:ProcessContext, SubName} = subcontext_type(CType, SubName)
-@inline subcontext_type(scvt::Type{<:SubContextView{CType, SubName}}) where {CType<:ProcessContext, SubName} = subcontext_type(CType, SubName)
 
-@inline Base.keys(scv::SubContextView) = propertynames(@inline get_all_locations(scv))
-@inline Base.propertynames(scv::SubContextView) = propertynames(@inline get_all_locations(scv))
-
-@inline Base.haskey(scv::SubContextView, name::Symbol) = haskey(scv, Val(name))
-@inline @generated function Base.haskey(scv::SubContextView, v::Val{name}) where {name}
-    locations = @inline get_all_locations(scv)
-    has_key = hasproperty(locations, name)
-    return :( $has_key )
-end
+##########################################
+############### MERGING ##################
+##########################################
 
 """
 Returns a merged context by merging the provided named tuple into the appropriate subcontexts
@@ -207,9 +240,15 @@ Returns a merged context by merging the provided named tuple into the appropriat
     end
 end
 
+"""
+Fallback merge if nothing is merged that just returns the original context
+"""
 @inline Base.merge(scv::SubContextView, ::Nothing) = getcontext(scv)
 
-@inline viewmerge(scv::SubContextView, args::NamedTuple) = @inline view(merge(scv, args), this_instance(scv))
+"""
+Merge, but return view, useful for injecting variables that are not meant to be in the full context
+"""
+@inline inject(scv::SubContextView, args::NamedTuple) = @inline view(merge(scv, args), this_instance(scv))
 
 """
 Instead of merging, replace the subcontext entirely with the provided args named tuple
@@ -217,17 +256,23 @@ Returns new context
 
 This is to be used during the prepare phase, where entire subcontexts are replaced
 """
-@inline function Base.replace(scv::SubContextView{CType, SubName}, args::NamedTuple) where {CType<:ProcessContext, SubName}
-    names = propertynames(args)
-    # Error if trying to replace any other subcontext than the one in the view
-    if any( n -> n != SubName, names)
+@inline @generated function Base.replace(scv::SubContextView{CType, SubName}, args::NamedTuple) where {CType<:ProcessContext, SubName}
+    names = fieldnames(args)
+    if any( n -> n != SubName, names) # Static check that only the correct subcontext is being replaced
         error("Trying to replace subcontext $(n) from SubContextView $(SubName), only $(SubName) can be replaced")
     end
-    newsubcontext = @inline newdata(subcontext_type(scv), getproperty(args, SubName))
-    old_context = @inline getcontext(scv)
-    return replace(old_context, (; SubName => newsubcontext))
+
+    return quote
+        newsubcontext = @inline newdata(subcontext_type(scv), getproperty(args, SubName))
+        old_context = @inline getcontext(scv)
+        return replace(old_context, (; SubName => newsubcontext))
+    end
 end
 
-function inject(scv::SubContextView, args::NamedTuple)
-    
+####################################
+############## SHOW ################
+####################################
+
+function Base.show(io::IO, scv::SubContextView{CType, SubName}) where {CType, SubName}
+    print(io, "SubContextView(", SubName, ")")
 end

@@ -1,5 +1,8 @@
 export Share, Route, to_sharedcontext, to_sharedvar
 
+################################################
+##################  SHARES  ####################
+################################################
 
 """
 Whole name space from A1 to A2, optionally directional
@@ -33,6 +36,11 @@ function to_sharedcontext(reg::NameSpaceRegistry, s::Share)
     return nt
 end
 
+
+################################################
+##################  ROUTES  ####################
+################################################
+
 """
 User-facing route from one subcontext to another
 """
@@ -65,36 +73,35 @@ contextname(st::Type{SharedContext{name}}) where {name} = name
 contextname(st::SharedContext{name}) where {name} = name
 contextname(::Any) = nothing
 
-struct SharedVars{from_name, varnames, aliases} end
+struct SharedVars{from_name, NT} end
 get_fromname(::Type{<:SharedVars{from_name}}) where {from_name} = from_name
 get_fromname(::SharedVars{from_name}) where {from_name} = from_name
-get_varname(::Type{<:SharedVars{from_name, varnames, aliases}}) where {from_name, varnames, aliases} = varnames
-get_aliasname(::Type{<:SharedVars{from_name, varnames, aliases}}) where {from_name, varnames, aliases} = aliases
+get_alias(sv::SharedVars{from_name, NT}, varname::Symbol) where {from_name, NT} = getproperty(NT, varname)
+
+# TODO CHECK IF USED
 contextname(sv::Type{<:SharedVars{from_name}}) where {from_name} = from_name
 contextname(sv::SharedVars{from_name}) where {from_name} = from_name
 
-function Base.iterate(r::Union{SharedVars{F,V,SharedVarsA}, Type{SharedVars{F,V,SharedVarsA}}}, state = 1) where {F,V,SharedVarsA}
-    if state > length(V)
-        return nothing
-    else
-        return ( (V[state], SharedVarsA[state]), state + 1 )
-    end
-end
+# function Base.iterate(r::Union{SharedVars{F,V,SharedVarsA}, Type{SharedVars{F,V,SharedVarsA}}}, state = 1) where {F,V,SharedVarsA}
+#     if state > length(V)
+#         return nothing
+#     else
+#         return ( (V[state], SharedVarsA[state]), state + 1 )
+#     end
+# end
 
+## TODO MOVE
 function to_sharedvar(reg::NameSpaceRegistry, r::Route)
-    # if getto(r) isa All
-    #     matches = static_get(reg, getto(r))
-    #     named_flat_collect_broadcast(matches) do match
-    #         fromname = static_find_name(reg, r.from)
-    #         toname = static_find_name(reg, match)
-    #         (;toname => SharedVars{fromname, r.varnames, r.aliases}())
-    #     end
-    # else
         fromname = static_find_name(reg, r.from)
         toname = static_find_name(reg, r.to)
         (;toname => SharedVars{fromname, r.varnames, r.aliases}())
-    # end
 end
+
+
+################################################
+#################  RESOLVING  ##################
+################################################
+
 
 function resolve_options(reg::NameSpaceRegistry)
     return (;)

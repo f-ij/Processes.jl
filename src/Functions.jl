@@ -11,6 +11,44 @@ macro includetextfile(pathsymbs...)
     esc(Meta.parse(read(open(path), String)))
 end
 
+macro DebugMode(args...)
+    line = __source__.line
+    file = __source__.file
+    lnn = LineNumberNode(line, file)
+    file_str = string(file)
+    body = Expr[]
+    for arg in args
+        val = gensym(:debug_val)
+        if arg isa String
+            push!(body, :(println("| ", $(arg))))
+        elseif arg isa Expr && arg.head == :call && (arg.args[1] == :println || arg.args[1] == :print)
+            # Inline println/print with a leading "| " to keep context.
+            args_exprs = [esc(a) for a in arg.args[2:end]]
+            push!(body, quote
+                print("| ")
+                print($(args_exprs...))
+                println()
+            end)
+        else
+            push!(body, quote
+                local $val = $(esc(arg))
+                println("| ", $(QuoteNode(arg)), " = ", $val)
+            end)
+        end
+    end
+    return quote
+        @static if DEBUG_MODE
+            $lnn
+            if $(line) > 0
+                println("| ", $(file_str), ":", $(line))
+            end
+            $(body...)
+            println("")
+        end
+    end
+end
+export DebugMode
+
 function setTuple(tuple, idx, val)
     if idx == 1
         return (val, tuple[2:end]...)
@@ -711,4 +749,47 @@ General replacing setfield
         end
     end
     # return exp
+end
+
+@inline function setfields(s, names, vals)
+    @assert length(names) == length(vals) "setfields: names and values must have the same length"
+    result = s
+    for i in eachindex(names, vals)
+        result = setfield(result, names[i], vals[i])
+    end
+    return result
+end
+
+@generated function setfields(s::S, names::NTuple{N, Symbol}, vals::NTuple{N}) where {S, N}
+    ex = :s
+    for i in 1:N
+        ex = :(setfield($ex, Val($(names[i])), vals[$i]))
+    end
+    return ex
+end
+
+"""
+In a parametric type, set a type parameter by index, keeping all the
+other type parameters and fields the same.
+
+This only works if the paramter is not used as a field type.
+"""
+setparameter(s::S, i::Integer, typeval) where {S} = setparameter(s, Val(i), typeval)
+@generated function setparameter(s::S, i::Val{idx}, typeval) where {S, idx}
+    parameters = S.parameters
+    type_expr = :($S)
+    if !isempty(parameters) && !(S <: NamedTuple)
+        begin_params = parameters[1:(idx - 1)]
+        end_params = parameters[(idx + 1):end]
+        begin_params = map(x -> x isa Symbol ? QuoteNode(x) : x, begin_params)
+        end_params = map(x -> x isa Symbol ? QuoteNode(x) : x, end_params)
+
+        type_expr = Expr(:curly, :($(nameof(S))), begin_params..., :typeval, end_params...)
+    end    
+
+    fieldnames = Base.fieldnames(S)
+    getfields = Any[:(getfield(s, $(QuoteNode(field)))) for field in fieldnames]
+    
+    exp = Expr(:call, type_expr, getfields...)
+    return exp
 end

@@ -25,6 +25,9 @@ function prepare_context(algo::F, c::ProcessContext, overrides_and_inputs::Union
     
     input_context = merge(c, inputs...; to_all = (;algo, lifetime))
 
+    @DebugMode "Preparing context for algo $(algo) with input context $input_context"
+    @DebugMode "Overrides are $overrides"
+
     prepared_context = prepare(algo, input_context)
 
     overridden_context = merge(prepared_context, overrides...)
@@ -52,16 +55,12 @@ end
 @inline function init_context(p::AbstractProcess)
     td = taskdata(p)
     c = init_context(td)
-    @static if DEBUG_MODE
-        display("Prepared context is $c")
-    end
+    @DebugMode "Prepared context is $c"
     return c
 end
 
 function prepare_context(process::AbstractProcess, c::ProcessContext) 
-    @static if DEBUG_MODE
-        println("Creating task for process $(process.id)")
-    end
+    @DebugMode "Creating task for process $(process.id)"
 
     td = taskdata(process)
     return prepare_context(td, c)

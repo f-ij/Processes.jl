@@ -1,20 +1,3 @@
-
-########################
-    ### SUBCONTEXT ###
-########################
-
-"""
-A subcontext can share share in two ways:
-    1) Whole subcontext shares:         The entire subcontext is shared between processes
-    2) Variable shares through shared vars: Only specific variables are shared between subcontexts, 
-                                                defined by shared vars with optional aliases
-"""
-struct SubContext{Name, T<:NamedTuple, S, SV} <: AbstractSubContext
-    data::T
-    sharedcontexts::S # Whole subcontext shares
-    sharedvars::SV # Variable shares with aliases
-end
-
 getdata(sc::SubContext) = getfield(sc, :data)
 getsharedcontexts(sc::SubContext) = getfield(sc, :sharedcontexts)
 getsharedvars(sc::SubContext) = getfield(sc, :sharedvars)

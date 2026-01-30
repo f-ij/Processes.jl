@@ -23,9 +23,9 @@ export Process
 
 function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1.0)
 
-    # Wrap in a ComplexLoopAlgorithm to get all
+    # Wrap in a LoopAlgorithm to get all
     # features
-    if !(func isa ComplexLoopAlgorithm)
+    if !(func isa LoopAlgorithm)
         func = SimpleAlgo(tuple(func))
     end
     
@@ -57,9 +57,7 @@ function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1
     context = prepare_context(td)
     p = Process(uuid1(), context, td, timeout, nothing, UInt(1), Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), 0)
     register_process!(p)
-    @static if DEBUG_MODE
-        println("Created process with id $(p.id), now preparing data")
-    end
+    @DebugMode "Created process with id $(p.id), now preparing data"
     
     finalizer(remove_process!, p)
     return p

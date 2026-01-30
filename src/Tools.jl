@@ -27,9 +27,7 @@ give the array a size hint based on the lifetime and the number of updates per s
     # recommended_extra = recommendsize(args, updates_per_step)
     sizehint = startsize + recommended_extra
     # println("Recommended sizehint: $sizehint")
-    @static if DEBUG_MODE
-        println("Sizehint is $sizehint")
-    end
+    @DebugMode "Sizehint is $sizehint"
     sizehint!(array, sizehint)
 end
 # """

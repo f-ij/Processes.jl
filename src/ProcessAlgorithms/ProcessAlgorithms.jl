@@ -1,13 +1,15 @@
 include("Utils.jl")
-include("ComplexLoopAlgorithms.jl")
+include("LoopAlgorithms.jl")
 include("GetFirst.jl")
-include("SimpleAlgo.jl")
 include("CompositeAlgorithms.jl")
+include("SimpleAlgo.jl")
 include("Routines.jl")
 include("Setup.jl")
 include("Prepare.jl")
 # include("Step.jl")
 include("GeneratedStep.jl")
+include("Fusing/Fusing.jl")
+
 include("Showing.jl")
 
 

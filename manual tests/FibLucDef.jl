@@ -3,6 +3,9 @@ include("_env.jl")
 #     push!(fiblist, fiblist[end] + fiblist[end-1])
 #     return (;)
 # end
+struct Fib <: ProcessAlgorithm end
+struct Luc <: ProcessAlgorithm end
+
 function Processes.step!(::Fib, context)
     fiblist = context.fiblist
     push!(fiblist, fiblist[end] + fiblist[end-1])
