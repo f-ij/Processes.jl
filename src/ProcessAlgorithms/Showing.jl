@@ -14,10 +14,37 @@ function Base.show(io::IO, ca::CompositeAlgorithm)
         return
     end
     _intervals = Processes.intervals(ca)
+    limit = get(io, :limit, false)
     for (idx, thisfunc) in enumerate(funcs)
         interval = _intervals[idx]
+        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
+        lines = split(func_str, '\n')
         suffix = " (every " * string(interval) * " time(s))"
-        print(io, "  | ", _algo_label(thisfunc), suffix)
+        print(io, "  | ", lines[1], suffix)
+        for line in Iterators.drop(lines, 1)
+            print(io, "\n  | ", line)
+        end
+        if idx < length(funcs)
+            print(io, "\n")
+        end
+    end
+end
+
+function Base.show(io::IO, sa::SimpleAlgo)
+    funcs = sa.funcs
+    if isempty(funcs)
+        print(io, "SimpleAlgo (empty)")
+        return
+    end
+    println(io, "SimpleAlgo")
+    limit = get(io, :limit, false)
+    for (idx, f) in enumerate(funcs)
+        func_str = repr(f; context = IOContext(io, :limit => limit))
+        lines = split(func_str, '\n')
+        print(io, "  | ", lines[1])
+        for line in Iterators.drop(lines, 1)
+            print(io, "\n  |   ", line)
+        end
         if idx < length(funcs)
             print(io, "\n")
         end
@@ -34,10 +61,16 @@ function Base.show(io::IO, r::Routine)
     end
     reps = repeats(r)
     reps_is_type = reps isa Type
+    limit = get(io, :limit, false)
     for (idx, thisfunc) in enumerate(funcs)
         rep = reps_is_type ? reps : reps[idx]
         suffix = reps_is_type ? " (repeats " * string(rep) * ")" : " (repeats " * string(rep) * " time(s))"
-        print(io, "  | ", _algo_label(thisfunc), suffix)
+        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
+        lines = split(func_str, '\n')
+        print(io, "  | ", lines[1], suffix)
+        for line in Iterators.drop(lines, 1)
+            print(io, "\n  |   ", line)
+        end
         if idx < length(funcs)
             print(io, "\n")
         end
@@ -117,8 +150,14 @@ function Base.summary(io::IO, sa::SimpleAlgo)
         return
     end
     println(io, "SimpleAlgo")
+    limit = get(io, :limit, false)
     for (idx, f) in enumerate(funcs)
-        print(io, "  | ", _algo_label(f))
+        func_str = repr(f; context = IOContext(io, :limit => limit))
+        lines = split(func_str, '\n')
+        print(io, "  | ", lines[1])
+        for line in Iterators.drop(lines, 1)
+            print(io, "\n  |   ", line)
+        end
         if idx < length(funcs)
             print(io, "\n")
         end
@@ -149,10 +188,16 @@ function Base.summary(io::IO, r::Routine)
     reps = repeats(r)
     reps_is_type = reps isa Type
     println(io, "Routine")
+    limit = get(io, :limit, false)
     for (idx, f) in enumerate(funcs)
         rep = reps_is_type ? reps : reps[idx]
         suffix = reps_is_type ? " (repeats " * string(rep) * ")" : " (repeats " * string(rep) * " time(s))"
-        print(io, "  | ", _algo_label(f), suffix)
+        func_str = repr(f; context = IOContext(io, :limit => limit))
+        lines = split(func_str, '\n')
+        print(io, "  | ", lines[1], suffix)
+        for line in Iterators.drop(lines, 1)
+            print(io, "\n  |   ", line)
+        end
         if idx < length(funcs)
             print(io, "\n")
         end

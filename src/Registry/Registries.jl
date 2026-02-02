@@ -1,6 +1,6 @@
 get_entries(reg::NameSpaceRegistry{T}) where {T} = reg.entries
-
 Base.getindex(reg::NameSpaceRegistry, idx::Int) = reg.entries[idx]
+
 function Base.setindex(reg::NameSpaceRegistry{T}, newentry, idx::Int) where {T}
     old_entries = get_entries(reg)
     new_entries = Base.setindex(old_entries, newentry, idx)
@@ -39,19 +39,37 @@ gettypes_iterator(reg::NameSpaceRegistry) = gettypes_iterator(typeof(reg))
 """
 Find the index in the entries for a given type T
 """
+@inline find_typeidx(regt::Type{<:NameSpaceRegistry}, obj) = _find_typeidx(regt, typeof(obj))
+@inline find_typeidx(regt::Type{<:NameSpaceRegistry}, typ::Type) = _find_typeidx(regt, typ)
+@inline find_typeidx(reg::NameSpaceRegistry, obj) = find_typeidx(typeof(reg), obj)
+
 @generated function _find_typeidx(reg::Type{<:NameSpaceRegistry}, typ::Type{T}) where {T}
     T_non_scoped = contained_type(T) # Containers are categorized give the type of the obj inside
     regt = reg.parameters[1]
     it = gettypes_iterator(regt)
     index = findfirst(t -> T_non_scoped <: t, it)
-    return :( $index )
+    dmode = debug_mode()
+    return quote
+        $(LineNumberNode(@__LINE__, @__FILE__))
+        idx = $index
+        if $dmode
+            tns = $T_non_scoped
+            reg = $reg
+            println("Type $(tns) not found in registry: $reg")
+        end
+        return idx
+    end
 end
-"""
 
 """
-@inline find_typeidx(regt::Type{<:NameSpaceRegistry}, obj) = _find_typeidx(regt, typeof(obj))
-@inline find_typeidx(regt::Type{<:NameSpaceRegistry}, typ::Type) = _find_typeidx(regt, typ)
-@inline find_typeidx(reg::NameSpaceRegistry, obj) = find_typeidx(typeof(reg), obj)
+Non-generated helper of find_typeidx for use in other generated functions
+"""
+function nongen_find_typeidx(reg::Type{<:NameSpaceRegistry}, typ::Type{T}) where {T}
+    T_non_scoped = contained_type(T) # Containers are categorized give the type of the obj inside
+    it = gettypes_iterator(reg)
+    index = findfirst(t -> T_non_scoped <: t, it)
+    return index
+end
 
 
 ########################################
@@ -141,12 +159,15 @@ Get entries for a given type T
 """
 @generated function get_type_entries(reg::NameSpaceRegistry, typ::Type{T}) where {T}
     find_this_type = contained_type(T) # For containers, get the contained type
-    _type_index = find_typeidx(reg, find_this_type)
+    _type_index = nongen_find_typeidx(reg, find_this_type)
     if isnothing(_type_index)
         # error("typ: $typ, T: $T, find_this_type: $find_this_type, reg: $reg")
-        error("Type $(find_this_type) not found in registry")
+        :(error("Type $(find_this_type) not found in registry: $reg"))
     end
-    return :( reg.entries[$_type_index] )
+    return quote 
+        $(LineNumberNode(@__LINE__, @__FILE__))
+        reg.entries[$_type_index]
+    end
 end
 
 function get_type_entries(reg::NameSpaceRegistry, obj)

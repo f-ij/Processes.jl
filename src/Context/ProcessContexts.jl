@@ -155,7 +155,7 @@ function _subcontext_var_lines(sc::SubContext)
     if !isempty(shared_names)
         push!(lines, "shared: " * join(shared_names, ", "))
     end
-    data = getdata(sc)
+    data = get_data(sc)
     data_names = propertynames(data)
     if isempty(data_names)
         push!(lines, "vars: ∅")

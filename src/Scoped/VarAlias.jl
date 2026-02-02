@@ -13,10 +13,11 @@ VarAliases(;names...) = VarAliases{(;names...)}()
 end
 
 @inline Base.@constprop :aggressive function apply_aliases(va::Union{VarAliases{NT}, Type{<:VarAliases{NT}}}, names::Union{Tuple, AbstractVector}) where NT
-    @assert eltype(names) == Symbol "Aliases must be Symbols"
     if isempty(NT)
         return names
     end
+    @assert eltype(names) == Symbol "Aliases must be Symbols, got $(eltype(names)), and names: $names"
+
     return map( n -> getproperty(NT, n), names)
 end
 

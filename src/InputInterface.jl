@@ -69,7 +69,8 @@ get_target_name(ov::Union{NamedOverride{N, NT}, NamedInput{N, NT}}) where {N, NT
 get_vars(ov::Union{NamedOverride, NamedInput}) = ov.vars
 
 """
-If a LoopAlgorithm is given, duplicate the Override/Input for all contained algorithms
+If Overrides and inputs target a LoopAlgorithm, duplicate them for all contained algorithms
+    Maybe this is not used anymore after the fusing system
 """
 function to_named(cla::LoopAlgorithm, ov::Union{Override, Input})
     if target_type(ov) <: LoopAlgorithm

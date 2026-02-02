@@ -1,4 +1,4 @@
-getdata(sc::SubContext) = getfield(sc, :data)
+get_data(sc::SubContext) = getfield(sc, :data)
 getsharedcontexts(sc::SubContext) = getfield(sc, :sharedcontexts)
 getsharedvars(sc::SubContext) = getfield(sc, :sharedvars)
 
@@ -14,7 +14,7 @@ function newdata(sc::SubContext, data::NamedTuple)
     SubContext{getname(sc), typeof(data), getsharedcontext_types(sc), getsharedvars_types(sc)}(data, getsharedcontexts(sc), getsharedvars(sc))
 end
 
-@inline Base.isempty(sc::SubContext) = isempty(getdata(sc))
+@inline Base.isempty(sc::SubContext) = isempty(get_data(sc))
 @inline getname(sct::Type{<:SubContext}) = sct.parameters[1]
 @inline get_datatype(sct::Type{<:SubContext}) = sct.parameters[2]
 
@@ -48,15 +48,15 @@ end
     contextname.(shared_context_types)
 end
 
-@inline Base.pairs(sc::SubContext) = pairs(getdata(sc))
-@inline Base.getproperty(sc::SubContext, name::Symbol) = getproperty(getdata(sc), name)
+@inline Base.pairs(sc::SubContext) = pairs(get_data(sc))
+@inline Base.getproperty(sc::SubContext, name::Symbol) = getproperty(get_data(sc), name)
 @inline function Base.merge(sc::SubContext{Name, T, S, R}, args::NamedTuple) where {Name, T, S, R}
-    merged = merge(getdata(sc), args)
+    merged = merge(get_data(sc), args)
     @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
 end
 
 @inline function Base.merge(args::NamedTuple, sc::SubContext{Name, T, S, R}) where {Name, T, S, R}
-    merged = merge(args, getdata(sc))
+    merged = merge(args, get_data(sc))
     @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
 end
 
@@ -68,7 +68,7 @@ end
 end
 
 @inline Base.keys(sct::Type{<:SubContext}) = fieldnames(sct.parameters[2])
-@inline Base.keys(sc::SubContext) = propertynames(getdata(sc))
+@inline Base.keys(sc::SubContext) = propertynames(get_data(sc))
 
 
 

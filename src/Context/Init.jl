@@ -11,6 +11,8 @@ function ProcessContext(algos::LoopAlgorithm; globals = (;))
     shares = get_shares(algos)
     routes = get_routes(algos)
 
+    @DebugMode "Shares are: $shares" "Routes are: $routes"
+
     sharedcontexts = resolve_options(registry, shares...)
     sharedvars = resolve_options(registry, routes...)
 

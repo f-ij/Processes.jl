@@ -9,17 +9,14 @@ Ldup = Unique(Luc)
 FibLuc = CompositeAlgorithm( (Fib(), Luc), (1,2) )
 C = Routine((Fib, Fib(), FibLuc))
 
-
 FFluc = CompositeAlgorithm( (FibLuc, Fdup, Fib, Ldup), (10,5,2,1) )
+td = ps.TaskData(FFluc)
+c = td.empty_context
+v = view(c, Fdup)
+locs = ps.get_varlocations(v)
 
-ps.flat_tree_property_recursion((FFluc,), (1,)) do el, trait
-    if !(el isa CompositeAlgorithm)
-        return nothing, nothing
-    end
-    newels = ps.getfuncs(el)
-    newtraits = ps.intervals(el)
-    return newels, trait.*newtraits
-end
+# create_merge_tuples
+
 
 ps.flatten(FibLuc)
 

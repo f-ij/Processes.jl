@@ -77,6 +77,7 @@ Main responsibilities:
    non-`isbits` values) as keys that map to a symbol name. This performs a static conversion
    from an arbitrary scoped value—or an unscoped value through auto matching—to a symbol key.
    That key is later used by contexts.
+4) Provide static iteration over (non-dynamic) entries in the registry
 
 Each entry is expected to contain only `ScopedAlgorithm` wrappers; no other payloads should be
 stored directly in a registry entry. `ScopedAlgorithm` drives the matching system (via entry

@@ -1,4 +1,7 @@
 export fuse, isfused
+
+include("ContextExt.jl")
+
 #=
 Fusing for now splats non-routine LoopAlgorithms into one CompositeAlgorithm.
 
@@ -43,4 +46,3 @@ function fuse(cla::LoopAlgorithm, name_prefix = "")
 
     fused = ScopedAlgorithm(CompositeAlgorithm(flat_funcs, flat_intervals; id), fusename,; customname = fusename)
 end
-|

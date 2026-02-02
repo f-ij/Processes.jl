@@ -20,19 +20,21 @@ macro DebugMode(args...)
     for arg in args
         val = gensym(:debug_val)
         if arg isa String
-            push!(body, :(println("| ", $(arg))))
+            push!(body, :(println(_dbg_io, "| ", $(arg))))
+        elseif arg isa Expr && arg.head == :string
+            push!(body, :(println(_dbg_io, "| ", $(esc(arg)))))
         elseif arg isa Expr && arg.head == :call && (arg.args[1] == :println || arg.args[1] == :print)
             # Inline println/print with a leading "| " to keep context.
             args_exprs = [esc(a) for a in arg.args[2:end]]
             push!(body, quote
-                print("| ")
-                print($(args_exprs...))
-                println()
+                print(_dbg_io, "| ")
+                print(_dbg_io, $(args_exprs...))
+                println(_dbg_io)
             end)
         else
             push!(body, quote
                 local $val = $(esc(arg))
-                println("| ", $(QuoteNode(arg)), " = ", $val)
+                println(_dbg_io, "| ", $(QuoteNode(arg)), " = ", repr($val; context = _dbg_io))
             end)
         end
     end
@@ -40,13 +42,62 @@ macro DebugMode(args...)
         @static if DEBUG_MODE
             $lnn
             if $(line) > 0
-                println("| ", $(file_str), ":", $(line))
+                local _dbg_io = IOContext(stdout, :limit => get(stdout, :limit, false))
+                println(_dbg_io, "| ", $(file_str), ":", $(line))
+            else
+                local _dbg_io = IOContext(stdout, :limit => get(stdout, :limit, false))
             end
             $(body...)
-            println("")
+            println(_dbg_io, "")
         end
     end
 end
+
+"""
+Version of debugmode macro that doesn't work in static, but instead inlines dmode into the code
+    This is assumed to come from a function that returns a Bool
+"""
+macro GenDebugMode(args...)
+    line = __source__.line
+    file = __source__.file
+    lnn = LineNumberNode(line, file)
+    file_str = string(file)
+    body = Expr[]
+    for arg in args
+        val = gensym(:debug_val)
+        if arg isa String
+            push!(body, :(println(_dbg_io, "| ", $(arg))))
+        elseif arg isa Expr && arg.head == :string
+            push!(body, :(println(_dbg_io, "| ", $(esc(arg)))))
+        elseif arg isa Expr && arg.head == :call && (arg.args[1] == :println || arg.args[1] == :print)
+            # Inline println/print with a leading "| " to keep context.
+            args_exprs = [esc(a) for a in arg.args[2:end]]
+            push!(body, quote
+                print(_dbg_io, "| ")
+                print(_dbg_io, $(args_exprs...))
+                println(_dbg_io)
+            end)
+        else
+            push!(body, quote
+                local $val = $(esc(arg))
+                println(_dbg_io, "| ", $(QuoteNode(arg)), " = ", repr($val; context = _dbg_io))
+            end)
+        end
+    end
+    
+    return quote
+        if $dmode
+            $lnn
+            local _dbg_io = IOContext(stdout, :limit => get(stdout, :limit, false))
+            if $(line) > 0
+                println(_dbg_io, "| ", $(file_str), ":", $(line))
+            end
+            $(body...)
+            println(_dbg_io, "")
+        end
+    end
+end
+
 export DebugMode
 
 function setTuple(tuple, idx, val)
@@ -785,7 +836,7 @@ setparameter(s::S, i::Integer, typeval) where {S} = setparameter(s, Val(i), type
         end_params = map(x -> x isa Symbol ? QuoteNode(x) : x, end_params)
 
         type_expr = Expr(:curly, :($(nameof(S))), begin_params..., :typeval, end_params...)
-    end    
+w    end    
 
     fieldnames = Base.fieldnames(S)
     getfields = Any[:(getfield(s, $(QuoteNode(field)))) for field in fieldnames]

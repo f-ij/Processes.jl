@@ -55,14 +55,9 @@ end
     return (;f(gethead(elements))..., _named_flat_collect_broadcast(f, gettail(elements))...)
 end
 
-# function flat_tree_broadcast(f, elements::Tuple)
-    
-# end
-
-# function __flat_tree_broadcast(f, elements::Tuple)
-
-# end
-
+"""
+Ntuple, but if f returns a tuple, flatten it
+"""
 function flat_ntuple(f, n)
     function _flat_ntuple(f, n, idx)
         if idx > n
@@ -134,3 +129,4 @@ function flat_tree_property_recursion(nodefunc, elements::Tuple, traits::Tuple, 
     end
     return @inline flat_tree_property_recursion(nodefunc, flat_replaced_nodes, flat_replaced_traits, next_mask)
 end
+

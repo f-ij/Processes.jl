@@ -59,7 +59,7 @@ VarLocation(type, subcontextname::Symbol, originalname::Symbol) = VarLocation{ty
 struct SubContextView{CType, SubName, T, NT, VarAliases} <: AbstractContext
     context::CType
     instance::T # ScopedInstance for which the view is created
-    inject::NT
+    injected::NT
 
     function SubContextView{CType, SubName, T, NT}(context::CType, instance::T; inject::NT = (;)) where {CType, SubName, T, NT}
         new{CType, SubName, T, typeof(inject), varaliases(instance)}(context, instance, inject)
