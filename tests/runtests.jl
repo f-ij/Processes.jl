@@ -7,4 +7,5 @@ using Test
     include("ProcessesFibLucTest.jl")
     include("ProcessesContextTest.jl")
     include("ProcessesStateTest.jl")
+    include("CompositeRegistryIntervalsTest.jl")
 end
