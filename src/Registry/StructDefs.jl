@@ -9,34 +9,13 @@ values, auto-naming, and multiplier tracking.
 abstract type AbstractRegistry end
 
 
-
-################################
-##### SCOPED VALUE ENTRY ######
-################################
-"""
-Wraps scopedvalues statically with a multilier indicating how often per top-level call
-    the an algorithm using this entry is expected to be called
-
-    Multupliers are set by the algorithm composition system when building LoopAlgorithms
-"""
-struct ScopedValueEntry{T, V} 
-    multiplier::Float64
-end
-
-ScopedValueEntry(val, mult = 0.) = ScopedValueEntry{typeof(val), val}(mult)
-"""
-Entries don't wrap themselves
-"""
-ScopedValueEntry(sve::ScopedValueEntry{T,V}) where {T,V} = ScopedValueEntry{T,V}(sve.multiplier)
-
-
 ###############################
 ##### REGISTRY TYPE ENTRY #####
 ###############################
 """
 Holds scoped value entries for a specific type T
-    DE: Default Entry Type
-    S: Static Entries Type
+    S: Entries
+    M: Multipliers per entry
     D: Dynamic Entries Type (Dict)
     DL: Dynamic Lookup Type (PreferStrongKeyDict)
 
@@ -44,23 +23,21 @@ I'm not super happy about the name, since it's easy to confuse with the ScopedVa
     but it's what we have for now.
 """
 
-struct RegistryTypeEntry{T,DE,S,D}
-    default::DE  # Default instance and its multiplier
-    entries::S   # isbits(x) == true, 
-    dynamic::D
-    dynamic_lookup::PreferStrongKeyDict{Any,Tuple{Symbol, Int}} # Map from object to (location, index)
+struct RegistryTypeEntry{T,E}
+    entries::E   # isbits(x) == true, 
+    multipliers::Vector{Float64}
+    dynamic_lookup::Dict{Any,Int} # Map from object to (location, index)
 end
 
 function RegistryTypeEntry(obj::T) where T
     entrytype = contained_type(obj)
     @DebugMode "Creating RegistryTypeEntry for obj: $obj and type: $entrytype"
-    return RegistryTypeEntry{entrytype}(nothing, (), nothing, PreferStrongKeyDict{Any,Tuple{Symbol, Int}}())
-
+    return RegistryTypeEntry{entrytype}(nothing, (), Dict{Any,Int}())
 end
 
-RegistryTypeEntry{T}() where {T} = RegistryTypeEntry{T,Nothing,Tuple{}}(nothing, (), nothing, PreferStrongKeyDict{Any,Tuple{Symbol, Int}}())
-RegistryTypeEntry{T}(default::DE, entries::E, dynamic::D, lookup) where {T,DE,E,D} = RegistryTypeEntry{T,DE,E,D}(default, entries, dynamic, lookup)
-RegistryTypeEntry(rte::RegistryTypeEntry{T}, default, entries) where T = RegistryTypeEntry{T,typeof(default),typeof(entries),typeof(getdynamic(rte))}(default, entries, getdynamic(rte), getdynamiclookup(rte))
+RegistryTypeEntry{T}() where {T} = RegistryTypeEntry{T,Tuple{}}((), Float64[], Dict{Any,Int}())
+RegistryTypeEntry{T}(entries::E, multipliers, lookup) where {T,E,} = RegistryTypeEntry{T,E}(entries, multipliers, lookup)
+RegistryTypeEntry(rte::RegistryTypeEntry{T}, entries) where T = RegistryTypeEntry{T, typeof(getentries(rte))}(entries, get_multipliers(rte), getdynamiclookup(rte))
 
 ########################################
 ############## REGISTRY ################
@@ -79,8 +56,8 @@ Main responsibilities:
    That key is later used by contexts.
 4) Provide static iteration over (non-dynamic) entries in the registry
 
-Each entry is expected to contain only `ScopedAlgorithm` wrappers; no other payloads should be
-stored directly in a registry entry. `ScopedAlgorithm` drives the matching system (via entry
+Each entry is expected to contain only `IdentifiableAlgo` wrappers; no other payloads should be
+stored directly in a registry entry. `IdentifiableAlgo` drives the matching system (via entry
 matching), and it works together with thin containers so that wrapping layers do not affect
 identity: a value and any amount of thin wrapping resolve to the same underlying identity.
 Auto-scoped values (currently denoted by a `nothing` id, possibly changing to `:auto`)
@@ -93,8 +70,8 @@ algorithm will be called relative to the top level of a composed algorithm.
 Structure:
     (# Tuple for type 1 (namedinstance1, namedinstance2, ...), # Tuple for type 2 (...), ...)
 """
-struct NameSpaceRegistry{T} <: AbstractRegistry
-    entries::T # Tuple of RegistryTypeEntry
+struct NameSpaceRegistry{E} <: AbstractRegistry
+    entries::E # Tuple of RegistryTypeEntry
 end
 
 NameSpaceRegistry() = NameSpaceRegistry(tuple())

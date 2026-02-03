@@ -1,65 +1,28 @@
 function Base.length(te::RegistryTypeEntry)
-    return length(te.entries) + (hasdefault(te) ? 1 : 0)
-end
-
-function setfield(rte::RegistryTypeEntry, location::Symbol, new)
-    if location == :default
-        return setdefault(rte, new)
-    elseif location == :entries
-        return setentries(rte, new)
-    else
-        error("Unknown location symbol: $location")
-    end
+    return length(te.entries)
 end
 
 function Base.setindex(rte::RegistryTypeEntry, new, idx::Int)
-    location = hasdefault(rte) ? (idx == 1 ? :default : :entries) : :entries
-
-    if location == :default
-        return setdefault(rte, new)
-    end
-
     entries = getentries(rte)
-    entries_idx = hasdefault(rte) ? idx - 1 : idx
-    newentries = Base.setindex(entries, new, entries_idx)
-    return setentries(rte, newentries)
+    Base.setindex(entries, new, idx)
 end
 
 
-getdefault(rte::RegistryTypeEntry) = getfield(rte, :default)
 getentries(rte::RegistryTypeEntry) = getfield(rte, :entries)
 getdynamic(rte::RegistryTypeEntry) = getfield(rte, :dynamic)
 getdynamiclookup(rte::RegistryTypeEntry) = getfield(rte, :dynamic_lookup)
+getmultipliers(rte::RegistryTypeEntry) = getfield(rte, :multipliers)
+getmultiplier(rte::RegistryTypeEntry, idx::Int) = getmultipliers(rte)[idx]
 
+getentries(rtetype::Type{<:RegistryTypeEntry{T,S}}) where {T,S} = tuple(S.parameters...)
 
-default(rte::RegistryTypeEntry) = getdefault(rte)
-default(rtetype::Type{<:RegistryTypeEntry{T,DE}}) where {T,DE} = DE
-
-getdefault(rtetype::Type{<:RegistryTypeEntry{T,DE}}) where {T,DE} = DE
-getentries(rtetype::Type{<:RegistryTypeEntry{T,DE,S}}) where {T,DE,S} = tuple(S.parameters...)
-
-setdefault(rte::RegistryTypeEntry{T}, newdefault) where {T} = RegistryTypeEntry{T,typeof(newdefault),typeof(getentries(rte)), typeof(getdynamic(rte))}(newdefault, getentries(rte), getdynamic(rte), getdynamiclookup(rte))    
 setentries(rte::RegistryTypeEntry{T}, newentries) where {T} = RegistryTypeEntry{T,typeof(getdefault(rte)),typeof(newentries), typeof(getdynamic(rte))}(getdefault(rte), newentries, getdynamic(rte), getdynamiclookup(rte))
 setdynamic(rte::RegistryTypeEntry{T}, newdynamic) where {T} = RegistryTypeEntry{T,typeof(getdefault(rte)),typeof(getentries(rte)), typeof(newdynamic)}(getdefault(rte), getentries(rte), newdynamic, getdynamiclookup(rte))
 
 function add_dynamic_link!(obj, location::Symbol, idx::Int, rte::RegistryTypeEntry)
-    all_contained = full_unwrap_container(obj)
-    for contained in all_contained
-        getdynamiclookup(rte)[contained] = (location, idx)
-    end
+    matching_obj = staticmatch_by(obj)
+    getdynamiclookup(rte)[matching_obj] = idx
     return nothing
-end
-
-
-function target_location(rte::RegistryTypeEntry{T}, obj) where {T}
-    if obj isa Type
-        @assert isbits(obj()) "Type based lookup/adding only supported for isbits values"
-        return :default
-    elseif isbits(obj)
-        return :entries
-    else 
-        return :dynamic
-    end
 end
 
 ###############################
@@ -69,18 +32,11 @@ end
 """
 Get the types of static entries
 """
-entry_types(rte::Type{<:RegistryTypeEntry{T,DE,S}}) where {T,DE,S} = S.parameters
-"""
-All types including default
-"""
-@inline function all_types(rte::Union{RegistryTypeEntry{T,DE,S}, Type{<:RegistryTypeEntry{T,DE,S}}}) where {T,DE,S}
-    ptypes = fieldtypes(S)
-    if hasdefault(rte)
-        ptypes = (DE, ptypes...)
-    end
-    return ptypes
-end
+entry_types(rte::Type{<:RegistryTypeEntry{T,E}}) where {T,E} = E.parameters
 
+"""
+Is a registry type the same as another
+"""
 same_entry_type(rte1::RegistryTypeEntry{T1}, rte2::RegistryTypeEntry{T2}) where {T1,T2} = T1 == T2
 
 gettype(rte::Type{<:RegistryTypeEntry{T}}) where T = T
@@ -89,257 +45,93 @@ gettype(rte::RegistryTypeEntry) = gettype(typeof(rte))
 hasdefault(rtetype::Type{<:RegistryTypeEntry{T,Td}}) where {T,Td} = !(Td <: Nothing)
 hasdefault(rte::RegistryTypeEntry{T,Td}) where {T,Td} = !(Td <: Nothing)
 
+###############################
+##### CHANGING MULTIPLIER #####
+###############################
+
+function scale_multipliers!(rte::RegistryTypeEntry{T}, factor) where {T}
+    getmultipliers(rte) .*= factor
+    return rte
+end
+
+function add_multiplier!(rte::RegistryTypeEntry{T}, idx::Int, num::Number) where {T}
+    getmultipliers(rte)[idx] += num
+    return rte
+end
+function scale_multiplier!(rte::RegistryTypeEntry{T}, idx::Int, factor::Number) where {T}
+    getmultipliers(rte)[idx] *= factor
+    return rte
+end
 
 ############################
-##### STATIC GETTERS #######
+######### Finding ##########
 ############################
 
-@inline static_findfirst(rte::RegistryTypeEntry, val) = static_findfirst(rte, Val(val))
-@inline @generated function static_findfirst(rte::RegistryTypeEntry{T,DE,S}, v::Val{value}) where {T,DE,S,value}
-    if value isa Type
-        if value <: T
-            if hasdefault(rte)
-                return :default, 0
-            end
-        end
-        return :(nothing, nothing)
-    end
+@inline function static_findfirst_match(rte::RegistryTypeEntry, val)
+    @DebugMode "Looking for static match of value: $val in RegistryTypeEntry $(rte)"
+    static_findfirst_match(rte, Val(val))
+end
+@inline @generated function static_findfirst_match(rte::RegistryTypeEntry{T,S}, v::Val{value}) where {T,S,value}
+    idx = findfirst(x -> staticmatch(value, x), entry_types(rte))
+    return :($idx)
+end
 
+@inline dynamic_find_match(rte::RegistryTypeEntry{T}, val) where {T} = get(getdynamiclookup(rte), val, nothing)
 
-    _isdefault = isdefault(value)
-    if _isdefault
-        return :( :default, 0)
-    end
+##########################
+######## GETTERS #########
+##########################
+Base.getindex(te::RegistryTypeEntry, obj) = static_get(te, obj)
 
-    # Try to match static entries
-    default_entry_type = default(rte)
-    if match(value, default_entry_type)
-        return :( :default, 0)
-    end
-
-    idx = findfirst(x -> match(value, x), entry_types(rte))
-    if isnothing(idx)
-        return :( nothing, nothing )
-    end
-
-    return :( :entries, $idx )
+function Base.getindex(te::RegistryTypeEntry, idx::Int)
+    getentries(te)[idx]
 end
 
 """
 Match Exact with value
 """
 @inline function static_get(rte::RegistryTypeEntry, val::V) where V 
-    location, idx = static_findfirst(rte, Val(val))
-    if isnothing(location)
-        return nothing
+    idx = static_findfirst_match(rte, Val(val))
+    if isnothing(idx)
+        error("No matching entry found for value: $val")
     end
-    return getentry(rte, location, idx)
+    return getentries(rte)[idx]
 end
 
-
-
-##########################
-######## GETTERS #########
-##########################
-
-
-"""
-Get entry from location and index
-"""
-function getentry(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int = nothing) where {T}
-    if location == :default
-        return getdefault(rte)
-    elseif location == :entries
-        return getentries(rte)[idx]
-    else
-        error("Unknown location symbol: $location")
-    end
-end
-
-getvalue(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int = nothing) where {T} = value(getentry(rte, location, idx))
-
-function getmultiplier(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int = nothing) where {T}
-    if location == :default
-        return multiplier(getdefault(rte))
-    elseif location == :entries
-        return multiplier(getentries(rte)[idx])
-    else
-        error("Unknown location symbol: $location")
-    end
-end
-
-Base.getindex(te::RegistryTypeEntry, obj) = static_value_get(te, obj)
-
-function Base.getindex(te::RegistryTypeEntry, idx::Int)
-    if idx > length(te) 
-        error("Index $idx out of bounds for Registry with length $(length(te))")
-    end
-
-    if hasdefault(te)
-        if idx == 1
-            return value(getdefault(te))
-        else
-            return value(getentry(te, :entries, idx - 1))
-        end
-    else
-        return value(getentry(te, :entries, idx))
-    end
-end
-
-
-
-
-##########################
-##### MATCHING  ##########
-##########################
-"""
-Find a match in the entry, either default
-    or other entries
-"""
-function find_match(rte::RegistryTypeEntry{T}, obj) where {T}
-    # If type is given, auto match with default
-    if obj isa Type && T <: Type 
-        if hasdefault(rte)
-            return :default, 0
-        else
-            return nothing, nothing
-        end
-    end
-
-    #No type, check default
-    if hasdefault(rte) && match(getdefault(rte), obj)
-        return :default, 0
-    end
-
-    return find_match_in_entries(rte, obj)
-end
-
-"""
-Match with one of the entries
-"""
-function find_match_in_entries(rte::RegistryTypeEntry{T}, obj) where {T}
-    for (idx, inst) in enumerate(getentries(rte))
-        if match(inst, obj)
-                return :entries, idx
-        end
-    end
-    return nothing, nothing
-end
 
 ##########################
 ##### ADDING ENTRIES #####
 ##########################
 
-### ADD returns a new registry and a scoped value
-
-function add_default(rte::RegistryTypeEntry{T,Td}, val, multiplier = 1.) where {T,Td}
-    if isnothing(val)
-        return rte, nothing
-    end
-
-    if isnothing(getdefault(rte))
-        named_val = DefaultScope(val) # 0 is reserved for default
-        entry = ScopedValueEntry(named_val, multiplier)
-        # getdynamiclookup(rte)[val] = (:default, 0)
-        # getdynamiclookup(rte)[typeof(val)] = (:default, 0)
-        add_dynamic_link!(val, :default, 0, rte)
-        new_rte = setdefault(rte, entry)
-        # return RegistryType
-        RegistryTypeEntry{T}(entry, getentries(rte), getdynamic(rte), getdynamiclookup(rte)), named_val
-        return new_rte, named_val
-    else
-        new_rte = setdefault(rte, add_multiplier(getdefault(rte), multiplier))
-        # return RegistryTypeEntry{T}(new_default, getentries(rte), getdynamic(rte), getdynamiclookup(rte)), value(getdefault(rte))
-        return new_rte, value(getdefault(rte))
-    end
-end
-
-add_entry(rte::RegistryTypeEntry, entry::ScopedValueEntry) = add_entry(rte, entry, multiplier(entry))
-
-function add_entry(rte::RegistryTypeEntry{T}, obj, multiplier = 1.) where {T}
+function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.) where {T}
     if isnothing(obj)
-        return rte, nothing
+        # return rte, nothing
+        error("Trying to add `nothing` to RegistryTypeEntry of type $T")
     end
 
-    location, fidx = find_match_in_entries(rte, obj)
+    fidx = static_findfirst_match(rte, obj)
     if isnothing(fidx) #add new
-        obj = value(obj) # Strip the entry
-        # @show obj
         entries = getentries(rte)
         current_length = length(entries)
-        named_val = Autoname(obj, current_length + 1)
-        entry = ScopedValueEntry(named_val, multiplier)
-        newentries = (entries..., entry)
-        add_dynamic_link!(named_val, :entries, current_length + 1, rte)
-        return setfield(rte, :entries, newentries), named_val
+
+        identifiable = Autoname(obj, current_length + 1)
+        push!(getmultipliers(rte), multiplier) # Add the multiplier
+
+        newentries = (entries..., identifiable)
+        add_dynamic_link!(identifiable, :entries, current_length + 1, rte)
+        return setfield(rte, :entries, newentries), identifiable
     else # Existing instance, bump multiplier and get the named version
-        return add_multiplier(rte, :entries, fidx, multiplier), value(getentry(rte, :entries, fidx))
+        return add_multiplier!(rte, fidx, multiplier), getentries(rte)[fidx]
     end
 end
-
-function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.) where {T}
-    if obj isa Type # Add to default
-        val = obj()
-        return add_default(rte, val, multiplier)
-    else
-        return add_entry(rte, obj, multiplier)
-    end
-end
-
-function add_default(rte::RegistryTypeEntry, entry::ScopedValueEntry)
-    old_default = getdefault(rte)
-    if isnothing(old_default)
-        rte = setdefault(rte, entry)
-        getdynamiclookup(rte)[typeof(contained_type(value(entry)))] = (:default, 0)
-        return rte, value(entry)
-    else
-        new_default = add_multiplier(old_default, multiplier(entry))
-        rte = setdefault(rte, new_default)
-        return rte, value(new_default)
-    end
-end
-
-###############################
-##### CHANGING MULTIPLIER #####
-###############################
-
-function scale_multipliers(rte::RegistryTypeEntry{T}, factor) where {T}
-    default = scale_multiplier(getdefault(rte), factor)
-    entries = map(se -> scale_multiplier(se, factor), getentries(rte))
-    return RegistryTypeEntry{T}(default, entries, getdynamic(rte), getdynamiclookup(rte))
-end
-
-
-function change_multiplier(rte::RegistryTypeEntry, location::Symbol, idx::Int, num, changetype::Symbol)
-    changefunc = changetype == :add ? add_multiplier : scale_multiplier
-    if location == :default
-        new_default = changefunc(getdefault(rte), num)
-        return setdefault(rte, new_default)
-    elseif location == :entries
-        entries = getfield(rte, location)
-        entry = entries[idx]
-        new_entry = changefunc(entry, num)
-        new_collection = Base.setindex(entries, new_entry, idx)
-        return setfield(rte,location, new_collection)
-    else
-        error("Unknown location symbol: $location")
-    end
-end
-
-add_multiplier(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int, num::Number) where {T} = change_multiplier(rte, location, idx, num, :add)
-scale_multiplier(rte::RegistryTypeEntry{T}, location::Symbol, idx::Int, factor::Number) where {T} = change_multiplier(rte, location, idx, factor, :scale)
 
 ###########################
 ##### MERGING ENTRIES #####
 ###########################
 
 @inline function Base.merge(entry1::RegistryTypeEntry{T}, entry2::RegistryTypeEntry{T}) where {T}
-    # Merging default entries
-    entry1, _ = @inline add_default(entry1, entry2.default)
-    # @show entry1
-    # @show entry2
-    for scopedentry2 in getentries(entry2)
-        entry1, _ = @inline add_entry(entry1, value(scopedentry2), multiplier(scopedentry2))
+    for (identifiable, multiplier) in getentries(entry2)
+        entry1, _ = @inline add(entry1, identifiable, multiplier)
     end
 
     return entry1
@@ -370,66 +162,56 @@ end
 ############################
 ######## ITERATE  ##########
 ############################
-function all_entries(te::Union{RegistryTypeEntry, Type{<:RegistryTypeEntry}})
-    if hasdefault(te)
-        return (getdefault(te), getentries(te)...)
-    else
-        return getentries(te)
-    end
-end
 
 function Base.iterate(te::RegistryTypeEntry, state = 1)
     if state > length(te)
         return nothing
+    else
+        return ((getentries(te)[state], getmultipliers(te)[state]), state + 1)
     end
-    return (te[state], state + 1)
 end
 
-function entries_iterator(te::RegistryTypeEntry)
-    if hasdefault(te)
-        return (getdefault(te), getentries(te)...)
-    else
-        return getentries(te)
-    end
-end
 
 ###############################
 ########## Names #############
 ###############################
 function all_named_algos(te::Union{RegistryTypeEntry, Type{<:RegistryTypeEntry}})
-    algos = tuple()
-    if hasdefault(te)
-        algos = (getvalue(getdefault(te)),)
-    end
-    return (algos..., getvalue.(getentries(te))...)
+    getentries_list = getentries(te)
 end
 
+"""
+Context names
+"""
 function all_names(te::Union{RegistryTypeEntry, Type{<:RegistryTypeEntry}})
-    names = tuple()
-    if hasdefault(te)
-        names = (getname(getdefault(te)),)
-    end
-    return (names..., getname.(getentries(te))...)
+    getname.(getentries(te))
 end
 
-function findname_idx(te::RegistryTypeEntry, name::Symbol)
-    l = length(te)
-    entry_name = getname(te[idx])
-    return findfirst(==(name), entry_name)
-end
+# function findname_idx(te::RegistryTypeEntry, name::Symbol)
+#     l = length(te)
+#     entry_name = getname(te[idx])
+#     return findfirst(==(name), entry_name)
+# end
 
-function replacename(te::RegistryTypeEntry, oldname, newname::Symbol)
+"""
+Change the context name of an entry
+from oldname to newname
+"""
+function replacecontextname(te::RegistryTypeEntry, oldname, newname::Symbol)
     idx = findfirst(==(oldname), all_names(te))
     if isnothing(idx)
         return te
     end
-    return setindex(te, changename(te[idx], newname), idx)
+    return setindex(te, changecontextname(te[idx], newname), idx)
 end
 
-function replacenames(te::RegistryTypeEntry, changed_names::Dict{Symbol,Symbol})
+"""
+From a dict that contains oldname => newname
+Change all referenced context names in the RegistryTypeEntry
+"""
+function replacecontextnames(te::RegistryTypeEntry, changed_names::Dict{Symbol,Symbol})
     ps = pairs(changed_names)
     UnrollReplace(te, ps...) do rte, (oldname, newname)
-        changename(rte, newname)
+        changecontextname(rte, newname)
     end
 end
 
@@ -439,22 +221,9 @@ end
 
 function rebuild(f, rte::RegistryTypeEntry)
     @DebugMode println("Rebuilding RegistryTypeEntry for type ", gettype(rte))
-    @DebugMode "Default is $(getdefault(rte))"
-
-    new_default = hasdefault(rte) ? f(getdefault(rte)) : nothing
+ 
     new_entries = f.(getentries(rte))
     @DebugMode "New Entries: $(new_entries)"
-
-    @DebugMode "New Default is $(new_default)"
-    @DebugMode "New default is default: $(isdefault(new_default))"
-    @DebugMode "New default value: $(typeof(value(new_default)))"
-    @DebugMode "New default id: $(id(value(new_default)))"
-    if !(isdefault(new_default)) # Default status can change
-        new_entries = (new_entries..., new_default)
-        new_default = nothing
-    end
-
-    @DebugMode "Final Entries: $(new_entries)"
 
     return setfield(rte, :default, new_default) |> x -> setfield(x, :entries, new_entries)
 end
@@ -467,10 +236,6 @@ end
 
 function Base.show(io::IO, rte::RegistryTypeEntry{T}) where {T}
     println(io, "RegistryTypeEntry for type: $(T)")
-    if hasdefault(rte)
-        println(io, "\t:default => ", value(getdefault(rte)), " x ", multiplier(getdefault(rte)))
-    else
-    end
     if length(getentries(rte)) == 0
     else
         entries = getentries(rte)
@@ -480,17 +245,17 @@ function Base.show(io::IO, rte::RegistryTypeEntry{T}) where {T}
         tail = 2
         if !limit || n <= head + tail + 1
             for (idx, entry) in enumerate(entries)
-                println(io, "\t", idx, " \t => ", value(entry), " x ", multiplier(entry))
+                println(io, "\t", idx, " \t => ", entry, " x ", getmultiplier(rte,idx))
             end
         else
             for idx in 1:head
                 entry = entries[idx]
-                println(io, "\t", idx, " \t => ", value(entry), " x ", multiplier(entry))
+                println(io, "\t", idx, " \t => ", entry, " x ", getmultiplier(rte,idx))
             end
             println(io, "\t...")
             for idx in (n - tail + 1):n
                 entry = entries[idx]
-                println(io, "\t", idx, " \t => ", value(entry), " x ", multiplier(entry))
+                println(io, "\t", idx, " \t => ", entry, " x ", getmultiplier(rte,idx))
             end
         end
     end

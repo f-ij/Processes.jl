@@ -10,7 +10,7 @@ end
 
 Injector() = Injector(32)
 
-@inline function Processes.step!(sa::ScopedAlgorithm{Injector, Name}, context::C) where {Name, C<:AbstractContext}
+@inline function Processes.step!(sa::IdentifiableAlgo{Injector}, context::C) where {C<:AbstractContext}
     return @inline step!(getfunc(sa), getcontext(context))
 end
 

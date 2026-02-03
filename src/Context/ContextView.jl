@@ -11,6 +11,11 @@ varaliases(scv::Union{SubContextView{CType, SubName, T, NT, Aliases}, Type{<:Sub
 @inline getcontext(scv::SubContextView) = @inline getfield(scv, :context)
 @inline getsubcontext(scv::SubContextView{CType, SubName}) where {CType, SubName} = @inline getproperty(getcontext(scv), SubName)
 
+
+getinjected(scv::SubContextView) = getfield(scv, :injected)
+injectedfieldnames(scvt::Union{SubContextView{CType, SubName, T, NT}, Type{<:SubContextView{CType, SubName, T, NT}}}) where {CType, SubName, T, NT} = fieldnames(NT)
+
+
 #################################
 ####### CREATING VIEWS ##########
 #################################
@@ -18,8 +23,8 @@ varaliases(scv::Union{SubContextView{CType, SubName, T, NT, Aliases}, Type{<:Sub
 """
 Get a subcontext view for a specific subcontext
 """
-@inline Base.view(pc::ProcessContext, instance::SA; inject = (;)) where SA <: ScopedAlgorithm = SubContextView{typeof(pc), getname(instance), typeof(instance), typeof(inject)}(pc, instance; inject)
-@inline function Base.view(pc::ProcessContext{D}, instance::ScopedAlgorithm{T, nothing}, inject = (;)) where {D, T}
+@inline Base.view(pc::ProcessContext, instance::SA; inject = (;)) where SA <: IdentifiableAlgo = SubContextView{typeof(pc), getname(instance), typeof(instance), typeof(inject)}(pc, instance; inject)
+@inline function Base.view(pc::ProcessContext{D}, instance::IdentifiableAlgo{T, nothing}, inject = (;)) where {D, T}
     named_instance = get_registry(pc)[instance]
     return view(pc, named_instance; inject)
 end
@@ -40,7 +45,7 @@ Regenerate a SubContextView from its type
 """
 View a view
 """
-@inline function Base.view(scv::SubContextView{C,SubName}, instance::SA) where {C, SubName, SA <: ScopedAlgorithm}
+@inline function Base.view(scv::SubContextView{C,SubName}, instance::SA) where {C, SubName, SA <: IdentifiableAlgo}
     scopename = getname(instance)
     @assert scopename == SubName "Trying to view SubContextView of subcontext $(SubName) with instance of subcontext $(scopename)"
     context = getcontext(scv)
@@ -158,14 +163,12 @@ end
 ########### Getting Properties  ###########
 ###########################################
 
-getinjected(scv::SubContextView) = getfield(scv, :injected)
-injectedfieldnames(scvt::Union{SubContextView{CType, SubName, T, NT}, Type{<:SubContextView{CType, SubName, T, NT}}}) where {CType, SubName, T, NT} = fieldnames(NT)
-
 @inline Base.keys(scv::SubContextView) = propertynames(@inline get_all_locations(scv))
 @inline Base.propertynames(scv::SubContextView) = propertynames(@inline get_all_locations(scv))
 
 @inline Base.haskey(scv::SubContextView, name::Symbol) = haskey(scv, Val(name))
 
+##########################################
 """
 From a pair of a namedtuple intended to merge into context from a view
 And all locations in the view

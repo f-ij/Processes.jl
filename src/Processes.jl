@@ -19,6 +19,8 @@ module Processes
     abstract type AbstractContext end
     abstract type AbstractSubContext end
 
+    abstract type AbstractRegistry end
+
     export ProcessAlgorithm, ProcessState
 
     const DEBUG_MODE = @load_preference("debug", false)
@@ -42,8 +44,8 @@ module Processes
 
     include("AbstractProcesses.jl")
 
-    include("Matching/Matching.jl")
-    include("Scoped/Scoped.jl")
+    include("Matching.jl")
+    include("Identifiable/Identifiable.jl")
 
     include("Registry/Registry.jl")
     include("Context/Context.jl")

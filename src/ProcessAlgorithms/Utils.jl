@@ -14,9 +14,9 @@ Obtain all the registriees, merge them and update the names downwards in the alg
 """
 function update_names(cla::LoopAlgorithm, base_registry::NameSpaceRegistry)
     oldsfuncs = getfuncs(cla)
-
+    @DebugMode "Updating names for LoopAlgorithm: $cla using base registry: $base_registry"
     newfuncs = update_names.(oldsfuncs, Ref(base_registry)) #Recursive replace LoopAlgorithm
-    # newfuncs = update_name.(funcs, Ref(base_registry)) # Rename ScopedAlgorithms and remove old registries
+    # newfuncs = update_name.(funcs, Ref(base_registry)) # Rename IdentifiableAlgos and remove old registries
     updated_registry = update_names(get_registry(cla), base_registry)
     cla = setfield(cla, :funcs, newfuncs)
     cla = setfield(cla, :registry, updated_registry)

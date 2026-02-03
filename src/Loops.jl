@@ -87,11 +87,21 @@ Base.@constprop :aggressive function processloop(p::AbstractProcess, func::F, co
     return @inline after_while(p, func, context)
 end
 
-"""
-Generated process loop that inlines the step! expression when available.
-"""
-@generated function generated_processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
-    return loop_exp(F, C, Indefinite) 
+function loop_exp(f::Type{F}, c::Type{C}, ::Type{<:Indefinite}) where {F, C}
+    step_expr = step!_expr(F, C, :func)
+    return quote
+        println("Running generated process loop indefinitely from thread $(Threads.threadid())")
+        @inline before_while(p)
+        if resuming(p)
+            context = @inline resume_step!(func, context)
+        end
+
+        while run(p)
+            $(step_expr)
+            @inline inc!(p)
+        end
+        return @inline after_while(p, func, context)
+    end
 end
 
 """
@@ -136,19 +146,10 @@ Generated process loop that inlines the step! expression when available.
 end
 
 
-function loop_exp(f::Type{F}, c::Type{C}, ::Type{<:Indefinite}) where {F, C}
-    step_expr = step!_expr(F, C, :func)
-    return quote
-        println("Running generated process loop indefinitely from thread $(Threads.threadid())")
-        @inline before_while(p)
-        if resuming(p)
-            context = @inline resume_step!(func, context)
-        end
 
-        while run(p)
-            $(step_expr)
-            @inline inc!(p)
-        end
-        return @inline after_while(p, func, context)
-    end
+"""
+Generated process loop that inlines the step! expression when available.
+"""
+@generated function generated_processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
+    return loop_exp(F, C, Indefinite) 
 end

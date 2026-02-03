@@ -11,7 +11,7 @@ end
 PreferStrongKeyDict{K,V}() where {K,V} = PreferStrongKeyDict(Dict{K,V}(), WeakKeyDict{Any,V}())
 PreferStrongKeyDict() = PreferStrongKeyDict{Any,Any}()
 
-@inline _use_strong(k) = isbitstype(typeof(k))
+@inline _use_strong(k) = isbits(k)
 
 function Base.setindex!(d::PreferStrongKeyDict{K,V}, v::V, k) where {K,V}
     if _use_strong(k)

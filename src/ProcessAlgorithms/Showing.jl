@@ -1,7 +1,7 @@
 
 @inline function _algo_label(f)
-    if f isa ScopedAlgorithm
-        return Processes.scopedalgorithm_label(f)
+    if f isa IdentifiableAlgo
+        return Processes.IdentifiableAlgo_label(f)
     end
     return sprint(summary, f)
 end
@@ -84,8 +84,8 @@ Custom display helpers for composite algorithms.
 function _composite_algo_labels(funcs)
     labels = String[]
     for f in funcs
-        if f isa ScopedAlgorithm
-            push!(labels, Processes.scopedalgorithm_label(f))
+        if f isa IdentifiableAlgo
+            push!(labels, Processes.IdentifiableAlgo_label(f))
         else
             push!(labels, summary(f))
         end
@@ -96,7 +96,7 @@ end
 function _composite_algo_type_labels(types::Tuple)
     labels = String[]
     for t in types
-        if t <: ScopedAlgorithm
+        if t <: IdentifiableAlgo
             algo_type = t.parameters[1]
             push!(labels, string(nameof(algo_type), "@", Processes.getname(t)))
         else
@@ -222,7 +222,7 @@ end
 """
 When composite is wrapped by a scope
 """
-function Base.show(io::IO, sa::ScopedAlgorithm{F, Name, Id, Aliases, AlgoName}) where {F<:CompositeAlgorithm, Name, Id, Aliases, AlgoName}
+function Base.show(io::IO, sa::IdentifiableAlgo{F, Id, Aliases, AlgoName, ScopeName}) where {F<:CompositeAlgorithm, Id, Aliases, AlgoName, ScopeName}
     header = isnothing(algoname(sa)) ? "CompositeAlgorithm" : string(algoname(sa))
     println(io, header, "@", getname(sa))
     ca = getalgorithm(sa)

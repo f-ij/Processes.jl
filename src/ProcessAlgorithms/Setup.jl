@@ -12,16 +12,18 @@ function setup(cla_target_type::Type{<:LoopAlgorithm},funcs::NTuple{N, Any},
         if func isa LoopAlgorithm # Deepcopy to make multiple instances independent
             func = deepcopy(func)
         else
-            registry, func = add_instance(registry, func, multipliers[func_idx])
+            registry, func = add(registry, func, multipliers[func_idx])
         end
         push!(allfuncs, func)
     end
 
-
     registry = inherit(registry, get_registry.(allfuncs)...; multipliers)
+    @DebugMode "Combined registry: $registry, after inheriting: $(get_registry.(allfuncs))"
 
     process_state = filter(x -> x isa ProcessState, options_all)
-    registry = add(registry, process_state...)
+    registry = addall(registry, process_state)
+    @DebugMode "Adding process state options: $process_state"
+    @DebugMode "Final registry: $registry"
 
     # allfuncs = recursive_update_cla_names.(allfuncs, Ref(registry))
     allfuncs = update_names.(allfuncs, Ref(registry))

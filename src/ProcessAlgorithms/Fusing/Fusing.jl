@@ -44,5 +44,5 @@ function fuse(cla::LoopAlgorithm, name_prefix = "")
 
     id = uuid4()
 
-    fused = ScopedAlgorithm(CompositeAlgorithm(flat_funcs, flat_intervals; id), fusename,; customname = fusename)
+    # fused = IdentifiableAlgo(CompositeAlgorithm(flat_funcs, flat_intervals; id), fusename,; customname = fusename)
 end

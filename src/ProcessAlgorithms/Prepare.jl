@@ -4,7 +4,7 @@ Inputargs are given as a NamedTuple of (;algo_name => (; inputname1 = value1, ..
 """
 function prepare(algos::LoopAlgorithm, inputcontext::ProcessContext)
     registry = get_registry(algos)
-    named_algos = funcs_in_prepare_order(registry)
+    named_algos = all_algos(registry)
 
     context = UnrollReplace(inputcontext, named_algos...) do context, named_algo # Recursively replace context
         prepare(named_algo, context)
@@ -17,7 +17,7 @@ end
 
 function cleanup(algos::LoopAlgorithm, context)
     registry = get_registry(algos)
-    named_algos = all_named_algos(registry)
+    named_algos = all_algos(registry)
 
     context = UnrollReplace(context, named_algos...) do context, named_algo # Recursively replace context
         cleanup(named_algo, context)

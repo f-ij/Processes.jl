@@ -64,4 +64,8 @@ struct SubContextView{CType, SubName, T, NT, VarAliases} <: AbstractContext
     function SubContextView{CType, SubName, T, NT}(context::CType, instance::T; inject::NT = (;)) where {CType, SubName, T, NT}
         new{CType, SubName, T, typeof(inject), varaliases(instance)}(context, instance, inject)
     end
+
+    function SubContextView{CType, SubName, T, NT, VarAliases}(context::CType, instance::T, inject::NT = (;)) where {CType, SubName, T, NT, VarAliases}
+        new{CType, SubName, T, typeof(inject), varaliases(instance)}(context, instance, inject)
+    end
 end

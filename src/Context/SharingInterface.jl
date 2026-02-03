@@ -27,7 +27,13 @@ function to_sharedcontext(reg::NameSpaceRegistry, s::Share)
 
     names = (static_find_name(reg, s.algo1), static_find_name(reg, s.algo2))
     if any(isnothing, names)
-        error("No registered name found for share endpoints $(s.algo1), $(s.algo2)")
+        available = all_names(reg)
+        available_str = isempty(available) ? "<none>" : join(string.(available), ", ")
+        msg = "Share references algo(s) not found in registry.\n" *
+              "Requested: " * string(s.algo1) * " (type: " * string(typeof(s.algo1)) * "), " *
+              string(s.algo2) * " (type: " * string(typeof(s.algo2)) * ")\n" *
+              "Available names: " * available_str
+        error(msg)
     end
     nt = (; names[1] => SharedContext{ names[2] }())
     if !s.directional
@@ -94,6 +100,15 @@ contextname(sv::SharedVars{from_name}) where {from_name} = from_name
 function to_sharedvar(reg::NameSpaceRegistry, r::Route)
         fromname = static_find_name(reg, r.from)
         toname = static_find_name(reg, r.to)
+        if isnothing(fromname) || isnothing(toname)
+            available = all_names(reg)
+            available_str = isempty(available) ? "<none>" : join(string.(available), ", ")
+            msg = "Route references algo(s) not found in registry.\n" *
+                  "Requested: " * string(r.from) * " (type: " * string(typeof(r.from)) * "), " *
+                  string(r.to) * " (type: " * string(typeof(r.to)) * ")\n" *
+                  "Available names: " * available_str
+            error(msg)
+        end
         (;toname => SharedVars{fromname, r.varnames, r.aliases}())
 end
 

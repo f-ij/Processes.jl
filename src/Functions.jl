@@ -20,21 +20,43 @@ macro DebugMode(args...)
     for arg in args
         val = gensym(:debug_val)
         if arg isa String
-            push!(body, :(println(_dbg_io, "| ", $(arg))))
+            push!(body, quote
+                local _dbg_s = $(arg)
+                for _dbg_line in eachline(IOBuffer(_dbg_s))
+                    println(_dbg_io, "| ", _dbg_line)
+                end
+            end)
         elseif arg isa Expr && arg.head == :string
-            push!(body, :(println(_dbg_io, "| ", $(esc(arg)))))
+            parts = Any[]
+            for p in arg.args
+                if p isa String
+                    push!(parts, QuoteNode(p))
+                else
+                    push!(parts, :(sprint(show, $(esc(p)); context = _dbg_io)))
+                end
+            end
+            push!(body, quote
+                local _dbg_s = string($(parts...))
+                for _dbg_line in eachline(IOBuffer(_dbg_s))
+                    println(_dbg_io, "| ", _dbg_line)
+                end
+            end)
         elseif arg isa Expr && arg.head == :call && (arg.args[1] == :println || arg.args[1] == :print)
             # Inline println/print with a leading "| " to keep context.
             args_exprs = [esc(a) for a in arg.args[2:end]]
             push!(body, quote
-                print(_dbg_io, "| ")
-                print(_dbg_io, $(args_exprs...))
-                println(_dbg_io)
+                local _dbg_s = sprint(io -> print(io, $(args_exprs...)); context = _dbg_io)
+                for _dbg_line in eachline(IOBuffer(_dbg_s))
+                    println(_dbg_io, "| ", _dbg_line)
+                end
             end)
         else
             push!(body, quote
                 local $val = $(esc(arg))
-                println(_dbg_io, "| ", $(QuoteNode(arg)), " = ", repr($val; context = _dbg_io))
+                local _dbg_s = string($(QuoteNode(arg)), " = ", sprint(show, $val; context = _dbg_io))
+                for _dbg_line in eachline(IOBuffer(_dbg_s))
+                    println(_dbg_io, "| ", _dbg_line)
+                end
             end)
         end
     end
@@ -66,27 +88,49 @@ macro GenDebugMode(args...)
     for arg in args
         val = gensym(:debug_val)
         if arg isa String
-            push!(body, :(println(_dbg_io, "| ", $(arg))))
+            push!(body, quote
+                local _dbg_s = $(arg)
+                for _dbg_line in eachline(IOBuffer(_dbg_s))
+                    println(_dbg_io, "| ", _dbg_line)
+                end
+            end)
         elseif arg isa Expr && arg.head == :string
-            push!(body, :(println(_dbg_io, "| ", $(esc(arg)))))
+            parts = Any[]
+            for p in arg.args
+                if p isa String
+                    push!(parts, QuoteNode(p))
+                else
+                    push!(parts, :(sprint(show, $(esc(p)); context = _dbg_io)))
+                end
+            end
+            push!(body, quote
+                local _dbg_s = string($(parts...))
+                for _dbg_line in eachline(IOBuffer(_dbg_s))
+                    println(_dbg_io, "| ", _dbg_line)
+                end
+            end)
         elseif arg isa Expr && arg.head == :call && (arg.args[1] == :println || arg.args[1] == :print)
             # Inline println/print with a leading "| " to keep context.
             args_exprs = [esc(a) for a in arg.args[2:end]]
             push!(body, quote
-                print(_dbg_io, "| ")
-                print(_dbg_io, $(args_exprs...))
-                println(_dbg_io)
+                local _dbg_s = sprint(io -> print(io, $(args_exprs...)); context = _dbg_io)
+                for _dbg_line in eachline(IOBuffer(_dbg_s))
+                    println(_dbg_io, "| ", _dbg_line)
+                end
             end)
         else
             push!(body, quote
                 local $val = $(esc(arg))
-                println(_dbg_io, "| ", $(QuoteNode(arg)), " = ", repr($val; context = _dbg_io))
+                local _dbg_s = string($(QuoteNode(arg)), " = ", sprint(show, $val; context = _dbg_io))
+                for _dbg_line in eachline(IOBuffer(_dbg_s))
+                    println(_dbg_io, "| ", _dbg_line)
+                end
             end)
         end
     end
     
     return quote
-        if $dmode
+        if $(esc(:debug_mode))()
             $lnn
             local _dbg_io = IOContext(stdout, :limit => get(stdout, :limit, false))
             if $(line) > 0
