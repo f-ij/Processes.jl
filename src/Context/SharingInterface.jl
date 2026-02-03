@@ -23,8 +23,6 @@ function Share(algo1, algo2; directional::Bool=false)
 end
 
 function to_sharedcontext(reg::NameSpaceRegistry, s::Share)
-    # if get_
-
     names = (static_find_name(reg, s.algo1), static_find_name(reg, s.algo2))
     if any(isnothing, names)
         available = all_names(reg)
@@ -80,7 +78,10 @@ contextname(st::SharedContext{name}) where {name} = name
 contextname(::Any) = nothing
 
 struct SharedVars{from_name, NT} end
+SharedVars(fromname; nt...) = SharedVars{fromname, (nt...,)}() # NamedTuple of varnames => aliases
+SharedVars(fromname, varnames, aliases) = SharedVars{fromname, NamedTuple{tuple(varnames...)}(aliases...)}()
 get_fromname(::Type{<:SharedVars{from_name}}) where {from_name} = from_name
+
 get_fromname(::SharedVars{from_name}) where {from_name} = from_name
 get_alias(sv::SharedVars{from_name, NT}, varname::Symbol) where {from_name, NT} = getproperty(NT, varname)
 
@@ -109,7 +110,8 @@ function to_sharedvar(reg::NameSpaceRegistry, r::Route)
                   "Available names: " * available_str
             error(msg)
         end
-        (;toname => SharedVars{fromname, r.varnames, r.aliases}())
+        (; toname => SharedVars(fromname, getvarnames(r), getaliases(r)) )
+        # (;toname => SharedVars{fromname, r.varnames, r.aliases}())
 end
 
 
