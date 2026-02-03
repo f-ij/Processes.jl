@@ -5,6 +5,11 @@ function nameoftype(f)
         return nameof(typeof(f))
     end
 end
+
+#################################
+######## RELEVANT TRAITS ########
+#################################
+
 include("VarAlias.jl")
 include("StructDef.jl")
 include("IdentifiableAlgos.jl")
