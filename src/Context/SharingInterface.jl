@@ -79,11 +79,14 @@ contextname(::Any) = nothing
 
 struct SharedVars{from_name, NT} end
 SharedVars(fromname; nt...) = SharedVars{fromname, (nt...,)}() # NamedTuple of varnames => aliases
-SharedVars(fromname, varnames, aliases) = SharedVars{fromname, NamedTuple{tuple(varnames...)}(aliases...)}()
+SharedVars(fromname, varnames, aliases) = SharedVars{fromname, NamedTuple{tuple(varnames...)}(tuple(aliases...))}()
 get_fromname(::Type{<:SharedVars{from_name}}) where {from_name} = from_name
 
 get_fromname(::SharedVars{from_name}) where {from_name} = from_name
 get_alias(sv::SharedVars{from_name, NT}, varname::Symbol) where {from_name, NT} = getproperty(NT, varname)
+
+Base.keys(sv::Union{SharedVars{from_name, NT}, Type{<:SharedVars{from_name, NT}}}) where {from_name, NT} = keys(NT)
+Base.values(sv::Union{SharedVars{from_name, NT}, Type{<:SharedVars{from_name, NT}}}) where {from_name, NT} = values(NT)
 
 # TODO CHECK IF USED
 contextname(sv::Type{<:SharedVars{from_name}}) where {from_name} = from_name

@@ -79,6 +79,7 @@ function step!_expr(r::Type{<:Routine}, context::Type{C}, name::Symbol) where {C
                     return context
                 end
                 $(step!_expr(fti, C, local_name))
+                inc!(p)
                 # GC.safepoint()
             end
         end)
