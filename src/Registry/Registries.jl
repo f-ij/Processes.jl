@@ -279,22 +279,24 @@ function dynamic_get(reg::NameSpaceRegistry, val)
 end
 
 function getmultiplier(reg::NameSpaceRegistry, val)
-    entry = static_get(reg, val)
-    if isnothing(entry)
-        return nothing
+    entries = get_type_entries(reg, val)
+    entry_idx = static_findfirst_match(entries, val)
+    if isnothing(entry_idx)
+        return 0
     end
-    return multiplier(entry)
+    return getmultiplier(entries, entry_idx)
 end
 
 """
 Statically Get the name from the registry
 """
 function getname(reg::NameSpaceRegistry, val)
-    entry = static_get(reg, val)
-    if isnothing(entry)
+    entries = get_type_entries(reg, val)
+    entry_idx = static_findfirst_match(entries, val)
+    if isnothing(entry_idx)
         return nothing
     end
-    return getname(entry)
+    return getname(entries, entry_idx)
 end
 
 
