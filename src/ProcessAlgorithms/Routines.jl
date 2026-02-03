@@ -87,7 +87,7 @@ end
             end
             context = @inline step!(func, context)
             GC.safepoint()
-            inc!(context.global.process)
+            inc!(context.globals.process)
         end
         @inline _unroll_subroutines(r, context, unroll_idx + 1, gethead(tail), gettail(tail), gethead(repeats), gettail(repeats))
     end

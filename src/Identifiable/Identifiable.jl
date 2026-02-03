@@ -9,6 +9,7 @@ end
 #################################
 ######## RELEVANT TRAITS ########
 #################################
+isidentifiable(obj) = false # Trait to signify that an algorithm has an identity
 
 include("VarAlias.jl")
 include("StructDef.jl")

@@ -12,7 +12,7 @@ FibLuc = CompositeAlgorithm( (Fib(), Fib, Luc), (1,1,2) )
 
 C = Routine((Fib, Fib(), FibLuc), (10,20,30))
 
-# FFluc = CompositeAlgorithm( (FibLuc, Fdup, Fib, Ldup), (10,5,2,1) )
+FFluc = CompositeAlgorithm( (FibLuc, Fdup, Fib, Ldup), (10,5,2,1) )
 # td = ps.TaskData(FFluc)
 # c = td.empty_context
 # v = view(c, Fdup)

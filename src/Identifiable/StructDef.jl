@@ -36,11 +36,7 @@ function IdentifiableAlgo(f, scopename::Symbol = Symbol(), id::Union{Nothing, Sy
     end
 
     if isnothing(id) # Not unique so auto matching
-        if f isa Type  
-            id = f # If no id is given, match by type
-        else
-            id = f # Otherwise match by value
-        end
+        id = staticmatch_by(f) # Either match by f, or get the matching behavior of f if set
     end
     f = instantiate(f) # Don't wrap a type
 
