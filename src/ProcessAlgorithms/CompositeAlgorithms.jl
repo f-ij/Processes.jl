@@ -67,8 +67,8 @@ numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
 #######################################
 ############ Properties ################
 ########################################
-intervals(ca::C) where {C<:CompositeAlgorithm} = C.parameters[2]
-intervals(caT::Type{<:CompositeAlgorithm}) = caT.parameters[2]
+# intervals(ca::C) where {C<:CompositeAlgorithm} = C.parameters[2]
+# intervals(caT::Type{<:CompositeAlgorithm}) = caT.parameters[2]
 get_intervals(ca) = intervals(ca)
 
 hasid(ca::Union{CompositeAlgorithm{T,I,NSR,O,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,id}}}) where {T,I,NSR,O,id} = !isnothing(id)

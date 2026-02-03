@@ -33,16 +33,18 @@ function fuse(cla::LoopAlgorithm, name_prefix = "")
         return cla
     end
     
-    fusename = Symbol(name_prefix,"_fused_", gensym())
+    # fusename = Symbol(name_prefix,"_fused_", gensym())
     # new_cla = replace_all_names(cla, fusename)
     # new_cla = setid(new_cla, uuid4())
 
     flat_funcs, flat_intervals = flatten(cla)
-    flat_funcs = replace_all_names.(flat_funcs, fusename)
 
-    @DebugMode println("Fusing LoopAlgorithm ", cla, " into ", fusename, " with ", length(flat_funcs), " functions.")
+    return CompositeAlgorithm(flat_funcs, flat_intervals)
+    # flat_funcs = replace_all_names.(flat_funcs, fusename)
 
-    id = uuid4()
+    # @DebugMode println("Fusing LoopAlgorithm ", cla, " into ", fusename, " with ", length(flat_funcs), " functions.")
 
-    # fused = IdentifiableAlgo(CompositeAlgorithm(flat_funcs, flat_intervals; id), fusename,; customname = fusename)
+    # id = uuid4()
+
+    # # fused = IdentifiableAlgo(CompositeAlgorithm(flat_funcs, flat_intervals; id), fusename,; customname = fusename)
 end
