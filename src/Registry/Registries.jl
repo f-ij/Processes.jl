@@ -291,12 +291,11 @@ end
 Statically Get the name from the registry
 """
 function getname(reg::NameSpaceRegistry, val)
-    entries = get_type_entries(reg, val)
-    entry_idx = static_findfirst_match(entries, val)
-    if isnothing(entry_idx)
+    entry = static_get(reg, val)
+    if isnothing(entry)
         return nothing
     end
-    return getname(entries, entry_idx)
+    return getname(entry)
 end
 
 
