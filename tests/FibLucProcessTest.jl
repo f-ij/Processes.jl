@@ -30,16 +30,14 @@ end
 
 @testset "Process run fills context" begin
     n = 50_000
-    fibluc = Processes.CompositeAlgorithm((RunFib, RunLuc), (1, 1))
+    fibluc = Processes.CompositeAlgorithm((RunFib, RunLuc), (1, 2))
     p = Processes.Process(fibluc; lifetime = n)
     Processes.start(p)
     ctx = fetch(p)
 
-    fib_name = Processes.getname(fibluc, RunFib())
-    luc_name = Processes.getname(fibluc, RunLuc())
-    fib_ctx = getproperty(ctx, fib_name)
-    luc_ctx = getproperty(ctx, luc_name)
+    fib_ctx = ctx[RunFib]
+    luc_ctx = ctx[RunLuc]
 
     @test length(fib_ctx.fiblist) == n + 2
-    @test length(luc_ctx.luclist) == n + 2
+    @test length(luc_ctx.luclist) == n/2 + 2
 end
