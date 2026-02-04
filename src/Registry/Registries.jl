@@ -211,10 +211,10 @@ inherit(e1::NameSpaceRegistry; kwargs...) = e1
 """
 Get entries for an obj
 """
-@generated function get_type_entries(reg::NameSpaceRegistry, typ::T) where {T}
+@generated function get_type_entries(reg::NameSpaceRegistry, typ::Union{T, Type{T}}) where {T}
     assigned_T = assign_entry_type(T)
     idx = nongen_find_typeidx(reg, assigned_T)
-    if idx === nothing
+    if isnothing(idx)
         types = entrytypes_iterator(reg)
         available = isempty(types) ? "<none>" : join(string.(types), ", ")
         requested = string(assigned_T)

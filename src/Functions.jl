@@ -888,3 +888,17 @@ w    end
     exp = Expr(:call, type_expr, getfields...)
     return exp
 end
+
+"""
+From keys -> values named tuple to values -> keys named tuple
+"""
+function invert_nt(nt::NamedTuple)
+    NamedTuple{Tuple(values(nt))}(Tuple(keys(nt)))
+end
+
+"""
+Apply a function to all keys in a named tuple
+"""
+function replace_nt_keys(func, nt::NamedTuple)
+    NamedTuple{Tuple(map(func, keys(nt)))}(Tuple(values(nt)))
+end

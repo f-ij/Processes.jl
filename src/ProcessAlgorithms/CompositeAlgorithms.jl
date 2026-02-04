@@ -1,5 +1,5 @@
 #AlgoTracker
-export inc!, nextalgo!
+export inc!, nextalgo!, intervals, interval
 export CompositeAlgorithm
 struct CompositeAlgorithm{T, Intervals, NSR, O, id, CustomName} <: LoopAlgorithm
     funcs::T
@@ -17,6 +17,9 @@ function CompositeAlgorithm(funcs::NTuple{N, Any},
     (;functuple, registry, options) = setup(CompositeAlgorithm, funcs, intervals, options...)
     if all(x -> x == 1, intervals)
         intervals = RepeatOne() # Set to simpleAlgo
+    end
+    if any(x -> x isa CompositeAlgorithm, functuple) # Flatten nested composites
+        functuple, intervals = flatten_comp_funcs(functuple, intervals)    
     end
     CompositeAlgorithm{typeof(functuple), intervals, typeof(registry), typeof(options), nothing, customname}(functuple, Ref(1), registry, options)
 end

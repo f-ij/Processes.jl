@@ -76,7 +76,7 @@ end
 
 
 ########################
-### Setters ###
+####### Setters ########
 ########################
 
 set_sharedcontexts(sc::SubContext, sharedcontexts) = setproperty(sc, :sharedcontexts, sharedcontexts, SubContext{getname(sc)})

@@ -30,8 +30,8 @@ end
 
 @inline get_subcontexts_fieldnames(pct::Type{<:ProcessContext{D}}) where {D} = fieldnames(D)
 
-@inline getglobal(pc::ProcessContext) = getproperty(get_subcontexts(pc), :globals)
-@inline function getglobal(pc::ProcessContext, name::Symbol)
+@inline getglobals(pc::ProcessContext) = getproperty(get_subcontexts(pc), :globals)
+@inline function getglobals(pc::ProcessContext, name::Symbol)
     return getproperty(getproperty(get_subcontexts(pc), :globals), name)
 end
 

@@ -39,10 +39,6 @@ function NaiveFibluc(num, trials = 100)
 
     times = Float64[]
     for i in 1:trials
-        # empty!(fiblist)
-        # empty!(luclist)
-        # append!(fiblist, [0, 1])
-        # append!(luclist, [2, 1])
         luclist = Int[2, 1]
         fiblist = Int[0, 1]
 

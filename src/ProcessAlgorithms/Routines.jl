@@ -76,7 +76,7 @@ end
 end
 
 @inline function _unroll_subroutines(r::Routine, context::C, unroll_idx, func::F, tail, this_repeat, repeats) where {F, C<:AbstractContext}
-    (;process) = getglobal(context)
+    (;process) = getglobals(context)
     if isnothing(func)
         return context
     else

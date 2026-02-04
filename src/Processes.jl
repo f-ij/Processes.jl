@@ -9,18 +9,6 @@ module Processes
 
     import DataStructures: Queue, dequeue!, enqueue!
 
-    abstract type ProcessAlgorithm end
-    abstract type ProcessLoopAlgorithm <: ProcessAlgorithm end # Algorithms that can be inlined in processloop
-    abstract type LoopAlgorithm <: ProcessLoopAlgorithm end # Algorithms that have multiple functions and intervals
-
-    abstract type AbstractOption end
-    abstract type ProcessState <: AbstractOption end
-
-    abstract type AbstractContext end
-    abstract type AbstractSubContext end
-
-    abstract type AbstractRegistry end
-
     export ProcessAlgorithm, ProcessState
 
     const DEBUG_MODE = @load_preference("debug", false)
@@ -29,16 +17,15 @@ module Processes
         @set_preferences!("debug" => bool)
     end
 
+    include("AbstractTypeDefs.jl")
+
     include("Functions.jl")
     include("Unroll.jl")
     include("Printing.jl")
     include("ExpressionTools.jl")
 
-    # @ForwardDeclare AVec ""
-    abstract type AbstractAVec{T} <: AbstractVector{T} end
     include("Arena.jl")
-    # @ForwardDeclare Process ""
-    # struct Process end
+
 
     
 
@@ -52,7 +39,7 @@ module Processes
 
     include("Lifetime.jl")
     include("TaskDatas.jl")
-    include("InputInterface.jl")
+    include("InputInterface/InputInterface.jl")
     include("Prepare.jl")
     include("Running.jl")
     include("TriggerList.jl")

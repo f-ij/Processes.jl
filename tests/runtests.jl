@@ -1,11 +1,8 @@
-using Test
+using Test, Pkg
+Pkg.activate((@__DIR__ )*"/..")
 
 @testset "Processes" begin
-    include("ArenaTest.jl")
-    include("NamedProcessAlgorithmTest.jl")
-    include("FibLucPerformanceTest.jl")
-    include("ProcessesFibLucTest.jl")
-    include("ProcessesContextTest.jl")
-    include("ProcessesStateTest.jl")
-    include("CompositeRegistryIntervalsTest.jl")
+    include("CompositeCompositionTest.jl")
+    include("InlineBenchmarkTest.jl")
+    include("FibLucProcessTest.jl")
 end

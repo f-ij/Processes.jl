@@ -13,7 +13,7 @@ give the array a size hint based on the lifetime and the number of updates per s
         return nothing
     end
 
-    globals = getglobal(context)
+    globals = getglobals(context)
     lifetime = globals.lifetime
     if lifetime isa Indefinite
         return sizehint!(array, 2^16)
@@ -56,8 +56,8 @@ Get the number of times an algorithm will be called in a process
 This is to be used in the prepare function
 """
 function num_calls(context)
-    algo = context.algo
-    lifetime = context.lifetime
+    algo = getglobals(context).algo
+    lifetime = getglobals(context).lifetime
     instance = context._instance
     num_calls(algo, lifetime, instance)
 end

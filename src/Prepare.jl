@@ -15,7 +15,6 @@ function prepare(t::T, c::Any) where T
     (;)
 end
 
-
 """
 previously prepare_args
 """
@@ -29,6 +28,7 @@ function prepare_context(algo::F, c::ProcessContext, overrides_and_inputs::Union
     @DebugMode "Overrides are $overrides"
 
     prepared_context = prepare(algo, input_context)
+    @DebugMode "Prepared in prepare_context context is $prepared_context"
 
     overridden_context = merge(prepared_context, overrides...)
 
@@ -39,6 +39,14 @@ end
     func = getfunc(td)
     ProcessContext(func, globals = (;lifetime = getlifetime(td), algo = func))
 end
+
+@inline function init_context(p::AbstractProcess)
+    td = taskdata(p)
+    c = init_context(td)
+    @DebugMode "Prepared context is $c"
+    return c
+end
+
 
 """
 Prepare context from TaskData
@@ -52,28 +60,12 @@ function prepare_context(td::TD) where {TD<:TaskData}
     return prepare_context(td.func, empty_c, overrides..., inputs...; lifetime = lifetime)
 end
 
-@inline function init_context(p::AbstractProcess)
-    td = taskdata(p)
-    c = init_context(td)
-    @DebugMode "Prepared context is $c"
-    return c
-end
-
-function prepare_context(process::AbstractProcess, c::ProcessContext) 
-    @DebugMode "Creating task for process $(process.id)"
-
-    td = taskdata(process)
-    return prepare_context(td, c)
-end
-
-
 function makecontext(p::AbstractProcess)
-    c = init_context(p)
-    prepare_context(p, c)
+    prepare_context(taskdata(p))
 end
+
 function makecontext!(p::AbstractProcess)
     c = makecontext(p)
-    @show c
     context(p,c)
 end
 

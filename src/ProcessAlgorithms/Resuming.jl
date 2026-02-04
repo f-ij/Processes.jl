@@ -9,7 +9,7 @@ end
 end
 
 @inline function _resume_step!(r::Routine, context::C, unroll_idx, func::F, tail, this_repeat, repeats, this_resume_idx, resume_idxs_tail) where {F, C<:AbstractContext}
-    (;process) = getglobal(context)
+    (;process) = getglobals(context)
     if isnothing(func)
         reset!(r)
         return context

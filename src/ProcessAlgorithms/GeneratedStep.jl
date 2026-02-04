@@ -7,7 +7,7 @@ function step!_expr(sa::Type{SA}, context::Type{C}, name::Symbol) where {SA<:Sim
     ft = dt.parameters[1]
 
     exprs = Any[]
-    push!(exprs, :((;process) = @inline getglobal(context)))
+    push!(exprs, :((;process) = @inline getglobals(context)))
 
     for i in 1:length(ft.parameters)
         push!(exprs, quote
@@ -66,7 +66,7 @@ function step!_expr(r::Type{<:Routine}, context::Type{C}, name::Symbol) where {C
     ft = dt.parameters[1]
     reps = dt.parameters[2]
     exprs = Any[]
-    push!(exprs, :((;process) = @inline getglobal(context)))
+    push!(exprs, :((;process) = @inline getglobals(context)))
     for i in 1:length(ft.parameters)
         this_repeat = reps[i]
         local_name = gensym(:algo)
