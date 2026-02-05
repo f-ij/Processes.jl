@@ -1,7 +1,7 @@
 define_processdebug_task(@specialize(p), @specialize(func), @specialize(context), @specialize(lifetime)) = @task mainloop_warntype(p, func, context, lifetime)
 
 function process_warntype(p)
-    func = getfunc(p)
+    func = getalgo(p)
     context = getinputcontext(p)
     lifetime = getlifetime(p)
     mainloop_warntype(p, func, context, lifetime)

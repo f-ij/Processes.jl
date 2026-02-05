@@ -27,7 +27,7 @@ function TaskData(algo; overrides = tuple(), inputs = tuple(), lifetime = Indefi
     TaskData(algo, inputs, overrides, c, lifetime)
 end
 
-getfunc(td::TaskData) = td.func
+getalgo(td::TaskData) = td.func
 getinputs(td::TaskData) = td.inputs
 getoverrides(td::TaskData) = td.overrides
 getlifetime(td::TaskData) = td.lifetime

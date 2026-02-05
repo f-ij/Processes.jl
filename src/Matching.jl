@@ -31,6 +31,25 @@ function Base.:(==)(a, m1::MatchAll)
     return all(x -> x == a, getmatchers(m1))
 end
 
+"""
+Match with any parent nodes but not other siblings
+"""
+struct TreeMatcher{A} <: AbstractMatcher{A} end
+TreeMatcher(id = uuid4()) = TreeMatcher(id)
+getchild(tm::TreeMatcher{ids}) where ids = TreeMatcher((ids...,uuid4()))
+function Base.:(==)(tm1::TreeMatcher{ids1}, tm2::TreeMatcher{ids2}) where {ids1,ids2}
+    l1 = length(ids1)
+    l2 = length(ids2)
+    if l1 == l2
+        return ids1 == ids2
+    elseif l1 < l2
+        return ids1 == ids2[1:l1]
+    else
+        return ids1[1:l2] == ids2
+    end
+end 
+
+
 
 match_by(obj::Any) = obj
 staticmatch_by(obj::Any) = obj

@@ -3,8 +3,9 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 using Processes, Random
 import Processes as ps
 
+struct Walker <: ProcessAlgorithm end
 
-@ProcessAlgorithm function Walker(state, momentum, dt)
+function Walker(state, momentum, dt)
     println("State is now $state")
     println("pushing : $(momentum) * dt)")
     push!(state, state[end] + momentum * dt)
@@ -25,7 +26,10 @@ struct InsertNoise <: ProcessAlgorithm
     seed::Int64
 end
 
-@ProcessAlgorithm function InsertNoise(targetnum, scale, rng)
+InsertNoise(seed = 1234) = InsertNoise(seed)
+
+function Processes.step!(::InsertNoise, context::C) where C
+    (;targetnum, scale, rng) = context
     T = typeof(targetnum)
     rand_num  = (rand(rng, T)-T(0.5))*T(2)*scale
     println("Adding noise: $rand_num")
@@ -40,6 +44,6 @@ function Processes.prepare(::InsertNoise, input::A) where A
 end
 
 RandomWalker = CompositeAlgorithm((Walker, InsertNoise), (1,2), Route(Walker, InsertNoise, :momentum => :targetnum, :dt => :scale))
-
+# RandomWalker = CompositeAlgorithm((Walker, InsertNoise), (1,2))
 p = Process(RandomWalker, lifetime = 10, Input(Walker, :dt => 0.01))
 start(p)

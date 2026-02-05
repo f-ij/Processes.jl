@@ -10,7 +10,7 @@
 # """
 # Get the name of the scoped value entry
 # """
-# getname(se::ScopedValueEntry{T,V}) where {T,V} = getname(getvalue(se))
+# getkey(se::ScopedValueEntry{T,V}) where {T,V} = getkey(getvalue(se))
 
 
 # ### CHANGING ###

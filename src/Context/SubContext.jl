@@ -11,11 +11,11 @@ function SubContext(name, data::NamedTuple, sharedcontexts, sharedvars)
 end
 
 function newdata(sc::SubContext, data::NamedTuple)
-    SubContext{getname(sc), typeof(data), getsharedcontext_types(sc), getsharedvars_types(sc)}(data, getsharedcontexts(sc), getsharedvars(sc))
+    SubContext{getkey(sc), typeof(data), getsharedcontext_types(sc), getsharedvars_types(sc)}(data, getsharedcontexts(sc), getsharedvars(sc))
 end
 
 @inline Base.isempty(sc::SubContext) = isempty(get_data(sc))
-@inline getname(sct::Type{<:SubContext}) = sct.parameters[1]
+@inline getkey(sct::Type{<:SubContext}) = sct.parameters[1]
 @inline get_datatype(sct::Type{<:SubContext}) = sct.parameters[2]
 
 @inline function getsharedcontext_types(sct::Type{<:SubContext})
@@ -35,7 +35,7 @@ end
     return (shared,)
 end
 
-@inline getname(sc::SubContext) = getname(typeof(sc))
+@inline getkey(sc::SubContext) = getkey(typeof(sc))
 @inline get_datatype(sc::SubContext) = get_datatype(typeof(sc))
 @inline getsharedcontext_types(sc::SubContext) = getsharedcontext_types(typeof(sc))
 @inline getsharedvars_types(sc::SubContext) = getsharedvars_types(typeof(sc))
@@ -79,8 +79,8 @@ end
 ####### Setters ########
 ########################
 
-set_sharedcontexts(sc::SubContext, sharedcontexts) = setproperty(sc, :sharedcontexts, sharedcontexts, SubContext{getname(sc)})
-set_sharedvars(sc::SubContext, sharedvars) = setproperty(sc, :sharedvars, sharedvars, SubContext{getname(sc)})
+set_sharedcontexts(sc::SubContext, sharedcontexts) = setproperty(sc, :sharedcontexts, sharedcontexts, SubContext{getkey(sc)})
+set_sharedvars(sc::SubContext, sharedvars) = setproperty(sc, :sharedvars, sharedvars, SubContext{getkey(sc)})
 
 
 function merge_sharedcontexts(sctuple::NamedTuple, sharedcontexts::NamedTuple)

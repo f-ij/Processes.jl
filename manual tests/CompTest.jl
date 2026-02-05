@@ -13,3 +13,9 @@ FibLuc = CompositeAlgorithm( (Fib(), Fib, Luc), (1,1,2) )
 C = Routine((Fib, Fib(), FibLuc), (10,20,30))
 
 FFluc = CompositeAlgorithm( (FibLuc, Fdup, Fib, Ldup), (10,5,2,1) )
+
+p = Process(FFluc)
+start(p)
+sleep(0.2)
+quit(p)
+println(p.context)

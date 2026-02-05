@@ -81,9 +81,9 @@ Redefine task without preparing again
 function unpause(p::Process; threaded = true)
     @atomic p.run = true
     if threaded
-        p.task = spawntask(p, getfunc(p), getcontext(p), runtimelisteners(p))
+        p.task = spawntask(p, getalgo(p), getcontext(p), runtimelisteners(p))
     else
-        p.task = @async runtask(p, getfunc(p), getcontext(p), runtimelisteners(p))
+        p.task = @async runtask(p, getalgo(p), getcontext(p), runtimelisteners(p))
     end
     return true
 end

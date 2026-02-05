@@ -2,7 +2,7 @@
 Set up an empty ProcessContext for a LoopAlgorithm with given shared specifications
 """
 function ProcessContext(algos::LoopAlgorithm; globals = (;))
-    registry = get_registry(algos)
+    registry = getregistry(algos)
 
     # shared_specs = get_sharedspecs(algos)
 
@@ -36,7 +36,7 @@ end
 
 function ProcessContext(func::Any; globals = (;))
     registry = SimpleRegistry(func)
-    name = getname(static_get(registry, func))
+    name = getkey(static_get(registry, func))
     subcontext = SubContext(name, (;), (;), (;))
     named_subcontexts = NamedTuple{(name,)}((subcontext,))
     (;named_subcontexts..., globals)

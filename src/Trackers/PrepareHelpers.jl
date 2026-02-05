@@ -54,7 +54,7 @@
 # total_repeats(ph::PrepereHelper) = ph.repeats
 # getalgo(ph::PrepereHelper, idx) = getindex(ph.unique_algos, idx)
 # this_algo(args) = getalgo(args.ph, args.ph.current)
-# getfunc(ph::PrepereHelper) = ph.pa
+# getalgo(ph::PrepereHelper) = ph.pa
 # lifetime(ph::PrepereHelper) = ph.lifetime
 # repeats(ph::PrepereHelper) = repeats(ph.lifetime)
 

@@ -18,6 +18,17 @@ getinjected(scv::SubContextView) = getfield(scv, :injected)
 injectedfieldnames(scvt::Union{SubContextView{CType, SubName, T, NT}, Type{<:SubContextView{CType, SubName, T, NT}}}) where {CType, SubName, T, NT} = fieldnames(NT)
 
 
+"""
+Helper to merge into a subcontext target in a namedtuple
+    Merge nt's are (;targetsubcontext => (;targetname1 = value1, targetname2 = value2,...),...)
+
+This merges a set of named tuples into the appropriate subcontexts in the provided context
+"""
+function algo_to_subcontext_names(scv::Union{SubContextView{CType, SubName, T, NT, Aliases}, Type{<:SubContextView{CType, SubName, T, NT, Aliases}}}, name::Symbol) where {CType, SubName, T, NT, Aliases}
+    _aliases = varaliases(scv)
+    return @inline algo_to_subcontext_names(_aliases, name)
+end
+
 #################################
 ####### CREATING VIEWS ##########
 #################################
@@ -25,9 +36,9 @@ injectedfieldnames(scvt::Union{SubContextView{CType, SubName, T, NT}, Type{<:Sub
 """
 Get a subcontext view for a specific subcontext
 """
-@inline Base.view(pc::ProcessContext, instance::SA; inject = (;)) where SA <: IdentifiableAlgo = SubContextView{typeof(pc), getname(instance), typeof(instance), typeof(inject)}(pc, instance; inject)
-@inline function Base.view(pc::ProcessContext{D}, instance::IdentifiableAlgo{T, nothing}, inject = (;)) where {D, T}
-    named_instance = get_registry(pc)[instance]
+@inline Base.view(pc::ProcessContext, instance::SA; inject = (;)) where SA <: AbstractIdentifiableAlgo = SubContextView{typeof(pc), getkey(instance), typeof(instance), typeof(inject)}(pc, instance; inject)
+@inline function Base.view(pc::ProcessContext{D}, instance::AbstractIdentifiableAlgo{T, nothing}, inject = (;)) where {D, T}
+    named_instance = getregistry(pc)[instance]
     return view(pc, named_instance; inject)
 end
 
@@ -35,8 +46,8 @@ end
 Create a view from a non-scoped instance by looking it up in the registry
 """
 @inline function Base.view(pc::ProcessContext, instance::I, inject = (;)) where I
-    scoped_instance = @inline value(static_get(get_registry(pc), instance))
-    return SubContextView{typeof(pc), getname(scoped_instance), typeof(scoped_instance), typeof(inject)}(pc, scoped_instance; inject=inject)
+    scoped_instance = @inline static_get(getregistry(pc), instance)
+    return SubContextView{typeof(pc), getkey(scoped_instance), typeof(scoped_instance), typeof(inject)}(pc, scoped_instance; inject=inject)
 end
 
 """
@@ -47,8 +58,8 @@ Regenerate a SubContextView from its type
 """
 View a view
 """
-@inline function Base.view(scv::SubContextView{C,SubName}, instance::SA) where {C, SubName, SA <: IdentifiableAlgo}
-    scopename = getname(instance)
+@inline function Base.view(scv::SubContextView{C,SubName}, instance::SA) where {C, SubName, SA <: AbstractIdentifiableAlgo}
+    scopename = getkey(instance)
     @assert scopename == SubName "Trying to view SubContextView of subcontext $(SubName) with instance of subcontext $(scopename)"
     context = getcontext(scv)
     return view(context, instance)
@@ -63,7 +74,6 @@ end
 Get the type of the original subcontext from the view
 """
 @inline subcontext_type(scv::Union{SubContextView{CType, SubName}, Type{<:SubContextView{CType, SubName}}}) where {CType<:ProcessContext, SubName} = subcontext_type(CType, SubName)
-
 
 ##########################################
 ########## Variable Locations ############
@@ -115,9 +125,9 @@ function get_routed_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, 
 
     routedvars = named_flat_collect_broadcast(sharedvars) do sv
         fromname = get_fromname(sv)
-        varnames = keys(sv)
-        # aliased_varnames = @inline apply_aliases(_aliases, varnames)
-        pairs = (varnames[i] => VarLocation{:subcontext}(fromname, varnames[i]) for i in 1:length(varnames))
+        _localnames = localnames(sv)
+        _subvarcontextnames = subvarcontextnames(sv)
+        pairs = (_localnames[i] => VarLocation{:subcontext}(fromname, _subvarcontextnames[i]) for i in 1:length(_localnames))
         return NamedTuple(pairs)
     end
 
@@ -261,19 +271,6 @@ end
 ##########################################
 ############### MERGING ##################
 ##########################################
-
-"""
-Helper to merge into a subcontext target in a namedtuple
-    Merge nt's are (;targetsubcontext => (;targetname1 = value1, targetname2 = value2,...),...)
-
-This merges a set of named tuples into the appropriate subcontexts in the provided context
-"""
-function algo_to_subcontext_names(scv::Union{SubContextView{CType, SubName, T, NT, Aliases}, Type{<:SubContextView{CType, SubName, T, NT, Aliases}}}, name::Symbol) where {CType, SubName, T, NT, Aliases}
-    _aliases = varaliases(scv)
-    return @inline algo_to_subcontext_names(_aliases, name)
-end
-
-
 
 """
 Fallback merge if nothing is merged that just returns the original context

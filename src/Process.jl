@@ -44,6 +44,8 @@ function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1
 
     named_inputs = to_named(func, inputs...)
     named_overrides = to_named(func, overrides...)
+    # @show named_inputs
+    # @show named_overrides
 
     # if !(func isa ProcessLoopAlgorithm)
     #     func = SimpleAlgo(func)

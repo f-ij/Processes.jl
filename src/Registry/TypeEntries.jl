@@ -69,8 +69,15 @@ end
 
 @inline function static_findfirst_match(rte::RegistryTypeEntry, val)
     @DebugMode "Looking for static match of value: $val in RegistryTypeEntry $(rte)"
+    if !isbits(val)
+        # TODO: This is a bit hacky
+        @DebugMode "Value is not bits, skipping static match"
+        return static_findfirst_match(rte, Val(typeof(val)))
+
+    end
     static_findfirst_match(rte, Val(val))
 end
+
 @inline @generated function static_findfirst_match(rte::RegistryTypeEntry{T,S}, v::Val{value}) where {T,S,value}
     idx = findfirst(x -> staticmatch(value, x), entry_types(rte))
     return :($idx)
@@ -103,7 +110,7 @@ end
 ##### ADDING ENTRIES #####
 ##########################
 
-function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.) where {T}
+function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withname = nothing) where {T}
     if isnothing(obj)
         # return rte, nothing
         error("Trying to add `nothing` to RegistryTypeEntry of type $T")
@@ -114,13 +121,27 @@ function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.) where {T}
         entries = getentries(rte)
         current_length = length(entries)
 
-        identifiable = Autoname(obj, current_length + 1)
+        identifiable = nothing
+        if !isnothing(withname) # If name is given, use that
+            identifiable = IdentifiableAlgo(obj, withname)
+        else
+            identifiable = Autoname(obj, current_length + 1)
+        end
+
         push!(getmultipliers(rte), multiplier) # Add the multiplier
 
         newentries = (entries..., identifiable)
         add_dynamic_link!(identifiable, :entries, current_length + 1, rte)
         return setfield(rte, :entries, newentries), identifiable
     else # Existing instance, bump multiplier and get the named version
+        
+        if !isnothing(withname) # Check name match, cannot add two matching objects with different names
+            name = getkey(rte[fidx])
+            if name != withname
+                error("Trying to add an entry with name $withname but an entry with the same type already exists with name $name")
+            end
+        end
+
         return add_multiplier!(rte, fidx, multiplier), getentries(rte)[fidx]
     end
 end
@@ -183,12 +204,12 @@ end
 Context names
 """
 function all_names(te::Union{RegistryTypeEntry, Type{<:RegistryTypeEntry}})
-    getname.(getentries(te))
+    getkey.(getentries(te))
 end
 
 # function findname_idx(te::RegistryTypeEntry, name::Symbol)
 #     l = length(te)
-#     entry_name = getname(te[idx])
+#     entry_name = getkey(te[idx])
 #     return findfirst(==(name), entry_name)
 # end
 
@@ -196,22 +217,22 @@ end
 Change the context name of an entry
 from oldname to newname
 """
-function replacecontextname(te::RegistryTypeEntry, oldname, newname::Symbol)
+function replacecontextkeys(te::RegistryTypeEntry, oldname, newname::Symbol)
     idx = findfirst(==(oldname), all_names(te))
     if isnothing(idx)
         return te
     end
-    return setindex(te, changecontextname(te[idx], newname), idx)
+    return setindex(te, setcontextkey(te[idx], newname), idx)
 end
 
 """
 From a dict that contains oldname => newname
 Change all referenced context names in the RegistryTypeEntry
 """
-function replacecontextnames(te::RegistryTypeEntry, changed_names::Dict{Symbol,Symbol})
+function replacecontextkeyss(te::RegistryTypeEntry, changed_names::Dict{Symbol,Symbol})
     ps = pairs(changed_names)
     UnrollReplace(te, ps...) do rte, (oldname, newname)
-        changecontextname(rte, newname)
+        setcontextkey(rte, newname)
     end
 end
 

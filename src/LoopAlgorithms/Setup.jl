@@ -17,8 +17,8 @@ function setup(cla_target_type::Type{<:LoopAlgorithm},funcs::NTuple{N, Any},
         push!(allfuncs, func)
     end
 
-    registry = inherit(registry, get_registry.(allfuncs)...; multipliers)
-    @DebugMode "Combined registry: $registry, after inheriting: $(get_registry.(allfuncs))"
+    registry = inherit(registry, getregistry.(allfuncs)...; multipliers)
+    @DebugMode "Combined registry: $registry, after inheriting: $(getregistry.(allfuncs))"
 
     process_state = filter(x -> x isa ProcessState, options_all)
     registry = addall(registry, process_state)

@@ -35,6 +35,7 @@ subalgotypes(caT::Type{<:CompositeAlgorithm{FT}}) where FT = FT.parameters
 
 getinc(ca::CompositeAlgorithm) = ca.inc
 getoptions(ca::CompositeAlgorithm) = ca.options
+
 getid(ca::Union{CompositeAlgorithm{T,I,NSR,O,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,id}}}) where {T,I,NSR,O,id} = id
 setid(ca::CA, id = uuid4()) where CA = setparameter(ca, 5, id)
 
@@ -43,14 +44,24 @@ getname(ca::Union{CompositeAlgorithm{T,I,NSR,O,id,CustomName}, Type{<:CompositeA
 
 interval(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, idx) where {T,I} = I[idx]
 
-function intervals(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I}
+
+###########################################
+################ Type Info ###############
+###########################################
+
+@inline functypes(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = tuple(T.parameters...)
+@inline getalgotype(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, idx) where {T,I} = T.parameters[idx]
+@inline numfuncs(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = length(T.parameters)
+
+
+@inline function intervals(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I}
     if I isa Tuple
         return I
     else
         return ntuple(_ -> 1, length(T.parameters))
     end
 end
-get_this_interval(args) = interval(getfunc(args.process), algoidx(args))
+get_this_interval(args) = interval(getalgo(args.process), algoidx(args))
 
 function setintervals(ca::C, new_intervals) where {C<:CompositeAlgorithm}
     @assert length(new_intervals) == length(ca.funcs)
@@ -62,8 +73,7 @@ function setinterval(ca::C, idx::Int, new_interval) where {C<:CompositeAlgorithm
     setparameter(ca, 2, new_intervals)
 end
 
-numfuncs(::CompositeAlgorithm{T,I}) where {T,I} = length(I)
-@inline getfuncname(::CompositeAlgorithm{T,I}, idx) where {T,I} = T.parameters[idx]
+
 
 
 
@@ -82,8 +92,8 @@ id(ca::Union{CompositeAlgorithm{T,I,NSR,O,id}, Type{<:CompositeAlgorithm{T,I,NSR
 # getnames(ca::CompositeAlgorithm{T, I, N}) where {T, I, N} = N
 Base.length(ca::CompositeAlgorithm) = length(ca.funcs)
 Base.eachindex(ca::CompositeAlgorithm) = Base.eachindex(ca.funcs)
-getfunc(ca::CompositeAlgorithm, idx) = ca.funcs[idx]
-getfuncs(ca::CompositeAlgorithm) = ca.funcs
+getalgo(ca::CompositeAlgorithm, idx) = ca.funcs[idx]
+getalgos(ca::CompositeAlgorithm) = ca.funcs
 hasflag(ca::CompositeAlgorithm, flag) = flag in ca.flags
 track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
 """
@@ -130,37 +140,3 @@ inc(ca::CompositeAlgorithm) = ca.inc[]
 
 
 # CompositeAlgorithm(f, interval::Int, flags...) = CompositeAlgorithm((f,), (interval,), flags...)
-
-
-
-### STEP
-"""
-Running a composite algorithm allows for static unrolling and inlining of all sub-algorithms through 
-    recursive calls
-"""
-Base.@constprop :aggressive @inline function step!(ca::CompositeAlgorithm{T, Is}, context::C) where {T,Is,C<:AbstractContext}
-    algoidx = 1
-    this_inc = inc(ca)
-    return @inline _comp_dispatch(ca, context::C, algoidx, this_inc, gethead(ca.funcs), gettail(ca.funcs))
-end
-
-"""
-Dispatch on a composite function
-    Made such that the functions will be completely inlined at compile time
-"""
-Base.@constprop :aggressive @inline function _comp_dispatch(ca::CompositeAlgorithm{T,Is}, context::C, algoidx::Int, this_inc::Int, thisfunc::TF, funcs) where {T, Is, TF,C<:AbstractContext}
-    if isnothing(thisfunc)
-        inc!(ca)
-        GC.safepoint()
-        return context
-    end
-    if interval(ca, algoidx) == 1
-        context = step!(thisfunc, context)
-    else
-        if this_inc % interval(ca, algoidx) == 0
-            context = step!(thisfunc, context)
-        end
-    end
-    return @inline _comp_dispatch(ca, context, algoidx + 1, this_inc, gethead(funcs), gettail(funcs))
-end
-

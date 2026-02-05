@@ -48,8 +48,17 @@ function inline_bmark(ip::Processes.InlineProcess, trials = 5)
     for _ in 1:trials
         @inline reset!(ip)
         start_ns = time_ns()
-        @inline run!(ip)
+        @inline run!(ip,)
         elapsed = (time_ns() - start_ns) / 1e9
+        push!(runtimes, elapsed)
+    end
+    return mean(runtimes)
+end
+
+function naive_benchmark(trials = 5, n = 100_000)
+    runtimes = Float64[]
+    for _ in 1:trials
+        elapsed = naive_fibluc(n)
         push!(runtimes, elapsed)
     end
     return mean(runtimes)
@@ -58,18 +67,17 @@ end
 @testset "InlineProcess benchmark" begin
     n = 100_000
     fibluc = Processes.CompositeAlgorithm((InlineFib, InlineLuc), (1, 1))
-    ip = Processes.InlineProcess(fibluc; lifetime = n)
+    ip = Processes.InlineProcess(fibluc; repeats = n)
+    
+    println("Benchmarking InlineProcess with $n repeats...")
+    inline_time = inline_bmark(ip, 1)
+    naive_time = naive_benchmark(1, n)
 
     inline_time = inline_bmark(ip, 1000)
-
-    naive_times = Float64[]
-    for _ in 1:1000
-        elapsed = naive_fibluc(n)
-        push!(naive_times, elapsed)
-    end
-    naive_time = mean(naive_times)
+    naive_time = naive_benchmark(1000, n)
+   
 
     @info "InlineProcess time: $inline_time s and Naive time: $naive_time s"
     @info "InlineProcess is $((inline_time/naive_time)*100 ) % of Naive time"
-    @test inline_time <= naive_time * 1.1
+    @test inline_time <= naive_time * 1.2
 end

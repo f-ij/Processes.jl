@@ -29,7 +29,7 @@ function update_names(func::F, reg::NameSpaceRegistry) where {F}
         if isnothing(newval)
             error("Tyring to update name of function $(func) but no match found in registry $reg")
         end
-        return changecontextname(func, getname(newval))
+        return setcontextkey(func, getkey(newval))
     end
 end
 
@@ -43,16 +43,16 @@ function update_names(target_reg::NameSpaceRegistry,  ground_reg::NameSpaceRegis
     # changed_names = Dict{Symbol,Symbol}() # old name => new name
     _all_entries = all_entries(target_reg)
     for target_entry in _all_entries
-        oldname = getname(target_entry)
+        oldname = getkey(target_entry)
         groundval = static_get_match(ground_reg, target_entry)
         if isnothing(groundval) # TODO: Assume it's supposed to be there?
             continue
         end
         # if !isnothing(changed_names)
-        changed_names[oldname] = getname(groundval)
+        changed_names[oldname] = getkey(groundval)
         # end
     end
-    target_reg = replacecontextnames(target_reg, changed_names)
+    target_reg = replacecontextkeyss(target_reg, changed_names)
     return target_reg
 end
 
@@ -62,7 +62,7 @@ end
 ##################################
 
 function replace_all_names(reg::NameSpaceRegistry, name::Symbol)
-    func = valentry -> changecontextname(valentry, name)
+    func = valentry -> setcontextkey(valentry, name)
     rebuild_type_entries(func, reg)
 end
 
@@ -86,8 +86,8 @@ end
 # end
 
 function replace_all_names(cla::LoopAlgorithm, name::Symbol)
-    newfuncs = replace_all_names.(getfuncs(cla), name)
-    new_registry = replace_all_names(get_registry(cla), name)
+    newfuncs = replace_all_names.(getalgos(cla), name)
+    new_registry = replace_all_names(getregistry(cla), name)
     cla = setfield(cla, :funcs, newfuncs)
     cla = setfield(cla, :registry, new_registry)
     return cla

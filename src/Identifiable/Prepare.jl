@@ -2,10 +2,10 @@
 Get the name from a IdentifiableAlgo and prepare the inputs for it
 """
 @inline function prepare(sa::IdentifiableAlgo, inputcontext::AbstractContext)
-    name = getname(sa)
+    name = getkey(sa)
     inputcontext = merge_into_subcontexts(inputcontext, (;name => (;_instance = sa)))
     inputview = @inline view(inputcontext, sa)
-    prepared = @inline prepare(getalgorithm(sa), inputview)
+    prepared = @inline prepare(getalgo(sa), inputview)
     @inline replace(inputcontext, (;name => prepared))
 end
 
@@ -13,11 +13,11 @@ end
 Direct prepare running for debugging
 """
 @inline function prepare(sa::IdentifiableAlgo, input::NamedTuple = (;))
-    return (;getname(sa) => prepare(getalgorithm(sa), input))
+    return (;getkey(sa) => prepare(getalgo(sa), input))
 end
 
 function cleanup(sa::IdentifiableAlgo, context::AbstractContext)
     contextview = view(context, sa)
-    cleanup_args = @inline cleanup(getalgorithm(sa), contextview)
+    cleanup_args = @inline cleanup(getalgo(sa), contextview)
     @inline merge(contextview, cleanup_args)
 end

@@ -1,59 +1,75 @@
 
-"""
-Give the expression form of the step! function form the types
-"""
-function step!_expr(sa::Type{SA}, context::Type{C}, name::Symbol) where {SA<:SimpleAlgo, C<:AbstractContext}
-    dt = SA
-    ft = dt.parameters[1]
+# """
+# Give the expression form of the step! function form the types
+# """
+# function step!_expr(sa::Type{SA}, context::Type{C}, name::Symbol) where {SA<:SimpleAlgo, C<:AbstractContext}
+#     ca = SA
+#     ft = dt.parameters[1]
 
-    exprs = Any[]
-    push!(exprs, :((;process) = @inline getglobals(context)))
+#     exprs = Any[]
+#     push!(exprs, :((;process) = @inline getglobals(context)))
 
-    for i in 1:length(ft.parameters)
-        push!(exprs, quote
-            if !run(process)
-                if resumable($name)
-                    resume_idx!($name)
-                end
-                return context
-            end
-        end)
-        fti = ft.parameters[i]
-        local_name = gensym(:algo)
-        push!(exprs, :(local $local_name = getfunc($name, $i)))
-        push!(exprs, step!_expr(fti, C, local_name))
-    end
+#     for i in 1:length(ft.parameters)
+#         push!(exprs, quote
+#             if !run(process)
+#                 if resumable($name)
+#                     resume_idx!($name)
+#                 end
+#                 return context
+#             end
+#         end)
+#         fti = ft.parameters[i]
+#         local_name = gensym(:algo)
+#         push!(exprs, :(local $local_name = getalgo($name, $i)))
+#         push!(exprs, step!_expr(fti, C, local_name))
+#     end
 
-    push!(exprs, :(context))
-    return Expr(:block, exprs...)
-end
+#     push!(exprs, :(context))
+#     return Expr(:block, exprs...)
+# end
 
 """
 Generated expression form of the composite step! with a caller-provided name binding.
 """
 function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symbol) where {C<:AbstractContext}
-    dt = ca
-    ft = dt.parameters[1]
-    intervals = dt.parameters[2]
+    # This method does not execute the algorithm directly. Instead, it *builds an Expr*
+    # representing the body of a `step!` method specialized to:
+    # - the CompositeAlgorithm type `ca`
+    # - the AbstractContext subtype `C`
+    #
+    # Each `push!(exprs, ...)` adds (roughly) one "line" to the generated function body.
+    # `ca.parameters[1]` is the function-tuple type that stores the child algorithms.
+   
     exprs = Any[]
+    # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
     push!(exprs, :(this_inc = inc($name)))
-    for i in 1:length(ft.parameters)
+    for i in 1:numfuncs(ca)
         interval = intervals[i]
         local_name = gensym(:algo)
-        push!(exprs, :(local $local_name = getfunc($name, $i)))
-        fti = ft.parameters[i]
+        # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
+        push!(exprs, :(local $local_name = getalgo($name, $i)))
+        # fti = ft.parameters[i]
+        this_interval = interval(ca, i)
         if interval == 1
-            push!(exprs, step!_expr(fti, C, local_name))
+            # Generated block: the child algorithm's `step!` body (always executed).
+            push!(exprs, step!_expr(this_interval, C, local_name))
         else
+            # Generated block:
+            #   if this_inc % interval == 0
+            #       <child step! body>
+            #   end
             push!(exprs, quote
+                # Only run this child every `interval` composite steps.
                 if this_inc % $(interval) == 0
-                    $(step!_expr(fti, C, local_name))
+                    $(step!_expr(this_interval, C, local_name))
                 end
             end)
         end
     end
+    # Generated line: `inc!(name)` (advance composite counter after running children).
     push!(exprs, :(@inline inc!($name)))
     # push!(exprs, :(GC.safepoint()))
+    # Generated line: `context` (ensure the generated function returns the runtime context).
     push!(exprs, :(context))
     return Expr(:block, exprs...)
 end
@@ -61,29 +77,43 @@ end
 """
 Generated expression form of the routine step! with a caller-provided name binding.
 """
-function step!_expr(r::Type{<:Routine}, context::Type{C}, name::Symbol) where {C<:AbstractContext}
-    dt = r
-    ft = dt.parameters[1]
-    reps = dt.parameters[2]
+function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) where {C<:AbstractContext}
+    # Builds an Expr representing the body of `step!` for a Routine:
+    # each child algorithm runs `reps[i]` times before moving to the next.
+
+    func_repeats = repeats(routine)
     exprs = Any[]
-    push!(exprs, :((;process) = @inline getglobals(context)))
-    for i in 1:length(ft.parameters)
-        this_repeat = reps[i]
+
+    for i in 1:numfuncs(routine)
+        this_repeat = func_repeats[i]
         local_name = gensym(:algo)
-        fti = ft.parameters[i]
-        push!(exprs, :(local $local_name = getfunc($name, $i)))
+        this_functype = getalgotype(routine, i)
+        
+
+        # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
+        push!(exprs, :(local $local_name = getalgo($name, $i)))
+
+        # Generated block: a repeat-loop for this child algorithm.
+        # - If `run(process)` is false, record the resume point (child index i) and return early.
+        # - Otherwise execute the child's generated `step!` body.
         push!(exprs, quote
+
             for _ in 1:$(this_repeat)
+                # Pause/stop check: if the process is not running, record which child we were on.
                 if !run(process)
                     set_resume_point!($name, $i)
                     return context
                 end
-                $(step!_expr(fti, C, local_name))
-                inc!(p)
+                # Inline the child's `step!` body, specialized to the child's algorithm type and the context type.
+                $(step!_expr(this_functype, C, local_name))
+                
+                # Assumes process is defined in the top level
+                inc!(process)
                 # GC.safepoint()
             end
         end)
     end
+    # Generated line: `context` (ensure the generated function returns the runtime context).
     push!(exprs, :(context))
     return Expr(:block, exprs...)
 end
@@ -93,5 +123,8 @@ end
 Fallback expression form for non-CLA algorithms.
 """
 function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol) where {T, C<:AbstractContext}
+    # Generated single line:
+    #   context = step!(funcname, context)
+    # This is the non-generated fallback that just dispatches to an existing runtime `step!`.
     return :(context = @inline step!($funcname, context))
 end

@@ -5,70 +5,71 @@ Mainly used to compose algorithms in tight loops, plugging into the ProcessLoopA
 
 This doesn't provide the multitasking features of Process, but is faster to restart
 """
-mutable struct InlineProcess{TD, As, Threaded} <: AbstractProcess
+mutable struct InlineProcess{TD,As,Threaded} <: AbstractProcess
     const id::UUID
     const taskdata::TD
     context::As
     loopidx::UInt
-    lifetime::Int
-    starttime ::Union{Nothing, Float64, UInt64}
-    endtime::Union{Nothing, Float64, UInt64}
+    repeats::Int
+    starttime::Union{Nothing,Float64,UInt64}
+    endtime::Union{Nothing,Float64,UInt64}
 end
 
-function InlineProcess(func::F; threaded = false, lifetime = 1, context...) where F
+function InlineProcess(func::F; threaded=false, repeats=1, context...) where F
     # if !(func isa ProcessLoopAlgorithm)
     #     func = SimpleAlgo(func)
     # end
 
-    nrepeats = Repeat(lifetime)
+    nrepeats = Repeat(repeats)
     # tf = PreparedData(func; lifetime = nrepeats, args...)
-    tf = TaskData(func; lifetime = nrepeats, context...)
+    tf = TaskData(func; lifetime=nrepeats, context...)
     # prepared_context = prepare_args(tf)
     context = prepare_context(tf)
 
-    p = InlineProcess{typeof(tf), typeof(context), threaded}(uuid1(), tf, context, UInt(1), lifetime, nothing, nothing)
+    p = InlineProcess{typeof(tf),typeof(context),threaded}(uuid1(), tf, context, UInt(1), repeats, nothing, nothing)
     return p
 end
 
-isthreaded(ip::InlineProcess{F, TD, T}) where {F, TD, T} = T == :threaded
-isasync(ip::InlineProcess{F, TD, T}) where {F, TD, T} = T == :async
+@inline isthreaded(ip::InlineProcess{F,TD,T}) where {F,TD,T} = T == :threaded
+@inline isasync(ip::InlineProcess{F,TD,T}) where {F,TD,T} = T == :async
 
 # getlidx(ip::InlineProcess) = Int(ip.loopidx)
-shouldrun(ip::InlineProcess) = true
-lifetime(ip::InlineProcess) = Repeat(ip.lifetime)
-getcontext(ip::InlineProcess) = ip.context
+@inline shouldrun(ip::InlineProcess) = true
+@inline repeats(ip::InlineProcess) = Repeat(ip.repeats)
+@inline getcontext(ip::InlineProcess) = ip.context
 
-set_starttime!(ip::InlineProcess) = (ip.starttime = time_ns())
-set_endtime!(ip::InlineProcess) = (ip.endtime = time_ns())
-run(ip::InlineProcess) = true
+@inline set_starttime!(ip::InlineProcess) = (ip.starttime = time_ns())
+@inline set_endtime!(ip::InlineProcess) = (ip.endtime = time_ns())
+@inline run(ip::InlineProcess) = true
 taskdata(ip::InlineProcess) = ip.taskdata
 
-context(ip::InlineProcess, c) = (ip.context = c)
-context(ip::InlineProcess) = ip.context
+@inline context(ip::InlineProcess, c) = (ip.context = c)
+@inline context(ip::InlineProcess) = ip.context
 
-function (p::InlineProcess)()
+@inline function reset!(p::InlineProcess)
+    p.loopidx = 1
+    makecontext!(p)
+    return true
+end
+
+@inline function run!(p::InlineProcess, repeat=nothing)
+    if !isnothing(repeat)
+        p.repeats = repeat
+    end
     algo = p.taskdata.func
     context = p.context
     p.loopidx = 1
-    runtime_context = @inline merge_into_globals(context, (;process = p))
+    runtime_context = @inline merge_into_globals(context, (; process=p))
+
+    # @inline processloop(p, algo, runtime_context, (@inline repeats(p)))
 
     if isthreaded(p)
-        return Threads.@spawn processloop(p, algo, runtime_context, lifetime(p))
+        return Threads.@spawn generated_processloop(p, algo, runtime_context, (@inline repeats(p)))
     elseif isasync(p)
-        return @async processloop(p, algo, runtime_context, lifetime(p))
+        return @async generated_processloop(p, algo, runtime_context, (@inline repeats(p)))
     else
-        return @inline processloop(p, algo, runtime_context, lifetime(p))
+        return @inline generated_processloop(p, algo, runtime_context, (@inline repeats(p)))
     end
 end
 
-function reset!(p::InlineProcess)
-    p.loopidx = 1
-    makecontext!(p)
-    return true 
-end
-
-@inline function run!(p::InlineProcess, lifetime = p.lifetime)
-    p.lifetime = lifetime
-    @inline p()
-end
     

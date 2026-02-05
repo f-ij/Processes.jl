@@ -18,7 +18,7 @@ There are two inverse mappings stored here:
 struct VarAliases{StoA_nt, AtoS_nt} <: AbstractVarAlias end
 externalnames(va::VarAliases{StoA_nt, AtoS_nt}) where {StoA_nt, AtoS_nt} = keys(StoA_nt)
 internalnames(va::VarAliases{StoA_nt, AtoS_nt}) where {StoA_nt, AtoS_nt} = keys(AtoS_nt)
-VarAliases(;names...) = VarAliases{(;names...), invert_nt((;names...))}()
+VarAliases(;subcontext_to_algo_names...) = VarAliases{(;subcontext_to_algo_names...), invert_nt((;subcontext_to_algo_names...))}()
 
 @inline Base.@constprop :aggressive function subcontext_to_algo_names(va::Union{VarAliases{StoA_nt, AtoS_nt}, Type{<:VarAliases{StoA_nt, AtoS_nt}}}, name::Symbol) where {StoA_nt, AtoS_nt}
     if isempty(StoA_nt)

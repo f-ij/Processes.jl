@@ -1,6 +1,6 @@
 @inline function step!(sa::IdentifiableAlgo{F}, context::C) where {F, C <: AbstractContext}
     contextview = @inline view(context, sa)
-    @inline merge(contextview, @inline step!(getfunc(sa), contextview)) # Merge into view
+    @inline merge(contextview, @inline step!(getalgo(sa), contextview)) # Merge into view
 end
 
 """
@@ -15,7 +15,7 @@ Expression form of the scoped step! to inline view/merge and the inner step! cal
 #     return quote
 #         contextview = @inline view(context, func)
 #         inner_updates = begin
-#             local func = getfunc(func)
+#             local func = getalgo(func)
 #             local context = contextview
 #             $(inner_expr)
 #         end
@@ -25,14 +25,14 @@ Expression form of the scoped step! to inline view/merge and the inner step! cal
 # function step!_expr(sa::Type{<:IdentifiableAlgo}, context::Val{C}, funcname = :func) where {C<:AbstractContext}
 #     return quote
 #         contextview = @inline view(context, $(funcname))
-#         returnvals = @inline step!(getfunc($(funcname)), contextview)
+#         returnvals = @inline step!(getalgo($(funcname)), contextview)
 #         context = @inline merge(contextview, returnvals)
 #     end
 # end
 function step!_expr(sa::Type{<:IdentifiableAlgo}, context::Type{C}, funcname::Symbol) where {C<:AbstractContext}
     return quote
         contextview = @inline view(context, $funcname)
-        returnvals = @inline step!(getfunc($funcname), contextview)
+        returnvals = @inline step!(getalgo($funcname), contextview)
         context = @inline merge(contextview, returnvals)
     end
 end

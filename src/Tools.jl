@@ -12,6 +12,7 @@ give the array a size hint based on the lifetime and the number of updates per s
         @warn("Cannot give a sizehint, prepare is not called from a process")
         return nothing
     end
+    @show
 
     globals = getglobals(context)
     lifetime = globals.lifetime
@@ -27,6 +28,7 @@ give the array a size hint based on the lifetime and the number of updates per s
     # recommended_extra = recommendsize(args, updates_per_step)
     sizehint = startsize + recommended_extra
     # println("Recommended sizehint: $sizehint")
+    # @show sizehint
     @DebugMode "Sizehint is $sizehint"
     sizehint!(array, sizehint)
 end
@@ -48,6 +50,9 @@ Get the number of times an algorithm will be called in a process
 """
 function num_calls(algo, lifetime, instance)
     multiplier = getmultiplier(algo, instance)
+    if lifetime isa Indefinite
+        return typemax(Int)
+    end
     floor(Int, repeats(lifetime)*multiplier)
 end
 
