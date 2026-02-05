@@ -54,7 +54,9 @@ module Processes
     include("Interface.jl")
     include("Loops.jl")
     include("ProcessStates/ProcessStates.jl")
-    include("ProcessAlgorithms/ProcessAlgorithms.jl")
+    include("ProcessAlgorithms.jl")
+
+    include("LoopAlgorithms/LoopAlgorithms.jl")
     include("Trackers/Trackers.jl")
     include("TotalInc.jl")
     include("Tools.jl")

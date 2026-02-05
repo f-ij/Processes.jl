@@ -26,11 +26,11 @@ function to_named(cla::LoopAlgorithm, ov::Union{Override, Input})
         if target_T <: typeof(cla)
             reg = get_registry(cla)
         else
-            find_first_target = getfirst_node(x -> match_cla(target_T, typeof(x)), cla, unwrap = unwrap_cla)
-            if isnothing(find_first_target)
-                error("Target algorithm $(target_T) not found in LoopAlgorithm $(cla)")
-            end
-            reg = get_registry(find_first_target)
+            # find_first_target = getfirst_node(x -> match_cla(target_T, typeof(x)), cla, unwrap = unwrap_cla)
+            # if isnothing(find_first_target)
+            #     error("Target algorithm $(target_T) not found in LoopAlgorithm $(cla)")
+            # end
+            # reg = get_registry(find_first_target)
         end
         reg = get_registry(cla)
         # Duplicate for all in registry

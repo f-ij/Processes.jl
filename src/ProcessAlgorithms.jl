@@ -1,24 +1,3 @@
-include("Utils.jl")
-include("LoopAlgorithms.jl")
-include("GetFirst.jl")
-include("CompositeAlgorithms.jl")
-include("SimpleAlgo.jl")
-include("Routines.jl")
-include("Setup.jl")
-include("Prepare.jl")
-# include("Step.jl")
-include("GeneratedStep.jl")
-include("Fusing/Fusing.jl")
-include("IsBitsStorage.jl")
-include("Widgets/Widgets.jl")
-
-include("Showing.jl")
-
-
-
-export SimpleAlgo, CompositeAlgorithm, Routine
-export getname, step!, @ProcessAlgorithm, @NamedProcessAlgorithm, prepare
-
 """
 Macro to define a ProcessAlgorithm from a function definition.
     This creates a struct of the function name subtype of ProcessAlgorithm,
