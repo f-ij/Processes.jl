@@ -44,14 +44,10 @@ function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1
 
     named_inputs = to_named(func, inputs...)
     named_overrides = to_named(func, overrides...)
-    # @show named_inputs
-    # @show named_overrides
+    @DebugMode "Named_inputs: $(named_inputs)"
+    @DebugMode "Named overrides: $(named_overrides)"
 
-    # if !(func isa ProcessLoopAlgorithm)
-    #     func = SimpleAlgo(func)
-    # end
-
-    # tf = TaskData(func, (func, args) -> args, (func, args) -> nothing, args, (;), (), rt)
+  
     td = TaskData(func; lifetime, overrides = named_overrides, inputs = named_inputs)
 
     # context = init_context(td)
