@@ -4,13 +4,13 @@ we can unroll the recursion with this function
 
 f requires two arguments: the value to be replaced, and the next argument from the list
 """
-@inline function UnrollReplace(f, to_replace, args...)
+@inline function unrollreplace(f, to_replace, args...)
     if isempty(args)
         return to_replace
     end
     first_arg = gethead(args)
     to_replace = @inline f(to_replace, first_arg)
-    return @inline UnrollReplace(f, to_replace, gettail(args)...)
+    return @inline unrollreplace(f, to_replace, gettail(args)...)
 end
 
 

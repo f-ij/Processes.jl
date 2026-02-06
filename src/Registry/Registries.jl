@@ -148,7 +148,7 @@ Add multiple objects to the registry with the same multiplier
 @inline function addall(reg::NameSpaceRegistry, objs::Union{Tuple, AbstractArray}; multiplier = 1., withnames = nothing, withname = nothing)
     @assert !(withnames !== nothing && withname !== nothing) "Cannot specify both withnames and withname"
     unrollidx = 1
-    reg = UnrollReplace(reg, objs...) do r, o
+    reg = unrollreplace(reg, objs...) do r, o
         thisname = nothing
         if !isnothing(withname)
             thisname = withname

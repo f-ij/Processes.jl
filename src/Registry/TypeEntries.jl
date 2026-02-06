@@ -230,7 +230,7 @@ Change all referenced context names in the RegistryTypeEntry
 """
 function replacecontextkeyss(te::RegistryTypeEntry, changed_names::Dict{Symbol,Symbol})
     ps = pairs(changed_names)
-    UnrollReplace(te, ps...) do rte, (oldname, newname)
+    unrollreplace(te, ps...) do rte, (oldname, newname)
         setcontextkey(rte, newname)
     end
 end

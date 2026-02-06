@@ -6,7 +6,7 @@ function prepare(algos::LoopAlgorithm, inputcontext::ProcessContext)
     registry = getregistry(algos)
     named_algos = all_algos(registry)
 
-    context = UnrollReplace(inputcontext, named_algos...) do context, named_algo # Recursively replace context
+    context = unrollreplace(inputcontext, named_algos...) do context, named_algo # Recursively replace context
         prepare(named_algo, context)
     end
 
@@ -19,7 +19,7 @@ function cleanup(algos::LoopAlgorithm, context)
     registry = getregistry(algos)
     named_algos = all_algos(registry)
 
-    context = UnrollReplace(context, named_algos...) do context, named_algo # Recursively replace context
+    context = unrollreplace(context, named_algos...) do context, named_algo # Recursively replace context
         cleanup(named_algo, context)
     end
     
