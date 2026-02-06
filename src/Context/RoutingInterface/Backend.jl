@@ -27,8 +27,8 @@ contextname(sv::SharedVars{from_name}) where {from_name} = from_name
 
 ## TODO MOVE
 function to_sharedvar(reg::NameSpaceRegistry, r::Route)
-        fromname = static_find_name(reg, r.from)
-        toname = static_find_name(reg, r.to)
+        fromname = static_findkey(reg, r.from)
+        toname = static_findkey(reg, r.to)
         if isnothing(fromname) || isnothing(toname)
             available = all_names(reg)
             available_str = isempty(available) ? "<none>" : join(string.(available), ", ")

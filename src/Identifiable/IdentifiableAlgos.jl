@@ -10,8 +10,11 @@ The type with which this gets registered in the registry
 """
 registry_entrytype(::Type{<:IdentifiableAlgo{T}}) where {T} = T
 
-match_id(sa::IdentifiableAlgo) = id(sa)
-match_id(::Union{T,Type{T}}) where {T<:IdentifiableAlgo} = id(T)
+# match_id(sa::IdentifiableAlgo) = id(sa)
+# match_id(::Union{T,Type{T}}) where {T<:IdentifiableAlgo} = id(T)
+
+match_by(sa::IdentifiableAlgo) = id(sa)
+match_by(::Union{T,Type{T}}) where {T<:IdentifiableAlgo} = id(T)
 
 id(sa::IdentifiableAlgo{F, Id}) where {F, Id} = Id
 id(sat::Type{<:IdentifiableAlgo{F, Id}}) where {F, Id} = Id

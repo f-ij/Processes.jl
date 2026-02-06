@@ -12,7 +12,7 @@ function Share(algo1, algo2; directional::Bool=false)
 end
 
 function to_sharedcontext(reg::NameSpaceRegistry, s::Share)
-    names = (static_find_name(reg, s.algo1), static_find_name(reg, s.algo2))
+    names = (static_findkey(reg, s.algo1), static_findkey(reg, s.algo2))
     if any(isnothing, names)
         available = all_names(reg)
         available_str = isempty(available) ? "<none>" : join(string.(available), ", ")

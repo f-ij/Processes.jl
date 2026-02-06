@@ -5,9 +5,16 @@ replacecontextkeys(a::Any, name_replacements) = a
 setcontextkey(a::Any, newname) = a
 algotype(f::Any) = typeof(f)
 
+##########################################################
+################ AbstractIdentifiableAlgo ################
+##########################################################
 
 
-abstract type AbstractIdentifiableAlgo{F,Id,VarAliases,AlgoName,ContextKey} end
+abstract type AbstractIdentifiableAlgo{F, Id, VarAliases, AlgoName,ContextKey} end
+
+
+
+
 staticmach_by(::Union{<:AbstractIdentifiableAlgo{F,Id},Type{<:AbstractIdentifiableAlgo{F,Id}}}) where {F,Id} = Id
 
 @inline contextkey(sa::Union{AbstractIdentifiableAlgo{F, Id, Aliases, AlgoName, ContextKey}, Type{<:AbstractIdentifiableAlgo{F, Id, Aliases, AlgoName, ContextKey}}}) where {F, Id, Aliases, AlgoName, ContextKey} = ContextKey

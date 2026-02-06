@@ -13,6 +13,7 @@ But works like a ProcessAlgorithm, options wont work since SubContext is fully s
 struct PackagedAlgo{T, Intervals, NSR, id, CustomName, ContextKey} <: AbstractIdentifiableAlgo{T, id, VarAliases{NamedTuple(),NamedTuple()}(), CustomName, ContextKey}
     funcs::T
     inc::Base.RefValue{Int} # To track the intervals
+    simplereg::NSR
 end
 
 function PackagedAlgo(comp::CompositeAlgorithm, name="")
@@ -25,13 +26,19 @@ function PackagedAlgo(comp::CompositeAlgorithm, name="")
 
     flatfuncs = map(x -> set_aliases_from_routes(x, reg, routes...), flatfuncs)
     non_keyed_funcs = setcontextkey.(flatfuncs, nothing)
-    ided_funcs = map(func -> setid(func, getchild(id)), non_keyed_funcs)
+    subpackages = map(func -> SubPackage(func, id), non_keyed_funcs)
     ## If shares are used, error and suggest using varaliases
     ## TODO: Support autoalias (e.g. all variables get a postfix)
 
     customname = name == "" ? algoname(comp) === nothing ? Symbol() : algoname(comp) : Symbol(name)
+
+    subs_and_intervals = zip(subpackages, flatintervals)
+    registry = UnrollReplace(SimpleRegistry(), subs_and_intervals...) do reg, sub_interval
+        reg, _ = add(reg, first(sub_interval), 1/last(sub_interval))
+        return reg
+    end
     
-    PackagedAlgo{typeof(ided_funcs), typeof(flatintervals), typeof(reg), id, customname, nothing}(ided_funcs, Ref(1))
+    PackagedAlgo{typeof(subpackages), typeof(flatintervals), typeof(registry), id, customname, nothing}(subpackages, Ref(1), registry)
     # PackagedAlgo(flatfuncs, flatintervals, customname=name)
 end
 
@@ -51,8 +58,13 @@ end
 @inline intervals(ca::Union{PackagedAlgo{T,I},Type{<:PackagedAlgo{T,I}}}) where {T,I} = I
 @inline interval(ca::PackagedAlgo, i) = intervals(ca)[i]
 @inline getalgotype(::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}, idx) where {T,I} = T.parameters[idx]
-@inline match_id(::Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
+# @inline match_id(::Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
+
 @inline getname(::Union{PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}, Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}}) where {T,I,NSR,id,CustomName,ContextKey} = CustomName
+
+
+#### FOR REGISTRY ###
+@inline match_by(::Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
 @inline registry_entrytype(::Type{<:PackagedAlgo}) = PackagedAlgo
 
 ########################################

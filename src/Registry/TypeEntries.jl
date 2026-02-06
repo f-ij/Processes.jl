@@ -7,7 +7,6 @@ function Base.setindex(rte::RegistryTypeEntry, new, idx::Int)
     Base.setindex(entries, new, idx)
 end
 
-
 getentries(rte::RegistryTypeEntry) = getfield(rte, :entries)
 getdynamic(rte::RegistryTypeEntry) = getfield(rte, :dynamic)
 getdynamiclookup(rte::RegistryTypeEntry) = getfield(rte, :dynamic_lookup)

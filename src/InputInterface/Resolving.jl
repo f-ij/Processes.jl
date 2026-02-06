@@ -53,8 +53,12 @@ function to_named(cla::LoopAlgorithm, ov::Union{Override, Input})
 end
 
 function to_named(reg::NameSpaceRegistry, ov::Union{Override, Input})
-    name = getkey(reg, get_target_algo(ov))
-    return (Named(typeof(ov), name, get_vars(ov)),)
+    target_algo = get_target_algo(ov)
+    key = static_findkey(reg, target_algo)
+    if isnothing(key)
+        error("Target algorithm $(target_algo) not found in registry: $reg. Cannot convert to Named.\n")
+    end
+    return (Named(typeof(ov), key, get_vars(ov)),)
 end
 
 to_named(cla::LoopAlgorithm, ovs::Union{Override, Input}...) = flat_collect_broadcast(ovs) do ov

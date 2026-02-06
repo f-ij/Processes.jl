@@ -100,27 +100,7 @@ function nongen_find_typeidx(reg::Type{<:NameSpaceRegistry}, typ::Type{T}) where
 end
 
 
-"""
-Which type entry is an object assigned?
-"""
-function assign_entrytype(obj)
-    entry_t = nothing
-    if obj isa Type
-        entry_t = registry_entrytype(obj)
-    else
-        entry_t = registry_entrytype(typeof(obj))
-    end
-    if isnothing(entry_t)
-        if obj isa Type
-            entry_t = obj
-        else
-            entry_t = typeof(obj)
-        end
-    end
-    return entry_t
-end
 
-registry_entrytype(t::Type) = nothing
 # registry_entrytype(tt::Type{Type{T}}) where T = match_by(T) # For generated function compatibility
 
 
@@ -267,15 +247,41 @@ end
 #######################
 ####### FINDING #######
 #######################
+
+
+@inline function static_findfirst_match(reg::NameSpaceRegistry, val)
+    entries = get_type_entries(reg, val)
+    idx = static_findfirst_match(entries, val)
+    if isnothing(idx)
+        return nothing, nothing
+    end
+    T = gettype(entries)
+    return T, idx
+end
+
+"""
+
+"""
+function Base.getindex(reg::NameSpaceRegistry, t::Tuple)
+    if isnothing(t[1])
+        error("No matching entry found for type: (nothing, nothing) in registry")
+    end
+    target_type = t[1]
+    type_entries_idx = t[2]
+    type_entries = get_type_entries(reg, target_type)
+    return type_entries[type_entries_idx]
+end
+
+
 """
 Statically Find the name in the registry
 """
-function static_find_name(reg::NameSpaceRegistry, val)
-    found_scoped_value = static_get(reg, val)
-    if isnothing(found_scoped_value)
+function static_findkey(reg::NameSpaceRegistry, val)
+    location = static_findfirst_match(reg, val)
+    if isnothing(location[1])
         return nothing
     else
-        return getkey(found_scoped_value)
+        return getkey(reg[location])
     end
 end
 

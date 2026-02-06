@@ -30,15 +30,18 @@ Deconstruct a CompositeAlgorithm into its functions and intervals
 """
 function flatten(comp::CompositeAlgorithm)
     flatten_comp_funcs((comp,), (1,))
-    # flat_funcs, flat_intervals = flat_tree_property_recursion((comp,), (1,)) do el, trait
-    #     if !(el isa CompositeAlgorithm)
-    #         return nothing, nothing
-    #     end
-    #     newels = getalgos(el)
-    #     newtraits = intervals(el)
-    #     return newels, trait.*newtraits
-    # end
-    # return flat_funcs, flat_intervals
+end
+
+function flatten_loopalgorithms(la::LoopAlgorithm)
+    flat_funcs, flat_intervals = flat_tree_property_recursion((la,), (1,)) do el, trait
+        if !(el isa LoopAlgorithm)
+            return nothing, nothing
+        end
+        newels = getalgos(el)
+        newtraits = multipliers(el)
+        return newels, trait.*newtraits
+    end
+    return flat_funcs, flat_intervals
 end
 
 

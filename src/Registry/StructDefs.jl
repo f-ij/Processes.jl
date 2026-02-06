@@ -6,8 +6,6 @@ Registries provide a static, type-driven name/lookup layer used by the Processes
 system. The primary implementation is `NameSpaceRegistry`, which supports scoped
 values, auto-naming, and multiplier tracking.
 """
-abstract type AbstractRegistry end
-
 
 ###############################
 ##### REGISTRY TYPE ENTRY #####
