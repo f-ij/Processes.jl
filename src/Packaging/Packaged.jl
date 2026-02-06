@@ -38,7 +38,7 @@ function PackagedAlgo(comp::CompositeAlgorithm, name="")
         return reg
     end
     
-    PackagedAlgo{typeof(subpackages), typeof(flatintervals), typeof(registry), id, customname, nothing}(subpackages, Ref(1), registry)
+    PackagedAlgo{typeof(subpackages), flatintervals, typeof(registry), id, customname, nothing}(subpackages, Ref(1), registry)
     # PackagedAlgo(flatfuncs, flatintervals, customname=name)
 end
 
@@ -47,7 +47,8 @@ Base.getindex(ca::PackagedAlgo, i) = getalgos(ca)[i]
 
 function Autokey(pa::PackagedAlgo, i::Int, prefix = "")
     nameof = !isnothing(getname(pa)) ? getname(pa) : :PackagedAlgo
-    setparameter(pa, 4, Symbol(prefix, nameof, "_", string(i))) 
+    # setparameter(pa, 6, Symbol(prefix, nameof, "_", string(i))) 
+    setcontextkey(pa, Symbol(prefix, nameof, "_", string(i)))
 end
 
 #################################
@@ -55,14 +56,17 @@ end
 #################################
 
 @inline inc(ca::PackagedAlgo) = ca.inc[]
+@inline inc!(ca::PackagedAlgo) = (ca.inc[] += 1)
 @inline intervals(ca::Union{PackagedAlgo{T,I},Type{<:PackagedAlgo{T,I}}}) where {T,I} = I
-@inline interval(ca::PackagedAlgo, i) = intervals(ca)[i]
+@inline interval(ca::Union{PackagedAlgo{T,I},Type{<:PackagedAlgo{T,I}}}, i) where {T,I} = intervals(ca)[i]
 @inline getalgotype(::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}, idx) where {T,I} = T.parameters[idx]
+@inline numfuncs(ca::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}) where {T,I} = length(T.parameters)
 # @inline match_id(::Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
 
 @inline getname(::Union{PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}, Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}}) where {T,I,NSR,id,CustomName,ContextKey} = CustomName
+@inline getmultiplier(ca::PackagedAlgo, subpackage::SubPackage) = static_get_multiplier(getregistry(ca), subpackage)
 
-
+@inline getregistry(ca::PackagedAlgo) = getfield(ca, :simplereg)
 #### FOR REGISTRY ###
 @inline match_by(::Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
 @inline registry_entrytype(::Type{<:PackagedAlgo}) = PackagedAlgo
@@ -74,6 +78,8 @@ end
 @inline getkey(sa::Union{<:PackagedAlgo{T, I, NSR, id, CustomName, ContextKey}, Type{<:PackagedAlgo{T, I, NSR, id, CustomName, ContextKey}}}) where {T,I,NSR,id,CustomName,ContextKey} = ContextKey
 @inline getalgo(sa::PackagedAlgo{F}) where {F} = error("Cannot get singular algo from a PackagedAlgo. Use `getalgos` instead.")
 @inline getalgos(ca::PackagedAlgo) = ca.funcs
+@inline getalgo(sa::PackagedAlgo{F}, i) where {F} = getalgos(sa)[i]
+
 @inline setid(sa::PackagedAlgo, newid) = setparameter(sa, 4, newid)
 function setcontextkey(package::PackagedAlgo, key::Symbol)
     newfuncs = map(func -> setcontextkey(func, key), package.funcs)

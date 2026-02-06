@@ -10,7 +10,7 @@ algotype(f::Any) = typeof(f)
 ##########################################################
 
 
-abstract type AbstractIdentifiableAlgo{F, Id, VarAliases, AlgoName,ContextKey} end
+abstract type AbstractIdentifiableAlgo{F, Id, VarAliases, AlgoName,ContextKey} <: ProcessAlgorithm end
 
 
 

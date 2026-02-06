@@ -19,7 +19,7 @@ function ProcessContext(algos::LoopAlgorithm; globals = (;))
     @DebugMode "Resolved shared contexts: $sharedcontexts" "Resolved shared vars: $sharedvars"
 
     # Create Subcontexts from registry
-    registered_keys = all_names(registry)
+    registered_keys = all_keys(registry)
     @DebugMode "Registered names: $registered_keys"
     subcontexts = ntuple(length(registered_keys)) do i
         algo_name = registered_keys[i]

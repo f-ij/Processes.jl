@@ -118,17 +118,17 @@ end
 """
 Add an instance and get new registry and a named instance back
 """
-function add(reg::NameSpaceRegistry{T}, obj, multiplier = 1.; withname = nothing) where {T}
+function add(reg::NameSpaceRegistry{T}, obj, multiplier = 1.; withkey = nothing) where {T}
     if obj isa NameSpaceRegistry
         error("Cannot add a NameSpaceRegistry to another NameSpaceRegistry")
     end
 
-    @DebugMode "Adding object: $obj to registry: $reg with multiplier: $multiplier and name: $withname"
+    @DebugMode "Adding object: $obj to registry: $reg with multiplier: $multiplier and name: $withkey"
     entry_t = assign_entrytype(obj)
     fidx = find_typeidx(reg, entry_t)
     if isnothing(fidx) # New Entry
         newentry = RegistryTypeEntry{entry_t}()
-        newentry, keyed_obj = add(newentry, obj, multiplier; withname)
+        newentry, keyed_obj = add(newentry, obj, multiplier; withkey)
         if entry_t <: ProcessState # States go first
             newreg = StaticArrays.pushfirst(reg, newentry)
         else
@@ -137,7 +137,7 @@ function add(reg::NameSpaceRegistry{T}, obj, multiplier = 1.; withname = nothing
         return newreg, keyed_obj
     else # Type was found
         entry = reg.entries[fidx]
-        newentry, keyed_obj = add(entry, obj, multiplier; withname)
+        newentry, keyed_obj = add(entry, obj, multiplier; withkey)
         return Base.setindex(reg, newentry, fidx), keyed_obj
     end
 end
@@ -145,17 +145,17 @@ end
 """
 Add multiple objects to the registry with the same multiplier
 """
-@inline function addall(reg::NameSpaceRegistry, objs::Union{Tuple, AbstractArray}; multiplier = 1., withnames = nothing, withname = nothing)
-    @assert !(withnames !== nothing && withname !== nothing) "Cannot specify both withnames and withname"
+@inline function addall(reg::NameSpaceRegistry, objs::Union{Tuple, AbstractArray}; multiplier = 1., withkeys = nothing, withkey = nothing)
+    @assert !(withkeys !== nothing && withkey !== nothing) "Cannot specify both withkeys and withkey"
     unrollidx = 1
     reg = unrollreplace(reg, objs...) do r, o
-        thisname = nothing
-        if !isnothing(withname)
-            thisname = withname
-        elseif !isnothing(withnames) && length(withnames) >= unrollidx
-            thisname = withnames[unrollidx]
+        thiskey = nothing
+        if !isnothing(withkey)
+            thiskey = withkey
+        elseif !isnothing(withkeys) && length(withkeys) >= unrollidx
+            thiskey = withkeys[unrollidx]
         end
-        registry, _ = add(r, o, multiplier; withname=thisname)
+        registry, _ = add(r, o, multiplier; withkey=thiskey)
         unrollidx += 1
         return registry
     end
@@ -212,13 +212,24 @@ Get entries for an obj
         types = entrytypes_iterator(reg)
         available = isempty(types) ? "<none>" : join(string.(types), ", ")
         requested = string(assigned_T)
-        msg = "Unknown algo/type referenced in registry lookup.\n" *
-              "Requested: " * requested * "\n" *
-              "Available entry types: " * available * "\n" *
-              "If this came from a Share or Route, the referenced algo/type is not registered."
-        return :( error($msg) )
+        # msg = "Unknown algo/type referenced in registry lookup.\n" *
+        #       "Requested: " * requested * "\n" *
+        #       "Available entry types: " * available * "\n" *
+        #       "If this came from a Share or Route, the referenced algo/type is not registered."
+        return quote
+            $(LineNumberNode(@__LINE__, @__FILE__))
+            requested = $requested
+            available = $available
+            error("Unknown algo/type referenced in registry lookup, for registry: $reg.\n" *
+                  "Requested: $requested\n" *
+                  "Available entry types: $available\n" *
+                  "If this came from a Share or Route, the referenced algo/type is not registered." ) 
+        end
     end
-    return :( getentries(reg)[ $idx ] )
+    return quote 
+        $(LineNumberNode(@__LINE__, @__FILE__)) 
+        getentries(reg)[ $idx ] 
+    end
 end
 
 #########################
@@ -260,7 +271,7 @@ end
 end
 
 """
-
+From T, idx
 """
 function Base.getindex(reg::NameSpaceRegistry, t::Tuple)
     if isnothing(t[1])
@@ -290,24 +301,24 @@ function Base.in(val, reg::NameSpaceRegistry)
     return !isnothing(found_scoped_value)
 end
 
-function findfirst_match(reg::NameSpaceRegistry, val)
-    function _findfirst_match_in_t(reg, first_idx)
-        this_match = static_findfirst_match(reg[first_idx], val)
-        return this_match
-    end 
-    function outer_recursion(reg, val, idx1, idx2)
-        if idx1 > length(reg)
-            return nothing, nothing
-        end
-        if !isnothing(idx2)
-            return idx1-1, idx2
-        end
-        this_match = _findfirst_match_in_t(reg, idx1)
-        return outer_recursion(reg, val, idx1 + 1, this_match)
-    end
+# function findfirst_match(reg::NameSpaceRegistry, val)
+#     function _findfirst_match_in_t(reg, first_idx)
+#         this_match = static_findfirst_match(reg[first_idx], val)
+#         return this_match
+#     end 
+#     function outer_recursion(reg, val, idx1, idx2)
+#         if idx1 > length(reg)
+#             return nothing, nothing
+#         end
+#         if !isnothing(idx2)
+#             return idx1-1, idx2
+#         end
+#         this_match = _findfirst_match_in_t(reg, idx1)
+#         return outer_recursion(reg, val, idx1 + 1, this_match)
+#     end
 
-    return outer_recursion(reg, val, 1, nothing)
-end
+#     return outer_recursion(reg, val, 1, nothing)
+# end
 #########################
     ##### GETTERS #####
 #########################
@@ -325,6 +336,15 @@ function dynamic_get(reg::NameSpaceRegistry, val)
     entries = get_type_entries(reg, val)
     loc = dynamic_lookup(entries, val)
     return getentry(entries, loc...)
+end
+
+function static_get_multiplier(reg::NameSpaceRegistry, val)
+    loc = static_findfirst_match(reg, val)
+    if isnothing(loc[1])
+        error("No match found for value: $val in registry: $reg")
+    end 
+    type_entries = get_type_entries(reg, loc[1])
+    return getmultiplier(type_entries, loc[2])
 end
 
 function getmultiplier(reg::NameSpaceRegistry, val)
@@ -348,8 +368,8 @@ function getkey(reg::NameSpaceRegistry, val)
 end
 
 
-function dynamic_value_get(reg::NameSpaceRegistry, v::V) where {V}
-    return value(dynamic_get(reg, v))
+function dynamic_get(reg::NameSpaceRegistry, v::V) where {V}
+    return dynamic_get(reg, v)
 end
 
 """
@@ -359,7 +379,8 @@ Get the value from the registry
     if obj isa Type || isbits(obj)
         return static_get(reg, obj)
     else
-        return dynamic_value_get(reg, obj)
+        return static_get(reg, typeof(obj)) 
+        # return dynamic_get(reg, obj)
     end
 end
 
@@ -372,7 +393,7 @@ end
         end
     else
         try 
-            return dynamic_value_get(reg, obj)
+            return dynamic_get(reg, obj)
         catch e
             return default
         end
@@ -387,8 +408,8 @@ function all_named_algos(reg::Union{NameSpaceRegistry, Type{<:NameSpaceRegistry}
     flat_collect_broadcast(all_named_algos, reg.entries)
 end
 
-function all_names(reg::Union{NameSpaceRegistry, Type{<:NameSpaceRegistry}})
-    flat_collect_broadcast(all_names, reg.entries)
+function all_keys(reg::Union{NameSpaceRegistry, Type{<:NameSpaceRegistry}})
+    flat_collect_broadcast(all_keys, reg.entries)
 end
 
 # function find_location_by_name(reg::NameSpaceRegistry, name::Symbol)

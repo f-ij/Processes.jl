@@ -63,7 +63,7 @@ end
 ###### REPLACING ALL NAMES #######
 ##################################
 
-function replace_all_names(reg::NameSpaceRegistry, name::Symbol)
+function replace_all_keys(reg::NameSpaceRegistry, name::Symbol)
     func = valentry -> setcontextkey(valentry, name)
     rebuild_type_entries(func, reg)
 end
@@ -71,12 +71,12 @@ end
 # """
 # Replace all names in the registry to a given name
 # """
-# function replace_all_names(reg::NameSpaceRegistry, name::Symbol)
-#     new_type_entries = replace_all_names.(getentries(reg), name)
+# function replace_all_keys(reg::NameSpaceRegistry, name::Symbol)
+#     new_type_entries = replace_all_keys.(getentries(reg), name)
 #     setfield(reg, :entries, new_type_entries)
 # end
 
-# function replace_all_names(func::T, name::Symbol) where {T}
+# function replace_all_keys(func::T, name::Symbol) where {T}
 #     if contains_type(T, IdentifiableAlgo)
 #         return rebuild_from(x -> x isa IdentifiableAlgo, 
 #             x -> begin 
@@ -87,9 +87,9 @@ end
 #     return func
 # end
 
-function replace_all_names(cla::LoopAlgorithm, name::Symbol)
-    newfuncs = replace_all_names.(getalgos(cla), name)
-    new_registry = replace_all_names(getregistry(cla), name)
+function replace_all_keys(cla::LoopAlgorithm, name::Symbol)
+    newfuncs = replace_all_keys.(getalgos(cla), name)
+    new_registry = replace_all_keys(getregistry(cla), name)
     cla = setfield(cla, :funcs, newfuncs)
     cla = setfield(cla, :registry, new_registry)
     return cla

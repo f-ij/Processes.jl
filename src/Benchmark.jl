@@ -1,4 +1,4 @@
-function benchmark(func, rt, trials = 100; loopfunction = nothing, progress = false, print_outer = false) 
+function benchmark(func::Union{ProcessAlgorithm, LoopAlgorithm}, rt, trials = 100; loopfunction = nothing, progress = false, print_outer = false) 
     p = Process(func; lifetime = rt)
     runtimes = []
     outer_times = []
@@ -9,7 +9,7 @@ function benchmark(func, rt, trials = 100; loopfunction = nothing, progress = fa
         makecontext!(p)
         ti = time_ns()
         p()
-        wait(p)
+        fetch(p)
         push!(runtimes, runtime(p))
         push!(outer_times, (time_ns() - ti) / 1e9)
     end

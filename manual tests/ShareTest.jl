@@ -1,4 +1,5 @@
 include("_env.jl")
+import Processes as ps
 
 @ProcessAlgorithm function Oscillator(state, velocity, dt, trajectory)
     new_vel = velocity - state * dt

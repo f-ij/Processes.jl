@@ -56,7 +56,7 @@ function to_named(reg::NameSpaceRegistry, ov::Union{Override, Input})
     target_algo = get_target_algo(ov)
     key = static_findkey(reg, target_algo)
     if isnothing(key)
-        error("Target algorithm $(target_algo) not found in registry: $reg. Cannot convert to Named.\n")
+        error("Target algorithm $(target_algo) not found in registry: $reg \n Cannot convert to Named")
     end
     return (Named(typeof(ov), key, get_vars(ov)),)
 end

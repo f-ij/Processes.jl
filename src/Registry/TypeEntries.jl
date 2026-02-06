@@ -68,9 +68,9 @@ end
 
 @inline function static_findfirst_match(rte::RegistryTypeEntry, val)
     @DebugMode "Looking for static match of value: $val in RegistryTypeEntry $(rte)"
-    if !isbits(val)
+    if !(val isa Type) && !isbits(val)
         # TODO: This is a bit hacky
-        @DebugMode "Value: $val is not bits, skipping static match"
+        @DebugMode "Value: $val is not bits, matching by type instead"
         return static_findfirst_match(rte, Val(typeof(val)))
 
     end
@@ -109,7 +109,7 @@ end
 ##### ADDING ENTRIES #####
 ##########################
 
-function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withname = nothing) where {T}
+function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withkey = nothing) where {T}
     if isnothing(obj)
         # return rte, nothing
         error("Trying to add `nothing` to RegistryTypeEntry of type $T")
@@ -121,8 +121,9 @@ function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withname = nothing
         current_length = length(entries)
 
         identifiable = nothing
-        if !isnothing(withname) # If name is given, use that
-            identifiable = IdentifiableAlgo(obj, withname)
+
+        if !isnothing(withkey) # If name is given, use that
+            identifiable = IdentifiableAlgo(obj, withkey)
         else
             identifiable = Autokey(obj, current_length + 1)
         end
@@ -134,10 +135,10 @@ function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withname = nothing
         return setfield(rte, :entries, newentries), identifiable
     else # Existing instance, bump multiplier and get the named version
         
-        if !isnothing(withname) # Check name match, cannot add two matching objects with different names
+        if !isnothing(withkey) # Check name match, cannot add two matching objects with different names
             name = getkey(rte[fidx])
-            if name != withname
-                error("Trying to add an entry with name $withname but an entry with the same type already exists with name $name")
+            if name != withkey
+                error("Trying to add an entry with name $withkey but an entry with the same type already exists with name $name")
             end
         end
 
@@ -168,7 +169,7 @@ This is faster for runtime, slower for inlining
 
 dynamic_lookup(rte::RegistryTypeEntry{T}, val) where {T} = get(getdynamiclookup(rte), val, nothing)
 
-@inline function dynamic_value_get(rte::RegistryTypeEntry{T}, val) where {T}
+@inline function dynamic_get(rte::RegistryTypeEntry{T}, val) where {T}
     loc_idx = dynamic_lookup(rte, val)
     if isnothing(loc_idx)
         return nothing
@@ -202,7 +203,7 @@ end
 """
 Context names
 """
-function all_names(te::Union{RegistryTypeEntry, Type{<:RegistryTypeEntry}})
+function all_keys(te::Union{RegistryTypeEntry, Type{<:RegistryTypeEntry}})
     getkey.(getentries(te))
 end
 
@@ -217,7 +218,7 @@ Change the context name of an entry
 from oldname to newname
 """
 function replacecontextkeys(te::RegistryTypeEntry, oldname, newname::Symbol)
-    idx = findfirst(==(oldname), all_names(te))
+    idx = findfirst(==(oldname), all_keys(te))
     if isnothing(idx)
         return te
     end

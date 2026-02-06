@@ -6,21 +6,20 @@ Use within prepare function
 For a process with a limited lifetime,
 give the array a size hint based on the lifetime and the number of updates per step.
 """
-@inline function processsizehint!(array, context::AbstractContext, updates_per_step = 1)
-    if !(context isa AbstractContext)
-        @show context
+@inline function processsizehint!(array, contextview::AbstractContext, updates_per_step = 1)
+    if !(contextview isa AbstractContext)
+        @show contextview
         @warn("Cannot give a sizehint, prepare is not called from a process")
         return nothing
     end
-    @show
 
-    globals = getglobals(context)
+    globals = getglobals(contextview)
     lifetime = globals.lifetime
     if lifetime isa Indefinite
         return sizehint!(array, 2^16)
     end
 
-    multiplier = getmultiplier(globals.algo, this_instance(context))
+    multiplier = getmultiplier(contextview, this_instance(contextview))
     startsize = length(array)
 
     recommended_extra = ceil(Int, repeats(lifetime)*multiplier*updates_per_step)
@@ -45,14 +44,41 @@ end
 #     ph.repeats[algo]
 # end
 
+function getmultiplier(sct::SubContextView, subpackage::SubPackage)
+    registry = getregistry(sct)
+    package = registry[subpackage]
+    package_multiplier = static_get_multiplier(registry, package)
+    sub_multiplier = getmultiplier(package, subpackage)
+    return package_multiplier * sub_multiplier
+end
+
+
 """
 Get the number of times an algorithm will be called in a process
 """
-function num_calls(algo, lifetime, instance)
-    multiplier = getmultiplier(algo, instance)
+function getmultiplier(contextview::AbstractContext, instance::ProcessAlgorithm)
+    multiplier = getmultiplier(getregistry(contextview), instance)
+    return multiplier
+end
+
+function num_calls(contextview, lifetime, instance)
+    multiplier = getmultiplier(contextview, instance)
     if lifetime isa Indefinite
         return typemax(Int)
     end
+    floor(Int, repeats(lifetime)*multiplier)
+end
+
+function num_calls(contextview, lifetime, instance::SubPackage)
+    # @show getregistry(contextview)
+    # @show instance 
+    package_multiplier = getmultiplier(getregistry(contextview), instance)
+    submultiplier = getmultiplier(getregistry(contextview)[instance], instance)
+    multiplier = package_multiplier * submultiplier
+    if lifetime isa Indefinite
+        return typemax(Int)
+    end
+    # @show multiplier
     floor(Int, repeats(lifetime)*multiplier)
 end
 
@@ -60,11 +86,10 @@ end
 Get the number of times an algorithm will be called in a process
 This is to be used in the prepare function
 """
-function num_calls(context)
-    algo = getglobals(context).algo
-    lifetime = getglobals(context).lifetime
-    instance = context._instance
-    num_calls(algo, lifetime, instance)
+function num_calls(contextview)
+    lifetime = getglobals(contextview).lifetime
+    instance = this_instance(contextview)
+    num_calls(contextview, lifetime, instance)
 end
 
 """

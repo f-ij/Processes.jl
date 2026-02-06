@@ -5,6 +5,7 @@ Pkg.activate((@__DIR__ )*"/..")
     include("CompositeCompositionTest.jl")
     include("InlineBenchmarkTest.jl")
     include("FibLucProcessTest.jl")
+    include("PackagedAlgoTest.jl")
     include("RouteWalkerTest.jl")
     include("ShareContextTest.jl")
 end

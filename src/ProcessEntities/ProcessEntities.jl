@@ -1,5 +1,11 @@
 const ProcessEntity = Union{ProcessState, ProcessAlgorithm}
 
+prepare(::ProcessEntity, context) = (;)
+step!(pe::ProcessEntity, context) = error("step! not implemented for $(typeof(pe))")
+cleanup(::ProcessEntity, context) = (;)
+
+
+
 """
 Process entities match by value if a value is given
 """

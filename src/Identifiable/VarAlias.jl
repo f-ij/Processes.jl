@@ -34,6 +34,15 @@ end
     @inline getproperty(AtoS_nt, name)
 end
 
+"""
+No alias means the name is the same in the subcontext and the algo
+"""
+algo_to_subcontext_names(::Nothing, name) = name
+"""
+No alias means the name is the same in the subcontext and the algo
+"""
+subcontext_to_algo_names(::Nothing, name) = name
+
 ##############################
 ######## State Alias #########
 ##############################

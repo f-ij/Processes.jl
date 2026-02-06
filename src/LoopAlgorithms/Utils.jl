@@ -7,7 +7,7 @@ function replace_name!(pa::LoopAlgorithm, idx, newname::Symbol)
 end
 
 getregistry(pa::LoopAlgorithm) = pa.registry
-getregistry(a::Any) = NameSpaceRegistry()
+getregistry(a::Any) = error("No registry found for object of type $(typeof(a))")
 
 """
 Obtain all the registriees, merge them and update the names downwards in the algorithm accordingly

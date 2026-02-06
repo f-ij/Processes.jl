@@ -30,7 +30,7 @@ function to_sharedvar(reg::NameSpaceRegistry, r::Route)
         fromname = static_findkey(reg, r.from)
         toname = static_findkey(reg, r.to)
         if isnothing(fromname) || isnothing(toname)
-            available = all_names(reg)
+            available = all_keys(reg)
             available_str = isempty(available) ? "<none>" : join(string.(available), ", ")
             msg = "Route references algo(s) not found in registry.\n" *
                   "Requested: " * string(r.from) * " (type: " * string(typeof(r.from)) * "), " *

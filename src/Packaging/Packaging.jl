@@ -1,3 +1,5 @@
+export PackagedAlgo, getalgos, getalgo, getname, getregistry, getmultiplier
+
 include("Utils.jl")
 include("SubPackage.jl")
 include("Packaged.jl")
