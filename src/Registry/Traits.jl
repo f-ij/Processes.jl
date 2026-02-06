@@ -21,6 +21,7 @@ function assign_entrytype(obj)
             entry_t = typeof(obj)
         end
     end
+    entry_t = Base.typename(entry_t).wrapper
     return entry_t
 end
 

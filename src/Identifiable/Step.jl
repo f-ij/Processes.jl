@@ -1,6 +1,7 @@
 @inline function step!(sa::IdentifiableAlgo{F}, context::C) where {F, C <: AbstractContext}
     contextview = @inline view(context, sa)
-    @inline merge(contextview, @inline step!(getalgo(sa), contextview)) # Merge into view
+    retval = @inline step!(getalgo(sa), contextview)
+    @inline merge(contextview, retval) # Merge into view
 end
 
 """

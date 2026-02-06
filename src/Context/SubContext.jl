@@ -49,7 +49,12 @@ end
 end
 
 @inline Base.pairs(sc::SubContext) = pairs(get_data(sc))
-@inline Base.getproperty(sc::SubContext, name::Symbol) = getproperty(get_data(sc), name)
+@inline function Base.getproperty(sc::SubContext, name::Symbol)
+    if !haskey(get_data(sc), name)
+        error("Key $name not found in SubContext $(sc) \n with keys $(keys(get_data(sc)))")
+    end
+    getproperty(get_data(sc), name)
+end
 @inline function Base.merge(sc::SubContext{Name, T, S, R}, args::NamedTuple) where {Name, T, S, R}
     merged = merge(get_data(sc), args)
     @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))

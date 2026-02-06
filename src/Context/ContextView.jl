@@ -216,9 +216,9 @@ end
     else
         available = keys(locations)
         if subcontextname == algoname
-            msg = "Variable $(QuoteNode(algoname)) requested, but not supplied to context. Available names are: $(available)"
+            msg = "Variable $(QuoteNode(algoname)) requested, but not supplied to context. Available names are: $(available) \n Context: $(getcontext(sct))"
         else
-            msg = "Variable $(QuoteNode(algoname)) (mapped to $(QuoteNode(subcontextname))) requested, but not supplied to context. Available names are: $(available)"
+            msg = "Variable $(QuoteNode(algoname)) (mapped to $(QuoteNode(subcontextname))) requested, but not supplied to context. Available names are: $(available) \n Context: $(getcontext(sct))"
         end
         error(msg)
     end
@@ -276,7 +276,7 @@ end
 Fallback merge if nothing is merged that just returns the original context
 """
 @inline Base.merge(scv::SubContextView, ::Nothing) = getcontext(scv)
-
+@inline Base.merge(scv::SubContextView, args) = error("Step, prepare and cleanup must return namedtuple, trying to merge $(args) into context from SubContextView $(scv)")
 """
 Returns a merged context by merging the provided named tuple into the appropriate subcontexts
 """
