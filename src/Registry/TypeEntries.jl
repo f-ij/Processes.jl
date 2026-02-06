@@ -20,7 +20,7 @@ setentries(rte::RegistryTypeEntry{T}, newentries) where {T} = RegistryTypeEntry{
 setdynamic(rte::RegistryTypeEntry{T}, newdynamic) where {T} = RegistryTypeEntry{T,typeof(getdefault(rte)),typeof(getentries(rte)), typeof(newdynamic)}(getdefault(rte), getentries(rte), newdynamic, getdynamiclookup(rte))
 
 function add_dynamic_link!(obj, location::Symbol, idx::Int, rte::RegistryTypeEntry)
-    matching_obj = staticmatch_by(obj)
+    matching_obj = match_by(obj)
     getdynamiclookup(rte)[matching_obj] = idx
     return nothing
 end
@@ -71,7 +71,7 @@ end
     @DebugMode "Looking for static match of value: $val in RegistryTypeEntry $(rte)"
     if !isbits(val)
         # TODO: This is a bit hacky
-        @DebugMode "Value is not bits, skipping static match"
+        @DebugMode "Value: $val is not bits, skipping static match"
         return static_findfirst_match(rte, Val(typeof(val)))
 
     end
@@ -79,7 +79,7 @@ end
 end
 
 @inline @generated function static_findfirst_match(rte::RegistryTypeEntry{T,S}, v::Val{value}) where {T,S,value}
-    idx = findfirst(x -> staticmatch(value, x), entry_types(rte))
+    idx = findfirst(x -> match(value, x), entry_types(rte))
     return :($idx)
 end
 
@@ -125,7 +125,7 @@ function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withname = nothing
         if !isnothing(withname) # If name is given, use that
             identifiable = IdentifiableAlgo(obj, withname)
         else
-            identifiable = Autoname(obj, current_length + 1)
+            identifiable = Autokey(obj, current_length + 1)
         end
 
         push!(getmultipliers(rte), multiplier) # Add the multiplier

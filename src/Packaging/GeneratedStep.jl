@@ -14,16 +14,16 @@ function step!_expr(pa::Type{<:PackagedAlgo}, context::Type{C}, name::Symbol) wh
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
     push!(exprs, :(this_inc = inc($name)))
     for i in 1:numfuncs(pa)
-        interval = intervals[i]
+        interval = Processes.interval(pa, i)
         local_name = gensym(:algo)
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
         push!(exprs, :(local $local_name = getalgo($name, $i)))
         # fti = ft.parameters[i]
-        this_interval = interval(pa, i)
+        this_functype = getalgotype(pa, i)
         push!(exprs, quote
             # Only run this child every `interval` composite steps.
             if this_inc % $(interval) == 0 # If interval == 1 this will be compiled away and optimized out, so no need for a separate branch
-                $(step!_expr(this_interval, C, local_name))
+                $(step!_expr(this_functype, C, local_name))
             end
         end)
     end

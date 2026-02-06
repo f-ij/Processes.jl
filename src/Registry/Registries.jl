@@ -1,5 +1,6 @@
-getentries(reg::NameSpaceRegistry{T}) where {T} = reg.entries
-Base.getindex(reg::NameSpaceRegistry, idx::Int) = reg.entries[idx]
+getentries(reg::NameSpaceRegistry{T}) where {T} = getfield(reg, :entries)
+Base.getindex(reg::NameSpaceRegistry, idx::Int) = getentries(reg)[idx]
+Base.length(reg::NameSpaceRegistry) = length(getentries(reg))
 
 function Base.setindex(reg::NameSpaceRegistry{T}, newentry, idx::Int) where {T}
     old_entries = getentries(reg)
@@ -102,21 +103,28 @@ end
 """
 Which type entry is an object assigned?
 """
-function assign_entry_type(obj)
-    if obj isa AbstractIdentifiableAlgo
-        return algotype(obj)
+function assign_entrytype(obj)
+    entry_t = nothing
+    if obj isa Type
+        entry_t = registry_entrytype(obj)
     else
-        return typeof(obj)
+        entry_t = registry_entrytype(typeof(obj))
     end
+    if isnothing(entry_t)
+        if obj isa Type
+            entry_t = obj
+        else
+            entry_t = typeof(obj)
+        end
+    end
+    return entry_t
 end
 
-function assign_entry_type(objT::Type)
-    if objT <: AbstractIdentifiableAlgo
-        return algotype(objT)
-    else
-        return objT
-    end
-end
+registry_entrytype(t::Type) = nothing
+# registry_entrytype(tt::Type{Type{T}}) where T = match_by(T) # For generated function compatibility
+
+
+
 
 ########################################
 ############## Interface ###############
@@ -135,12 +143,12 @@ function add(reg::NameSpaceRegistry{T}, obj, multiplier = 1.; withname = nothing
         error("Cannot add a NameSpaceRegistry to another NameSpaceRegistry")
     end
 
-    entry_t = assign_entry_type(obj)
+    @DebugMode "Adding object: $obj to registry: $reg with multiplier: $multiplier and name: $withname"
+    entry_t = assign_entrytype(obj)
     fidx = find_typeidx(reg, entry_t)
     if isnothing(fidx) # New Entry
         newentry = RegistryTypeEntry{entry_t}()
         newentry, keyed_obj = add(newentry, obj, multiplier; withname)
-        
         if entry_t <: ProcessState # States go first
             newreg = StaticArrays.pushfirst(reg, newentry)
         else
@@ -218,7 +226,7 @@ inherit(e1::NameSpaceRegistry; kwargs...) = e1
 Get entries for an obj
 """
 @generated function get_type_entries(reg::NameSpaceRegistry, typ::Union{T, Type{T}}) where {T}
-    assigned_T = assign_entry_type(T)
+    assigned_T = assign_entrytype(T)
     idx = nongen_find_typeidx(reg, assigned_T)
     if isnothing(idx)
         types = entrytypes_iterator(reg)
@@ -276,6 +284,24 @@ function Base.in(val, reg::NameSpaceRegistry)
     return !isnothing(found_scoped_value)
 end
 
+function findfirst_match(reg::NameSpaceRegistry, val)
+    function _findfirst_match_in_t(reg, first_idx)
+        this_match = static_findfirst_match(reg[first_idx], val)
+        return this_match
+    end 
+    function outer_recursion(reg, val, idx1, idx2)
+        if idx1 > length(reg)
+            return nothing, nothing
+        end
+        if !isnothing(idx2)
+            return idx1-1, idx2
+        end
+        this_match = _findfirst_match_in_t(reg, idx1)
+        return outer_recursion(reg, val, idx1 + 1, this_match)
+    end
+
+    return outer_recursion(reg, val, 1, nothing)
+end
 #########################
     ##### GETTERS #####
 #########################

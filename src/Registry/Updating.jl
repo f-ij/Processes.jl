@@ -20,7 +20,7 @@ end
 Scoped Algorithms or thin_wrapped scoped algorithms that need an updated name
     Can be matched with a new registry and rebuilt accordingly
 """
-function update_names(func::F, reg::NameSpaceRegistry) where {F}
+function update_keys(func::F, reg::NameSpaceRegistry) where {F}
     if func isa IdentifiableAlgo
         @DebugMode println("Updating name for IdentifiableAlgo: $func using registry: $reg")
 
@@ -31,6 +31,8 @@ function update_names(func::F, reg::NameSpaceRegistry) where {F}
         end
         return setcontextkey(func, getkey(newval))
     end
+    # Default: keep non-Identifiable algorithms unchanged.
+    return func
 end
 
 """
@@ -39,7 +41,7 @@ Changes all the names in target_reg to match those in ground_reg
 
     Can be supplied with a Dict of changed names to fill
 """
-function update_names(target_reg::NameSpaceRegistry,  ground_reg::NameSpaceRegistry, changed_names = Dict{Symbol,Symbol}())
+function update_keys(target_reg::NameSpaceRegistry,  ground_reg::NameSpaceRegistry, changed_names = Dict{Symbol,Symbol}())
     # changed_names = Dict{Symbol,Symbol}() # old name => new name
     _all_entries = all_entries(target_reg)
     for target_entry in _all_entries

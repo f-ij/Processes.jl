@@ -26,7 +26,7 @@ function setup(cla_target_type::Type{<:LoopAlgorithm},funcs::NTuple{N, Any},
     @DebugMode "Final registry: $registry"
 
     # allfuncs = recursive_update_cla_names.(allfuncs, Ref(registry))
-    allfuncs = update_names.(allfuncs, Ref(registry))
+    allfuncs = update_keys.(allfuncs, Ref(registry))
     # @show allfuncs
 
     functuple = tuple(allfuncs...)

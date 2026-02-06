@@ -1,6 +1,7 @@
 function prepare(pack::PackagedAlgo, context)
     allfuncs = getalgos(pack)
     all_algos = getalgos(pack)
+    contextview = view(context, pack, inject = (;))
     context = UnrollReplace(context, all_algos...) do context, algo
         prepare(algo, context)
     end

@@ -35,9 +35,16 @@ end
 Match with any parent nodes but not other siblings
 """
 struct TreeMatcher{A} <: AbstractMatcher{A} end
-TreeMatcher(id = uuid4()) = TreeMatcher(id)
+function TreeMatcher(id = uuid4())
+    if id isa Tuple
+        return TreeMatcher{tuple(id...)}()
+    else
+        return TreeMatcher{tuple(id)}()
+    end
+end
+
 getchild(tm::TreeMatcher{ids}) where ids = TreeMatcher((ids...,uuid4()))
-function Base.:(==)(tm1::TreeMatcher{ids1}, tm2::TreeMatcher{ids2}) where {ids1,ids2}
+@inline function Base.:(==)(tm1::TreeMatcher{ids1}, tm2::TreeMatcher{ids2}) where {ids1,ids2}
     l1 = length(ids1)
     l2 = length(ids2)
     if l1 == l2
@@ -49,12 +56,26 @@ function Base.:(==)(tm1::TreeMatcher{ids1}, tm2::TreeMatcher{ids2}) where {ids1,
     end
 end 
 
+# Fallback
+"""
+Types extend this
+"""
+match_id(t::Type) = nothing
+# match_by(tt::Type{Type{T}}) where T = match_by(T) # For generated function compatibility
 
-
-match_by(obj::Any) = obj
-staticmatch_by(obj::Any) = obj
-staticmatch_by(::Type{T}) where {T} = T
-staticmatch_by(tt::Type{Type{T}}) where T = staticmatch_by(T) # For generated function compatibility
+function match_by(obj)
+    id = nothing
+    if obj isa Type
+        id = match_id(obj)
+    else
+        id = match_id(typeof(obj))
+    end
+    if isnothing(id)
+        return obj
+    else
+        return id
+    end
+end
 
 function match(obj1, obj2)
     id1 = match_by(obj1)
@@ -62,14 +83,25 @@ function match(obj1, obj2)
     return id1 == id2
 end
 
-function match(objtype1::Type{T1}, objtype2::Type{T2}) where {T1,T2}
-    id1 = staticmatch_by(objtype1)
-    id2 = staticmatch_by(objtype2)
-    return id1 == id2
-end
+# match_by(obj::Any) = obj
+# match_by(obj::Any) = obj
+# match_by(::Type{T}) where {T} = T
+# match_by(tt::Type{Type{T}}) where T = match_by(T) # For generated function compatibility
 
-function staticmatch(obj1, obj2)
-    id1 = staticmatch_by(obj1)
-    id2 = staticmatch_by(obj2)
-    return id1 == id2
-end
+# function match(obj1, obj2)
+#     id1 = match_by(obj1)
+#     id2 = match_by(obj2)
+#     return id1 == id2
+# end
+
+# function match(objtype1::Type{T1}, objtype2::Type{T2}) where {T1,T2}
+#     id1 = match_by(objtype1)
+#     id2 = match_by(objtype2)
+#     return id1 == id2
+# end
+
+# function match(obj1, obj2)
+#     id1 = match_by(obj1)
+#     id2 = match_by(obj2)
+#     return id1 == id2
+# end

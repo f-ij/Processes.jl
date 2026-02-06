@@ -12,17 +12,17 @@ getregistry(a::Any) = NameSpaceRegistry()
 """
 Obtain all the registriees, merge them and update the names downwards in the algorithm accordingly
 """
-function update_names(cla::LoopAlgorithm, base_registry::NameSpaceRegistry)
+function update_keys(cla::LoopAlgorithm, base_registry::NameSpaceRegistry)
     oldsfuncs = getalgos(cla)
     @DebugMode "Updating names for LoopAlgorithm: $cla using base registry: $base_registry"
-    newfuncs = update_names.(oldsfuncs, Ref(base_registry)) #Recursive replace LoopAlgorithm
+    newfuncs = update_keys.(oldsfuncs, Ref(base_registry)) #Recursive replace LoopAlgorithm
     # newfuncs = update_name.(funcs, Ref(base_registry)) # Rename IdentifiableAlgos and remove old registries
-    updated_registry = update_names(getregistry(cla), base_registry)
+    updated_registry = update_keys(getregistry(cla), base_registry)
     cla = setfield(cla, :funcs, newfuncs)
     cla = setfield(cla, :registry, updated_registry)
     return cla
     # pa_new = newfuncs(pa, funcs)
-    # update_names(pa_new, base_registry)
+    # update_keys(pa_new, base_registry)
 end
 
 function recursive_update_cla_names(a::Any, ::Any)

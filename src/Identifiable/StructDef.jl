@@ -29,19 +29,23 @@ end
 """
 Set an explicit name for an algorithm
 """
-function IdentifiableAlgo(f, scopename::Symbol = Symbol(), id::Union{Nothing, Symbol, UUID} = nothing; customname = Symbol(), aliases...)
+function IdentifiableAlgo(f, contextkey::Symbol = Symbol(), id::Union{Nothing, Symbol, UUID} = nothing; customname = Symbol(), aliases...)
     if f isa AbstractIdentifiableAlgo # Don't wrap a IdentifiableAlgo again, just setid
-        # return IdentifiableAlgo(getalgo(f), scopename, id(f); aliases...)
-        return setid(f, id)
+        # return IdentifiableAlgo(getalgo(f), contextkey, id(f); aliases...)
+        if !isnothing(id) && !isnothing(getid(f))
+            error("Trying to wrap an IdentifiableAlgo with a new id")
+        end
+        return setcontextkey(f, contextkey)
     end
 
     if isnothing(id) # Not unique so auto matching
-        id = staticmatch_by(f) # Either match by f, or get the matching behavior of f if set
+        id = match_by(f) # Either match by f, or get the matching behavior of f if set
+        # if 
     end
     f = instantiate(f) # Don't wrap a type
 
     aliases = VarAliases(;aliases...)
-    IdentifiableAlgo{typeof(f), id, aliases, customname, scopename}(f)
+    IdentifiableAlgo{typeof(f), id, aliases, customname, contextkey}(f)
 end
 
 """
@@ -51,8 +55,8 @@ Scoped Algorithms don't wrap other IdentifiableAlgos
 IdentifiableAlgo(na::IdentifiableAlgo, name::Symbol) = setcontextkey(na, name)
 
 
-Autoname(f, i::Int, prefix = "", id = nothing; customname = Symbol(), aliases...) = IdentifiableAlgo(f, Symbol(prefix, nameoftype(f),"_",string(i)), id; customname=customname, aliases...)
-Autoname(f::IdentifiableAlgo, i::Int, prefix = ""; customname = Symbol(), aliases...) = setcontextkey(f, Symbol(prefix, nameoftype(getalgo(f)),"_",string(i)))
+Autokey(f, i::Int, prefix = "", id = nothing; customname = Symbol(), aliases...) = IdentifiableAlgo(f, Symbol(prefix, nameoftype(f),"_",string(i)), id; customname=customname, aliases...)
+Autokey(f::IdentifiableAlgo, i::Int, prefix = ""; customname = Symbol(), aliases...) = setcontextkey(f, Symbol(prefix, nameoftype(getalgo(f)),"_",string(i)))
 
 
 function Unique(f; customname = Symbol(), aliases...)

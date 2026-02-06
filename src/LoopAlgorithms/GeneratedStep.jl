@@ -44,15 +44,15 @@ function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symb
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
     push!(exprs, :(this_inc = inc($name)))
     for i in 1:numfuncs(ca)
-        interval = intervals[i]
+        interval = Processes.interval(ca, i)
         local_name = gensym(:algo)
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
         push!(exprs, :(local $local_name = getalgo($name, $i)))
         # fti = ft.parameters[i]
-        this_interval = interval(ca, i)
+        this_functype = getalgotype(ca, i)
         if interval == 1
             # Generated block: the child algorithm's `step!` body (always executed).
-            push!(exprs, step!_expr(this_interval, C, local_name))
+            push!(exprs, step!_expr(this_functype, C, local_name))
         else
             # Generated block:
             #   if this_inc % interval == 0
@@ -61,7 +61,7 @@ function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symb
             push!(exprs, quote
                 # Only run this child every `interval` composite steps.
                 if this_inc % $(interval) == 0
-                    $(step!_expr(this_interval, C, local_name))
+                    $(step!_expr(this_functype, C, local_name))
                 end
             end)
         end
