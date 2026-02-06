@@ -15,12 +15,12 @@ end
 end
 
 @inline function Base.getindex(pc::ProcessContext, obj)
-    name = getname(get_registry(pc)[obj])
+    name = getkey(getregistry(pc)[obj])
     return @inline getproperty(get_subcontexts(pc), name)
 end
 
 @inline get_subcontexts(pc::ProcessContext) = getfield(pc, :subcontexts)
-@inline get_registry(pc::ProcessContext) = getfield(pc, :registry)
+@inline getregistry(pc::ProcessContext) = getfield(pc, :registry)
 
 @inline subcontext_names(pc::ProcessContext{D}, name::Symbol) where {D} = @inline fieldnames(typeof(getproperty(get_subcontexts(pc), name)))
 @inline subcontext_type(pc::ProcessContext{D}, name::Symbol) where {D} = @inline fieldtype(typeof(get_subcontexts(pc)), name)
@@ -52,7 +52,7 @@ end
 @inline function merge_into_globals(pc::ProcessContext{D}, args) where {D}
     merged_globals = @inline merge(getfield(get_subcontexts(pc), :globals), args)
     newsubs = (; get_subcontexts(pc)..., globals = merged_globals)
-    # return @inline ProcessContext(newsubs, get_registry(pc))
+    # return @inline ProcessContext(newsubs, getregistry(pc))
     return setfield(pc, :subcontexts, newsubs)
 end
 
@@ -92,7 +92,7 @@ end
 #     end
 #     newsubs = NamedTuple{subnames}(merged_subvalues)
 #     setfield(pc, :subcontexts, newsubs)
-#     # return ProcessContext{typeof(newsubs), typeof(get_registry(pc))}(newsubs, get_registry(pc))
+#     # return ProcessContext{typeof(newsubs), typeof(getregistry(pc))}(newsubs, getregistry(pc))
 # end
 
 """
@@ -141,19 +141,36 @@ function _sharedvars_display(sharedvars_types)
     items = String[]
     for sv in sharedvars_types
         from = get_fromname(sv)
-        for (varname, alias) in sv
+        # `SharedVars` is usually carried around as a *type* (DataType) whose 2nd type-parameter
+        # encodes the varname=>alias mapping (typically as a NamedTuple value).
+        # Iterating the type itself isn't defined, so iterate the stored mapping instead.
+        svu = Base.unwrap_unionall(sv)
+        nt = svu.parameters[2]
+        itr = nt isa NamedTuple ? pairs(nt) : nt
+        for (varname, alias) in itr
             push!(items, string(alias, "@", from, ".", varname))
         end
     end
     return items
 end
 
-function _subcontext_var_lines(sc::SubContext)
+function _subcontext_var_lines(sc::SubContext; io::IO = stdout)
     lines = String[]
     shared_types = getsharedcontext_types(typeof(sc))
     shared_names = shared_types === Tuple{} ? Symbol[] : filter(!isnothing, contextname.(shared_types))
     if !isempty(shared_names)
-        push!(lines, "shared: " * join(shared_names, ", "))
+        # Emit styling only when the *caller IO* supports it; otherwise keep plain text.
+        if get(io, :color, false)
+            buf = IOBuffer()
+            # `printstyled` consults `:color` on the IO it is writing to, so wrap the buffer
+            # in an IOContext that explicitly enables color/styling.
+            cio = IOContext(buf, :color => true)
+            printstyled(cio, "shared:"; bold = true)
+            print(cio, " ", join(shared_names, ", "))
+            push!(lines, String(take!(buf)))
+        else
+            push!(lines, "shared: " * join(shared_names, ", "))
+        end
     end
     data = get_data(sc)
     data_names = propertynames(data)
@@ -176,7 +193,7 @@ function _subcontext_var_lines(sc::SubContext)
     return lines
 end
 
-function _subcontext_var_lines(sc::NamedTuple)
+function _subcontext_var_lines(sc::NamedTuple; io::IO = stdout)
     lines = String[]
     data_names = propertynames(sc)
     if isempty(data_names)
@@ -195,8 +212,8 @@ function _subcontext_var_lines(sc::NamedTuple)
 end
 
 function Base.show(io::IO, sc::SubContext)
-    println(io, "SubContext ", getname(sc))
-    for line in _subcontext_var_lines(sc)
+    println(io, "SubContext ", getkey(sc))
+    for line in _subcontext_var_lines(sc; io)
         println(io, "  ", line)
     end
     return nothing
@@ -212,7 +229,7 @@ function Base.show(io::IO, pc::ProcessContext)
         branch = idx == last_idx ? "`-- " : "|-- "
         stem = idx == last_idx ? "    " : "|   "
         println(io, branch, name)
-        for line in _subcontext_var_lines(sc)
+        for line in _subcontext_var_lines(sc; io)
             println(io, stem, "| ", line)
         end
     end

@@ -15,7 +15,7 @@
 # end
 
 function total_incs(ca::CompositeAlgorithm)
-    return 1 + sum(total_incs(getfunc(ca, i))/interval(ca,i) for i in 1:length(ca))
+    return 1 + sum(total_incs(getalgo(ca, i))/interval(ca,i) for i in 1:length(ca))
 end
 
 function total_incs(r::Routine)

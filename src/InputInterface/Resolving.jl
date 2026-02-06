@@ -20,37 +20,40 @@ If Overrides and inputs target a LoopAlgorithm, duplicate them for all contained
     Maybe this is not used anymore after the fusing system
 """
 function to_named(cla::LoopAlgorithm, ov::Union{Override, Input})
-    if target_type(ov) <: LoopAlgorithm
-        target_T = target_type(ov)
-        reg = nothing
-        if target_T <: typeof(cla)
-            reg = get_registry(cla)
-        else
-            # find_first_target = getfirst_node(x -> match_cla(target_T, typeof(x)), cla, unwrap = unwrap_cla)
-            # if isnothing(find_first_target)
-            #     error("Target algorithm $(target_T) not found in LoopAlgorithm $(cla)")
-            # end
-            # reg = get_registry(find_first_target)
-        end
-        reg = get_registry(cla)
-        # Duplicate for all in registry
-        all_algos = all_named_algos(reg)
-        # @show all_algos
-        duplicates = change_target.(Ref(ov), all_algos)
-        # @show duplicates
-        return flat_collect_broadcast(duplicates) do dup
-            to_named(reg, dup)
-        end
-    else
-        # @show ov
-        return ov
-        reg = get_registry(cla)
-        return to_named(reg, ov)
-    end 
+    target_obj = get_target_algo(ov)
+    return to_named(getregistry(cla), ov)
+
+    # if target_type(ov) <: LoopAlgorithm
+    #     target_T = target_type(ov)
+    #     reg = nothing
+    #     if target_T <: typeof(cla)
+    #         reg = getregistry(cla)
+    #     else
+    #         # find_first_target = getfirst_node(x -> match_cla(target_T, typeof(x)), cla, unwrap = unwrap_cla)
+    #         # if isnothing(find_first_target)
+    #         #     error("Target algorithm $(target_T) not found in LoopAlgorithm $(cla)")
+    #         # end
+    #         # reg = getregistry(find_first_target)
+    #     end
+    #     reg = getregistry(cla)
+    #     # Duplicate for all in registry
+    #     all_algos = all_named_algos(reg)
+    #     # @show all_algos
+    #     duplicates = change_target.(Ref(ov), all_algos)
+    #     # @show duplicates
+    #     return flat_collect_broadcast(duplicates) do dup
+    #         to_named(reg, dup)
+    #     end
+    # else
+    #     # @show ov
+    #     return ov
+    #     reg = getregistry(cla)
+    #     return to_named(reg, ov)
+    # end 
 end
 
 function to_named(reg::NameSpaceRegistry, ov::Union{Override, Input})
-    name = getname(reg, get_target_algo(ov))
+    name = getkey(reg, get_target_algo(ov))
     return (Named(typeof(ov), name, get_vars(ov)),)
 end
 

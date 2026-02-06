@@ -880,7 +880,7 @@ setparameter(s::S, i::Integer, typeval) where {S} = setparameter(s, Val(i), type
         end_params = map(x -> x isa Symbol ? QuoteNode(x) : x, end_params)
 
         type_expr = Expr(:curly, :($(nameof(S))), begin_params..., :typeval, end_params...)
-w    end    
+    end    
 
     fieldnames = Base.fieldnames(S)
     getfields = Any[:(getfield(s, $(QuoteNode(field)))) for field in fieldnames]

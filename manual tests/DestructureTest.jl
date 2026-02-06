@@ -27,7 +27,7 @@ destr = Destructure(agent) do fields, context
 end
 
 Runner = SimpleAlgo((Tick,), destr, Share(destr, Tick))
-r = get_registry(Runner)
+r = getregistry(Runner)
 
 p = Process(Runner)
 @show p.context

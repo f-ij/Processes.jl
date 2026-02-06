@@ -2,8 +2,8 @@
 Set up an empty ProcessContext for a LoopAlgorithm with given shared specifications
 """
 function ProcessContext(algos::LoopAlgorithm; globals = (;))
-    registry = get_registry(algos)
-
+    registry = getregistry(algos)
+    @DebugMode "Creating ProcessContext for LoopAlgorithm with registry: $registry"
     # shared_specs = get_sharedspecs(algos)
 
     # shares = filter(x -> x isa Share, shared_specs)
@@ -19,13 +19,14 @@ function ProcessContext(algos::LoopAlgorithm; globals = (;))
     @DebugMode "Resolved shared contexts: $sharedcontexts" "Resolved shared vars: $sharedvars"
 
     # Create Subcontexts from registry
-    registered_names = all_names(registry)
-    subcontexts = ntuple(length(registered_names)) do i
-        algo_name = registered_names[i]
+    registered_keys = all_names(registry)
+    @DebugMode "Registered names: $registered_keys"
+    subcontexts = ntuple(length(registered_keys)) do i
+        algo_name = registered_keys[i]
         SubContext(algo_name, (;), get(sharedcontexts, algo_name, ()), get(sharedvars, algo_name, ()))
     end
 
-    named_subcontexts = NamedTuple{registered_names}(subcontexts)
+    named_subcontexts = NamedTuple{registered_keys}(subcontexts)
 
     @DebugMode "Created subcontexts: $named_subcontexts"
 
@@ -36,7 +37,7 @@ end
 
 function ProcessContext(func::Any; globals = (;))
     registry = SimpleRegistry(func)
-    name = getname(static_get(registry, func))
+    name = getkey(static_get(registry, func))
     subcontext = SubContext(name, (;), (;), (;))
     named_subcontexts = NamedTuple{(name,)}((subcontext,))
     (;named_subcontexts..., globals)

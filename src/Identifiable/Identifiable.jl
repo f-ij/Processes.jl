@@ -1,3 +1,6 @@
+#################################
+######## RELEVANT TRAITS ########
+#################################
 function nameoftype(f)
     if f isa Type
         return nameof(f)
@@ -6,12 +9,10 @@ function nameoftype(f)
     end
 end
 
-#################################
-######## RELEVANT TRAITS ########
-#################################
 isidentifiable(obj) = false # Trait to signify that an algorithm has an identity
 
 include("VarAlias.jl")
+include("AbstractInterface.jl")
 include("StructDef.jl")
 include("IdentifiableAlgos.jl")
 include("Prepare.jl")

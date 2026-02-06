@@ -1,5 +1,6 @@
-getentries(reg::NameSpaceRegistry{T}) where {T} = reg.entries
-Base.getindex(reg::NameSpaceRegistry, idx::Int) = reg.entries[idx]
+getentries(reg::NameSpaceRegistry{T}) where {T} = getfield(reg, :entries)
+Base.getindex(reg::NameSpaceRegistry, idx::Int) = getentries(reg)[idx]
+Base.length(reg::NameSpaceRegistry) = length(getentries(reg))
 
 function Base.setindex(reg::NameSpaceRegistry{T}, newentry, idx::Int) where {T}
     old_entries = getentries(reg)
@@ -102,21 +103,28 @@ end
 """
 Which type entry is an object assigned?
 """
-function assign_entry_type(obj)
-    if obj isa IdentifiableAlgo
-        return algotype(obj)
+function assign_entrytype(obj)
+    entry_t = nothing
+    if obj isa Type
+        entry_t = registry_entrytype(obj)
     else
-        return typeof(obj)
+        entry_t = registry_entrytype(typeof(obj))
     end
+    if isnothing(entry_t)
+        if obj isa Type
+            entry_t = obj
+        else
+            entry_t = typeof(obj)
+        end
+    end
+    return entry_t
 end
 
-function assign_entry_type(objT::Type)
-    if objT <: IdentifiableAlgo
-        return algotype(objT)
-    else
-        return objT
-    end
-end
+registry_entrytype(t::Type) = nothing
+# registry_entrytype(tt::Type{Type{T}}) where T = match_by(T) # For generated function compatibility
+
+
+
 
 ########################################
 ############## Interface ###############
@@ -130,17 +138,17 @@ end
 """
 Add an instance and get new registry and a named instance back
 """
-function add(reg::NameSpaceRegistry{T}, obj, multiplier = 1.) where {T}
+function add(reg::NameSpaceRegistry{T}, obj, multiplier = 1.; withname = nothing) where {T}
     if obj isa NameSpaceRegistry
         error("Cannot add a NameSpaceRegistry to another NameSpaceRegistry")
     end
 
-    entry_t = assign_entry_type(obj)
+    @DebugMode "Adding object: $obj to registry: $reg with multiplier: $multiplier and name: $withname"
+    entry_t = assign_entrytype(obj)
     fidx = find_typeidx(reg, entry_t)
     if isnothing(fidx) # New Entry
         newentry = RegistryTypeEntry{entry_t}()
-        newentry, keyed_obj = add(newentry, obj, multiplier)
-        
+        newentry, keyed_obj = add(newentry, obj, multiplier; withname)
         if entry_t <: ProcessState # States go first
             newreg = StaticArrays.pushfirst(reg, newentry)
         else
@@ -149,7 +157,7 @@ function add(reg::NameSpaceRegistry{T}, obj, multiplier = 1.) where {T}
         return newreg, keyed_obj
     else # Type was found
         entry = reg.entries[fidx]
-        newentry, keyed_obj = add(entry, obj, multiplier)
+        newentry, keyed_obj = add(entry, obj, multiplier; withname)
         return Base.setindex(reg, newentry, fidx), keyed_obj
     end
 end
@@ -157,17 +165,23 @@ end
 """
 Add multiple objects to the registry with the same multiplier
 """
-@inline function addall(reg::NameSpaceRegistry, objs::Union{Tuple, AbstractArray}; multiplier = 1.)
+@inline function addall(reg::NameSpaceRegistry, objs::Union{Tuple, AbstractArray}; multiplier = 1., withnames = nothing, withname = nothing)
+    @assert !(withnames !== nothing && withname !== nothing) "Cannot specify both withnames and withname"
+    unrollidx = 1
     reg = UnrollReplace(reg, objs...) do r, o
-        registry, _ = add(r, o, multiplier)
+        thisname = nothing
+        if !isnothing(withname)
+            thisname = withname
+        elseif !isnothing(withnames) && length(withnames) >= unrollidx
+            thisname = withnames[unrollidx]
+        end
+        registry, _ = add(r, o, multiplier; withname=thisname)
+        unrollidx += 1
         return registry
     end
     reg
 end
 
-#######################
-####### FINDING #######
-#######################
 
 ########################
 
@@ -212,7 +226,7 @@ inherit(e1::NameSpaceRegistry; kwargs...) = e1
 Get entries for an obj
 """
 @generated function get_type_entries(reg::NameSpaceRegistry, typ::Union{T, Type{T}}) where {T}
-    assigned_T = assign_entry_type(T)
+    assigned_T = assign_entrytype(T)
     idx = nongen_find_typeidx(reg, assigned_T)
     if isnothing(idx)
         types = entrytypes_iterator(reg)
@@ -239,14 +253,6 @@ function dynamic_lookup(reg::NameSpaceRegistry, val)
     return dynamic_lookup(entries, val)
 end
 
-# """
-# Gets the static lookup in the registry
-# """
-# function static_lookup(reg::NameSpaceRegistry, val) 
-#     entries = get_type_entries(reg, val) # Get the entries for the type
-#     return static_findfirst(entries, val)
-# end
-
 @inline function static_get_match(reg::NameSpaceRegistry, val)
     entries = get_type_entries(reg, val)
     @DebugMode "Static get match for value: $val in entries: $entries"
@@ -258,7 +264,44 @@ end
 
     return getentries(entries)[idx]
 end
+#######################
+####### FINDING #######
+#######################
+"""
+Statically Find the name in the registry
+"""
+function static_find_name(reg::NameSpaceRegistry, val)
+    found_scoped_value = static_get(reg, val)
+    if isnothing(found_scoped_value)
+        return nothing
+    else
+        return getkey(found_scoped_value)
+    end
+end
 
+function Base.in(val, reg::NameSpaceRegistry)
+    found_scoped_value = static_get(reg, val)
+    return !isnothing(found_scoped_value)
+end
+
+function findfirst_match(reg::NameSpaceRegistry, val)
+    function _findfirst_match_in_t(reg, first_idx)
+        this_match = static_findfirst_match(reg[first_idx], val)
+        return this_match
+    end 
+    function outer_recursion(reg, val, idx1, idx2)
+        if idx1 > length(reg)
+            return nothing, nothing
+        end
+        if !isnothing(idx2)
+            return idx1-1, idx2
+        end
+        this_match = _findfirst_match_in_t(reg, idx1)
+        return outer_recursion(reg, val, idx1 + 1, this_match)
+    end
+
+    return outer_recursion(reg, val, 1, nothing)
+end
 #########################
     ##### GETTERS #####
 #########################
@@ -290,26 +333,12 @@ end
 """
 Statically Get the name from the registry
 """
-function getname(reg::NameSpaceRegistry, val)
+function getkey(reg::NameSpaceRegistry, val)
     entry = static_get(reg, val)
     if isnothing(entry)
         return nothing
     end
-    return getname(entry)
-end
-
-
-#### TODO: Remove either of these and merge
-"""
-Statically Find the name in the registry
-"""
-function static_find_name(reg::NameSpaceRegistry, val)
-    found_scoped_value = static_get(reg, val)
-    if isnothing(found_scoped_value)
-        return nothing
-    else
-        return getname(found_scoped_value)
-    end
+    return getkey(entry)
 end
 
 
@@ -366,8 +395,8 @@ end
 #     return nothing
 # end
 
-function replacecontextnames(reg::NameSpaceRegistry, changed_names::Dict{Symbol,Symbol})
-    newentries = map(entry -> replacecontextnames(entry, changed_names), reg.entries)
+function replacecontextkeyss(reg::NameSpaceRegistry, changed_names::Dict{Symbol,Symbol})
+    newentries = map(entry -> replacecontextkeyss(entry, changed_names), reg.entries)
     return NameSpaceRegistry{typeof(newentries)}(newentries)
 end
     
@@ -387,8 +416,8 @@ end
 #     entrytypes = tuple(T.parameters...)
 #     _all_types = flat_collect_broadcast(entry_types, entrytypes)
 #     all_values = getvalue.(_all_types)
-#     process_states = filter(x -> getfunc(x) isa ProcessState, all_values)
-#     other = filter(x -> !(getfunc(x) isa ProcessState), all_values)
+#     process_states = filter(x -> getalgo(x) isa ProcessState, all_values)
+#     other = filter(x -> !(getalgo(x) isa ProcessState), all_values)
 #     all_in_order = (process_states..., other...)
 #     return :( $all_in_order )
 # end

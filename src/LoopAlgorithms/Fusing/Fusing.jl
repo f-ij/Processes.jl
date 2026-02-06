@@ -18,7 +18,7 @@ function flatten_comp_funcs(funcs, _intervals)
         if !(el isa CompositeAlgorithm)
             return nothing, nothing
         end
-        newels = getfuncs(el)
+        newels = getalgos(el)
         newtraits = intervals(el)
         return newels, trait.*newtraits
     end
@@ -34,7 +34,7 @@ function flatten(comp::CompositeAlgorithm)
     #     if !(el isa CompositeAlgorithm)
     #         return nothing, nothing
     #     end
-    #     newels = getfuncs(el)
+    #     newels = getalgos(el)
     #     newtraits = intervals(el)
     #     return newels, trait.*newtraits
     # end

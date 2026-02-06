@@ -10,8 +10,8 @@ end
 
 Injector() = Injector(32)
 
-@inline function Processes.step!(sa::IdentifiableAlgo{Injector}, context::C) where {C<:AbstractContext}
-    return @inline step!(getfunc(sa), getcontext(context))
+@inline function Processes.step!(sa::AbstractIdentifiableAlgo{Injector}, context::C) where {C<:AbstractContext}
+    return @inline step!(getalgo(sa), getcontext(context))
 end
 
 @inline function step!(inj::Injector, context::ProcessContext)
@@ -50,7 +50,7 @@ end
 end
 
 @inline function _channel(pc::ProcessContext, inj::Injector)
-    name = getname(get_registry(pc), inj)
+    name = getkey(getregistry(pc), inj)
     subcontext = getproperty(pc, name)
     return getproperty(subcontext, :channel)
 end

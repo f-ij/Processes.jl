@@ -12,6 +12,6 @@
 
 # SimpleRegistry(func::T) where {T} = SimpleRegistry{Symbol, T}(Symbol(nameof(typeof(func))), ScopedValueEntry(IdentifiableAlgo(func, nameof(typeof(func))), 1))
 
-# getname(reg::SimpleRegistry, func::T) where {T} = match(reg.funcentry, func) ? reg.funcentry.name : nothing
+# getkey(reg::SimpleRegistry, func::T) where {T} = match(reg.funcentry, func) ? reg.funcentry.name : nothing
 # static_get(reg::SimpleRegistry, val) = match(reg.funcentry, val) ? reg.funcentry : nothing
 # static_get(reg::SimpleRegistry, v) = match(reg.funcentry, v) ? value(reg.funcentry) : nothing

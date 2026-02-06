@@ -1,4 +1,4 @@
-unwrap_cla(cla::LoopAlgorithm) = getfuncs(cla)
+unwrap_cla(cla::LoopAlgorithm) = getalgos(cla)
 unwrap_cla(x) = x
 
 # Empty tuple

@@ -11,10 +11,12 @@ contextname(::Any) = nothing
 struct SharedVars{from_name, NT} end
 SharedVars(fromname; nt...) = SharedVars{fromname, (nt...,)}() # NamedTuple of varnames => aliases
 SharedVars(fromname, varnames, aliases) = SharedVars{fromname, NamedTuple{tuple(varnames...)}(tuple(aliases...))}()
-get_fromname(::Type{<:SharedVars{from_name}}) where {from_name} = from_name
 
-get_fromname(::SharedVars{from_name}) where {from_name} = from_name
-get_alias(sv::SharedVars{from_name, NT}, varname::Symbol) where {from_name, NT} = getproperty(NT, varname)
+get_fromname(::Union{SharedVars{from_name}, Type{<:SharedVars{from_name}}}) where {from_name} = from_name
+get_localname(sv::Union{SharedVars{from_name, NT}, Type{SharedVars{from_name, NT}}}, varname::Symbol) where {from_name, NT} = getproperty(NT, varname)
+@inline localnames(sv::Union{SharedVars{from_name, NT}, Type{SharedVars{from_name, NT}}}) where {from_name, NT} = values(NT)
+@inline subvarcontextnames(sv::Union{SharedVars{from_name, NT}, Type{SharedVars{from_name, NT}}}) where {from_name, NT} = keys(NT)
+
 
 Base.keys(sv::Union{SharedVars{from_name, NT}, Type{<:SharedVars{from_name, NT}}}) where {from_name, NT} = keys(NT)
 Base.values(sv::Union{SharedVars{from_name, NT}, Type{<:SharedVars{from_name, NT}}}) where {from_name, NT} = values(NT)

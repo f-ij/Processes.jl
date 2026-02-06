@@ -7,10 +7,10 @@ include("_env.jl")
     return (;state = new_state, velocity = new_vel)
 end
 
-function Processes.prepare(::Oscillator, input)
-    (;dt) = input
+function Processes.prepare(::Oscillator, context)
+    (;dt) = context
     trajectory = Float64[1.0]
-    processsizehint!(trajectory, input)
+    processsizehint!(trajectory, context)
     return (;state = 1.0, velocity = 0.0, dt, trajectory)
 end
 
@@ -20,7 +20,7 @@ end
     return (;velocity)
 end
 
-function Processes.prepare(::DampedFollower, input)
+function Processes.prepare(::DampedFollower, context)
     return (;damp = 0.05)
 end
 

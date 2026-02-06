@@ -36,7 +36,7 @@ function prepare_context(algo::F, c::ProcessContext, overrides_and_inputs::Union
 end
 
 @inline function init_context(td::TaskData)
-    func = getfunc(td)
+    func = getalgo(td)
     ProcessContext(func, globals = (;lifetime = getlifetime(td), algo = func))
 end
 
@@ -71,7 +71,7 @@ end
 
 function cleanup(p::AbstractProcess)
     lifetime = tasklifetime(p)
-    returncontext = cleanup(getfunc(p), (;process = p, lifetime, getcontext(p)...))
+    returncontext = cleanup(getalgo(p), (;process = p, lifetime, getcontext(p)...))
     return deletekeys(returncontext, :process, :lifetime)
 end
 

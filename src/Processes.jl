@@ -52,11 +52,13 @@ module Processes
 
     include("ProcessStatus.jl")
     include("Interface.jl")
-    include("Loops.jl")
+    
     include("ProcessStates/ProcessStates.jl")
     include("ProcessAlgorithms.jl")
 
     include("LoopAlgorithms/LoopAlgorithms.jl")
+    include("Packaging/Packaging.jl")
+    include("Loops.jl")
     include("Trackers/Trackers.jl")
     include("TotalInc.jl")
     include("Tools.jl")

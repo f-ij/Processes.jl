@@ -98,7 +98,7 @@ function _composite_algo_type_labels(types::Tuple)
     for t in types
         if t <: IdentifiableAlgo
             algo_type = t.parameters[1]
-            push!(labels, string(nameof(algo_type), "@", Processes.getname(t)))
+            push!(labels, string(nameof(algo_type), "@", Processes.getkey(t)))
         else
             push!(labels, string(nameof(t)))
         end
@@ -224,9 +224,9 @@ When composite is wrapped by a scope
 """
 function Base.show(io::IO, sa::IdentifiableAlgo{F, Id, Aliases, AlgoName, ScopeName}) where {F<:CompositeAlgorithm, Id, Aliases, AlgoName, ScopeName}
     header = isnothing(algoname(sa)) ? "CompositeAlgorithm" : string(algoname(sa))
-    println(io, header, "@", getname(sa))
-    ca = getalgorithm(sa)
-    funcs = getfuncs(ca)
+    println(io, header, "@", getkey(sa))
+    ca = getalgo(sa)
+    funcs = getalgos(ca)
     _intervals = intervals(ca)
     for (idx, f) in enumerate(funcs)
         interval = _intervals[idx]

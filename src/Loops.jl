@@ -1,6 +1,6 @@
 const start_finished = Ref(false)
 
-function before_while(p::AbstractProcess)
+@inline function before_while(p::AbstractProcess)
     start_finished[] = true
     p.threadid = Threads.threadid()
     @atomic p.paused = false
@@ -10,26 +10,26 @@ function before_while(p::AbstractProcess)
     set_starttime!(p)
 end
 
-function before_while(ip::InlineProcess)
-    set_starttime!(ip)
+@inline function before_while(ip::InlineProcess)
+    @inline set_starttime!(ip)
 end
 
-function after_while(p::AbstractProcess, func::F, context) where {F}
-    set_endtime!(p)
+@inline function after_while(p::AbstractProcess, func::F, context) where {F}
+    @inline set_endtime!(p)
     _runtimelisteners = runtimelisteners(p)
     close(_runtimelisteners)
     close.(get_linked_processes(p)) # TODO OBSOLETE?
     if !run(p) || lifetime(p) isa Indefinite # If user interrupted, or lifetime is indefinite
         return context
     else
-        # return cleanup(getfunc(p), context)
-        return cleanup(func, context)
+        # return cleanup(getalgo(p), context)
+        return @inline cleanup(func, context)
     end
 end
 
-function after_while(ip::InlineProcess, func::F, context) where {F}
-    set_endtime!(ip)
-    return cleanup(func, context)
+@inline function after_while(ip::InlineProcess, func::F, context) where {F}
+    @inline set_endtime!(ip)
+    return @inline cleanup(func, context)
 end
 
 cleanup(::Any, context) = (;)
@@ -40,74 +40,57 @@ resuming(::Any) = false
 """
 Run a single function in a loop indefinitely
 """
-@inline function processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
+@inline function processloop(process::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
     # @static if DEBUG_MODE
         println("Running process loop indefinitely from thread $(Threads.threadid())")
     # end
 
-    @inline before_while(p)
-    if resuming(p)
+    @inline before_while(process)
+    if resuming(process)
         context = @inline resume_step!(func, context)
     end
 
-    while run(p)
-        context = step!(func, context)
-        inc!(p) 
+    while run(process)
+        context = @inline step!(func, context)
+        @inline inc!(process) 
         # if isthreaded(p) || isasync(p)
         #     GC.safepoint()
         # end
     end
-    return @inline after_while(p, func, context)
+    return @inline after_while(process, func, context)
 end
 
 """
 Run a single function in a loop for a given number of times
 """
-Base.@constprop :aggressive function processloop(p::AbstractProcess, func::F, context::C, r::Repeat) where {F, C}
+Base.@constprop :aggressive function processloop(process::AbstractProcess, func::F, context::C, r::Repeat) where {F, C}
     @DebugMode "Running process loop for $repeats times from thread $(Threads.threadid())"
-    @inline before_while(p)
-    start_idx = loopidx(p)
+    @inline before_while(process)
+    start_idx = loopidx(process)
     
-    if resuming(p)
-        context = resume_step!(func, context)
+    if resuming(process)
+        context = @inline resume_step!(func, context)
         start_idx += 1
     end
 
     for _ in start_idx:repeats(r)
-        if !run(p)
+        if !run(process)
             break
         end
         context = @inline step!(func, context)
-        @inline inc!(p)
+        @inline inc!(process)
 
         # if isthreaded(p) || isasync(p)
         #     GC.safepoint()
         # end
     end
-    return @inline after_while(p, func, context)
-end
-
-function loop_exp(f::Type{F}, c::Type{C}, ::Type{<:Indefinite}) where {F, C}
-    step_expr = step!_expr(F, C, :func)
-    return quote
-        println("Running generated process loop indefinitely from thread $(Threads.threadid())")
-        @inline before_while(p)
-        if resuming(p)
-            context = @inline resume_step!(func, context)
-        end
-
-        while run(p)
-            $(step_expr)
-            @inline inc!(p)
-        end
-        return @inline after_while(p, func, context)
-    end
+    return @inline after_while(process, func, context)
 end
 
 """
 Generated process loop that inlines the step! expression when available.
 """
-@generated function generated_processloop(p::AbstractProcess, func::F, context::C, r::Repeat) where {F, C}
+@inline @generated function generated_processloop(process::AbstractProcess, func::F, context::C, r::Repeat) where {F, C}
     # step_expr = try
     #     step!_expr(F, C)
     # catch
@@ -118,30 +101,24 @@ Generated process loop that inlines the step! expression when available.
     step_expr = step!_expr(F, C, algo_name)
 
     return quote
-        println("Running generated process loop for $repeats times from thread $(Threads.threadid())")
-        # @static if DEBUG_MODE
-        #     println("Running process loop for $repeats times from thread $(Threads.threadid())")
-        # end
-        # if DEBUG_MODE
-        #     println("Running process loop for $repeats times from thread $(Threads.threadid())")
-        # end
-        @inline before_while(p)
-        start_idx = loopidx(p)
+        # println("Running generated process loop for $repeats times from thread $(Threads.threadid())")
+        @inline before_while(process)
+        start_idx = loopidx(process)
         
-        if resuming(p)
-            context = resume_step!(func, context)
+        if @inline resuming(process)
+            context = @inline resume_step!(func, context)
             start_idx += 1
         end
 
         for _ in start_idx:repeats(r)
-            if !run(p)
+            if !run(process)
                 break
             end
-            local $(algo_name) = func
+            $(algo_name) = func
             $(step_expr)
-            @inline inc!(p)
+            @inline inc!(process)
         end
-        return @inline after_while(p, func, context)
+        return @inline after_while(process, func, context)
     end
 end
 
@@ -150,6 +127,19 @@ end
 """
 Generated process loop that inlines the step! expression when available.
 """
-@generated function generated_processloop(p::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
-    return loop_exp(F, C, Indefinite) 
+@generated function generated_processloop(process::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
+    step_expr = step!_expr(F, C, :func)
+    return quote
+        println("Running generated process loop indefinitely from thread $(Threads.threadid())")
+        @inline before_while(process)
+        if resuming(process)
+            context = @inline resume_step!(func, context)
+        end
+
+        while run(process)
+            $(step_expr)
+            @inline inc!(process)
+        end
+        return @inline after_while(process, func, context)
+    end
 end

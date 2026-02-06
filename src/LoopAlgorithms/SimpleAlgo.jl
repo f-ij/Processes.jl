@@ -45,7 +45,7 @@ end
 # @inline resumable(sa::SimpleAlgo{T,I}) where {T,I} = I != Nothing
 
 # @inline function reset!(sa::SimpleAlgo)
-#     @inline reset!.(getfuncs(sa))
+#     @inline reset!.(getalgos(sa))
 #     sa.resume_idx[] = 1
 # end
 
@@ -77,11 +77,11 @@ end
 # end
 
 # @inline getid(sa::Union{SimpleAlgo{T,I,NSR,O,id}, Type{<:SimpleAlgo{T,I,NSR,O,id}}}) where {T,I,NSR,O,id} = id
-# @inline getfuncs(sa::SimpleAlgo) = sa.funcs
+# @inline getalgos(sa::SimpleAlgo) = sa.funcs
 # @inline subalgorithms(sa::SimpleAlgo) = sa.funcs
 # @inline Base.length(sa::SimpleAlgo) = length(sa.funcs)
 # @inline Base.eachindex(sa::SimpleAlgo) = eachindex(sa.funcs)
-# @inline getfunc(sa::SimpleAlgo, idx) = sa.funcs[idx]
+# @inline getalgo(sa::SimpleAlgo, idx) = sa.funcs[idx]
 # @inline subalgotypes(sa::SimpleAlgo{FT}) where FT = FT.parameters
 # @inline subalgotypes(saT::Type{<:SimpleAlgo{FT}}) where FT = FT.parameters
 
