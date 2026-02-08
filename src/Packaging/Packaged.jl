@@ -23,13 +23,13 @@ function PackagedAlgo(comp::CompositeAlgorithm, name="")
     # Translate routes to VarAliases
     routes = getoptions(comp, Route)
     id = TreeMatcher()
-    @show routes
+    # @show routes
     flatfuncs = map(x -> routes_to_varaliases(x, reg, routes...), flatfuncs)
-    @show getvaraliases.(flatfuncs)
+    # @show getvaraliases.(flatfuncs)
     non_keyed_funcs = setcontextkey.(flatfuncs, nothing)
-    @show getvaraliases.(non_keyed_funcs)
+    # @show getvaraliases.(non_keyed_funcs)
     subpackages = map(func -> SubPackage(func, id), non_keyed_funcs)
-    @show getvaraliases.(subpackages)
+    # @show getvaraliases.(subpackages)
     ## If shares are used, error and suggest using varaliases
     ## TODO: Support autoalias (e.g. all variables get a postfix)
 
