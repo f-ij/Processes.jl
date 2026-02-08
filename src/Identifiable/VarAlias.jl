@@ -20,15 +20,17 @@ externalnames(va::VarAliases{StoA_nt, AtoS_nt}) where {StoA_nt, AtoS_nt} = keys(
 internalnames(va::VarAliases{StoA_nt, AtoS_nt}) where {StoA_nt, AtoS_nt} = keys(AtoS_nt)
 VarAliases(;subcontext_to_algo_names...) = VarAliases{(;subcontext_to_algo_names...), invert_nt((;subcontext_to_algo_names...))}()
 
+
+
 @inline Base.@constprop :aggressive function subcontext_to_algo_names(va::Union{VarAliases{StoA_nt, AtoS_nt}, Type{<:VarAliases{StoA_nt, AtoS_nt}}}, name::Symbol) where {StoA_nt, AtoS_nt}
-    if isempty(StoA_nt)
+    if isempty(StoA_nt) || !haskey(StoA_nt, name)
         return name
     end
     @inline getproperty(StoA_nt, name)
 end
 
 @inline Base.@constprop :aggressive function algo_to_subcontext_names(va::Union{VarAliases{StoA_nt, AtoS_nt}, Type{<:VarAliases{StoA_nt, AtoS_nt}}}, name::Symbol) where {StoA_nt, AtoS_nt}
-    if isempty(AtoS_nt)
+    if isempty(AtoS_nt) || !haskey(AtoS_nt, name)
         return name
     end
     @inline getproperty(AtoS_nt, name)
@@ -42,6 +44,26 @@ algo_to_subcontext_names(::Nothing, name) = name
 No alias means the name is the same in the subcontext and the algo
 """
 subcontext_to_algo_names(::Nothing, name) = name
+
+#######################################
+######### Interface ###################
+#######################################
+
+function getvaraliases(a::Any)
+    if a isa AbstractIdentifiableAlgo
+        error("No getaliases method defined for $(typeof(a))")
+    else 
+        error("getaliases only works for AbstractIdentifiableAlgo, not $(typeof(a))")
+    end
+end
+function setvaraliases(a, newaliases)
+    if a isa AbstractIdentifiableAlgo
+        error("No setaliases method defined for $(typeof(a))")
+    else 
+        error("setaliases only works for AbstractIdentifiableAlgo, not $(typeof(a))")
+    end
+end
+
 
 ##############################
 ######## State Alias #########

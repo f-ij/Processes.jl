@@ -56,4 +56,4 @@ end
 
 setcontextkey(sa::AbstractIdentifiableAlgo, newname::Symbol) = error("Not implemented for type: $(typeof(sa))")
 replacecontextkeys(a::AbstractIdentifiableAlgo, ::Any) = error("Not implemented for type: $(typeof(a))")
-setaliases(sa::AbstractIdentifiableAlgo, newaliases) = error("Not implemented for type: $(typeof(sa))")
+setvaraliases(sa::AbstractIdentifiableAlgo, newaliases) = error("Not implemented for type: $(typeof(sa))")

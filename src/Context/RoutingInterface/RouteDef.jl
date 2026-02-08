@@ -14,6 +14,8 @@ struct Route{F,T,N} <: AbstractOption
 end
 
 function Route(from, to, originalname_or_aliaspairs::Union{Symbol, Pair{Symbol, Symbol}}...)
+    @assert (from isa ProcessEntity) || from <: ProcessEntity "Origin of a Route must be a ProcessAlgorithm or ProcessState. Got: $from"
+    @assert (to isa ProcessEntity) || to <: ProcessEntity "Target of a Route must be a ProcessAlgorithm or ProcessState. Got: $to"
     completed_pairs = ntuple(length(originalname_or_aliaspairs)) do i
         item = originalname_or_aliaspairs[i]
         item isa Symbol ? item => item : item

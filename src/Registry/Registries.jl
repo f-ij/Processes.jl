@@ -368,9 +368,9 @@ function getkey(reg::NameSpaceRegistry, val)
 end
 
 
-function dynamic_get(reg::NameSpaceRegistry, v::V) where {V}
-    return dynamic_get(reg, v)
-end
+# function dynamic_get(reg::NameSpaceRegistry, v::V) where {V}
+#     return dynamic_get(reg, v)
+# end
 
 """
 Get the value from the registry

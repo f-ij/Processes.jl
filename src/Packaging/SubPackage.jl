@@ -2,13 +2,15 @@ struct SubPackage{F, ID, Aliases, ContextKey} <: AbstractIdentifiableAlgo{F, ID,
     func::F
 end
 
-function SubPackage(func::IdentifiableAlgo, parentid, aliases = nothing, contextkey = nothing)
-    treeid = getchild(parentid, id(func))
-    func = getalgo(func)
-    SubPackage{typeof(func), treeid, aliases, contextkey}(func)
+function SubPackage(algo::IdentifiableAlgo, parentid, aliases = nothing, contextkey = nothing)
+    treeid = getchild(parentid, id(algo))
+    if isnothing(aliases)
+        aliases = getvaraliases(algo)
+    end
+    algo = getalgo(algo)
+    
+    SubPackage{typeof(algo), treeid, aliases, contextkey}(algo)
 end
-
-
 
 
 ##################################
@@ -25,7 +27,8 @@ getkey(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,
 getalgo(ps::SubPackage{F}) where {F} = ps.func
 setcontextkey(ps::SubPackage, key::Symbol) = setparameter(ps, 4, key)
 setid(ps::SubPackage, newid) = setparameter(ps, 2, newid)
-
+getvaraliases(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,Aliases,ContextKey}}}) where {F, ID, Aliases, ContextKey} = Aliases
+setvaraliases(ps::SubPackage, newaliases) = setparameter(ps, 3, newaliases)
 """
 SubPackages match with their parent and themselves
     This is to allow for matching with the parent package in a registry

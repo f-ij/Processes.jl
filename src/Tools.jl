@@ -6,7 +6,7 @@ Use within prepare function
 For a process with a limited lifetime,
 give the array a size hint based on the lifetime and the number of updates per step.
 """
-@inline function processsizehint!(array, contextview::AbstractContext, updates_per_step = 1)
+@inline function processsizehint!(array, contextview::AbstractContext, updates_per_step = 1; print_hint = false)
     if !(contextview isa AbstractContext)
         @show contextview
         @warn("Cannot give a sizehint, prepare is not called from a process")
@@ -29,6 +29,9 @@ give the array a size hint based on the lifetime and the number of updates per s
     # println("Recommended sizehint: $sizehint")
     # @show sizehint
     @DebugMode "Sizehint is $sizehint"
+    if print_hint
+        println("Recommended sizehint for $(this_instance(contextview)) is: $sizehint")
+    end
     sizehint!(array, sizehint)
 end
 # """
