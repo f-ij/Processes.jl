@@ -1,3 +1,6 @@
+using Pkg
+Pkg.activate((@__DIR__ )*"/..")
+
 using Test
 using Random
 using Processes
@@ -7,19 +10,21 @@ using Processes
 
     struct Walker <: ProcessAlgorithm end
 
+    function Processes.prepare(::Walker, input)
+            (; dt) = input
+            state = Float64[1.0]
+            momentum = 1.0
+            Processes.processsizehint!(state, input)
+            return (; state, momentum, dt)
+        end
+
     function Processes.step!(::Walker, context)
         (; state, momentum, dt) = context
         push!(state, state[end] + momentum * dt)
         return (; momentum)
     end
 
-    function Processes.prepare(::Walker, input)
-        (; dt) = input
-        state = Float64[1.0]
-        momentum = 1.0
-        Processes.processsizehint!(state, input)
-        return (; state, momentum, dt)
-    end
+    
 
     struct InsertNoise <: ProcessAlgorithm
         seed::Int64
@@ -49,6 +54,10 @@ using Processes
     p = Process(algo, lifetime = 10, Input(Walker, :dt => 0.01))
     start(p; threaded = false)
     wait(p)
+    c = fetch(p)
+
+    # Test for correct cleanup output
+    @test c isa ProcessContext
 
     actual = p.context[Walker].state
     expected = [
@@ -66,4 +75,39 @@ using Processes
     ]
 
     @test isapprox(actual, expected; rtol = 0.0, atol = 1e-12)
+
+
+    # Route functions test
+    struct Logger{T} <: ProcessAlgorithm end
+    Logger(name::Symbol) = Logger{name}()
+
+    function Processes.prepare(::Logger{T}, _input) where {T}
+        log = Vector{Any}()
+        return (;log)
+    end
+    function Processes.step!(::Logger{T}, context) where {T}
+        (;log, targetnum) = context
+        push!(log, targetnum)
+        return (;)
+    end
+
+    Logger1 = Logger(:normal)
+    Logger2 = Logger(:squared)
+
+    algo2 = CompositeAlgorithm(
+        (Walker, InsertNoise, Logger1, Logger2),
+        (1, 2, 1, 1),
+        Route(Walker, InsertNoise, :momentum => :targetnum, :dt => :scale),
+        Route(Walker, Logger1, :state => :targetnum, transform = x-> x[end]),
+        Route(Walker, Logger2, :state => :targetnum, transform = x-> x[end]^2),
+    )
+
+    p2 = Process(algo2, lifetime = 10, Input(Walker, :dt => 0.01))
+    run!(p2)
+    c2 = fetch(p2)
+
+    log1 = c2[Logger1].log
+    log2 = c2[Logger2].log
+    @test all((log1 .^ 2) .== log2)
+
 end
