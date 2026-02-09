@@ -8,7 +8,7 @@ function benchmark(func::Union{ProcessAlgorithm, LoopAlgorithm}, rt, trials = 10
         end
         makecontext!(p)
         ti = time_ns()
-        p()
+        run!(p)
         fetch(p)
         push!(runtimes, runtime(p))
         push!(outer_times, (time_ns() - ti) / 1e9)

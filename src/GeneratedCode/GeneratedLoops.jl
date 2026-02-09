@@ -22,7 +22,7 @@ Generated process loop that inlines the step! expression when available.
         end
 
         for _ in start_idx:repeats(r)
-            if !run(process)
+            if !shouldrun(process)
                 break
             end
             $(algo_name) = algo
@@ -47,7 +47,7 @@ Generated process loop that inlines the step! expression when available.
             context = @inline resume_step!(func, context)
         end
 
-        while run(process)
+        while shouldrun(process)
             $(step_expr)
             @inline inc!(process)
         end
