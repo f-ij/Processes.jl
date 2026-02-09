@@ -103,7 +103,7 @@ using Processes
     )
 
     p2 = Process(algo2, lifetime = 10, Input(Walker, :dt => 0.01))
-    run!(p2)
+    run(p2)
     c2 = fetch(p2)
 
     log1 = c2[Logger1].log

@@ -262,11 +262,12 @@ end
 
 @inline function static_findfirst_match(reg::NameSpaceRegistry, val)
     entries = get_type_entries(reg, val)
+    T = gettype(entries)
+
     idx = static_findfirst_match(entries, val)
     if isnothing(idx)
-        return nothing, nothing
+        return T, nothing
     end
-    T = gettype(entries)
     return T, idx
 end
 
@@ -289,7 +290,7 @@ Statically Find the name in the registry
 """
 function static_findkey(reg::NameSpaceRegistry, val)
     location = static_findfirst_match(reg, val)
-    if isnothing(location[1])
+    if isnothing(location[2])
         return nothing
     else
         return getkey(reg[location])
@@ -340,8 +341,8 @@ end
 
 function static_get_multiplier(reg::NameSpaceRegistry, val)
     loc = static_findfirst_match(reg, val)
-    if isnothing(loc[1])
-        error("No match found for value: $val in registry: $reg")
+    if isnothing(loc[2])
+        error("Found other values of type $(loc[1]), but no match found for value: $val in registry: $reg")
     end 
     type_entries = get_type_entries(reg, loc[1])
     return getmultiplier(type_entries, loc[2])

@@ -6,7 +6,7 @@ function inline_bmark(ip::IP, trials = 100) where IP
     for _ in 1:trials
         reset!(ip)
         start_ns = time_ns()
-        @inline run!(ip)
+        @inline run(ip)
         elapsed = (time_ns() - start_ns) / 1e9
         push!(runtimes, elapsed)
     end

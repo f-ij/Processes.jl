@@ -10,7 +10,7 @@ getbranch(ca::CompositeAlgorithm, idx) = ca.funcs[idx]
 
 nbranches(::Any) = 0
 nbranches(r::Routine) = length(r.funcs)
-nbranches(ca::CompositeAlgorithm) = numfuncs(ca)
+nbranches(ca::CompositeAlgorithm) = numalgos(ca)
 
 """
 Give the number of total leafs in the algorithm

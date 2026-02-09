@@ -16,7 +16,7 @@ end
     else
         for i in this_resume_idx:this_repeat
             if !shouldrun(process)
-                set_resume_point!(r, unroll_idx)
+                set_resume_point!(r, unroll_idx, i)
                 return context
             end
             context = @inline step!(func, context)

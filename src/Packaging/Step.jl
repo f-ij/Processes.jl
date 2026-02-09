@@ -1,10 +1,12 @@
 function prepare(pack::PackagedAlgo, context)
-    allfuncs = getalgos(pack)
+    println("Preparing PackagedAlgo: ", getname(pack))
     all_algos = getalgos(pack)
+    @show all_algos
     contextview = view(context, pack, inject = (;))
     context = unrollreplace(context, all_algos...) do context, algo
         prepare(algo, context)
     end
+    @show context
 end
 
 """

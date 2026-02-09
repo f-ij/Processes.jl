@@ -51,7 +51,7 @@ interval(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, id
 
 @inline functypes(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = tuple(T.parameters...)
 @inline getalgotype(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, idx) where {T,I} = T.parameters[idx]
-@inline numfuncs(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = length(T.parameters)
+@inline numalgos(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = length(T.parameters)
 
 
 @inline function intervals(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I}
@@ -61,6 +61,8 @@ interval(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, id
         return ntuple(_ -> 1, length(T.parameters))
     end
 end
+@inline intervals(ca::Union{CompositeAlgorithm, Type{<:CompositeAlgorithm}}, ::Val{Idx}) where Idx = intervals(ca)[Idx]
+
 get_this_interval(args) = interval(getalgo(args.process), algoidx(args))
 
 function setintervals(ca::C, new_intervals) where {C<:CompositeAlgorithm}

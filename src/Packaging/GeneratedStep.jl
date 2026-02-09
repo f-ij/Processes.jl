@@ -13,7 +13,7 @@ function step!_expr(pa::Type{<:PackagedAlgo}, context::Type{C}, name::Symbol) wh
     exprs = Any[]
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
     push!(exprs, :(this_inc = inc($name)))
-    for i in 1:numfuncs(pa)
+    for i in 1:numalgos(pa)
         interval = Processes.interval(pa, i)
         local_name = gensym(:algo)
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).

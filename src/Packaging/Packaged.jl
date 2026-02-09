@@ -16,7 +16,11 @@ struct PackagedAlgo{T, Intervals, NSR, id, CustomName, ContextKey} <: AbstractId
     simplereg::NSR
 end
 
+
+package(args...) = PackagedAlgo(args...)
+
 function PackagedAlgo(comp::CompositeAlgorithm, name="")
+    algoname(a::Any) = nothing
     flatfuncs, flatintervals = flatten(comp)
     reg = getregistry(comp)
 
@@ -33,7 +37,7 @@ function PackagedAlgo(comp::CompositeAlgorithm, name="")
     ## If shares are used, error and suggest using varaliases
     ## TODO: Support autoalias (e.g. all variables get a postfix)
 
-    customname = name == "" ? algoname(comp) === nothing ? Symbol() : algoname(comp) : Symbol(name)
+    customname = name == "" ? isnothing(algoname(comp)) ? Symbol() : algoname(comp) : Symbol(name)
 
     subs_and_intervals = zip(subpackages, flatintervals)
     registry = unrollreplace(SimpleRegistry(), subs_and_intervals...) do reg, sub_interval
@@ -63,7 +67,7 @@ end
 @inline intervals(ca::Union{PackagedAlgo{T,I},Type{<:PackagedAlgo{T,I}}}) where {T,I} = I
 @inline interval(ca::Union{PackagedAlgo{T,I},Type{<:PackagedAlgo{T,I}}}, i) where {T,I} = intervals(ca)[i]
 @inline getalgotype(::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}, idx) where {T,I} = T.parameters[idx]
-@inline numfuncs(ca::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}) where {T,I} = length(T.parameters)
+@inline numalgos(ca::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}) where {T,I} = length(T.parameters)
 # @inline match_id(::Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
 
 @inline getname(::Union{PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}, Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}}) where {T,I,NSR,id,CustomName,ContextKey} = CustomName

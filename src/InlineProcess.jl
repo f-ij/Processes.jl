@@ -1,4 +1,4 @@
-export InlineProcess, InlineProcessAlgorithm, isthreaded, run!, reset!
+export InlineProcess, InlineProcessAlgorithm, isthreaded, run, reset!
 """
 A fully typed process that is meant for inlining into other Functions
 Mainly used to compose algorithms in tight loops, plugging into the ProcessLoopAlgorithm system
@@ -51,7 +51,7 @@ taskdata(ip::InlineProcess) = ip.taskdata
     return true
 end
 
-@inline function run!(p::InlineProcess, repeat=nothing)
+@inline function run(p::InlineProcess, repeat=nothing)
     if !isnothing(repeat)
         p.repeats = repeat
     end

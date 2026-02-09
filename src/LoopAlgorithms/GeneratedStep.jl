@@ -13,7 +13,7 @@ function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symb
     exprs = Any[]
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
     push!(exprs, :(this_inc = inc($name)))
-    for i in 1:numfuncs(ca)
+    for i in 1:numalgos(ca)
         interval = Processes.interval(ca, i)
         local_name = gensym(:algo)
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
@@ -54,7 +54,7 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) wh
     func_repeats = repeats(routine)
     exprs = Any[]
 
-    for i in 1:numfuncs(routine)
+    for i in 1:numalgos(routine)
         this_repeat = func_repeats[i]
         local_name = gensym(:algo)
         this_functype = getalgotype(routine, i)
@@ -68,10 +68,10 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) wh
         # - Otherwise execute the child's generated `step!` body.
         push!(exprs, quote
 
-            for _ in 1:$(this_repeat)
+            for lidx in 1:$(this_repeat)
                 # Pause/stop check: if the process is not running, record which child we were on.
                 if !shouldrun(process)
-                    set_resume_point!($name, $i)
+                    set_resume_point!($name, $i, lidx)
                     return context
                 end
                 # Inline the child's `step!` body, specialized to the child's algorithm type and the context type.

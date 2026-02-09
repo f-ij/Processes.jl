@@ -902,3 +902,8 @@ Apply a function to all keys in a named tuple
 function replace_nt_keys(func, nt::NamedTuple)
     NamedTuple{Tuple(map(func, keys(nt)))}(Tuple(values(nt)))
 end
+
+"""
+Get the value of a Val{N} as N
+"""
+@inline getvalue(::Val{N}) where N = N

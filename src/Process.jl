@@ -62,7 +62,7 @@ function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides.
     # context = init_context(td)
 
     context = prepare_context(td)
-    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), Threads.ReentrantLock(), false, false, nothing, nothing, Arena(), RuntimeListeners(), 0)
+    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
     register_process!(p)
     @DebugMode "Created process with id $(p.id), now preparing data"
     

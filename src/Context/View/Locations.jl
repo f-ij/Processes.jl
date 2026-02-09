@@ -148,9 +148,9 @@ end
                 context = getcontext(sct)
                 available_names = $available
                 sct_name = $(QuoteNode(subcontextname))
-                msg = "Variable $(a_name) requested, but not supplied to context. Available names are: $(available_names) \n Context: $(context)"
+                msg = "Variable $(a_name) requested from $(sct) in View: $(SubKey), but not supplied to context. Available names are: $(available_names) \n Context: $(context)"
             else
-                msg = "Variable $(a_name) (mapped to $(sct_name)) requested, but not supplied to context. Available names are: $(available_names) \n Context: $(context)"
+                msg = "Variable $(a_name) (mapped to $(sct_name)) requested from $(sct) in View: $(SubKey), but not supplied to context. Available names are: $(available_names) \n Context: $(context)"
             end
             error(msg)
         end

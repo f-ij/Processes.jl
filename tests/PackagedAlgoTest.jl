@@ -65,7 +65,7 @@ end
     Logging = CompositeAlgorithm((pack, Logger1), (1, 100), 
         Route(pack, Logger1, :fiblist => :targetnum, transform = x -> x[end]))
     p = Process(Logging; lifetime = 1000)
-    run!(p)
+    run(p)
 
     c = fetch(p)
     @test c isa ProcessContext

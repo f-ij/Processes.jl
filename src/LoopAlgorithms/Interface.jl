@@ -10,6 +10,13 @@ get_routes(cla::LoopAlgorithm) = filter(x -> x isa Route, getoptions(cla))
 
 getoptions(la::LoopAlgorithm, T::Type{O}) where O = filter(x -> x isa O, getoptions(la))
 
+"""
+Get the numbers Val(1), Val(2), ... Val(N) for the N algorithms in a composite or routine, as a tuple.
+"""
+@generated function algonvalumbers(ca::LoopAlgorithm)  
+    nums = ntuple(i -> Val(i), numalgos(ca))
+    return :($nums)
+end
 
 @inline function Base.getindex(cla::LoopAlgorithm, idx)
     getalgos(cla)[idx]

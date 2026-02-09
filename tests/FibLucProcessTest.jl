@@ -32,7 +32,7 @@ end
     n = 50_000
     fibluc = Processes.CompositeAlgorithm((RunFib, RunLuc), (1, 2))
     p = Processes.Process(fibluc; lifetime = n)
-    Processes.run!(p)
+    Processes.run(p)
     ctx = fetch(p)
 
     fib_ctx = ctx[RunFib]
