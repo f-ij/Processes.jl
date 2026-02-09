@@ -10,7 +10,6 @@ function prepare(algos::LoopAlgorithm, inputcontext::ProcessContext)
         prepare(named_algo, context)
     end
 
-    # newcontext = replace(inputcontext, prepared_subcontexts)
     
     return context
 end
@@ -20,12 +19,17 @@ function cleanup(algos::LoopAlgorithm, context)
     named_algos = all_algos(registry)
 
     context = unrollreplace(context, named_algos...) do context, named_algo # Recursively replace context
-        cleanup(named_algo, context)
+        @inline cleanup(named_algo, context)
     end
     
     return context
 end
 
+
+"""
+For testing purposes, allow prepare to be called with a NamedTuple of input arguments instead of a ProcessContext
+    This works like a subcontext
+"""
 function prepare(algos::LoopAlgorithm, input::NamedTuple = (;))
     # If prepared from a namedtuple, create an empty context first
     newcontext = ProcessContext(algos)

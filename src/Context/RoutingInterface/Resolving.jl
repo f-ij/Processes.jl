@@ -46,8 +46,13 @@ function resolve_options(reg::NameSpaceRegistry, routes::Route...)
     if isempty(routes)
         return (;)
     end
+    @show routes
     # return map(route -> to_sharedvar(reg, route), routes)
-    named_flat_collect_broadcast(routes) do route
-        to_sharedvar(reg, route)
+    named_routes = (;)
+    named_routes = unrollreplace(named_routes, routes...) do named_routes, route
+        tosubcontextname, sharedvar = to_sharedvar(reg, route)
+        return (;named_routes..., tosubcontextname => (get(named_routes, tosubcontextname, tuple())..., sharedvar))
     end
+    @show named_routes
+    return named_routes
 end

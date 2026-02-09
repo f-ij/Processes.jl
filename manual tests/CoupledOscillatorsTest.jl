@@ -37,3 +37,9 @@ Coupled = CompositeAlgorithm((OscillatorA, OscillatorB, Coupling), (1, 1, 1),
 
 p = Process(Coupled, lifetime = 40)
 start(p)
+fetch(p)
+
+# c = p.context
+# reg = getregistry(c)
+# coup = reg[3][1]
+# scv = view(c, coup)

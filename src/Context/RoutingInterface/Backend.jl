@@ -38,6 +38,7 @@ function to_sharedvar(reg::NameSpaceRegistry, r::Route)
                   "Available names: " * available_str
             error(msg)
         end
-        (; toname => SharedVars(fromname, getvarnames(r), getaliases(r)) )
+        # (; toname => tuple(SharedVars(fromname, getvarnames(r), getaliases(r)) ))
+        toname => SharedVars(fromname, getvarnames(r), getaliases(r))
         # (;toname => SharedVars{fromname, r.varnames, r.aliases}())
 end

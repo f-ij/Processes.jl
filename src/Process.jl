@@ -168,12 +168,11 @@ function makeloop!(p::Process; threaded = true)
     @atomic p.shouldrun = true
 
     context = merge_into_globals(p.context, (;process = p))
-    spawnloop(p, p.taskdata.func, context, lifetime(p))
-    # if threaded
-    #     p.task = spawnloop(p, p.taskdata.func, context, lifetime(p))
-    # else
-    #     p.task = @async runloop(p, p.taskdata.func, context, lifetime(p))
-    # end
+    if threaded
+        p.task = spawnloop(p, p.taskdata.func, context, lifetime(p))
+    else
+        p.task = @async runloop(p, p.taskdata.func, context, lifetime(p))
+    end
     return p
 end
 
