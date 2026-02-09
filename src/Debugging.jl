@@ -2,7 +2,7 @@ define_processdebug_task(@specialize(p), @specialize(func), @specialize(context)
 
 function process_warntype(p)
     func = getalgo(p)
-    context = getinputcontext(p)
+    context = getcontextð(p)
     lifetime = getlifetime(p)
     mainloop_warntype(p, func, context, lifetime)
 end

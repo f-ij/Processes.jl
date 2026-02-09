@@ -46,4 +46,4 @@ end
 RandomWalker = CompositeAlgorithm((Walker, InsertNoise), (1,2), Route(Walker, InsertNoise, :momentum => :targetnum, :dt => :scale))
 # RandomWalker = CompositeAlgorithm((Walker, InsertNoise), (1,2))
 p = Process(RandomWalker, lifetime = 10, Input(Walker, :dt => 0.01))
-start(p)
+run!(p)

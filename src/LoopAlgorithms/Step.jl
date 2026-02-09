@@ -18,15 +18,16 @@ Base.@constprop :aggressive @inline function _comp_dispatch(ca::CompositeAlgorit
         # GC.safepoint()
         return context
     end
-    if interval(ca, algoidx) == 1
+    if (@inline interval(ca, algoidx)) == 1
         context = step!(thisfunc, context)
     else
-        if this_inc % interval(ca, algoidx) == 0
+        if this_inc % (@inline interval(ca, algoidx)) == 0
             context = step!(thisfunc, context)
         end
     end
     return @inline _comp_dispatch(ca, context, algoidx + 1, this_inc, gethead(funcs), gettail(funcs))
 end
+
 
 
 
@@ -48,7 +49,7 @@ end
         return context
     else
         for i in 1:this_repeat
-            if !run(process)
+            if !shouldrun(process)
                 set_resume_point!(r, unroll_idx)
                 return context
             end
@@ -60,3 +61,6 @@ end
     end
 end
 
+function resume_step!(r::Routine, context::C) where {C<:AbstractContext}
+    
+end

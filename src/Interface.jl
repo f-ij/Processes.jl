@@ -1,41 +1,41 @@
 
-export start, restart, quit, pause, close, syncclose, refresh
+export run!, start, restart, quit, pause, close, syncclose, refresh
 
-"""
-Start a process that is not running or unpause a paused process
-"""
-function start(p::Process; prevent_hanging = false, threaded = true)
-    
+function run!(p::Process, lifetime = nothing)
     @assert isidle(p) "Process is already in use"
-
-    if ispaused(p) # If paused, then just unpause
-        unpause(p; threaded)
-    else # If not paused, then start from scratch
-        reset!(p)
-        # preparedata!(p)
-        spawntask!(p; threaded)
+    @atomic p.shouldrun = true
+    @atomic p.paused = false
+    
+    if !isnothing(lifetime)
+        p.lifetime = lifetime
     end
 
+     # ## Only run one start at a time to prevent hanging
+    # ## Some processes may hang if the main thread continues executing
+    # ## while the process is starting on a new thread
+    # if prevent_hanging
+    #     while !start_finished[]
+    #         yield()
+    #     end
+    # end
+    # start_finished[] = false
 
-    ## Only run one start at a time to prevent hanging
-    ## Some processes may hang if the main thread continues executing
-    ## while the process is starting on a new thread
-    if prevent_hanging
-        while !start_finished[]
-            yield()
-        end
-    end
-    start_finished[] = false
+    makeloop!(p; threaded=isthreaded(p))
+end
 
-    return true
-end   
+"""
+Wait for a process to finish
+"""
+@inline Base.wait(p::Process) = if !isnothing(p.task) wait(p.task) else nothing end
+
 
 """
 Close a process, stopping it from running
 """
 function Base.close(p::Process)
     @atomic p.paused = false
-    @atomic p.run = false
+    @atomic p.shouldrun = false
+
     try
         wait(p)
     catch(err)
@@ -47,6 +47,25 @@ function Base.close(p::Process)
     p.loopidx = 1
     return true
 end
+
+"""
+Pause a process, allowing it to be unpaused later
+"""
+function pause(p::Process)
+    @atomic p.paused = true
+    @atomic p.shouldrun = false
+    return true
+end
+
+
+"""
+Start a process that is not running or unpause a paused process
+"""
+function start(p::Process; prevent_hanging = false, threaded = true)
+    @warn "start is deprecated, use run! instead"
+    run!(p)
+end   
+
 
 """
 Close and wait for a process to finish
@@ -66,22 +85,14 @@ function quit(p::Process)
 end
 
 
-"""
-Pause a process, allowing it to be unpaused later
-"""
-function pause(p::Process)
-    @atomic p.paused = true
-    @atomic p.run = false
-    return true
-end
 
 """
 Redefine task without preparing again
 """
 function unpause(p::Process; threaded = true)
-    @atomic p.run = true
+    @atomic p.shouldrun = true
     if threaded
-        p.task = spawntask(p, getalgo(p), getcontext(p), runtimelisteners(p))
+        p.task = spawnloop(p, getalgo(p), getcontext(p), runtimelisteners(p))
     else
         p.task = @async runtask(p, getalgo(p), getcontext(p), runtimelisteners(p))
     end
@@ -128,11 +139,6 @@ function restart(p::Process; context...)
         end
     end    
 end
-
-"""
-Wait for a process to finish
-"""
-@inline Base.wait(p::Process) = if !isnothing(p.task) wait(p.task) else nothing end
 
 """
 Fetch the return value of a process

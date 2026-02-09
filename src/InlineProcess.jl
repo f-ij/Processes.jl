@@ -40,7 +40,6 @@ end
 
 @inline set_starttime!(ip::InlineProcess) = (ip.starttime = time_ns())
 @inline set_endtime!(ip::InlineProcess) = (ip.endtime = time_ns())
-@inline run(ip::InlineProcess) = true
 taskdata(ip::InlineProcess) = ip.taskdata
 
 @inline context(ip::InlineProcess, c) = (ip.context = c)

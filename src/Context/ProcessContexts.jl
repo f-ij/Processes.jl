@@ -19,6 +19,10 @@ end
     return @inline getproperty(get_subcontexts(pc), name)
 end
 
+@inline function Base.getindex(pc::ProcessContext, idx::Int)
+    get_subcontexts(pc)[idx]
+end
+
 @inline get_subcontexts(pc::ProcessContext) = getfield(pc, :subcontexts)
 @inline getregistry(pc::ProcessContext) = getfield(pc, :registry)
 
@@ -79,21 +83,6 @@ Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), sub
     end
 end
 
-
-# @inline function merge_into_subcontexts(pc::ProcessContext{D}, args::As) where {D, As}
-#     subs = subcontexts(pc)
-#     subnames = propertynames(subs)
-#     merged_subvalues = @inline ntuple(length(subnames)) do i
-#         if hasproperty(args, subnames[i])
-#             return merge(getproperty(subs, subnames[i]), getproperty(args, subnames[i]) )
-#         else
-#             return getproperty(subs, subnames[i])
-#         end
-#     end
-#     newsubs = NamedTuple{subnames}(merged_subvalues)
-#     setfield(pc, :subcontexts, newsubs)
-#     # return ProcessContext{typeof(newsubs), typeof(getregistry(pc))}(newsubs, getregistry(pc))
-# end
 
 """
 Args should name subcontext they want to replace, check if all names are in the original context

@@ -9,19 +9,28 @@ mutable struct Process{F} <: AbstractProcess
     loopidx::UInt   
     # To make sure other processes don't interfere
     lock::ReentrantLock 
-    @atomic run::Bool
+    @atomic shouldrun::Bool
     @atomic paused::Bool
     starttime ::Union{Nothing, Float64, UInt64}
     endtime::Union{Nothing, Float64, UInt64}
-    linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
+    # linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
     allocator::Allocator
     rls::RuntimeListeners
     threadid::Int
 end
 
-export Process
+@setterGetter Process lock shouldrun
+"""
+Get value of run of a process, denoting wether it should run or not
+"""
+shouldrun(p::Process) = p.shouldrun
+"""
+Set value of run of a process, denoting wether it should run or not
+"""
+shouldrun(p::Process, val) = @atomic p.shouldrun = val
 
-function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1.0)
+
+function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides...; lifetime = Indefinite(), timeout = 1.0)
 
     # Wrap in a LoopAlgorithm to get all
     # features
@@ -53,7 +62,7 @@ function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1
     # context = init_context(td)
 
     context = prepare_context(td)
-    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), Threads.ReentrantLock(), false, false, nothing, nothing, Process[], Arena(), RuntimeListeners(), 0)
+    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), Threads.ReentrantLock(), false, false, nothing, nothing, Arena(), RuntimeListeners(), 0)
     register_process!(p)
     @DebugMode "Created process with id $(p.id), now preparing data"
     
@@ -61,17 +70,13 @@ function Process(func, inputs_overrides...; lifetime = Indefinite(), timeout = 1
     return p
 end
 
-function Process(func, repeats::Int; overrides = (;), timeout = 1.0, context...) 
+function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, repeats::Int; overrides = (;), timeout = 1.0, context...) 
     lifetime = repeats == 0 ? Indefinite() : Repeat(repeats)
     return Process(func; lifetime, overrides, timeout, context...)
 end
 
-import Base: ==
-==(p1::Process, p2::Process) = p1.id == p2.id
+Base.:(==)(p1::Process, p2::Process) = p1.id == p2.id
 
-getallocator(p::Process) = p.allocator
-
-getinputcontext(p::Process) = p.taskdata.inputargs
 function getcontext(p::Process)
     if !isdone(p)   
         return merge_into_globals(p.context, (;process = p))
@@ -83,8 +88,8 @@ function getcontext(p::Process)
         end
     end
 end
+
 getcontext(p::Process, context) = getcontext(p)[context]
-setcontext!(p::Process, context::NamedTuple) = (p.context = context)
 lifetime(p::Process) = p.taskdata.lifetime
 
 set_starttime!(p::Process) = p.starttime = time_ns()
@@ -103,15 +108,8 @@ function getloopfunc(p::Process)
     get(p.taskdata.overrides, :loopfunc, processloop)
 end
 
-get_linked_processes(p::Process) = p.linked_processes
 
-# List of processes in use
-const processlist = Dict{UUID, WeakRef}()
-register_process!(p) = let id = uuid1(); processlist[id] = WeakRef(p); id end
-function remove_process!(p::Process)
-    quit(p)
-    delete!(processlist, p.id)
-end
+
 
 # function Base.finalizer(p::Process)
 #     quit(p)
@@ -147,7 +145,52 @@ function createfrom!(p1::Process, p2::Process)
 end
 
 
-@setterGetter Process lock run
+
+function timedwait(p, timeout = wait_timeout)
+    t = time()
+    
+    while !isdone(p) && time() - t < timeout
+    end
+
+    return isdone(p)
+end
+
+@inline lock(p::Process) = lock(p.lock)
+@inline lock(f, p::Process) = lock(f, p.lock)
+@inline unlock(p::Process) =  unlock(p.lock)
+
+
+"""
+Runs the prepared task of a process on a thread
+"""
+function makeloop!(p::Process; threaded = true) 
+    @atomic p.paused = false
+    @atomic p.shouldrun = true
+
+    context = merge_into_globals(p.context, (;process = p))
+    spawnloop(p, p.taskdata.func, context, lifetime(p))
+    # if threaded
+    #     p.task = spawnloop(p, p.taskdata.func, context, lifetime(p))
+    # else
+    #     p.task = @async runloop(p, p.taskdata.func, context, lifetime(p))
+    # end
+    return p
+end
+
+"""
+Reset process to initial state
+"""
+function reset!(p::Process)
+    reset_loopidx!(p)
+    @atomic p.paused = false
+    @atomic p.shouldrun = true
+    reset_times!(p)
+end
+
+### LINKING
+
+link_process!(p1::Process, p2::Process) = push!(p1.linked_processes, p2)
+unlink_process!(p1::Process, p2::Process) = filter!(x -> x != p2, p1.linked_processes)
 
 function Base.show(io::IO, p::Process)
     if !isnothing(p.task) && p.task._isexception
@@ -167,68 +210,3 @@ function Base.show(io::IO, p::Process)
 
     return nothing
 end
-
-function timedwait(p, timeout = wait_timeout)
-    t = time()
-    
-    while !isdone(p) && time() - t < timeout
-    end
-
-    return isdone(p)
-end
-
-# timeout(p::Process) = p.timeout
-
-export newprocess
-
-"""
-Runs the prepared task of a process on a thread
-"""
-function spawntask!(p::Process; threaded = true) 
-    @atomic p.paused = false
-    @atomic p.run = true
-
-    context = merge_into_globals(p.context, (;process = p))
-
-    if threaded
-        p.task = spawntask(p, p.taskdata.func, context, lifetime(p))
-    else
-        p.task = @async runloop(p, p.taskdata.func, context, lifetime(p))
-    end
-    return p
-end
-
-@inline lock(p::Process) = lock(p.lock)
-@inline lock(f, p::Process) = lock(f, p.lock)
-@inline unlock(p::Process) =  unlock(p.lock)
-
-function reset!(p::Process)
-    reset_loopidx!(p)
-    @atomic p.paused = false
-    @atomic p.run = true
-    reset_times!(p)
-end
-
-"""
-Get value of run of a process, denoting wether it should run or not
-"""
-run(p::Process) = p.run
-"""
-Set value of run of a process, denoting wether it should run or not
-"""
-run(p::Process, val) = @atomic p.run = val
-
-export changecontext!
-
-## Running
-
-# Run the loop without preparing data
-function (p::Process)(threaded = true)
-    spawntask!(p; threaded)
-end
-
-
-### LINKING
-
-link_process!(p1::Process, p2::Process) = push!(p1.linked_processes, p2)
-unlink_process!(p1::Process, p2::Process) = filter!(x -> x != p2, p1.linked_processes)

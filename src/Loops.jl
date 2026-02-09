@@ -4,9 +4,9 @@ const start_finished = Ref(false)
     start_finished[] = true
     p.threadid = Threads.threadid()
     @atomic p.paused = false
-    _runtimelisteners = runtimelisteners(p)
-    start(_runtimelisteners)
-    start.(get_linked_processes(p)) # TODO OBSOLETE?
+    # _runtimelisteners = runtimelisteners(p)
+    # start(_runtimelisteners)
+    # start.(get_linked_processes(p)) # TODO OBSOLETE?
     set_starttime!(p)
 end
 
@@ -16,20 +16,22 @@ end
 
 @inline function after_while(p::AbstractProcess, func::F, context) where {F}
     @inline set_endtime!(p)
-    _runtimelisteners = runtimelisteners(p)
-    close(_runtimelisteners)
-    close.(get_linked_processes(p)) # TODO OBSOLETE?
-    if !run(p) || lifetime(p) isa Indefinite # If user interrupted, or lifetime is indefinite
+    # _runtimelisteners = runtimelisteners(p)
+    # close(_runtimelisteners)
+    # close.(get_linked_processes(p)) # TODO OBSOLETE?
+    if !shouldrun(p) || lifetime(p) isa Indefinite # If user interrupted, or lifetime is indefinite
+        Processes.context(context(p, context))
         return context
     else
         # return cleanup(getalgo(p), context)
-        return @inline cleanup(func, context)
+        Processes.context(p, @inline cleanup(func, context))
+        return context
     end
 end
 
 @inline function after_while(ip::InlineProcess, func::F, context) where {F}
     @inline set_endtime!(ip)
-    return @inline cleanup(func, context)
+    @inline cleanup(func, context)
 end
 
 
@@ -49,7 +51,7 @@ Run a single function in a loop indefinitely
         context = @inline resume_step!(func, context)
     end
 
-    while run(process)
+    while shouldrun(process)
         context = @inline step!(func, context)
         @inline inc!(process) 
         # if isthreaded(p) || isasync(p)
@@ -73,7 +75,7 @@ Base.@constprop :aggressive function processloop(process::AbstractProcess, algo:
     end
 
     for _ in start_idx:repeats(r)
-        if !run(process)
+        if !shouldrun(process)
             break
         end
         context = @inline step!(algo, context)

@@ -15,7 +15,7 @@ end
         return context
     else
         for i in this_resume_idx:this_repeat
-            if !run(process)
+            if !shouldrun(process)
                 set_resume_point!(r, unroll_idx)
                 return context
             end

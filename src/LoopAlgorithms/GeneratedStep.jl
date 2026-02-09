@@ -1,33 +1,3 @@
-
-# """
-# Give the expression form of the step! function form the types
-# """
-# function step!_expr(sa::Type{SA}, context::Type{C}, name::Symbol) where {SA<:SimpleAlgo, C<:AbstractContext}
-#     ca = SA
-#     ft = dt.parameters[1]
-
-#     exprs = Any[]
-#     push!(exprs, :((;process) = @inline getglobals(context)))
-
-#     for i in 1:length(ft.parameters)
-#         push!(exprs, quote
-#             if !run(process)
-#                 if resumable($name)
-#                     resume_idx!($name)
-#                 end
-#                 return context
-#             end
-#         end)
-#         fti = ft.parameters[i]
-#         local_name = gensym(:algo)
-#         push!(exprs, :(local $local_name = getalgo($name, $i)))
-#         push!(exprs, step!_expr(fti, C, local_name))
-#     end
-
-#     push!(exprs, :(context))
-#     return Expr(:block, exprs...)
-# end
-
 """
 Generated expression form of the composite step! with a caller-provided name binding.
 """
@@ -94,13 +64,13 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) wh
         push!(exprs, :(local $local_name = getalgo($name, $i)))
 
         # Generated block: a repeat-loop for this child algorithm.
-        # - If `run(process)` is false, record the resume point (child index i) and return early.
+        # - If `shouldrun(process)` is false, record the resume point (child index i) and return early.
         # - Otherwise execute the child's generated `step!` body.
         push!(exprs, quote
 
             for _ in 1:$(this_repeat)
                 # Pause/stop check: if the process is not running, record which child we were on.
-                if !run(process)
+                if !shouldrun(process)
                     set_resume_point!($name, $i)
                     return context
                 end

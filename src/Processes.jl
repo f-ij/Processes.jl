@@ -4,6 +4,7 @@ module Processes
     export getcontext, Process, start, quit
 
     using UUIDs, Preferences, JLD2, MacroTools, StaticArrays
+
     import Base: Threads.SpinLock, lock, unlock
     const wait_timeout = .5
 
@@ -47,6 +48,8 @@ module Processes
     include("Debugging.jl")
     include("Listeners.jl")
     include("Process.jl")
+
+    include("ProcessList.jl")
 
     include("InlineProcess.jl")
 
