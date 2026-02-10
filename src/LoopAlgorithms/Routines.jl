@@ -16,6 +16,8 @@ function Routine(funcs::NTuple{N,Any},
 
     (; functuple, registry, options) = setup(Routine, funcs, repeats, shares_and_routes...)
     sidxs = MVector{length(functuple),Int}(ones(length(functuple)))
+    
+    repeats = Int.(repeats)
     Routine{typeof(functuple),repeats,typeof(sidxs),typeof(registry),typeof(options),uuid4()}(functuple, sidxs, registry, options)
 end
 

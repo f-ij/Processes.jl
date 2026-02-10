@@ -21,6 +21,8 @@ function CompositeAlgorithm(funcs::NTuple{N, Any},
     if any(x -> x isa CompositeAlgorithm, functuple) # Flatten nested composites
         functuple, intervals = flatten_comp_funcs(functuple, intervals)    
     end
+
+    intervals = Int.(intervals)
     CompositeAlgorithm{typeof(functuple), intervals, typeof(registry), typeof(options), nothing, customname}(functuple, Ref(1), registry, options)
 end
 
