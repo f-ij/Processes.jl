@@ -76,9 +76,6 @@ function setinterval(ca::C, idx::Int, new_interval) where {C<:CompositeAlgorithm
 end
 
 
-
-
-
 #######################################
 ############ Properties ################
 ########################################
@@ -109,6 +106,7 @@ function reset!(ca::CompositeAlgorithm)
     ca.inc[] = 1
     reset!.(ca.funcs)
 end
+
 
 # Change the names
 setnames(ca::CompositeAlgorithm{T,Int}, names::NTuple{N, Symbol}) where {T,N} = CompositeAlgorithm{T,Int,names}(ca.funcs, ca.inc, ca.flags)

@@ -8,7 +8,7 @@ Base.@constprop :aggressive @inline function step!(ca::CompositeAlgorithm{T, Is}
     idxs = @inline algonvalumbers(ca)
     algos_and_idxs = @inline zip(algos, idxs)
     return @inline unrollreplace_withcallback(context, context -> begin
-            @inline inc!(ca)
+            @inline tick!(ca)
             context
         end , algos_and_idxs... ) do context, (func, algoidx)
         if (@inline interval(ca, getvalue(algoidx))) == 1
@@ -39,7 +39,7 @@ Base.@constprop :aggressive @inline function step!(r::Routine, context::C) where
             end
             context = @inline step!(func, context)
             # GC.safepoint()
-            inc!(context.globals.process)
+            tick!(context.globals.process)
         end
         return context
     end

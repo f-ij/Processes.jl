@@ -78,6 +78,7 @@ end
 @inline match_by(::Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
 @inline registry_entrytype(::Type{<:PackagedAlgo}) = PackagedAlgo
 
+reset!(ca::PackagedAlgo) = (ca.inc[] = 1; reset!.(ca.funcs))
 ########################################
 ####### Identifiable Interface  ########
 ########################################

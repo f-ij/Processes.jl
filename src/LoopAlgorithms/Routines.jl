@@ -43,7 +43,10 @@ subalgotypes(rT::Type{<:Routine{FT}}) where FT = FT.parameters
 # getnames(r::Routine{T, R, NT, N}) where {T, R, NT, N} = N
 Base.length(r::Routine) = length(r.funcs)
 
-
+function reset!(r::Routine)
+    r.resume_idxs .= 1
+    reset!.(r.funcs)
+end
 #############################################
 ################ Type Info ###############
 #############################################
@@ -60,10 +63,7 @@ getid(r::Union{Routine{T,R,MV,NSR,O,id},Type{<:Routine{T,R,MV,NSR,O,id}}}) where
 repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, idx::Int) where {F,R} = R[idx]
 repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, ::Val{idx}) where {F,R,idx} = R[idx]
 
-function reset!(r::Routine)
-    r.resume_idxs .= 1
-    reset!.(r.funcs)
-end
+
 
 function resume_idxs(r::Routine)
     r.resume_idxs

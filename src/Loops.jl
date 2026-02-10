@@ -62,6 +62,7 @@ Run a single function in a loop indefinitely
 
     while shouldrun(process)
         context = @inline step!(func, context)
+        @inline tick!(process)
         @inline inc!(process) 
         # if isthreaded(p) || isasync(p)
         #     GC.safepoint()
@@ -88,6 +89,7 @@ Base.@constprop :aggressive function processloop(process::AbstractProcess, algo:
             break
         end
         context = @inline step!(algo, context)
+        @inline tick!(process)
         @inline inc!(process)
 
         # if isthreaded(p) || isasync(p)

@@ -24,7 +24,7 @@ function Base.run(p::Process, lifetime = nothing)
     # end
     # start_finished[] = false
 
-    makeloop!(p; threaded=isthreaded(p))
+    makeloop!(p)
 end
 
 """

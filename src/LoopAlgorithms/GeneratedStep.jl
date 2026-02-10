@@ -78,7 +78,7 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) wh
                 $(step!_expr(this_functype, C, local_name))
                 
                 # Assumes process is defined in the top level
-                inc!(process)
+                tick!(process) # Tick counter
                 # GC.safepoint()
             end
         end)

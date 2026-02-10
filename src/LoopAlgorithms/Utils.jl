@@ -1,5 +1,3 @@
-reset!(a::Any) = nothing
-
 function replace_name!(pa::LoopAlgorithm, idx, newname::Symbol) 
     oldnames = getnames(pa)
     newnames = ntuple(i -> i == idx ? newname : oldnames[i], length(oldnames))

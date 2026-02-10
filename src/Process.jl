@@ -1,4 +1,5 @@
-export Process, getallocator, getnewallocator, getcontext
+export Process, getallocator, getnewallocator, getcontext, getticks
+
 
 mutable struct Process{F} <: AbstractProcess
     id::UUID
@@ -6,7 +7,8 @@ mutable struct Process{F} <: AbstractProcess
     taskdata::TaskData{F}
     timeout::Float64
     task::Union{Nothing, Task}
-    loopidx::UInt   
+    loopidx::UInt # To track the current loop index for resuming
+    tickidx::UInt # To track ticks for performance monitoring
     # To make sure other processes don't interfere
     lock::ReentrantLock 
     @atomic shouldrun::Bool
@@ -28,6 +30,12 @@ shouldrun(p::Process) = p.shouldrun
 Set value of run of a process, denoting wether it should run or not
 """
 shouldrun(p::Process, val) = @atomic p.shouldrun = val
+
+# Loop counting
+looptick!(p::Process) = p.tickidx += 1
+tick!(p::Process) = p.tickidx += 1
+getticks(p::Process) = p.tickidx
+reset_ticks!(p::Process) = p.tickidx = 1
 
 
 function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides...; lifetime = Indefinite(), timeout = 1.0)
@@ -62,7 +70,7 @@ function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides.
     # context = init_context(td)
 
     context = prepare_context(td)
-    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
+    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
     register_process!(p)
     @DebugMode "Created process with id $(p.id), now preparing data"
     
@@ -181,9 +189,13 @@ Reset process to initial state
 """
 function reset!(p::Process)
     reset_loopidx!(p)
+    reset_ticks!(p)
     @atomic p.paused = false
     @atomic p.shouldrun = true
     reset_times!(p)
+    algo = getalgo(p.taskdata)
+    reset!(algo)
+    return p
 end
 
 ### LINKING
