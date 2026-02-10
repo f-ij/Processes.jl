@@ -9,7 +9,7 @@ function setup(cla_target_type::Type{<:LoopAlgorithm},funcs::NTuple{N, Any},
     multipliers = getmultipliers_from_specification_num(cla_target_type, specification_num)
     options_all = options
 
-    @assert all(isa.(funcs, ProcessEntity)) "All functions must be LoopAlgorithms, but got: $(funcs)"
+    @assert all(map(x -> (x isa ProcessEntity || x <: ProcessEntity || x isa LoopAlgorithm), funcs)) "All functions must be ProcessEntities or LoopAlgorithms, but got: $(funcs)"
 
     for (func_idx, func) in enumerate(funcs)
         if func isa LoopAlgorithm # Deepcopy to make multiple instances independent

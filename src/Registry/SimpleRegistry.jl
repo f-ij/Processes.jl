@@ -24,14 +24,14 @@ end
 
 static_findfirst_match(r::SR, val) where SR <: SimpleRegistry = static_findfirst_match(r, Val(val))
 static_findfirst_match(r::SR, v::Val{val}) where {SR <: SimpleRegistry{T} where T,val} = static_findfirst_match(SR, v)
-@generated function static_findfirst_match(r::Type{SR}, ::Val{val}) where {SR <: SimpleRegistry{T} where T,val}
-    ETypes = entrytypes(SR)
-    fidx = findfirst(x -> match(x, val), ETypes)
-    if isnothing(fidx)
-        return :(nothing)
-    end
-    return :($fidx)
-end
+# @generated function static_findfirst_match(r::Type{SR}, ::Val{val}) where {SR <: SimpleRegistry{T} where T,val}
+#     ETypes = entrytypes(SR)
+#     fidx = findfirst(x -> match(x, val), ETypes)
+#     if isnothing(fidx)
+#         return :(nothing)
+#     end
+#     return :($fidx)
+# end
 
 function Base.getindex(r::SimpleRegistry{T}, key) where T
     fidx = static_findfirst_match(r, Val(key))

@@ -35,7 +35,7 @@ end
     pack = PackagedAlgo(fibluc, "FLPack")
 
     p = Process(pack; lifetime = n)
-    start(p)
+    run(p)
     wait(p)
     ctx = fetch(p)
 

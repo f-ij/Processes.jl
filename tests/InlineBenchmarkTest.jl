@@ -48,7 +48,7 @@ function inline_bmark(ip::Processes.InlineProcess, trials = 5)
     for _ in 1:trials
         @inline reset!(ip)
         start_ns = time_ns()
-        @inline run(ip,)
+        @inline run(ip)
         elapsed = (time_ns() - start_ns) / 1e9
         push!(runtimes, elapsed)
     end

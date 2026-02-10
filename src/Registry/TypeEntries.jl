@@ -77,10 +77,10 @@ end
     static_findfirst_match(rte, Val(val))
 end
 
-@inline @generated function static_findfirst_match(rte::RegistryTypeEntry{T,S}, v::Val{value}) where {T,S,value}
-    idx = findfirst(x -> match(value, x), entry_types(rte))
-    return :($idx)
-end
+# @inline @generated function static_findfirst_match(rte::RegistryTypeEntry{T,S}, v::Val{value}) where {T,S,value}
+#     idx = findfirst(x -> match(value, x), entry_types(rte))
+#     return :($idx)
+# end
 
 @inline dynamic_find_match(rte::RegistryTypeEntry{T}, val) where {T} = get(getdynamiclookup(rte), val, nothing)
 

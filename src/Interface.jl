@@ -1,7 +1,7 @@
 
-export run, start, restart, quit, pause, close, syncclose, refresh
+export start, restart, quit, pause, syncclose, reprepare
 
-function run(p::Process, lifetime = nothing)
+function Base.run(p::Process, lifetime = nothing)
     @assert isidle(p) "Process is already in use"
     @atomic p.shouldrun = true
     if !ispaused(p)
@@ -40,8 +40,12 @@ function Base.close(p::Process)
     @atomic p.paused = false
     @atomic p.shouldrun = false
 
+    fetched_context = nothing
     try
         wait(p)
+        if !isnothing(p.task)
+            fetched_context = fetch(p)
+        end
     catch(err)
         println("Process with error closed:")
         Base.showerror(stderr, err)
@@ -49,7 +53,10 @@ function Base.close(p::Process)
         makecontext!(p)
 
     end
-    context(p, fetch(p))
+
+    if fetched_context isa AbstractContext
+        context(p, fetched_context)
+    end
     p.task = nothing 
 
     p.loopidx = 1

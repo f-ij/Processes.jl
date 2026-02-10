@@ -73,11 +73,7 @@ function num_calls(contextview, lifetime, instance)
 end
 
 function num_calls(contextview, lifetime, instance::SubPackage)
-    # @show getregistry(contextview)
-    # @show instance 
-    package_multiplier = getmultiplier(getregistry(contextview), instance)
-    submultiplier = getmultiplier(getregistry(contextview)[instance], instance)
-    multiplier = package_multiplier * submultiplier
+    multiplier = getmultiplier(contextview, instance)
     if lifetime isa Indefinite
         return typemax(Int)
     end

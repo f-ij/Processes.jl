@@ -51,7 +51,7 @@ taskdata(ip::InlineProcess) = ip.taskdata
     return true
 end
 
-@inline function run(p::InlineProcess, repeat=nothing)
+@inline function Base.run(p::InlineProcess, repeat=nothing)
     if !isnothing(repeat)
         p.repeats = repeat
     end

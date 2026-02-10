@@ -36,12 +36,6 @@ end
 """
 Types of entries as a tuple type Tuple{Type1, Type2, ...}
 """
-# @generated function entrytypes(reg::Type{NameSpaceRegistry{T}}) where {T}
-#     entrytypes = T.parameters
-#     datatypes = gettype.(entrytypes)
-#     Tt = Tuple{datatypes...}
-#     return :($Tt)
-# end
 function entrytypes(reg::Union{NameSpaceRegistry{T}, Type{NameSpaceRegistry{T}}}) where {T}
     param_svec = T.parameters
     if isempty(param_svec)
@@ -56,12 +50,6 @@ end
 """
 Types of entries as a tuple statically (Type1, type2, ...)
 """
-# @generated function entrytypes_iterator(reg::Type{NameSpaceRegistry{T}}) where {T}
-#     entrytypes = T.parameters
-#     datatypes = gettype.(entrytypes)
-#     Tt = tuple(datatypes...)
-#     return :($Tt)
-# end
 function entrytypes_iterator(reg::Union{NameSpaceRegistry{T}, Type{NameSpaceRegistry{T}}}) where {T}    
     param_svec = T.parameters
     if isempty(param_svec)
@@ -80,24 +68,24 @@ Find the index in the entries for a given type T
 @inline find_typeidx(regt::Type{<:NameSpaceRegistry}, typ::Type) = _find_typeidx(regt, typ)
 @inline find_typeidx(reg::NameSpaceRegistry, obj) = find_typeidx(typeof(reg), obj)
 
-@generated function _find_typeidx(reg::Type{NSR}, typ::Type{T}) where {NSR <: NameSpaceRegistry, T}
-    it = entrytypes_iterator(NSR)
-    index = findfirst(t -> T <: t, it)
-    return quote
-        $(LineNumberNode(@__LINE__, @__FILE__))
-        idx = $index
-        return idx
-    end
-end
+# @generated function _find_typeidx(reg::Type{NSR}, typ::Type{T}) where {NSR <: NameSpaceRegistry, T}
+#     it = entrytypes_iterator(NSR)
+#     index = findfirst(t -> T <: t, it)
+#     return quote
+#         $(LineNumberNode(@__LINE__, @__FILE__))
+#         idx = $index
+#         return idx
+#     end
+# end
 
-"""
-Non-generated helper of find_typeidx for use in other generated functions
-"""
-function nongen_find_typeidx(reg::Type{<:NameSpaceRegistry}, typ::Type{T}) where {T}
-    it = entrytypes_iterator(reg)
-    index = findfirst(t -> T <: t, it)
-    return index
-end
+# """
+# Non-generated helper of find_typeidx for use in other generated functions
+# """
+# function nongen_find_typeidx(reg::Type{<:NameSpaceRegistry}, typ::Type{T}) where {T}
+#     it = entrytypes_iterator(reg)
+#     index = findfirst(t -> T <: t, it)
+#     return index
+# end
 
 
 
@@ -205,32 +193,45 @@ inherit(e1::NameSpaceRegistry; kwargs...) = e1
 """
 Get entries for an obj
 """
-@generated function get_type_entries(reg::NameSpaceRegistry, typ::Union{T, Type{T}}) where {T}
-    assigned_T = assign_entrytype(T)
-    idx = nongen_find_typeidx(reg, assigned_T)
+function get_type_entries(reg::NameSpaceRegistry, obj)
+    assigned_t = assign_entrytype(obj)
+    idx = find_typeidx(reg, assigned_t)
     if isnothing(idx)
-        types = entrytypes_iterator(reg)
-        available = isempty(types) ? "<none>" : join(string.(types), ", ")
-        requested = string(assigned_T)
-        # msg = "Unknown algo/type referenced in registry lookup.\n" *
-        #       "Requested: " * requested * "\n" *
-        #       "Available entry types: " * available * "\n" *
-        #       "If this came from a Share or Route, the referenced algo/type is not registered."
-        return quote
-            $(LineNumberNode(@__LINE__, @__FILE__))
-            requested = $requested
-            available = $available
-            error("Unknown algo/type referenced in registry lookup, for registry: $reg.\n" *
-                  "Requested: $requested\n" *
-                  "Available entry types: $available\n" *
-                  "If this came from a Share or Route, the referenced algo/type is not registered." ) 
-        end
+        error("Unknown algo/type referenced in registry lookup, for registry: $reg.\n" *
+              "Requested type: $assigned_t\n" *
+              "Requested value: $obj\n" *
+              "Available entry types: $(entrytypes_iterator(reg))\n" *
+              "If this came from a Share or Route, the referenced algo/type is not registered." )
     end
-    return quote 
-        $(LineNumberNode(@__LINE__, @__FILE__)) 
-        getentries(reg)[ $idx ] 
-    end
+    return getentries(reg)[idx]
 end
+# @generated function get_type_entries(reg::NameSpaceRegistry, typ::Union{T, Type{T}}) where {T}
+#     assigned_T = assign_entrytype(T)
+#     idx = nongen_find_typeidx(reg, assigned_T)
+#     if isnothing(idx)
+#         types = entrytypes_iterator(reg)
+#         available = isempty(types) ? "<none>" : join(string.(types), ", ")
+#         requested = string(assigned_T)
+#         # msg = "Unknown algo/type referenced in registry lookup.\n" *
+#         #       "Requested: " * requested * "\n" *
+#         #       "Available entry types: " * available * "\n" *
+#         #       "If this came from a Share or Route, the referenced algo/type is not registered."
+#         return quote
+#             $(LineNumberNode(@__LINE__, @__FILE__))
+#             requested = $requested
+#             available = $available
+#             error("Unknown algo/type referenced in registry lookup, for registry: $reg.\n" *
+#                   "Requested type: $requested\n" *
+#                   "Requested value: $typ\n" *
+#                   "Available entry types: $available\n" *
+#                   "If this came from a Share or Route, the referenced algo/type is not registered." ) 
+#         end
+#     end
+#     return quote 
+#         $(LineNumberNode(@__LINE__, @__FILE__)) 
+#         getentries(reg)[ $idx ] 
+#     end
+# end
 
 #########################
 ### Lookup Utilities ###
@@ -439,16 +440,6 @@ Return all named objects
 function all_algos(reg::NameSpaceRegistry)
     return flat_collect_broadcast(getentries, getentries(reg))
 end
-
-# @generated function funcs_in_prepare_order(reg::NameSpaceRegistry{T}) where {T}
-#     entrytypes = tuple(T.parameters...)
-#     _all_types = flat_collect_broadcast(entry_types, entrytypes)
-#     all_values = getvalue.(_all_types)
-#     process_states = filter(x -> getalgo(x) isa ProcessState, all_values)
-#     other = filter(x -> !(getalgo(x) isa ProcessState), all_values)
-#     all_in_order = (process_states..., other...)
-#     return :( $all_in_order )
-# end
 ##########################
     ##### ITERATING #####
 ##########################
