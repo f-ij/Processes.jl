@@ -34,6 +34,8 @@ module Processes
     include("Identifiable/Identifiable.jl")
 
     include("Registry/Registry.jl")
+
+    include("RoutingInterface/RoutingInterface.jl")
     include("Context/Context.jl")
 
     include("Lifetime.jl")

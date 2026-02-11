@@ -38,7 +38,7 @@ getticks(p::Process) = p.tickidx
 reset_ticks!(p::Process) = p.tickidx = 1
 
 
-function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides...; lifetime = Indefinite(), timeout = 1.0)
+function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides...; context = nothing, lifetime = Indefinite(), timeout = 1.0)
 
     # Wrap in a LoopAlgorithm to get all
     # features
