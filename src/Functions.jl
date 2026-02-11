@@ -907,3 +907,11 @@ end
 Get the value of a Val{N} as N
 """
 @inline getvalue(::Val{N}) where N = N
+
+
+"""
+Creates expression: (;name1, name2, name3, etc...) = ntname
+"""
+function namedtuple_destructure_expr(ntname::Symbol, varnames...)
+    Expr(:(=), Expr(:tuple, Expr(:parameters, varnames...)), ntname)
+end

@@ -2,7 +2,7 @@ get_loopalgorithm_registry(la::LoopAlgorithm) = getregistry(la)
 get_loopalgorithm_registry(::Any) = NameSpaceRegistry()
 function setup(cla_target_type::Type{<:LoopAlgorithm},funcs::NTuple{N, Any}, 
                             specification_num::NTuple{N, Real} = ntuple(_ -> 1, N), 
-                            options::AbstractOption...) where {N}
+                            options::Union{AbstractOption, Type{<:AbstractOption}}...) where {N}
 
     allfuncs = Any[]
     registry = NameSpaceRegistry()
@@ -23,7 +23,8 @@ function setup(cla_target_type::Type{<:LoopAlgorithm},funcs::NTuple{N, Any},
     registry = inherit(registry, get_loopalgorithm_registry.(allfuncs)...; multipliers)
     @DebugMode "Combined registry: $registry, after inheriting: $(get_loopalgorithm_registry.(allfuncs))"
 
-    process_state = filter(x -> x isa ProcessState, options_all)
+
+    process_state = filter(x -> (x isa ProcessState) || (x isa Type{<:ProcessState}), options_all)
     registry = addall(registry, process_state)
     @DebugMode "Adding process state options: $process_state"
     @DebugMode "Final registry: $registry"

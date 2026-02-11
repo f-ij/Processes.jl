@@ -13,7 +13,7 @@ getmultipliers_from_specification_num(::Type{<:CompositeAlgorithm}, specificatio
 
 function CompositeAlgorithm(funcs::NTuple{N, Any}, 
                             intervals::NTuple{N, Real} = ntuple(_ -> 1, N), 
-                            options::Union{Share, Route, ProcessState}...; id = nothing, customname = Symbol()) where {N}
+                            options::Union{Share, Route, ProcessState, Type{<:ProcessState}}...; id = nothing, customname = Symbol()) where {N}
     (;functuple, registry, options) = setup(CompositeAlgorithm, funcs, intervals, options...)
     if all(x -> x == 1, intervals)
         intervals = RepeatOne() # Set to simpleAlgo

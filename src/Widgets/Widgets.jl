@@ -1,3 +1,6 @@
+include("IsBitsStorage.jl")
+include("RunFuncs.jl")
+
 """
 Log a variable
 """

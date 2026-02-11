@@ -5,7 +5,8 @@ import Processes as ps
 
 struct Walker <: ProcessAlgorithm end
 
-function Walker(state, momentum, dt)
+function Processes.step!(::Walker, context::C) where C
+    (;state, momentum, dt) = context
     println("State is now $state")
     println("pushing : $(momentum) * dt)")
     push!(state, state[end] + momentum * dt)

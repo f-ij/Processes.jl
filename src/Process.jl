@@ -16,7 +16,7 @@ mutable struct Process{F} <: AbstractProcess
     starttime ::Union{Nothing, Float64, UInt64}
     endtime::Union{Nothing, Float64, UInt64}
     # linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
-    allocator::Allocator
+    # allocator::Allocator
     rls::RuntimeListeners
     threadid::Int
 end
@@ -70,7 +70,9 @@ function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides.
     # context = init_context(td)
 
     context = prepare_context(td)
-    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
+    # p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
+    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, RuntimeListeners(), 0)
+
     register_process!(p)
     @DebugMode "Created process with id $(p.id), now preparing data"
     

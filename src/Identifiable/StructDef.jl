@@ -29,7 +29,7 @@ end
 """
 Set an explicit name for an algorithm
 """
-function IdentifiableAlgo(f, contextkey::Symbol = Symbol(), id::Union{Nothing, Symbol, UUID} = nothing; customname = Symbol(), aliases...)
+function IdentifiableAlgo(f, contextkey::Symbol, id::Union{Nothing, Symbol, UUID} = nothing; customname = Symbol(), aliases...)
     if f isa AbstractIdentifiableAlgo # Don't wrap a IdentifiableAlgo again, just setid
         # return IdentifiableAlgo(getalgo(f), contextkey, id(f); aliases...)
         if !isnothing(id) && !isnothing(getid(f))
@@ -47,6 +47,7 @@ function IdentifiableAlgo(f, contextkey::Symbol = Symbol(), id::Union{Nothing, S
     aliases = VarAliases(;aliases...)
     IdentifiableAlgo{typeof(f), id, aliases, customname, contextkey}(f)
 end
+IdentifiableAlgo(f; id = nothing, customname = Symbol(), aliases...)  = IdentifiableAlgo(f, contextkey = Symbol(), id; customname, aliases...)
 
 """
 Scoped Algorithms don't wrap other IdentifiableAlgos

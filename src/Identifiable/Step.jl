@@ -9,6 +9,7 @@ Expression form of the scoped step! to inline view/merge and the inner step! cal
 """
 function step!_expr(sa::Type{<:IdentifiableAlgo}, context::Type{C}, funcname::Symbol) where {C<:AbstractContext}
     return quote
+        $(LineNumberNode(@__LINE__, @__FILE__))
         contextview = @inline view(context, $funcname)
         returnvals = @inline step!(getalgo($funcname), contextview)
         context = @inline merge(contextview, returnvals)

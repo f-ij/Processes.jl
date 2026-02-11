@@ -25,10 +25,8 @@ module Processes
     include("Printing.jl")
     include("ExpressionTools.jl")
 
-    include("Arena.jl")
+    # include("Arena.jl")
 
-
-    
 
     include("AbstractProcesses.jl")
 
@@ -47,11 +45,15 @@ module Processes
     include("Benchmark.jl")
     include("Debugging.jl")
     include("Listeners.jl")
+
     include("Process.jl")
+    include("InlineProcess.jl")
+
 
     include("ProcessList.jl")
 
-    include("InlineProcess.jl")
+    include("Widgets/Widgets.jl")
+
 
     include("ProcessStatus.jl")
     include("Interface.jl")
