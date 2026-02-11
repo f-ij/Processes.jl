@@ -24,7 +24,7 @@ function InlineProcess(func::F; threaded=false, repeats=1, context...) where F
     # tf = PreparedData(func; lifetime = nrepeats, args...)
     tf = TaskData(func; lifetime=nrepeats, context...)
     # prepared_context = prepare_args(tf)
-    context = prepare_context(tf)
+    context = init_context(tf)
 
     p = InlineProcess{typeof(tf),typeof(context),threaded}(uuid1(), tf, context, UInt(1), repeats, nothing, nothing)
     return p
