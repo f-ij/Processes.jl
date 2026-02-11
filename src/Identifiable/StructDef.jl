@@ -22,14 +22,14 @@ Algorithm assigned to a namespace in a context
     AlgoName can be used when fusing multiple algorithms to give them custom names
 
 """
-struct IdentifiableAlgo{F, Id, VarAliases, AlgoName, ScopeName} <: AbstractIdentifiableAlgo{F, Id, VarAliases, AlgoName, ScopeName}
+struct IdentifiableAlgo{F, Id, VarAliases, AlgoName, Key} <: AbstractIdentifiableAlgo{F, Id, VarAliases, AlgoName, Key}
     func::F
 end
 
 """
 Set an explicit name for an algorithm
 """
-function IdentifiableAlgo(f, contextkey::Symbol, id::Union{Nothing, Symbol, UUID} = nothing; customname = Symbol(), aliases...)
+@inline function IdentifiableAlgo(f::F, contextkey::Symbol, id::Union{Nothing, Symbol, UUID} = nothing; customname = Symbol(), aliases...) where F
     if f isa AbstractIdentifiableAlgo # Don't wrap a IdentifiableAlgo again, just setid
         # return IdentifiableAlgo(getalgo(f), contextkey, id(f); aliases...)
         if !isnothing(id) && !isnothing(getid(f))
@@ -43,11 +43,12 @@ function IdentifiableAlgo(f, contextkey::Symbol, id::Union{Nothing, Symbol, UUID
         # if 
     end
     f = instantiate(f) # Don't wrap a type
-
     aliases = VarAliases(;aliases...)
-    IdentifiableAlgo{typeof(f), id, aliases, customname, contextkey}(f)
+
+    IdentifiableAlgo{typeof(f), id, aliases, customname, contextkey}(f)::IdentifiableAlgo{typeof(f), id, aliases, customname, contextkey}
 end
-IdentifiableAlgo(f; id = nothing, customname = Symbol(), aliases...)  = IdentifiableAlgo(f, contextkey = Symbol(), id; customname, aliases...)
+
+IdentifiableAlgo(f::F; key = Symbol(), id = nothing, customname = Symbol(), aliases...) where F = @inline IdentifiableAlgo(f, key, id; customname, aliases...)
 
 """
 Scoped Algorithms don't wrap other IdentifiableAlgos
@@ -55,9 +56,18 @@ Scoped Algorithms don't wrap other IdentifiableAlgos
 """
 IdentifiableAlgo(na::IdentifiableAlgo, name::Symbol) = setcontextkey(na, name)
 
+function Autokey(f::F, i::Int, id = nothing; customname = Symbol(), aliases...) where F
+    f = instantiate(f)
+    TName = nameof(typeof(f))
+    key = @inline static_symbol(TName,(:_), i)
+    @inline IdentifiableAlgo(f, key, id; customname, aliases...)
+end
 
-Autokey(f, i::Int, prefix = "", id = nothing; customname = Symbol(), aliases...) = IdentifiableAlgo(f, Symbol(prefix, nameoftype(f),"_",string(i)), id; customname=customname, aliases...)
-Autokey(f::IdentifiableAlgo, i::Int, prefix = ""; customname = Symbol(), aliases...) = setcontextkey(f, Symbol(prefix, nameoftype(getalgo(f)),"_",string(i)))
+function Autokey(f::IA, i::Int; customname = Symbol(), aliases...) where IA <: IdentifiableAlgo
+    TName = nameoftype(getalgo(f))
+    key = @inline static_symbol(TName,(:_), i)
+    setcontextkey(f, key)
+end
 
 
 function Unique(f; customname = Symbol(), aliases...)

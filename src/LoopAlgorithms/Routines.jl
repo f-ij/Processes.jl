@@ -3,25 +3,34 @@ export Routine
 """
 Struct to create routines
 """
-struct Routine{T,Repeats,MV,NSR,O,id} <: LoopAlgorithm
-    funcs::T
-    resume_idxs::MV
-    registry::NSR
+struct Routine{T, Repeats, S, MV, O, id} <: LoopAlgorithm
+    funcs::T     
+    states::S
     options::O
+    resume_idxs::MV
 end
 
-function Routine(funcs::NTuple{N,Any},
-    repeats::NTuple{N,Real}=ntuple(x -> 1, length(funcs)),
-    shares_and_routes::Union{Share,Route}...) where {N}
+function Routine(args...)
+    parse_la_input(Routine, args...)
+end
 
-    (; functuple, registry, options) = setup(Routine, funcs, repeats, shares_and_routes...)
-    sidxs = MVector{length(functuple),Int}(ones(length(functuple)))
+function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple, repeats; id = uuid4()) where F
+    resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
+    return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), id}(funcs, states, options, resume_idxs)
+end
+
+# function Routine(funcs::NTuple{N,Any},
+#     repeats::NTuple{N,Real}=ntuple(x -> 1, length(funcs)),
+#     shares_and_routes::Union{Share,Route}...) where {N}
+
+#     (; functuple, registry, options) = setup(Routine, funcs, repeats, shares_and_routes...)
+#     sidxs = MVector{length(functuple),Int}(ones(length(functuple)))
     
-    if repeats isa Tuple
-        repeats = Int.(repeats)
-    end
-    Routine{typeof(functuple),repeats,typeof(sidxs),typeof(registry),typeof(options),uuid4()}(functuple, sidxs, registry, options)
-end
+#     if repeats isa Tuple
+#         repeats = Int.(repeats)
+#     end
+#     Routine{typeof(functuple),repeats,typeof(sidxs),typeof(registry),typeof(options),uuid4()}(functuple, sidxs, registry, options)
+# end
 
 function newfuncs(r::Routine, funcs)
     setfield(r, :funcs, funcs)

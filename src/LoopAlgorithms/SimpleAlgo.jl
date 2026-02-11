@@ -4,12 +4,13 @@ Base.getindex(::RepeatOne, idx = nothing) = 1
 """
 Simple algo is base case for composite algorithms with all intervals set to 1
 """
-const SimpleAlgo{T,NSR,O,id, CustomName} = CompositeAlgorithm{T, RepeatOne(), NSR, O, id, CustomName}
-function SimpleAlgo(funcs::NTuple{N, Any}, 
-                    options::Union{Share, Route, ProcessState}...; id = nothing, customname = Symbol()) where {N}
-    (;functuple, registry, options) = setup(SimpleAlgo, funcs, ntuple(_ -> 1, N), options...)
-    CompositeAlgorithm{typeof(functuple), RepeatOne(), typeof(registry), typeof(options), id, customname}(functuple, Ref(1), registry, options)
-end
+const SimpleAlgo{T, S, O, id} = CompositeAlgorithm{T, RepeatOne(), S, O, id}
+SimpleAlgo(args...) = CompositeAlgorithm(args...)
+# function SimpleAlgo(funcs::NTuple{N, Any}, 
+#                     options::Union{Share, Route, ProcessState}...; id = nothing, customname = Symbol()) where {N}
+#     (;functuple, registry, options) = setup(SimpleAlgo, funcs, ntuple(_ -> 1, N), options...)
+#     CompositeAlgorithm{typeof(functuple), RepeatOne(), typeof(registry), typeof(options), id, customname}(functuple, Ref(1), registry, options)
+# end
 @inline intervals(sa::SA) where SA <: SimpleAlgo = ntuple(_ -> 1, length(sa))
 
 # #TODO: Extend this to wrap multiple functions with a 1:1 interval

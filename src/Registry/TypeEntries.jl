@@ -1,19 +1,18 @@
-function Base.length(te::RegistryTypeEntry)
+@inline function Base.length(te::RegistryTypeEntry)
     return length(te.entries)
 end
 
-function Base.setindex(rte::RegistryTypeEntry, new, idx::Int)
+@inline function Base.setindex(rte::RegistryTypeEntry, new::N , idx::Int) where {N}
     entries = getentries(rte)
-    Base.setindex(entries, new, idx)
+    Base.tuple_setindex(entries, new, idx)
 end
 
-getentries(rte::RegistryTypeEntry) = getfield(rte, :entries)
-getdynamic(rte::RegistryTypeEntry) = getfield(rte, :dynamic)
-getdynamiclookup(rte::RegistryTypeEntry) = getfield(rte, :dynamic_lookup)
-getmultipliers(rte::RegistryTypeEntry) = getfield(rte, :multipliers)
-getmultiplier(rte::RegistryTypeEntry, idx::Int) = getmultipliers(rte)[idx]
-
-getentries(rtetype::Type{<:RegistryTypeEntry{T,S}}) where {T,S} = tuple(S.parameters...)
+@inline getentries(rte::RegistryTypeEntry) = getfield(rte, :entries)
+@inline getdynamic(rte::RegistryTypeEntry) = getfield(rte, :dynamic)
+@inline getdynamiclookup(rte::RegistryTypeEntry) = getfield(rte, :dynamic_lookup)
+@inline getmultipliers(rte::RegistryTypeEntry) = getfield(rte, :multipliers)
+@inline getmultiplier(rte::RegistryTypeEntry, idx::Int) = getmultipliers(rte)[idx]
+@inline getentries(rtetype::Type{<:RegistryTypeEntry{T,S}}) where {T,S} = tuple(S.parameters...)
 
 setentries(rte::RegistryTypeEntry{T}, newentries) where {T} = RegistryTypeEntry{T,typeof(getdefault(rte)),typeof(newentries), typeof(getdynamic(rte))}(getdefault(rte), newentries, getdynamic(rte), getdynamiclookup(rte))
 setdynamic(rte::RegistryTypeEntry{T}, newdynamic) where {T} = RegistryTypeEntry{T,typeof(getdefault(rte)),typeof(getentries(rte)), typeof(newdynamic)}(getdefault(rte), getentries(rte), newdynamic, getdynamiclookup(rte))
@@ -109,7 +108,7 @@ end
 ##### ADDING ENTRIES #####
 ##########################
 
-function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withkey = nothing) where {T}
+function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withkey::WK = nothing) where {T, WK}
     if isnothing(obj)
         # return rte, nothing
         error("Trying to add `nothing` to RegistryTypeEntry of type $T")
@@ -132,9 +131,8 @@ function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withkey = nothing)
 
         newentries = (entries..., identifiable)
         add_dynamic_link!(identifiable, :entries, current_length + 1, rte)
-        return setfield(rte, :entries, newentries), identifiable
+        return setfield(rte, :entries, newentries)::RegistryTypeEntry{T, typeof(newentries)}, identifiable
     else # Existing instance, bump multiplier and get the named version
-        
         if !isnothing(withkey) # Check name match, cannot add two matching objects with different names
             name = getkey(rte[fidx])
             if name != withkey
@@ -142,7 +140,7 @@ function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withkey = nothing)
             end
         end
 
-        return add_multiplier!(rte, fidx, multiplier), getentries(rte)[fidx]
+        return add_multiplier!(rte, fidx, multiplier)::typeof(rte), getentries(rte)[fidx]
     end
 end
 

@@ -2,12 +2,13 @@ getentries(reg::NameSpaceRegistry{T}) where {T} = getfield(reg, :entries)
 Base.getindex(reg::NameSpaceRegistry, idx::Int) = getentries(reg)[idx]
 Base.length(reg::NameSpaceRegistry) = length(getentries(reg))
 
-function Base.setindex(reg::NameSpaceRegistry{T}, newentry, idx::Int) where {T}
+@inline function Base.setindex(reg::NameSpaceRegistry{T}, newentry, idx::Int) where {T}
     old_entries = getentries(reg)
-    new_entries = Base.setindex(old_entries, newentry, idx)
+    new_entries = @inline tuple_setindex(old_entries, newentry, idx)
     return NameSpaceRegistry{typeof(new_entries)}(new_entries)
 end
-function Base.setindex(reg::NameSpaceRegistry, newentry, T::Type)
+
+@inline function Base.setindex(reg::NameSpaceRegistry, newentry, T::Type)
     fidx = find_typeidx(reg, T)
     if isnothing(fidx)
         error("Type $T not found in registry")
@@ -15,7 +16,7 @@ function Base.setindex(reg::NameSpaceRegistry, newentry, T::Type)
     return Base.setindex(reg, newentry, fidx)
 end
 
-function StaticArrays.push(reg::NameSpaceRegistry{T}, newentry) where {T}
+@inline function StaticArrays.push(reg::NameSpaceRegistry{T}, newentry) where {T}
     if !(newentry isa RegistryTypeEntry)
         error("Cannot push a RegistryTypeEntry type: $(typeof(newentry)) to a NameSpaceRegistry")
     end
@@ -24,7 +25,7 @@ function StaticArrays.push(reg::NameSpaceRegistry{T}, newentry) where {T}
     return NameSpaceRegistry{typeof(new_entries)}(new_entries)
 end
 
-function StaticArrays.pushfirst(reg::NameSpaceRegistry{T}, newentry) where {T}
+@inline function StaticArrays.pushfirst(reg::NameSpaceRegistry{T}, newentry) where {T}
     if !(newentry isa RegistryTypeEntry)
         error("Cannot push a RegistryTypeEntry type: $(typeof(newentry)) to a NameSpaceRegistry")
     end
@@ -36,7 +37,7 @@ end
 """
 Types of entries as a tuple type Tuple{Type1, Type2, ...}
 """
-function entrytypes(reg::Union{NameSpaceRegistry{T}, Type{NameSpaceRegistry{T}}}) where {T}
+@inline function entrytypes(reg::Union{NameSpaceRegistry{T}, Type{NameSpaceRegistry{T}}}) where {T}
     param_svec = T.parameters
     if isempty(param_svec)
         return Tuple{}
@@ -50,7 +51,7 @@ end
 """
 Types of entries as a tuple statically (Type1, type2, ...)
 """
-function entrytypes_iterator(reg::Union{NameSpaceRegistry{T}, Type{NameSpaceRegistry{T}}}) where {T}    
+@inline function entrytypes_iterator(reg::Union{NameSpaceRegistry{T}, Type{NameSpaceRegistry{T}}}) where {T}    
     param_svec = T.parameters
     if isempty(param_svec)
         return tuple()
@@ -68,15 +69,7 @@ Find the index in the entries for a given type T
 @inline find_typeidx(regt::Type{<:NameSpaceRegistry}, typ::Type) = _find_typeidx(regt, typ)
 @inline find_typeidx(reg::NameSpaceRegistry, obj) = find_typeidx(typeof(reg), obj)
 
-# @generated function _find_typeidx(reg::Type{NSR}, typ::Type{T}) where {NSR <: NameSpaceRegistry, T}
-#     it = entrytypes_iterator(NSR)
-#     index = findfirst(t -> T <: t, it)
-#     return quote
-#         $(LineNumberNode(@__LINE__, @__FILE__))
-#         idx = $index
-#         return idx
-#     end
-# end
+### _find_typeidx in generated functions folder ###
 
 # """
 # Non-generated helper of find_typeidx for use in other generated functions
@@ -125,7 +118,9 @@ function add(reg::NameSpaceRegistry{T}, obj, multiplier = 1.; withkey = nothing)
         return newreg, keyed_obj
     else # Type was found
         entry = reg.entries[fidx]
+        
         newentry, keyed_obj = add(entry, obj, multiplier; withkey)
+        # return newentry
         return Base.setindex(reg, newentry, fidx), keyed_obj
     end
 end
@@ -133,22 +128,45 @@ end
 """
 Add multiple objects to the registry with the same multiplier
 """
-@inline function addall(reg::NameSpaceRegistry, objs::Union{Tuple, AbstractArray}; multiplier = 1., withkeys = nothing, withkey = nothing)
-    @assert !(withkeys !== nothing && withkey !== nothing) "Cannot specify both withkeys and withkey"
-    unrollidx = 1
-    reg = unrollreplace(reg, objs...) do r, o
-        thiskey = nothing
-        if !isnothing(withkey)
-            thiskey = withkey
-        elseif !isnothing(withkeys) && length(withkeys) >= unrollidx
-            thiskey = withkeys[unrollidx]
-        end
-        registry, _ = add(r, o, multiplier; withkey=thiskey)
-        unrollidx += 1
-        return registry
+function addall(reg::NSR, objs::O, mults::M) where {NSR<:NameSpaceRegistry,O<:Tuple,M<:Tuple}
+    reg = unrollreplace(reg, zip(objs, mults)...) do r, obj_mult
+        obj, mult = obj_mult
+        newreg, _ = add(r, obj, mult)
+        return newreg
     end
-    reg
 end
+# @inline function addall(reg::NSR, objs::O, mults::M) where {NSR<:NameSpaceRegistry,O<:Tuple,M<:Tuple}
+#     _addall_unrolled(reg, objs, mults)
+# end
+
+# @generated function _addall_unrolled(reg::R, objs::O, mults::M) where {R,O<:Tuple,M<:Tuple}
+#     N = length(O.parameters)
+#     N == length(M.parameters) || error("objs/mults length mismatch")
+
+#     ex = :(reg)
+#     for i in 1:N
+#         ex = quote
+#             local r = $ex
+#             local rnew, _ = add(r, getfield(objs, $i), getfield(mults, $i))
+#             rnew
+#         end
+#     end
+#     return ex
+# end
+
+# function _addall(reg::R, this_obj, this_mult, objs, mults) where R
+#         if isempty(objs)
+#             new_reg, _ = add(reg, this_obj, this_mult)
+#             return new_reg
+#         end
+#         newreg, _ = add(reg, this_obj, this_mult)
+#         return _addall(newreg, gethead(objs), gethead(mults), gettail(objs), gettail(mults))
+# end
+
+# @inline function addall(reg::NSR, objs::Union{Tuple, AbstractArray}, multipliers = RepeatOne()) where {NSR <: NameSpaceRegistry}
+#     return @inline _addall(reg, gethead(objs), gethead(multipliers), gettail(objs), gettail(multipliers))
+#     reg
+# end
 
 
 ########################

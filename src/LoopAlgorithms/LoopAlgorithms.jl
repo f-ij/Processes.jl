@@ -9,7 +9,7 @@ include("Interface.jl")
 include("Step.jl")
 include("GeneratedStep.jl")
 include("Fusing/Fusing.jl")
-
+include("Flatten.jl")
 include("Showing.jl")
 
 

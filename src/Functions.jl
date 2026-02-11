@@ -784,8 +784,8 @@ end
 """
 General replacing setfield
 """
-@inline setfield(s::S, name::Symbol, val::V) where {S,V} = setfield(s, Val(name), val)
-@generated function setfield(s::S, name::Val{FieldName}, val::V) where {S,V, FieldName}
+@inline setfield(s::S, name::Symbol, val::V) where {S,V} = @inline setfield(s, Val(name), val)
+@inline @generated function setfield(s::S, name::Val{FieldName}, val::V) where {S,V, FieldName}
     fieldnames = Base.fieldnames(S)
     field_match = findfirst(==(FieldName), fieldnames)
     if isnothing(field_match)
@@ -836,9 +836,11 @@ General replacing setfield
             "exp = ", exp_str, "\n",
         )
 
+    final_struct_expr = Expr(:(::), exp, Expr(:curly, nameof(S), parameters...))
     return quote
         try
-            $exp
+            # $exp
+            $(final_struct_expr)
         catch e
             error($msg * "\nOriginal error: " * sprint(showerror, e))
         end
@@ -907,11 +909,66 @@ end
 Get the value of a Val{N} as N
 """
 @inline getvalue(::Val{N}) where N = N
-
+@inline getvalue(::Type{Val{N}}) where N = N
 
 """
 Creates expression: (;name1, name2, name3, etc...) = ntname
 """
 function namedtuple_destructure_expr(ntname::Symbol, varnames...)
     Expr(:(=), Expr(:tuple, Expr(:parameters, varnames...)), ntname)
+end
+
+"""
+Create a symbol that is const foldable
+"""
+@inline static_symbol(args...) = @inline static_symbol_gen(Val.(args)...)
+@inline @generated function static_symbol_gen(val_ingredients...)
+    ingredients = getvalue.(val_ingredients)
+    staticsymbol = Symbol(ingredients...)
+    return :($(QuoteNode(staticsymbol)))
+end
+
+
+Base.@constprop :aggressive tuple_setindex(t::T, val, idx::Integer) where T<:Tuple = @inline tuple_setindex(t, val, Val(idx))
+
+Base.@constprop :aggressive @inline @generated function tuple_setindex(t::T, val::V, idx::Val{i}) where {T<:Tuple,i, V}
+    if i > length(T.parameters)
+        error("Index out of bounds for tuple_setindex. Tuple has length $(length(T.parameters)), but index is $i.")
+    end
+
+    params = T.parameters
+    newparams = ntuple(length(params)) do j
+        if j == i
+            V
+        else
+            params[j]
+        end
+    end
+
+    getfields = Any[:(getindex(t, $i)) for i in 1:length(T.parameters)]
+    getfields[i] = :(val)
+
+    fulltype = Expr(:curly, :Tuple, newparams...)
+
+
+    finalexpr = Expr(:call, fulltype, Expr(:tuple, getfields...))
+    return quote
+        $(LineNumberNode(@__LINE__, @__FILE__))
+        $finalexpr::$(Expr(:curly, :Tuple, newparams...))
+    end
+end
+
+
+@inline function _tuple_place(tup::T, val::V, ::Val{idx}) where {T, V, idx}
+    if idx == 1
+        return (val, gettail(tup)...)
+    else
+        return (gethead(tup), _tuple_place(gettail(tup), val, Val(idx - 1))...)
+    end
+end
+
+function tuple_place(tup::Tuple, val, idx::Integer)
+    println("Splicing $val into tuple $tup at index $idx")
+    # return tuple(t[1:(idx-1)]..., val, t[(idx+1):end]...)
+    return _tuple_place(tup, val, Val(idx))
 end

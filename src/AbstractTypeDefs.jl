@@ -1,10 +1,12 @@
-abstract type ProcessAlgorithm end
+abstract type SteppableAlgorithm end
+
+abstract type ProcessAlgorithm <: SteppableAlgorithm end
 abstract type AbstractOption end
 abstract type ProcessState <: AbstractOption end
 
 # abstract type ProcessLoopAlgorithm <: ProcessAlgorithm end # Algorithms that can be inlined in processloop
 # abstract type LoopAlgorithm <: ProcessLoopAlgorithm end # Algorithms that have multiple functions and intervals
-abstract type LoopAlgorithm <: ProcessAlgorithm end # Algorithms that have multiple functions and intervals
+abstract type LoopAlgorithm <: SteppableAlgorithm end # Algorithms that have multiple functions and intervals
 Base.iterate(la::LoopAlgorithm) = iterate(getalgos(la))
 
 
