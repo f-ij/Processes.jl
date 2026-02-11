@@ -12,7 +12,7 @@ function Walker(state, momentum, dt)
     return (;momentum)
 end
 
-function Processes.prepare(::Walker, input::A) where A
+function Processes.init(::Walker, input::A) where A
     (;dt) = input
 
     state = Float64[1.0]
@@ -38,7 +38,7 @@ function Processes.step!(::InsertNoise, context::C) where C
     return (;targetnum)
 end
 
-function Processes.prepare(::InsertNoise, input::A) where A
+function Processes.init(::InsertNoise, input::A) where A
     rng = MersenneTwister(1234)
     return (;rng)
 end

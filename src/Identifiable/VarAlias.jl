@@ -3,7 +3,7 @@ using UUIDs
 abstract type AbstractVarAlias end
 
 """
-Used as a mapping between internal subcontext variable, to the name of a runtime variable (i.e. in prepare, step!, cleanup)
+Used as a mapping between internal subcontext variable, to the name of a runtime variable (i.e. in init, step!, cleanup)
 These will be embedded in IdentifiableAlgo objects to tell them how to map from context to their internal variables
 
 As of now, this is only useful when algorithms are packaged because then subcontexts are shared

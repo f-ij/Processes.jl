@@ -41,7 +41,7 @@ module Processes
     include("Lifetime.jl")
     include("TaskDatas.jl")
     include("InputInterface/InputInterface.jl")
-    include("Prepare.jl")
+    include("Init.jl")
     include("Running.jl")
     include("TriggerList.jl")
     include("Benchmark.jl")
@@ -81,7 +81,7 @@ module Processes
                 return (;)
             end
 
-            function Processes.prepare(::Fib, context)
+            function Processes.init(::Fib, context)
                 n_calls = num_calls(context)
                 fiblist = Int[0, 1]
                 processsizehint!(fiblist, context)
@@ -94,7 +94,7 @@ module Processes
                 return (;)
             end
 
-            function Processes.prepare(::Luc, context)
+            function Processes.init(::Luc, context)
                 luclist = Int[2, 1]
                 processsizehint!(luclist,context)
                 return (;luclist)

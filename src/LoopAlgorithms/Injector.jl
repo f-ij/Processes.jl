@@ -27,7 +27,7 @@ end
     return context
 end
 
-function Processes.prepare(inj::Injector, input::NamedTuple = (;))
+function Processes.init(inj::Injector, input::NamedTuple = (;))
     channel = get(input, :channel, Channel{Tuple{Any, Symbol, Any}}(inj.capacity))
     return (;channel)
 end

@@ -20,15 +20,15 @@ end
     return (;positions)
 end
 
-function Processes.prepare(::AgentsStep, input)
+function Processes.init(::AgentsStep, input)
     return (;positions = [0.0, 1.0], velocity = 0.1)
 end
 
-function Processes.prepare(::FieldDiffuse, input)
+function Processes.init(::FieldDiffuse, input)
     return (;field = 0.5, diffusion = 0.05)
 end
 
-function Processes.prepare(::FieldSense, input)
+function Processes.init(::FieldSense, input)
     return (;strength = 0.02)
 end
 

@@ -1,6 +1,6 @@
 """
 Macro to define a ProcessState from a function definition.
-This creates a struct subtype of ProcessState with a prepare method.
+This creates a struct subtype of ProcessState with a init method.
 """
 macro ProcessState(ex)
     F, args, body = nothing, nothing, nothing
@@ -31,7 +31,7 @@ macro ProcessState(ex)
     q = quote
             struct $FFunction <: ProcessState end
 
-            @inline function Processes.prepare(s::$FFunction, context::C) where C <: Processes.AbstractContext
+            @inline function Processes.init(s::$FFunction, context::C) where C <: Processes.AbstractContext
                 (;$(splatnames...)) = context
                 return @inline $FSymbol($(typeless_args...))
             end

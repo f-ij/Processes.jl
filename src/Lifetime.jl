@@ -17,7 +17,7 @@ export repeats
 import Base./
 (/)(r::Repeat, n) = r.repeats / n
 
-# Get the lifetime within a prepare step of a process
+# Get the lifetime within a init step of a process
 mutable struct LifetimeTracker
     lt::Lifetime
 end

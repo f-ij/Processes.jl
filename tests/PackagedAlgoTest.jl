@@ -10,7 +10,7 @@ function Processes.step!(::PackFib, context)
     return (;)
 end
 
-function Processes.prepare(::PackFib, context)
+function Processes.init(::PackFib, context)
     fiblist = Int[0, 1]
     processsizehint!(fiblist, context)
     return (;fiblist)
@@ -22,7 +22,7 @@ function Processes.step!(::PackLuc, context)
     return (;)
 end
 
-function Processes.prepare(::PackLuc, context)
+function Processes.init(::PackLuc, context)
     luclist = Int[2, 1]
     processsizehint!(luclist, context)
     return (;luclist)
@@ -50,7 +50,7 @@ end
     struct Logger{T} <: ProcessAlgorithm end
     Logger(name::Symbol) = Logger{name}()
 
-    function Processes.prepare(::Logger{T}, _input) where {T}
+    function Processes.init(::Logger{T}, _input) where {T}
         log = Vector{Any}()
         processsizehint!(log, _input)
         return (;log)

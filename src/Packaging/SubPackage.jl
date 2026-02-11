@@ -44,12 +44,12 @@ registry_entrytype(::Type{<:SubPackage}) = PackagedAlgo
 
 
 ####################################
-####### Prepare-Step-Cleanup #######
+####### Init-Step-Cleanup #######
 ####################################
 
-function prepare(ps::SubPackage, context)
+function init(ps::SubPackage, context)
     viewed = view(context, ps)
-    returnvals = prepare(getalgo(ps), viewed)
+    returnvals = init(getalgo(ps), viewed)
     merge(viewed, returnvals)
 end
 

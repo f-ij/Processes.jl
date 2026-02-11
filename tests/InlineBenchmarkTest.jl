@@ -11,7 +11,7 @@ function Processes.step!(::InlineFib, context)
     return (;)
 end
 
-function Processes.prepare(::InlineFib, context)
+function Processes.init(::InlineFib, context)
     fiblist = Int[0, 1]
     processsizehint!(fiblist, context)
     return (;fiblist)
@@ -23,7 +23,7 @@ function Processes.step!(::InlineLuc, context)
     return (;)
 end
 
-function Processes.prepare(::InlineLuc, context)
+function Processes.init(::InlineLuc, context)
     luclist = Int[2, 1]
     processsizehint!(luclist, context)
     return (;luclist)

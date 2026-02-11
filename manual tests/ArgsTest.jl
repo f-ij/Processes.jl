@@ -1,7 +1,7 @@
 using Processes
 struct Algo <: ProcessAlgorithm end
 
-function Processes.prepare(::Algo, args)
+function Processes.init(::Algo, args)
     (;a,b,c) = args
     return (;a = a^2,b = b^3,c = c^4)
 end

@@ -112,7 +112,7 @@ end
 # end
 
 """
-Pause, re-prepare and unpause a process
+Pause, re-init and unpause a process
 This is useful mostly for processes that run indefinitely,
 where the prepared context is computed from the input context.
 

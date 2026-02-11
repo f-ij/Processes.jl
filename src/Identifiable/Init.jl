@@ -1,19 +1,19 @@
 """
-Get the name from a IdentifiableAlgo and prepare the inputs for it
+Get the name from a IdentifiableAlgo and init the inputs for it
 """
-@inline function prepare(sa::IdentifiableAlgo, inputcontext::AbstractContext)
+@inline function init(sa::IdentifiableAlgo, inputcontext::AbstractContext)
     name = getkey(sa)
     inputcontext = merge_into_subcontexts(inputcontext, (;name => (;_instance = sa)))
     inputview = @inline view(inputcontext, sa)
-    prepared = @inline prepare(getalgo(sa), inputview)
+    prepared = @inline init(getalgo(sa), inputview)
     @inline replace(inputcontext, (;name => prepared))
 end
 
 """
-Direct prepare running for debugging
+Direct init running for debugging
 """
-@inline function prepare(sa::IdentifiableAlgo, input::NamedTuple = (;))
-    return (;getkey(sa) => prepare(getalgo(sa), input))
+@inline function init(sa::IdentifiableAlgo, input::NamedTuple = (;))
+    return (;getkey(sa) => init(getalgo(sa), input))
 end
 
 function cleanup(sa::IdentifiableAlgo, context::AbstractContext)

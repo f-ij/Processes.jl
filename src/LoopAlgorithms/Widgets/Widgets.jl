@@ -3,7 +3,7 @@ Log a variable
 """
 struct Logger{T} <: ProcessAlgorithm end
 
-function Processes.prepare(::Logger{T}, context) where T
+function Processes.init(::Logger{T}, context) where T
     log = Vector{T}()
     processsizehint!(log, context)
     return (;log)
@@ -20,7 +20,7 @@ Apply a function
 struct Apply{F} <: ProcessAlgorithm
     f::F
 end
-function Processes.prepare(a::Apply{F}, context) where F
+function Processes.init(a::Apply{F}, context) where F
     (;target) = context
     return (;target = a.f(target))
 end
@@ -29,7 +29,7 @@ struct Interactive{T, id} <: ProcessAlgorithm
     channel_size::Int
     isbitsptr::IsBitsPtr{Channel{T}, id}
 end
-function Processes.prepare(I::Interactive{T}, context) where T
+function Processes.init(I::Interactive{T}, context) where T
     channel = Channel{T}(I.channel_size)
     
     return (;channel)

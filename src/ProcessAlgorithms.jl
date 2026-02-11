@@ -57,7 +57,7 @@ end
 export @ProcessAlgorithm, @NamedProcessAlgorithm
 
 
-# function prepare(pa::Union{CompositeAlgorithm, Routine}, args)
+# function init(pa::Union{CompositeAlgorithm, Routine}, args)
 #     prepare_helper = PrepereHelper(pa, args)
-#     prepare(prepare_helper, args)
+#     init(prepare_helper, args)
 # end

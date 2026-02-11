@@ -108,7 +108,7 @@ end
 Instead of merging, replace the subcontext entirely with the provided args named tuple
 Returns new context
 
-This is to be used during the prepare phase, where entire subcontexts are replaced
+This is to be used during the init phase, where entire subcontexts are replaced
 """
 @inline @generated function Base.replace(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
     names = fieldnames(args)

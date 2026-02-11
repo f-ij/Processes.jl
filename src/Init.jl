@@ -3,13 +3,13 @@ So that warnings are only printed once per type per session
 """
 const warnset = Set{Any}()
 """
-Fallback prepare
+Fallback init
 """
-function prepare(t::T, c::Any) where T
+function init(t::T, c::Any) where T
     # @show T
     # @show c
     if !in(T, warnset)
-        @warn "No prepare function defined for var $t with type $T, returning empty context"
+        @warn "No init function defined for var $t with type $T, returning empty context"
         push!(warnset, T)
     end
     (;)
@@ -27,7 +27,7 @@ function prepare_context(algo::F, c::ProcessContext, overrides_and_inputs::Union
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"
     @DebugMode "Overrides are $overrides"
 
-    prepared_context = prepare(algo, input_context)
+    prepared_context = init(algo, input_context)
     @DebugMode "Prepared in prepare_context context is $prepared_context"
 
     overridden_context = merge(prepared_context, overrides...)
@@ -49,7 +49,7 @@ end
 
 
 """
-Prepare context from TaskData
+Init context from TaskData
 """
 function prepare_context(td::TD) where {TD<:TaskData}
     lifetime = getlifetime(td)

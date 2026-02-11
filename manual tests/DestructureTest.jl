@@ -16,7 +16,7 @@ end
     return (;position, history)
 end
 
-function Processes.prepare(::Tick, input)
+function Processes.init(::Tick, input)
     return (;)
 end
 

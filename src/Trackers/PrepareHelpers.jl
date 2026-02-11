@@ -5,10 +5,10 @@
 # """
 # For routines and composite algorithms, this tracks every unique function used within.
 # Moreover, it tracks how many number of times each algorithm will be called
-# Lastly, it will track within the prepare functions which one of the unique functions is being prepared
+# Lastly, it will track within the init functions which one of the unique functions is being prepared
 
 # This allows for function agnistic tools like processsizehint! that gives a sizehint to a vector
-#     in the prepare function without having to redefine the prepare function it around when a user changes the total lifetime of a process
+#     in the init function without having to redefine the init function it around when a user changes the total lifetime of a process
 #     or occurrences of the function within composite algorithms/routines
 # """
 # mutable struct PrepereHelper{PA, T, TC, TR, LT}
@@ -73,11 +73,11 @@
 # current_repeats(ph::PrepereHelper) = ph.repeats[currentalgo(ph)]
 # current_counts(ph::PrepereHelper) = ph.counts[currentalgo(ph)]
 
-# function prepare(ph::PrepereHelper, args)
+# function init(ph::PrepereHelper, args)
 #     returnargs = (;)
 #     # for a in unique_algorithms(ph)
 #     for a in ph
-#         newargs = prepare(a, (;args..., ph))            # Add algo tracker to args
+#         newargs = init(a, (;args..., ph))            # Add algo tracker to args
 #         # overlap = intersect(keys(returnargs), keys(newargs))  # Find wether there are overlapping keys between the algorithms
 #         @static if DEBUG_MODE
 #             println("Preparing arguments using the PrepereHelper for algorithm $a")

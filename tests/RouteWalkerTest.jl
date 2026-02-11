@@ -10,7 +10,7 @@ using Processes
 
     struct Walker <: ProcessAlgorithm end
 
-    function Processes.prepare(::Walker, input)
+    function Processes.init(::Walker, input)
             (; dt) = input
             state = Float64[1.0]
             momentum = 1.0
@@ -40,7 +40,7 @@ using Processes
         return (; targetnum)
     end
 
-    function Processes.prepare(::InsertNoise, _input)
+    function Processes.init(::InsertNoise, _input)
         rng = MersenneTwister(1234)
         return (; rng)
     end
@@ -81,7 +81,7 @@ using Processes
     struct Logger{T} <: ProcessAlgorithm end
     Logger(name::Symbol) = Logger{name}()
 
-    function Processes.prepare(::Logger{T}, _input) where {T}
+    function Processes.init(::Logger{T}, _input) where {T}
         log = Vector{Any}()
         return (;log)
     end

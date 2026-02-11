@@ -8,7 +8,7 @@ import Processes as ps
     return (;state = new_state, velocity = new_vel)
 end
 
-function Processes.prepare(::Oscillator, context)
+function Processes.init(::Oscillator, context)
     (;dt) = context
     trajectory = Float64[1.0]
     processsizehint!(trajectory, context)
@@ -21,7 +21,7 @@ end
     return (;velocity)
 end
 
-function Processes.prepare(::DampedFollower, context)
+function Processes.init(::DampedFollower, context)
     return (;damp = 0.05)
 end
 

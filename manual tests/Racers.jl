@@ -8,7 +8,7 @@ const raceme = RaceForMe(rand(1000))
 
 struct Racing <: ProcessAlgorithm end
 
-function Processes.prepare(::Racing, args)
+function Processes.init(::Racing, args)
     return (;raceme, data = args.raceme.data)
 end
 

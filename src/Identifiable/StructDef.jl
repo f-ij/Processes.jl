@@ -16,7 +16,7 @@ Algorithm assigned to a namespace in a context
     Id makes two IdentifiableAlgos different even if they have the same name and function
     This can be used to create multiple instances of the same algorithm with each their own state
 
-    VarAliases are bridges from the scope to the runtime (prepare, step!, and cleanup) variables that
+    VarAliases are bridges from the scope to the runtime (init, step!, and cleanup) variables that
         the algorithm can get from a context. An alias definex Varname_in_subcontext => Varname_in_algorithm 
 
     AlgoName can be used when fusing multiple algorithms to give them custom names

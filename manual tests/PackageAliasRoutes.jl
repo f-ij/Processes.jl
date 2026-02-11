@@ -4,7 +4,7 @@ import Processes as ps
 FibLuc = CompositeAlgorithm( (Fib, Luc), (1,1) )
 
 struct FLMixer <:ProcessAlgorithm end
-function ps.prepare(::FLMixer, input)
+function ps.init(::FLMixer, input)
     mix = Int[]
     processsizehint!(mix, input)
     return (;mix)

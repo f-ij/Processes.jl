@@ -85,7 +85,7 @@ Get the type of the original subcontext from the view
 Fallback merge if nothing is merged that just returns the original context
 """
 @inline Base.merge(scv::SubContextView, ::Nothing) = getcontext(scv)
-@inline Base.merge(scv::SubContextView, args) = error("Step, prepare and cleanup must return namedtuple, trying to merge $(args) into context from SubContextView $(scv)")
+@inline Base.merge(scv::SubContextView, args) = error("Step, init and cleanup must return namedtuple, trying to merge $(args) into context from SubContextView $(scv)")
 # """
 # Returns a merged context by merging the provided named tuple into the appropriate subcontexts
 # """
@@ -201,7 +201,7 @@ Merge, but return view, useful for injecting variables that are not meant to be 
 # Instead of merging, replace the subcontext entirely with the provided args named tuple
 # Returns new context
 
-# This is to be used during the prepare phase, where entire subcontexts are replaced
+# This is to be used during the init phase, where entire subcontexts are replaced
 # """
 # @inline @generated function Base.replace(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
 #     names = fieldnames(args)

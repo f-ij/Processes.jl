@@ -1,8 +1,8 @@
-function prepare(pack::PackagedAlgo, context)
+function init(pack::PackagedAlgo, context)
     all_algos = getalgos(pack)
     # contextview = view(context, pack, inject = (;))
     context = unrollreplace(context, all_algos...) do context, algo
-        prepare(algo, context)
+        init(algo, context)
     end
 end
 

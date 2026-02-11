@@ -10,7 +10,7 @@ function Processes.step!(::Fib, context)
     return (;)
 end
 
-function Processes.prepare(::Fib, context)
+function Processes.init(::Fib, context)
     n_calls = num_calls(context)
     fiblist = Int[0, 1]
     processsizehint!(fiblist, context)
@@ -23,7 +23,7 @@ function Processes.step!(::Luc, context)
     return (;)
 end
 
-function Processes.prepare(::Luc, context)
+function Processes.init(::Luc, context)
     luclist = Int[2, 1]
     processsizehint!(luclist,context)
     return (;luclist)

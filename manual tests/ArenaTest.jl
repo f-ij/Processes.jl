@@ -7,7 +7,7 @@ function Fib(args)
     push!(fiblist, fiblist[end] + fiblist[end-1])
 end
 
-function Processes.prepare(::Fib, args)
+function Processes.init(::Fib, args)
     arena = newallocator(args)
     fiblist = AVecAlloc(Int, arena, 2+recommendsize(args))
     append!(fiblist, [0, 1])
@@ -22,7 +22,7 @@ function Luc(args)
     push!(luclist, luclist[end] + luclist[end-1])
 end
 
-function Processes.prepare(::Luc, args)
+function Processes.init(::Luc, args)
     arena = newallocator(args)
     luclist = AVecAlloc(Int, arena, 2+recommendsize(args))
     append!(luclist, [2, 1])

@@ -13,8 +13,8 @@ makedocs(
     # modules = [Processes],
     # checkdocs=:exports,
     pages = [
-        "Index" => "index.md",
-        "General Usage" => "man/usage.md"
+        "Home" => "index.md",
+        "Usage Guide" => "man/usage.md"
     ]
 )
 

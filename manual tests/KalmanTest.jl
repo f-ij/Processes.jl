@@ -18,15 +18,15 @@ end
     return (;state)
 end
 
-function Processes.prepare(::Predict, input)
+function Processes.init(::Predict, input)
     return (;state = 0.0, velocity = 1.0, dt = 0.1)
 end
 
-function Processes.prepare(::Observe, input)
+function Processes.init(::Observe, input)
     return (;noise = 0.05)
 end
 
-function Processes.prepare(::Update, input)
+function Processes.init(::Update, input)
     return (;gain = 0.2)
 end
 

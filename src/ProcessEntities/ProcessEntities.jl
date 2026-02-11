@@ -1,6 +1,6 @@
 const ProcessEntity = Union{ProcessState, ProcessAlgorithm}
 
-prepare(::ProcessEntity, context) = (;)
+init(::ProcessEntity, context) = (;)
 step!(pe::ProcessEntity, context) = error("step! not implemented for $(typeof(pe))")
 cleanup(::ProcessEntity, context) = (;)
 

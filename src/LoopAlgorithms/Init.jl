@@ -2,12 +2,12 @@
 Set up an empty ProcessContext for a LoopAlgorithm with given shared specifications
 Inputargs are given as a NamedTuple of (;algo_name => (; inputname1 = value1, ...), ...)
 """
-function prepare(algos::LoopAlgorithm, inputcontext::ProcessContext)
+function init(algos::LoopAlgorithm, inputcontext::ProcessContext)
     registry = getregistry(algos)
     named_algos = all_algos(registry)
 
     context = unrollreplace(inputcontext, named_algos...) do context, named_algo # Recursively replace context
-        prepare(named_algo, context)
+        init(named_algo, context)
     end
 
     
@@ -27,10 +27,10 @@ end
 
 
 """
-For testing purposes, allow prepare to be called with a NamedTuple of input arguments instead of a ProcessContext
+For testing purposes, allow init to be called with a NamedTuple of input arguments instead of a ProcessContext
     This works like a subcontext
 """
-function prepare(algos::LoopAlgorithm, input::NamedTuple = (;))
+function init(algos::LoopAlgorithm, input::NamedTuple = (;))
     # If prepared from a namedtuple, create an empty context first
     newcontext = ProcessContext(algos)
     
@@ -39,7 +39,7 @@ function prepare(algos::LoopAlgorithm, input::NamedTuple = (;))
 
 
     prepared_subcontexts = named_flat_collect_broadcast(named_algos) do named_algo
-        prepare(named_algo, get(input, getkey(named_algo), (;)))
+        init(named_algo, get(input, getkey(named_algo), (;)))
     end
 
 

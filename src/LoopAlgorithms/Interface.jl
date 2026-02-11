@@ -1,5 +1,5 @@
 export SimpleAlgo, CompositeAlgorithm, Routine
-export getkey, step!, prepare, getmultiplier, getoptions, get_shares, get_routes
+export getkey, step!, init, getmultiplier, getoptions, get_shares, get_routes
 
 getmultiplier(cla::LoopAlgorithm, obj) = getmultiplier(getregistry(cla), obj)
 getkey(cla::LoopAlgorithm, obj) = getkey(getregistry(cla), obj)

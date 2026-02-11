@@ -5,7 +5,7 @@ abstract type AbstractDestructure{T,F} <: ProcessState end
 
 """
 ProcessState wrapper for an arbitrary value that is destructured into its fields
-during prepare.
+during init.
 """
 struct Destructure{T,F} <: AbstractDestructure{T,F}
     obj::T
@@ -47,7 +47,7 @@ destructure(x::NamedTuple) = x
     return :(NamedTuple{$(names)}(($(vals...),)))
 end
 
-function prepare(d::Destructure, context::AbstractContext)
+function init(d::Destructure, context::AbstractContext)
     value = getvalue(d)
     valuename = Symbol(lowercase(string(nameof(typeof(value)))))
     fields = destructure(value)
@@ -81,7 +81,7 @@ end
 
 hasfunc(d::Union{DestructureInput{F}, Type{<:DestructureInput{F}}}) where {F} = !(F <: Nothing)
 
-function prepare(d::DestructureInput, context::AbstractContext)
+function init(d::DestructureInput, context::AbstractContext)
     (;structure) = context
     valuename = Symbol(lowercase(string(nameof(typeof(structure)))))
     fields = destructure(structure)

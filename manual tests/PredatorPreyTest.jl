@@ -20,15 +20,15 @@ end
     return (;prey)
 end
 
-function Processes.prepare(::PreyGrowth, input)
+function Processes.init(::PreyGrowth, input)
     return (;prey = 50.0, rate = 0.02)
 end
 
-function Processes.prepare(::Predation, input)
+function Processes.init(::Predation, input)
     return (;predators = 5.0, attack = 0.001)
 end
 
-function Processes.prepare(::ControlPulse, input)
+function Processes.init(::ControlPulse, input)
     return (;inject = 10.0)
 end
 

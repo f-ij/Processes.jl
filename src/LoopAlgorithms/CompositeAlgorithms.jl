@@ -22,7 +22,9 @@ function CompositeAlgorithm(funcs::NTuple{N, Any},
         functuple, intervals = flatten_comp_funcs(functuple, intervals)    
     end
 
-    intervals = Int.(intervals)
+    if intervals isa Tuple
+        intervals = Int.(intervals)
+    end
     CompositeAlgorithm{typeof(functuple), intervals, typeof(registry), typeof(options), nothing, customname}(functuple, Ref(1), registry, options)
 end
 

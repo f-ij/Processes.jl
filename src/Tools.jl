@@ -2,14 +2,14 @@ export processsizehint!, recommendsize, newallocator, progress, est_remaining,
     num_calls
 
 """
-Use within prepare function
+Use within init function
 For a process with a limited lifetime,
 give the array a size hint based on the lifetime and the number of updates per step.
 """
 @inline function processsizehint!(array, contextview::AbstractContext, updates_per_step = 1; print_hint = false)
     if !(contextview isa AbstractContext)
         @show contextview
-        @warn("Cannot give a sizehint, prepare is not called from a process")
+        @warn("Cannot give a sizehint, init is not called from a process")
         return nothing
     end
 
@@ -83,7 +83,7 @@ end
 
 """
 Get the number of times an algorithm will be called in a process
-This is to be used in the prepare function
+This is to be used in the init function
 """
 function num_calls(contextview)
     lifetime = getglobals(contextview).lifetime

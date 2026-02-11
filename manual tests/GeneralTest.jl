@@ -14,12 +14,12 @@ function Fib(args)
     push!(fiblist, fiblist[end] + fiblist[end-1])
 end
 
-function Processes.prepare(::Fib, args)
+function Processes.init(::Fib, args)
     println("Preparing with type")
     return (;fiblist = [0, 1])
 end
 
-function Processes.prepare(::typeof(Fib), args)
+function Processes.init(::typeof(Fib), args)
     println("Preparing with typeof")
     return (;fiblist = [0, 1])
 end
@@ -37,11 +37,11 @@ function Luc(args)
 end
 
 
-function Processes.prepare(::Luc, args)
+function Processes.init(::Luc, args)
     println("Preparing with type")
     return (;luclist = [2, 1])
 end
-function Processes.prepare(::typeof(Luc), args)
+function Processes.init(::typeof(Luc), args)
     println("Preparing with typeof")
     return (;luclist = [2, 1])
 end
@@ -51,7 +51,7 @@ FibLucComp = CompositeAlgorithm( (Fib, Luc), (1,2) )
 ###
 struct FibLuc end
 
-Processes.prepare(::Type{FibLuc}, args) = (;fiblist = [0, 1], luclist = [2, 1])
+Processes.init(::Type{FibLuc}, args) = (;fiblist = [0, 1], luclist = [2, 1])
 
 function FibLuc(args)
     (;process) = args
@@ -63,7 +63,7 @@ end
 
 struct FibLucTrig{Intervals} end
 
-function Processes.prepare(::Type{FibLucTrig{Intervals}}, args) where Intervals
+function Processes.init(::Type{FibLucTrig{Intervals}}, args) where Intervals
     (;lifetime) = args
     rpts = Processes.repeats(lifetime)
     triggers = ((Processes.InitTriggerList(interval) for interval in Intervals)...,)
