@@ -187,3 +187,15 @@ end
     (tree_trait_flatten(nodefunc, first(nodes), first(traits))...,
      _ttf(nodefunc, Base.tail(nodes), Base.tail(traits))...)
 end
+
+@inline function typefilter(type::Type{T}, elements) where T
+    if isempty(elements)
+        return tuple()
+    end
+    first_el = gethead(elements)
+    if first_el isa T
+        return (first_el, typefilter(T, gettail(elements))...)
+    else
+        return typefilter(T, gettail(elements))
+    end
+end

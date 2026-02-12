@@ -74,6 +74,13 @@ end
     return getmultipliers(r)[fidx]
 end
 
+"""
+Replace all keys in the registry with a new key
+"""
+function replace_all_keys(r::SimpleRegistry, key)
+    newentries = setcontextkey.(getentries(r), key)
+    return setfield(r, :entries, newentries)
+end
 
 
 # inherit(parent::AbstractRegistry, child::AbstractRegistry) = error("inherit not implemented for $(typeof(parent)) and $(typeof(child))")

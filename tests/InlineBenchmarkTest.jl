@@ -66,7 +66,7 @@ end
 
 @testset "InlineProcess benchmark" begin
     n = 100_000
-    fibluc = Processes.CompositeAlgorithm((InlineFib, InlineLuc), (1, 1))
+    fibluc = Processes.CompositeAlgorithm( InlineFib, InlineLuc , (1, 1))
     ip = Processes.InlineProcess(fibluc; repeats = n)
     
     println("Benchmarking InlineProcess with $n repeats...")

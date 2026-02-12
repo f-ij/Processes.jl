@@ -1,5 +1,5 @@
-using Pkg
-Pkg.activate((@__DIR__ )*"/..")
+# using Pkg
+# Pkg.activate((@__DIR__ )*"/..")
 
 using Test
 using Random
@@ -46,9 +46,9 @@ using Processes
     end
 
     algo = CompositeAlgorithm(
-        (Walker, InsertNoise),
+        Walker, InsertNoise,
         (1, 2),
-        Route(Walker, InsertNoise, :momentum => :targetnum, :dt => :scale),
+        Route(Walker => InsertNoise, :momentum => :targetnum, :dt => :scale),
     )
 
     p = Process(algo, lifetime = 10, Input(Walker, :dt => 0.01))
@@ -95,11 +95,11 @@ using Processes
     Logger2 = Logger(:squared)
 
     algo2 = CompositeAlgorithm(
-        (Walker, InsertNoise, Logger1, Logger2),
+        Walker, InsertNoise, Logger1, Logger2,
         (1, 2, 1, 1),
-        Route(Walker, InsertNoise, :momentum => :targetnum, :dt => :scale),
-        Route(Walker, Logger1, :state => :targetnum, transform = x-> x[end]),
-        Route(Walker, Logger2, :state => :targetnum, transform = x-> x[end]^2),
+        Route(Walker => InsertNoise, :momentum => :targetnum, :dt => :scale),
+        Route(Walker => Logger1, :state => :targetnum, transform = x-> x[end]),
+        Route(Walker => Logger2, :state => :targetnum, transform = x-> x[end]^2),
     )
 
     p2 = Process(algo2, lifetime = 10, Input(Walker, :dt => 0.01))

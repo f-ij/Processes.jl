@@ -30,7 +30,7 @@ using Processes
     end
 
     shared_algo = CompositeAlgorithm(
-        (Oscillator, DampedFollower),
+        Oscillator, DampedFollower,
         (1, 1),
         Share(Oscillator, DampedFollower),
     )

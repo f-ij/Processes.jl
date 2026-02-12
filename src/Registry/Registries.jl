@@ -1,3 +1,9 @@
+struct RegistryLocation{T, Int} end
+RegistryLocation(T, idx) = RegistryLocation{T, idx}()
+gettype(loc::RegistryLocation{T, idx}) where {T, idx} = T
+getidx(loc::RegistryLocation{T, idx}) where {T, idx} = idx
+
+
 getentries(reg::NameSpaceRegistry{T}) where {T} = getfield(reg, :entries)
 Base.getindex(reg::NameSpaceRegistry, idx::Int) = getentries(reg)[idx]
 Base.length(reg::NameSpaceRegistry) = length(getentries(reg))
@@ -207,6 +213,23 @@ inherit(e1::NameSpaceRegistry; kwargs...) = e1
 ########################
     ### ACCESSORS ###
 ########################   
+@inline function _get_by_matcher(matcher, entries) 
+    if isempty(entries)
+        error("Matcher $matcher not found in registry entries: $entries")
+    end
+    head = gethead(entries)
+    headmatcher = match_by(head)
+    if headmatcher == matcher
+        return head
+    else
+        tail = gettail(entries)
+        return _get_by_matcher(matcher, tail)
+    end
+end
+@inline function get_by_matcher(reg::NameSpaceRegistry, matcher)
+    all_entries = all_algos(reg)
+    return _get_by_matcher(matcher, all_entries)
+end
 
 """
 Get entries for an obj
@@ -285,39 +308,37 @@ end
 
     idx = static_findfirst_match(entries, val)
     if isnothing(idx)
-        return T, nothing
+        return RegistryLocation(T, nothing)
     end
-    return T, idx
+    return RegistryLocation(T, idx)
 end
 
 """
 From T, idx
 """
-function Base.getindex(reg::NameSpaceRegistry, t::Tuple)
-    if isnothing(t[1])
+function Base.getindex(reg::NameSpaceRegistry, t::RegistryLocation{T, idx}) where {T, idx}
+    if isnothing(T)
         error("No matching entry found for type: (nothing, nothing) in registry")
     end
-    target_type = t[1]
-    type_entries_idx = t[2]
-    type_entries = get_type_entries(reg, target_type)
-    return type_entries[type_entries_idx]
+    type_entries = get_type_entries(reg, T)
+    return type_entries[idx]
 end
 
 
 """
 Statically Find the name in the registry
 """
-function static_findkey(reg::NameSpaceRegistry, val)
-    location = static_findfirst_match(reg, val)
-    if isnothing(location[2])
+@inline function static_findkey(reg::NameSpaceRegistry, val)
+    location = @inline static_findfirst_match(reg, val)
+    if isnothing(getidx(location))
         return nothing
     else
-        return getkey(reg[location])
+        return @inline getkey(reg[location])
     end
 end
 
-function Base.in(val, reg::NameSpaceRegistry)
-    found_scoped_value = static_get(reg, val)
+@inline function Base.in(val, reg::NameSpaceRegistry)
+    found_scoped_value = @inline static_get(reg, val)
     return !isnothing(found_scoped_value)
 end
 
@@ -352,19 +373,20 @@ function static_get(reg::NameSpaceRegistry, v::V) where {V}
     return static_get(entries, v)
 end
 
-function dynamic_get(reg::NameSpaceRegistry, val)
-    entries = get_type_entries(reg, val)
-    loc = dynamic_lookup(entries, val)
-    return getentry(entries, loc...)
-end
+## TODO : FIX
+# function dynamic_get(reg::NameSpaceRegistry, val)
+#     entries = get_type_entries(reg, val)
+#     loc = dynamic_lookup(entries, val)
+#     return getentry(entries, loc...)
+# end
 
 function static_get_multiplier(reg::NameSpaceRegistry, val)
     loc = static_findfirst_match(reg, val)
-    if isnothing(loc[2])
-        error("Found other values of type $(loc[1]), but no match found for value: $val in registry: $reg")
+    if isnothing(getidx(loc))
+        error("Found other values of type $(gettype(loc)), but no match found for value: $val in registry: $reg")
     end 
-    type_entries = get_type_entries(reg, loc[1])
-    return getmultiplier(type_entries, loc[2])
+    type_entries = get_type_entries(reg, gettype(loc))
+    return getmultiplier(type_entries, getidx(loc))
 end
 
 function getmultiplier(reg::NameSpaceRegistry, val)
@@ -379,7 +401,7 @@ end
 """
 Statically Get the name from the registry
 """
-function getkey(reg::NameSpaceRegistry, val)
+@inline function getkey(reg::NameSpaceRegistry, val)
     entry = static_get(reg, val)
     if isnothing(entry)
         return nothing

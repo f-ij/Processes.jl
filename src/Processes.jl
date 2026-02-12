@@ -29,6 +29,8 @@ module Processes
 
 
     include("AbstractProcesses.jl")
+    include("ProcessEntities/ProcessEntities.jl")
+
 
     include("Matching.jl")
     include("Identifiable/Identifiable.jl")
@@ -60,7 +62,6 @@ module Processes
     include("ProcessStatus.jl")
     include("Interface.jl")
     
-    include("ProcessEntities/ProcessEntities.jl")
     # include("ProcessStates/ProcessStates.jl")
     # include("ProcessAlgorithms.jl")
 
@@ -74,66 +75,66 @@ module Processes
 
     include("GeneratedCode/GeneratedCode.jl")
 
-    # @setup_workload begin
-    #     @compile_workload begin
-    #         struct Fib <: ProcessAlgorithm end
-    #         struct Luc <: ProcessAlgorithm end
+    @setup_workload begin
+        @compile_workload begin
+            struct Fib <: ProcessAlgorithm end
+            struct Luc <: ProcessAlgorithm end
 
-    #         function Processes.step!(::Fib, context)
-    #             fiblist = context.fiblist
-    #             push!(fiblist, fiblist[end] + fiblist[end-1])
-    #             return (;)
-    #         end
+            function Processes.step!(::Fib, context)
+                fiblist = context.fiblist
+                push!(fiblist, fiblist[end] + fiblist[end-1])
+                return (;)
+            end
 
-    #         function Processes.init(::Fib, context)
-    #             n_calls = num_calls(context)
-    #             fiblist = Int[0, 1]
-    #             processsizehint!(fiblist, context)
-    #             return (;fiblist)
-    #         end
+            function Processes.init(::Fib, context)
+                n_calls = num_calls(context)
+                fiblist = Int[0, 1]
+                processsizehint!(fiblist, context)
+                return (;fiblist)
+            end
 
-    #         function Processes.step!(::Luc, context)
-    #             luclist = context.luclist
-    #             push!(luclist, luclist[end] + luclist[end-1])
-    #             return (;)
-    #         end
+            function Processes.step!(::Luc, context)
+                luclist = context.luclist
+                push!(luclist, luclist[end] + luclist[end-1])
+                return (;)
+            end
 
-    #         function Processes.init(::Luc, context)
-    #             luclist = Int[2, 1]
-    #             processsizehint!(luclist,context)
-    #             return (;luclist)
-    #         end
-
-
-    #         Fdup = Unique(Fib())
-    #         Ldup = Unique(Luc)
+            function Processes.init(::Luc, context)
+                luclist = Int[2, 1]
+                processsizehint!(luclist,context)
+                return (;luclist)
+            end
 
 
-    #         FibLuc = CompositeAlgorithm( (Fib(), Fib, Luc), (1,1,2), Route(Fib(), Luc, :fiblist))
+            Fdup = Unique(Fib())
+            Ldup = Unique(Luc)
 
-    #         C = Routine((Fib, Fib(), FibLuc), (10,20,30))
 
-    #         FFluc = CompositeAlgorithm( (FibLuc, Fdup, Fib, Ldup), (10,5,2,1), Route(Fdup, Ldup, :fiblist), Share(Fib, Ldup))
+            FibLuc = CompositeAlgorithm( Fib(), Fib, Luc, (1,1,2), Route(Fib() => Luc, :fiblist))
 
-    #         pfu = Process(FFluc)
-    #         pcu = Process(C)
-    #         run(pfu)
-    #         close(pfu)
-    #         run(pcu)
-    #         close(pcu)
+            C = Routine(Fib, Fib(), FibLuc, (10,20,30))
 
-    #         pfr = Process(FFluc, lifetime = 1)
-    #         pcr = Process(C, lifetime = 1)
+            FFluc = CompositeAlgorithm( FibLuc, Fdup, Fib, Ldup, (10,5,2,1), Route(Fdup => Ldup, :fiblist), Share(Fib, Ldup))
 
-    #         pack = package(FibLuc)
-    #         p = Process(pack)
-    #         run(p)
-    #         close(p)
-    #         pr = Process(pack, lifetime = 1)
-    #         run(pr)
+            pfu = Process(FFluc)
+            pcu = Process(C)
+            run(pfu)
+            close(pfu)
+            run(pcu)
+            close(pcu)
+
+            pfr = Process(FFluc, lifetime = 1)
+            pcr = Process(C, lifetime = 1)
+
+            pack = package(FibLuc)
+            p = Process(pack)
+            run(p)
+            close(p)
+            pr = Process(pack, lifetime = 1)
+            run(pr)
             
-    #     end
+        end
 
-    # end
+    end
 
 end

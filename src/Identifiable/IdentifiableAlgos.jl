@@ -38,6 +38,7 @@ algotype(::Union{IdentifiableAlgo{F}, Type{<:IdentifiableAlgo{F}}}) where {F} = 
 @inline function getkey(sat::Type{<:IdentifiableAlgo{F, Id, Aliases, AlgoName, ScopeName}}) where {F, Id, Aliases, AlgoName, ScopeName}
     ScopeName
 end
+# @inline setkey(sa::IdentifiableAlgo, newkey) = setparameter(sa, 6, newkey)
 
 function mergereturn(sa::IdentifiableAlgo{F, Id, Aliases, AlgoName, ScopeName}, args, returnval) where {F, Id, Aliases, AlgoName, ScopeName}
     (;args..., (ScopeName => (;getproperty(returnval, ScopeName)..., returnval...)))

@@ -1,18 +1,23 @@
+export Logger
 include("IsBitsStorage.jl")
 include("RunFuncs.jl")
 
 """
 Log a variable
 """
-struct Logger{T} <: ProcessAlgorithm end
+struct Logger{T, Name} <: ProcessAlgorithm end
+
+Logger(name::Symbol, T) = Logger{T, name}()
 
 function Processes.init(::Logger{T}, context) where T
+    println("RUNNING")
     log = Vector{T}()
     processsizehint!(log, context)
     return (;log)
 end
 function Processes.step!(::Logger{T}, context) where T
     (;log, value) = context
+
     push!(log, value)
     return (;)
 end

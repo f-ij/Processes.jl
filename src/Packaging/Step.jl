@@ -1,8 +1,9 @@
 function init(pack::PackagedAlgo, context)
-    all_algos = getalgos(pack)
+    # all_algos = getalgos(pack)
+    all_entities = get_processentities(pack)
     # contextview = view(context, pack, inject = (;))
-    context = unrollreplace(context, all_algos...) do context, algo
-        init(algo, context)
+    context = unrollreplace(context, all_entities...) do context, entity
+        init(entity, context)
     end
 end
 

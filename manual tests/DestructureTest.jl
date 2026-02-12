@@ -30,5 +30,4 @@ Runner = SimpleAlgo((Tick,), destr, Share(destr, Tick))
 r = getregistry(Runner)
 
 p = Process(Runner)
-@show p.context
 # start(p)

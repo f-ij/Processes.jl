@@ -7,6 +7,7 @@ getoptions(cla::LoopAlgorithm) = getfield(cla, :options)
 
 get_shares(cla::LoopAlgorithm) = filter(x -> x isa Share, getoptions(cla))
 get_routes(cla::LoopAlgorithm) = filter(x -> x isa Route, getoptions(cla)) 
+get_states(cla::LoopAlgorithm) = getfield(cla, :states)
 
 getoptions(la::LoopAlgorithm, T::Type{O}) where O = filter(x -> x isa O, getoptions(la))
 

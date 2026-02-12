@@ -52,7 +52,11 @@ function to_named(cla::LoopAlgorithm, ov::Union{Override, Input})
     # end 
 end
 
-function to_named(reg::NameSpaceRegistry, ov::Union{Override, Input})
+to_named(reg::NameSpaceRegistry, ov::Union{Override, Input}...) = flat_collect_broadcast(ov) do o
+    to_named(reg, o)
+end
+
+@inline function to_named(reg::NameSpaceRegistry, ov::Union{Override, Input})
     target_algo = get_target_algo(ov)
     key = static_findkey(reg, target_algo)
     if isnothing(key)

@@ -15,6 +15,7 @@ function TaskData(algo; overrides = tuple(), inputs = tuple(), lifetime = Indefi
         algo = algo()
     end
     c = ProcessContext(algo; globals = (;lifetime, algo))
+    algo = update_keys(algo, getregistry(c))
     # TaskData(algo, args, (;), overrides, lifetime, Ref(true))
     if !(inputs isa Tuple)
         # println("Making inputs a tuple")

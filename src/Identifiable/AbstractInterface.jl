@@ -29,6 +29,9 @@ algoname(sa::AbstractIdentifiableAlgo{F,Id,Aliases,AlgoName}) where {F,Id,Aliase
 @inline function getkey(sat::Type{<:AbstractIdentifiableAlgo{F,Id,Aliases,AlgoName,ContextKey}}) where {F,Id,Aliases,AlgoName,ContextKey}
     ContextKey
 end
+# @inline function setkey(sa::AbstractIdentifiableAlgo, newkey)
+#     error("setkey not implemented for type: $(typeof(sa)). This function should be implemented for any subtype of AbstractIdentifiableAlgo to allow for proper key management within registries and processes.")
+# end
 
 function mergereturn(sa::Union{<:AbstractIdentifiableAlgo{F,Id,Aliases,AlgoName,ContextKey}, Type{<:AbstractIdentifiableAlgo{F,Id,Aliases,AlgoName,ContextKey}}}, 
     args, 
@@ -38,7 +41,12 @@ end
 
 @inline varaliases(sa::Union{AbstractIdentifiableAlgo{F,Id,Aliases},Type{<:AbstractIdentifiableAlgo{F,Id,Aliases}}}) where {F,Id,Aliases} = Aliases
 
-
+# """
+# Update the keys in the PackagedAlgo's registry to match those in the provided registry, based on the algorithms contained in the PackagedAlgo. This is necessary to ensure that when the PackagedAlgo is used within a Process, it can correctly match its internal algorithms to those in the Process's registry for input/output mapping and overrides.
+# """
+# function update_keys(ca::AbstractIdentifiableAlgo, reg)
+#     return reg[ca]
+# end
 
 ########################################
 ############### Traits #################

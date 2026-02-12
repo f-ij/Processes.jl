@@ -27,8 +27,14 @@ contextname(sv::SharedVars{from_name}) where {from_name} = from_name
 
 ## TODO MOVE
 function to_sharedvar(reg::NameSpaceRegistry, r::Route)
-        fromname = static_findkey(reg, r.from)
-        toname = static_findkey(reg, r.to)
+        from_matcher = from_match_by(r)
+        to_matcher = to_match_by(r)
+        
+        fromobj = get_by_matcher(reg, from_matcher)
+        toobj = get_by_matcher(reg, to_matcher)
+
+        toname = getkey(toobj)
+        fromname = getkey(fromobj)
         if isnothing(fromname) || isnothing(toname)
             available = all_keys(reg)
             available_str = isempty(available) ? "<none>" : join(string.(available), ", ")
@@ -39,6 +45,6 @@ function to_sharedvar(reg::NameSpaceRegistry, r::Route)
             error(msg)
         end
         # (; toname => tuple(SharedVars(fromname, getvarnames(r), getaliases(r)) ))
-        toname => SharedVars(fromname, getvarnames(r), getaliases(r), getransform(r))
+        toname => SharedVars(fromname, getvarnames(r), getaliases(r), gettransform(r))
         # (;toname => SharedVars{fromname, r.varnames, r.aliases}())
 end

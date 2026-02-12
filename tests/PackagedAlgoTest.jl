@@ -31,7 +31,7 @@ end
 @testset "PackagedAlgo runs and benchmarks" begin
     n = 1_000
     @show n
-    fibluc = CompositeAlgorithm((PackFib, PackLuc), (1, 1))
+    fibluc = CompositeAlgorithm( PackFib, PackLuc , (1, 1))
     pack = PackagedAlgo(fibluc, "FLPack")
 
     p = Process(pack; lifetime = n)
@@ -62,8 +62,8 @@ end
     end
 
     Logger1 = Logger(:fibidiboo)
-    Logging = CompositeAlgorithm((pack, Logger1), (1, 100), 
-        Route(pack, Logger1, :fiblist => :targetnum, transform = x -> x[end]))
+    Logging = CompositeAlgorithm( pack, Logger1, (1, 100), 
+        Route(pack => Logger1, :fiblist => :targetnum, transform = x -> x[end]))
     p = Process(Logging; lifetime = 1000)
     run(p)
 

@@ -36,7 +36,15 @@ end
 """
 Get a subcontext view for a specific subcontext
 """
-@inline Base.view(pc::ProcessContext, instance::SA; inject = (;)) where SA <: AbstractIdentifiableAlgo = SubContextView{typeof(pc), getkey(instance), typeof(instance), typeof(inject)}(pc, instance; inject)
+@inline function Base.view(pc::ProcessContext, instance::SA; inject = (;)) where SA <: AbstractIdentifiableAlgo
+    key = getkey(instance)
+    # TODO: no key should always be nothing
+    if key == Symbol() || isnothing(key)
+        key = getkey(getregistry(pc)[instance])
+    end
+    SubContextView{typeof(pc), key, typeof(instance), typeof(inject)}(pc, instance; inject)
+end
+
 @inline function Base.view(pc::ProcessContext{D}, instance::AbstractIdentifiableAlgo{T, nothing}, inject = (;)) where {D, T}
     named_instance = getregistry(pc)[instance]
     return view(pc, named_instance; inject)
@@ -53,13 +61,16 @@ end
 """
 Regenerate a SubContextView from its type
 """
-@inline Base.view(pc::PC, scv::CV; inject = (;)) where {PC <: ProcessContext, CV <: SubContextView} = @inline view(pc, this_instance(scv), inject(scv))
+@inline function Base.view(pc::PC, scv::CV; inject = (;)) where {PC <: ProcessContext, CV <: SubContextView}
+    @inline view(pc, this_instance(scv), inject(scv))
+end
 
 """
 View a view
 """
 @inline function Base.view(scv::SubContextView{C,SubKey}, instance::SA) where {C, SubKey, SA <: AbstractIdentifiableAlgo}
-    scopename = getkey(instance)
+    scoped_instance = @inline static_get(getregistry(scv), instance)
+    scopename = getkey(scoped_instance)
     @assert scopename == SubKey "Trying to view SubContextView of subcontext $(SubKey) with instance of subcontext $(scopename)"
     context = getcontext(scv)
     return view(context, instance)

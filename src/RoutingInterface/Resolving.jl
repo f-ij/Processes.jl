@@ -12,15 +12,18 @@ function resolve_options(reg::NameSpaceRegistry)
     return (;)
 end
 
-function resolve_options(reg::NameSpaceRegistry, options::AbstractOption...)
-    if isempty(options)
-        return (;)
-    end
-    shares = filter(x -> x isa Share, options)
-    routes = filter(x -> x isa Route, options)
+# @inline function resolve_options(reg::NameSpaceRegistry, options::AbstractOption...)
+#     if isempty(options)
+#         return (;)
+#     end
+#     # shares = filter(x -> x isa Share, options)
+#     shares = typefilter(Share, options)
+#     # routes = filter(x -> x isa Route, options)
+#     routes = typefilter(Route, options)
 
-    return (resolve_options(reg, shares...)..., resolve_options(reg, routes...)...)
-end
+
+#     return (resolve_options(reg, shares...)..., resolve_options(reg, routes...)...)
+# end
 
 """
 From a collection of Share objects
@@ -42,7 +45,7 @@ end
 From a collection of Route objects
 Construct a namedtuple of (;target_namespace => SharedVars{origin_namespace, varnames, aliases},...)
 """
-function resolve_options(reg::NameSpaceRegistry, routes::Route...)
+@inline function resolve_options(reg::NameSpaceRegistry, routes::Route...)
     if isempty(routes)
         return (;)
     end
@@ -50,9 +53,23 @@ function resolve_options(reg::NameSpaceRegistry, routes::Route...)
     # return map(route -> to_sharedvar(reg, route), routes)
     named_routes = (;)
     named_routes = unrollreplace(named_routes, routes...) do named_routes, route
-        tosubcontextname, sharedvar = to_sharedvar(reg, route)
-        return (;named_routes..., tosubcontextname => (get(named_routes, tosubcontextname, tuple())..., sharedvar))
+        this_one = resolve_options(reg, route)
+        name = first(keys(this_one))
+        merged = (get(named_routes, name, tuple())..., this_one[1][1])
+        (;named_routes..., name => merged)
     end
-    # @show named_routes
+    # named_routes = resolve_options.(Ref(reg), routes)
     return named_routes
 end
+
+@inline function resolve_options(reg::NameSpaceRegistry, route::R) where R <: Route
+    tosubcontextname, sharedvar = to_sharedvar(reg, route)
+    return (;tosubcontextname => tuple(sharedvar))
+end
+
+# @generated function resolve_options(reg::NameSpaceRegistry, route::R) where R <: Route
+#     matcher_from = from_match_by(route)
+#     matcher_to = to_match_by(route)
+
+    
+# end

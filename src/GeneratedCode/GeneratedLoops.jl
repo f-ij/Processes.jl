@@ -28,6 +28,7 @@ Generated process loop that inlines the step! expression when available.
             $(algo_name) = algo
             $(step_expr)
             @inline inc!(process)
+            @inline tick!(process)
         end
         return @inline after_while(process, algo, context)
     end
@@ -50,6 +51,7 @@ Generated process loop that inlines the step! expression when available.
         while shouldrun(process)
             $(step_expr)
             @inline inc!(process)
+            @inline tick!(process)
         end
         return @inline after_while(process, func, context)
     end

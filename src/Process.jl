@@ -43,7 +43,7 @@ function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides.
     # Wrap in a LoopAlgorithm to get all
     # features
     if !(func isa LoopAlgorithm)
-        func = SimpleAlgo(tuple(func))
+        func = SimpleAlgo(func)
     end
     
     if lifetime isa Integer
@@ -56,18 +56,22 @@ function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides.
         end
     end
 
+    empty_context = ProcessContext(func)
+    reg = getregistry(empty_context)
+
     inputs = filter(x -> x isa Input, inputs_overrides)
     overrides = filter(x -> x isa Override, inputs_overrides)
 
-    named_inputs = to_named(func, inputs...)
-    named_overrides = to_named(func, overrides...)
+    # TODO: Should they already be converted to NamedInput/NamedOverride before passing to taskdata?
+    named_inputs = to_named(reg, inputs...)
+    named_overrides = to_named(reg, overrides...)
     @DebugMode "Named_inputs: $(named_inputs)"
     @DebugMode "Named overrides: $(named_overrides)"
 
-  
+    # func = update_keys(func, reg)
     td = TaskData(func; lifetime, overrides = named_overrides, inputs = named_inputs)
 
-    # context = init_context(td)
+    context = init_context(td)
 
     if isnothing(context)
          context = init_context(td)
