@@ -125,7 +125,7 @@ function reprepare(p::Process)
     @assert !isnothing(p.taskdata) "No task to run"
     pause(p)
     makecontext!(p)
-    unpause(p)
+    run(p)
     return true
 end
 
