@@ -14,7 +14,7 @@ function Routine(args...)
     parse_la_input(Routine, args...)
 end
 
-function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple, repeats; id = uuid4()) where F
+function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple, repeats; id = nothing) where F
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
     return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), id}(funcs, states, options, resume_idxs)
 end

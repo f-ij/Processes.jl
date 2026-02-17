@@ -11,7 +11,7 @@ end
 getmultipliers_from_specification_num(::Type{<:CompositeAlgorithm}, specification_num) = 1 ./(Float64.(specification_num))
 
 CompositeAlgorithm(args...) = parse_la_input(CompositeAlgorithm, args...)
-function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = uuid4()) where F
+function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
     return CompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), id}(funcs, states, options, Ref(1))
 end
 
