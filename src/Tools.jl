@@ -1,5 +1,5 @@
 export processsizehint!, recommendsize, newallocator, progress, est_remaining,
-    num_calls
+    num_calls, closeprocess
 
 """
 Use within init function
@@ -121,6 +121,13 @@ export algo_call_number
 #         end
 #     end
 # end
+
+function closeprocess(c::AbstractProcess)
+    globals = getglobals(c).process
+    @assert haskey(globals, :process) "Process context does not have a :process key, cannot close process"
+    proc = globals.process
+    close(proc)
+end
 
 
 ####
