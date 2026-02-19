@@ -6,7 +6,7 @@
 """
 User-facing route from one subcontext to another
 """
-struct Route{F,T,N, FT, varnames, aliases, Fmatch, Tmatch} <: AbstractOption
+struct Route{F,T, FT, varnames, aliases, Fmatch, Tmatch} <: AbstractOption
     from::F # From algo
     to::T   # To algo
     # varnames::NTuple{N, Symbol}
@@ -28,7 +28,7 @@ function Route(from_to::Pair, originalname_or_aliaspairs::Union{Symbol, Pair{Sym
     Fmatch = match_by(from)
     Tmatch = match_by(to)
     # @show typeof(from), typeof(to), Fmatch, Tmatch, transform Fmatch Tmatch
-    Route{typeof(from), typeof(to), length(varnames), transform, varnames, aliases, Fmatch, Tmatch}(from, to)
+    Route{typeof(from), typeof(to), transform, varnames, aliases, Fmatch, Tmatch}(from, to)
 end
 
 @inline function _route_endpoint_label(x)

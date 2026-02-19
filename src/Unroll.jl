@@ -174,6 +174,8 @@ end
 For a tree with traits at each node
 Nodefunction should return nothing, nothing
 or next leaves, nodetrait 
+
+This only works if every node has the same number of traits, and the traits are tuples
 """
 @inline function tree_trait_flatten(nodefunc, node, carry_trait)
     next_nodes, newtrait = nodefunc(node, carry_trait)
@@ -197,5 +199,22 @@ end
         return (first_el, typefilter(T, gettail(elements))...)
     else
         return typefilter(T, gettail(elements))
+    end
+end
+
+
+"""
+Apply a function f to the nodes of a tree, f returns (newchildren, tuple(whatever...))
+    Not sure if this works
+"""
+function tree_apply_collect(f::F, node, collected = tuple()) where F
+    newchildren, newcollect = f(node)
+
+    if isnothing(newchildren)
+        return (collected..., newcollect...)
+    else
+
+        next = flat_collect_broadcast(x -> tree_apply_collect(f, x), newchildren)
+        return (collected..., newcollect..., next...)
     end
 end

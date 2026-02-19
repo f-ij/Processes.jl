@@ -2,17 +2,6 @@ export fuse, isfused
 
 include("ContextExt.jl")
 
-#=
-Fusing for now splats non-routine LoopAlgorithms into one CompositeAlgorithm.
-
-Requirements that might be loosened later:
-    - Every type can only have one value
-    - Cannot contain any Routines or already fused Composites
-=#
-"""
-"""
-# isfused(cla::Union{LoopAlgorithm, Type{<:LoopAlgorithm}}) = !isnothing(getid(cla))
-
 function flatten_comp_funcs(funcs, _intervals)
     flat_funcs, flat_intervals = flat_tree_property_recursion(funcs, _intervals) do el, trait
         if !(el isa CompositeAlgorithm)
@@ -43,7 +32,6 @@ function flatten_loopalgorithms(la::LoopAlgorithm)
     end
     return flat_funcs, flat_intervals
 end
-
 
 
 function fuse(cla::LoopAlgorithm, name_prefix = "")

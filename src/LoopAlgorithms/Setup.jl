@@ -7,6 +7,7 @@ LoopAlgorithm(  func1, func2, func3, ...,
                 options1, option2, ...)
 """
 function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
+    collected_options = tuple()
 
     ######### ALGORITHMS #########
     if args[1] isa Tuple
@@ -24,8 +25,13 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
     @assert !isnothing(after_last_algo_idx) "At least one argument must be a non-ProcessAlgorithm to separate the functions from the options, but got: $(args)"
     processalgos = tuple(args[1:after_last_algo_idx]...)
     processalgos = ntuple(i -> (processalgos[i] isa ProcessEntity || processalgos[i] isa Type{<:ProcessEntity}) ? IdentifiableAlgo(processalgos[i]) : processalgos[i], length(processalgos))
-    # @assert all(x -> x isa ProcessAlgorithm, processalgos) "All arguments before the first non-ProcessAlgorithm must be ProcessAlgorithms, but got: $(processalgos)"
-
+    
+    # Collect options from all LoopAlgorithms
+    for algo in processalgos
+        if algo isa LoopAlgorithm
+            collected_options = (collected_options..., getoptions(algo)...)
+        end
+    end
 
     args = args[after_last_algo_idx + 1:end] # Remove the ProcessAlgorithms from the arguments list for further processing
 
@@ -77,56 +83,9 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
         options = tuple(args[1:end]...)
         @assert all(x -> x isa AbstractOption || x isa Type{<:AbstractOption}, options) "All arguments after the ProcessStates must be options, but got: $(options)"
     end
+    options = tuple(collected_options..., options...)
     return LoopAlgorithm(laType, processalgos, pstates, options, intervals_or_repeats)
 end
-
-# get_loopalgorithm_registry(la::LoopAlgorithm) = getregistry(la)
-# get_loopalgorithm_registry(::Any) = NameSpaceRegistry()
-# function setup(cla_target_type::Type{<:LoopAlgorithm},funcs::NTuple{N, ProcessAlgorithm}, 
-#                             specification_num::NTuple{N, Real} = ntuple(_ -> 1, N), 
-#                             options::Union{AbstractOption, Type{<:AbstractOption}}...) where {N}
-
-#     allfuncs = Any[]
-#     registry = NameSpaceRegistry()
-#     multipliers = getmultipliers_from_specification_num(cla_target_type, specification_num)
-#     options_all = options
-
-#     # @assert all(map(x -> (x isa ProcessEntity || x <: ProcessEntity || x isa LoopAlgorithm), funcs)) "All functions must be ProcessEntities or LoopAlgorithms, but got: $(funcs)"
-
-#     # for (func_idx, func) in enumerate(funcs)
-#     #     if func isa LoopAlgorithm # Deepcopy to make multiple instances independent
-#     #         func = deepcopy(func)
-#     #     else
-#     #         registry, func = add(registry, func, multipliers[func_idx])
-#     #     end
-#     #     push!(allfuncs, func)
-#     # end
-
-#     # registry = inherit(registry, get_loopalgorithm_registry.(allfuncs)...; multipliers)
-#     # @DebugMode "Combined registry: $registry, after inheriting: $(get_loopalgorithm_registry.(allfuncs))"
-
-
-#     # process_state = filter(x -> (x isa ProcessState) || (x isa Type{<:ProcessState}), options_all)
-#     # registry = addall(registry, process_state)
-#     # @DebugMode "Adding process state options: $process_state"
-#     # @DebugMode "Final registry: $registry"
-
-#     # # allfuncs = recursive_update_cla_names.(allfuncs, Ref(registry))
-#     # allfuncs = update_keys.(allfuncs, Ref(registry))
-#     # @show allfuncs
-
-
-#     functuple = IdentifiableAlgo(funcs...)
-#     specification_num = tuple(floor.(Int, specification_num)...)
-
-#     # routes = filter(x -> x isa Route, options_all)
-#     # shares = filter(x -> x isa Share, options_all)
-#     # resolved_options = resolve_options(registry, options_all...)
-
-#     # shared_contexts = resolve_options(registry, shares...)
-#     # shared_vars = resolve_options(registry, routes...)
-#     (;functuple, registry, options)
-# end
 
 function setup_registry(la::LA) where LA <: LoopAlgorithm
     registry = NameSpaceRegistry()
