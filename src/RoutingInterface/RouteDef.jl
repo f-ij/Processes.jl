@@ -14,7 +14,7 @@ struct Route{F,T, FT, varnames, aliases, Fmatch, Tmatch} <: AbstractOption
     # transform::FT
 end
 
-function Route(from_to::Pair, originalname_or_aliaspairs::Union{Symbol, Pair{Symbol, Symbol}}...; transform = nothing)
+function Route(from_to::Pair, originalname_or_aliaspairs::Union{Symbol, Pair{Symbol, Symbol}, Pair{NTuple{N, Symbol}, Symbol}}...; transform = nothing) where N
     from, to = from_to
     @assert (from isa ProcessEntity) || from <: ProcessEntity "Origin of a Route must be a ProcessAlgorithm or ProcessState. Got: $from"
     @assert (to isa ProcessEntity) || to <: ProcessEntity "Target of a Route must be a ProcessAlgorithm or ProcessState. Got: $to"
@@ -27,6 +27,8 @@ function Route(from_to::Pair, originalname_or_aliaspairs::Union{Symbol, Pair{Sym
 
     Fmatch = match_by(from)
     Tmatch = match_by(to)
+
+    @assert !isnothing(transform) ? (length(originalname_or_aliaspairs) == 1) : true "Transform-based routes must have exactly one variable mapping, but got $(originalname_or_aliaspairs)"
     # @show typeof(from), typeof(to), Fmatch, Tmatch, transform Fmatch Tmatch
     Route{typeof(from), typeof(to), transform, varnames, aliases, Fmatch, Tmatch}(from, to)
 end

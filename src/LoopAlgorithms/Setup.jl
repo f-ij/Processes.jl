@@ -29,7 +29,7 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
     # Collect options from all LoopAlgorithms
     for algo in processalgos
         if algo isa LoopAlgorithm
-            collected_options = (collected_options..., getoptions(algo)...)
+            collected_options = (unique(collected_options)..., getoptions(algo)...)
         end
     end
 

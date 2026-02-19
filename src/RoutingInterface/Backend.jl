@@ -8,18 +8,18 @@ contextname(st::Type{SharedContext{name}}) where {name} = name
 contextname(st::SharedContext{name}) where {name} = name
 contextname(::Any) = nothing
 
-struct SharedVars{from_name, NT, transform} end
+struct SharedVars{from_name, varnames, aliases, transform} end
 SharedVars(fromname, transform = nothing; nt...) = SharedVars{fromname, (nt...,), transform}() # NamedTuple of varnames => aliases
-SharedVars(fromname, varnames, aliases, transform = nothing) = SharedVars{fromname, NamedTuple{tuple(varnames...)}(tuple(aliases...)), transform}()
+SharedVars(fromname, varnames, aliases, transform = nothing) = SharedVars{fromname, varnames, aliases, transform}()
 
 get_fromname(::Union{SharedVars{from_name}, Type{<:SharedVars{from_name}}}) where {from_name} = from_name
-get_localname(sv::Union{SharedVars{from_name, NT}, Type{<:SharedVars{from_name, NT}}}, varname::Symbol) where {from_name, NT} = getproperty(NT, varname)
-@inline localnames(sv::Union{SharedVars{from_name, NT}, Type{<:SharedVars{from_name, NT}}}) where {from_name, NT} = values(NT)
-@inline subvarcontextnames(sv::Union{SharedVars{from_name, NT}, Type{<:SharedVars{from_name, NT}}}) where {from_name, NT} = keys(NT)
-@inline gettransform(sv::Union{SharedVars{from_name, NT, transform}, Type{<:SharedVars{from_name, NT, transform}}}) where {from_name, NT, transform} = transform
+get_localname(sv::Union{SharedVars{from_name, varnames, aliases}, Type{<:SharedVars{from_name, varnames, aliases}}}, varname::Symbol) where {from_name, varnames, aliases} = aliases[findfirst(==(varname), varnames)]
+@inline localnames(sv::Union{SharedVars{from_name, varnames, aliases}, Type{<:SharedVars{from_name, varnames, aliases}}}) where {from_name, varnames, aliases} = aliases
+@inline subvarcontextnames(sv::Union{SharedVars{from_name, varnames, aliases}, Type{<:SharedVars{from_name, varnames, aliases}}}) where {from_name, varnames, aliases} = varnames
+@inline gettransform(sv::Union{SharedVars{from_name, varnames, aliases, transform}, Type{<:SharedVars{from_name, varnames, aliases, transform}}}) where {from_name, varnames, aliases, transform} = transform
 
-Base.keys(sv::Union{SharedVars{from_name, NT}, Type{<:SharedVars{from_name, NT}}}) where {from_name, NT} = keys(NT)
-Base.values(sv::Union{SharedVars{from_name, NT}, Type{<:SharedVars{from_name, NT}}}) where {from_name, NT} = values(NT)
+Base.keys(sv::Union{SharedVars{from_name, varnames, aliases}, Type{<:SharedVars{from_name, varnames, aliases}}}) where {from_name, varnames, aliases} = varnames
+Base.values(sv::Union{SharedVars{from_name, varnames, aliases}, Type{<:SharedVars{from_name, varnames, aliases}}}) where {from_name, varnames, aliases} = aliases
 
 # TODO CHECK IF USED
 contextname(sv::Type{<:SharedVars{from_name}}) where {from_name} = from_name

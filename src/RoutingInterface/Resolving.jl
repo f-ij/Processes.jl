@@ -62,6 +62,10 @@ Construct a namedtuple of (;target_namespace => SharedVars{origin_namespace, var
     return named_routes
 end
 
+"""
+Go from single route to SharedVar
+    Also gives the target subcontext name for the route as a namedtuple key
+"""
 @inline function resolve_options(reg::NameSpaceRegistry, route::R) where R <: Route
     tosubcontextname, sharedvar = to_sharedvar(reg, route)
     return (;tosubcontextname => tuple(sharedvar))

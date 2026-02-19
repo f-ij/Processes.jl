@@ -11,13 +11,16 @@ Returns a merged context by merging the provided named tuple into the appropriat
     merge_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
     
     for (var_idx, subcontext_varname) in enumerate(subcontext_varnames)
-
+        # First look if varname is in locations
         if hasproperty(locations, subcontext_varname) # If the local variable exists
 
             target_location = getproperty(locations, subcontext_varname)
 
             target_subcontext = get_subcontextname(target_location)
             targetname = get_originalname(target_location)
+            if targetname isa Tuple
+                error("Algorithm returned a variable: $(algo_varnames[var_idx]) which it tries to merge into $(targetname) in subcontext $(target_subcontext) \n Merging into multiple variables is not supported at this moment, but might be supported in the future through inverse transforms.")
+            end
 
             exprs = get!(merge_expressions_by_subcontext, target_subcontext, Expr[])
                
@@ -42,6 +45,7 @@ Returns a merged context by merging the provided named tuple into the appropriat
     
     # Return the expression that does the merge
     return quote
+        $(LineNumberNode(@__LINE__, @__FILE__))
         mergetuple = $mergetuple_expr
         newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
         return newcontext

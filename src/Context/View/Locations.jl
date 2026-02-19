@@ -100,15 +100,26 @@ end
 @inline getproperty_fromsubcontext(scv::SCV, subcontextname::Symbol, varname::Symbol) where SCV <: SubContextView = @inline getproperty(getproperty(getcontext(scv), subcontextname), varname)
 @inline getinjected(scv::SCV, key) where SCV <: SubContextView = getproperty(getinjected(scv), key)
 
+const getprop_expr = Ref(Expr(:block))
 @inline @generated function Base.getproperty(sct::SCV, vl::Union{VarLocation{:subcontext}, VarLocation{:local}}) where SCV <: SubContextView
-    target_subcontext = get_subcontextname(vl)
-    target_variable = get_originalname(vl)
-    fexpr = funcexpr(vl, :var)
-    return quote
-        # context = getcontext(sct)
-        # subcontext = @inline getproperty(context, $(QuoteNode(target_subcontext)))
-        # var = @inline getproperty(subcontext, $(QuoteNode(target_variable)))
-        var = @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(target_variable)))
+    # target_subcontext = get_subcontextname(vl)
+    # target_variable = get_originalname(vl)
+    # numvars = length(target_variable)
+    # varsymbols = ntuple(i -> Symbol("var", i), numvars)
+    # fexpr = funcexpr(vl, varsymbols...)
+
+    assign_exprs, varsymbols = getvar_expressions_and_varnames(vl)
+    fexpr = funcexpr(vl, varsymbols...)
+
+    global getprop_expr[] = quote
+        # var = @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(target_variable)))
+        $(assign_exprs...)
+        return $(fexpr)
+    end
+    
+    return  quote
+        # var = @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(target_variable)))
+        $(assign_exprs...)
         return $(fexpr)
     end
 end

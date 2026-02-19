@@ -29,6 +29,16 @@ For variable names :a, :b, :c
             return Expr(:call, func, varnames...)
 end
 
+@inline function getvar_expressions_and_varnames(vl::Union{VL, Type{<:VL}}) where VL <: VarLocation
+    varnames = get_originalname(vl)
+    numvars = varnames isa Tuple ? length(varnames) : 1
+    varnames = varnames isa Tuple ? varnames : (varnames,)
+    assign_symbols = ntuple(i -> gensym(:var), numvars)
+    target_subcontext = get_subcontextname(vl)
+    return [:($(assign_symbols[i]) = @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(varnames[i]))))
+        for i in 1:numvars], assign_symbols
+end
+
 struct SubContextView{CType, SubName, T, NT, VarAliases} <: AbstractContext
     context::CType
     instance::T # ScopedInstance for which the view is created
