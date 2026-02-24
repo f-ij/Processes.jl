@@ -130,13 +130,9 @@ function _sharedvars_display(sharedvars_types)
     items = String[]
     for sv in sharedvars_types
         from = get_fromname(sv)
-        # `SharedVars` is usually carried around as a *type* (DataType) whose 2nd type-parameter
-        # encodes the varname=>alias mapping (typically as a NamedTuple value).
-        # Iterating the type itself isn't defined, so iterate the stored mapping instead.
-        svu = Base.unwrap_unionall(sv)
-        nt = svu.parameters[2]
-        itr = nt isa NamedTuple ? pairs(nt) : nt
-        for (varname, alias) in itr
+        varnames = subvarcontextnames(sv)
+        aliases = localnames(sv)
+        for (varname, alias) in zip(varnames, aliases)
             push!(items, string(alias, "@", from, ".", varname))
         end
     end
