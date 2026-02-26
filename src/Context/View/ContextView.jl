@@ -97,7 +97,10 @@ Fallback merge if nothing is merged that just returns the original context
 """
 @inline Base.merge(scv::SubContextView, ::Nothing) = getcontext(scv)
 @inline Base.merge(scv::SubContextView, args) = error("Step, init and cleanup must return namedtuple, trying to merge $(args) into context from SubContextView $(scv)")
-
+"""
+Merge, but return view, useful for injecting variables that are not meant to be in the full context
+"""
+@inline inject(scv::SubContextView, args::NamedTuple) = @inline setfield(scv, :injected, merge(getinjected(scv), args))
 
 ####################################
 ############## SHOW ################
