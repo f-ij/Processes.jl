@@ -29,16 +29,6 @@ function algo_to_subcontext_names(scv::Union{SubContextView{CType, SubKey, T, NT
     return @inline algo_to_subcontext_names(_aliases, name)
 end
 
-@inline function Base.keys(scv::SCV) where SCV <: SubContextView
-    locations = @inline get_all_locations(scv)
-    return keys(locations)
-end
-
-@inline function Base.haskey(scv::SCV, key) where SCV <: SubContextView
-    locations = @inline get_all_locations(scv)
-    return haskey(locations, key)
-end
-
 #################################
 ####### CREATING VIEWS ##########
 #################################

@@ -93,9 +93,9 @@ end
 ########### Getting Properties  ###########
 ###########################################
 
-@inline Base.keys(scv::SCV) where SCV <: SubContextView = propertynames(@inline get_all_locations(scv))
-@inline Base.propertynames(scv::SCV) where SCV <: SubContextView = propertynames(@inline get_all_locations(scv))
-@inline Base.haskey(scv::SCV, name::Symbol) where SCV <: SubContextView = haskey(scv, Val(name))
+@inline Base.keys(scv::SCV) where SCV <: SubContextView = @inline propertynames(@inline get_all_locations(scv))
+@inline Base.propertynames(scv::SCV) where SCV <: SubContextView = @inline propertynames(@inline get_all_locations(scv))
+@inline Base.haskey(scv::SCV, name::Symbol) where SCV <: SubContextView = @inline haskey(scv, Val(name))
 @inline getregistry(scv::SCV) where SCV <: SubContextView = getregistry(getcontext(scv))
 @inline getproperty_fromsubcontext(scv::SCV, subcontextname::Symbol, varname::Symbol) where SCV <: SubContextView = @inline getproperty(getproperty(getcontext(scv), subcontextname), varname)
 @inline getinjected(scv::SCV, key) where SCV <: SubContextView = getproperty(getinjected(scv), key)
