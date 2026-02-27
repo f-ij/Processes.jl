@@ -67,12 +67,8 @@ end
 ####### Properties/Traits #######
 #################################
 
-@inline inc(ca::PackagedAlgo) = ca.inc[]
-@generated function inc!(ca::PackagedAlgo)
-    _lcm = lcm(intervals(ca)...)
-    return :(ca.inc[] = mod1(ca.inc[] + 1, $_lcm))
-end
 @inline intervals(ca::Union{PackagedAlgo{T,I},Type{<:PackagedAlgo{T,I}}}) where {T,I} = I
+
 @inline interval(ca::Union{PackagedAlgo{T,I},Type{<:PackagedAlgo{T,I}}}, i) where {T,I} = intervals(ca)[i]
 @inline getalgotype(::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}, idx) where {T,I} = T.parameters[idx]
 @inline numalgos(ca::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}) where {T,I} = length(T.parameters)
@@ -89,6 +85,12 @@ end
 reset!(ca::PackagedAlgo) = (ca.inc[] = 1; reset!.(ca.funcs))
 
 get_processentities(ca::PackagedAlgo) = getentries(getregistry(ca))
+
+@inline inc(ca::PackagedAlgo) = ca.inc[]
+@generated function inc!(ca::PackagedAlgo)
+    _lcm = lcm(intervals(ca)...)
+    return :(ca.inc[] = mod1(ca.inc[] + 1, $_lcm))
+end
 ########################################
 ####### Identifiable Interface  ########
 ########################################
