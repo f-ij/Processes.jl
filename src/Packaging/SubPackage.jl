@@ -67,9 +67,8 @@ end
 
 @inline step!_expr(ps::Type{<:SubPackage}, context::Type{C}, funcname::Symbol) where {C<:AbstractContext} = quote
     $(LineNumberNode(@__LINE__, @__FILE__))
-    # viewed = @inline view(context, $funcname)
-    context = @inline getcontext(context)
     viewed = @inline view(context, $funcname)
+
     returnvals = @inline step!(getalgo($funcname), viewed)
     context = @inline merge(viewed, returnvals)
 end
