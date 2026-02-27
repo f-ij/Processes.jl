@@ -55,6 +55,8 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
     else
         error("For routines, please pass the number of repeats after all ProcessAlgorithms as a tuple, even if it's just one repeat, e.g. (10,). Got: $firstargs")
     end
+    intervals_or_repeats = ntuple(i -> round(Int, intervals_or_repeats[i]), length(processalgos))
+
 
 
     ### FLATTEN ###
