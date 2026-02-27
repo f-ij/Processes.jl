@@ -5,14 +5,13 @@ struct Logger{T, Name} <: ProcessAlgorithm end
 
 Logger(T; name = uuid4()) = Logger{T, name}()
 
-function Processes.init(::Logger{T}, context) where T
+function Processes.init(::Logger{T}, context::C) where {T, C}
     log = Vector{T}()
     processsizehint!(log, context)
     return (;log)
 end
-function Processes.step!(::Logger{T}, context) where T
+function Processes.step!(::Logger{T}, context::C) where {T, C}
     (;log, value) = context
-
     push!(log, value)
     return (;)
 end

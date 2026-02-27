@@ -95,11 +95,18 @@ end
 
 @inline Base.keys(scv::SCV) where SCV <: SubContextView = @inline propertynames(@inline get_all_locations(scv))
 @inline Base.propertynames(scv::SCV) where SCV <: SubContextView = @inline propertynames(@inline get_all_locations(scv))
-@inline Base.haskey(scv::SCV, name::Symbol) where SCV <: SubContextView = @inline haskey(scv, Val(name))
+@inline Base.haskey(scv::SCV, name::Symbol) where SCV <: SubContextView = @inline haskey(get_all_locations(scv), name)
 @inline getregistry(scv::SCV) where SCV <: SubContextView = getregistry(getcontext(scv))
 @inline getproperty_fromsubcontext(scv::SCV, subcontextname::Symbol, varname::Symbol) where SCV <: SubContextView = @inline getproperty(getproperty(getcontext(scv), subcontextname), varname)
 @inline getinjected(scv::SCV, key) where SCV <: SubContextView = getproperty(getinjected(scv), key)
-@inline Base.get(scv::SCV, name::Symbol, default) where SCV <: SubContextView = haskey(scv, Val(name)) ? getproperty(scv, Val(name)) : default
+@inline function Base.get(scv::SCV, name::Symbol, default) where SCV <: SubContextView
+    if haskey(scv, name)
+        return getproperty(scv, Val(name))
+    else
+        return default
+    end
+end
+
 @inline Base.@constprop :aggressive Base.getproperty(sct::SubContextView, v::Symbol) = getproperty(sct, Val(v))
 
 
