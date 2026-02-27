@@ -16,19 +16,6 @@ function RunFuncs(args...)
     return RunFuncs{tuple(varnames...), typeof(funcs)}(tuple(funcs...))
 end
 
-# # @inline _ntuple_apply_to(vars::Tuple, funcs...) = @inline ntuple(i -> funcs[i](vars...), length(funcs))
-# Base.@constprop :aggressive @inline function unroll_apply(funcs::F, vars::T) where {F, T <: Tuple}
-#     function _apply(funcs::F, vars::T, result) where {F, T}
-#         if isempty(funcs)
-#             return result
-#         else
-#             f, rest = first(funcs), Base.tail(funcs)
-#             new_result = (result..., f(vars...))
-#             return @inline _apply(rest, vars, new_result)
-#         end
-#     end
-#     return @inline _apply(funcs, vars, ())
-# end
 @generated function unroll_apply(funcs::F, vars::T) where {F, T <: Tuple}
     func_exprs = [:(funcs[$i](vars...)) for i in 1:length(F.parameters)]
     return Expr(:tuple, func_exprs...)

@@ -1,5 +1,5 @@
 """
-Macro to define a ProcessAlgorithm from a function definition.
+Macro to define a simple ProcessAlgorithm from a function definition.
     This creates a struct of the function name subtype of ProcessAlgorithm,
     with an implicit step! method that calls the function with the provided arguments.    
 """
@@ -34,8 +34,23 @@ macro ProcessAlgorithm(ex)
 
     typeless_args = map(arg -> arg isa Expr && arg.head == :(::) ? arg.args[1] : arg, args)
 
+    struct_def = quote
+        struct $FFunction <: ProcessAlgorithm end
+    end
+
+    if length(args) == 0
+        struct_def = quote
+            struct $FFunction <: ProcessAlgorithm 
+                function $FFunction(;_reserved)
+                    new()
+                end 
+            end
+        end
+    end
+
     q = quote
-            struct $FFunction <: ProcessAlgorithm end
+            # struct $FFunction <: ProcessAlgorithm end
+            $struct_def
 
             @inline function Processes.step!(f::$FFunction, context::C) where C <: Processes.AbstractContext
                 $(LineNumberNode(__source__.line, __source__.file))
@@ -45,14 +60,8 @@ macro ProcessAlgorithm(ex)
 
             $ex
         end
-    # println(q)
+    println(q)
     esc(q)
 end
 
 export @ProcessAlgorithm, @NamedProcessAlgorithm
-
-
-# function init(pa::Union{CompositeAlgorithm, Routine}, args)
-#     prepare_helper = PrepereHelper(pa, args)
-#     init(prepare_helper, args)
-# end

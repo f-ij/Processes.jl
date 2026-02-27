@@ -99,6 +99,9 @@ end
 @inline getregistry(scv::SCV) where SCV <: SubContextView = getregistry(getcontext(scv))
 @inline getproperty_fromsubcontext(scv::SCV, subcontextname::Symbol, varname::Symbol) where SCV <: SubContextView = @inline getproperty(getproperty(getcontext(scv), subcontextname), varname)
 @inline getinjected(scv::SCV, key) where SCV <: SubContextView = getproperty(getinjected(scv), key)
+@inline Base.get(scv::SCV, name::Symbol, default) where SCV <: SubContextView = haskey(scv, Val(name)) ? getproperty(scv, Val(name)) : default
+@inline Base.@constprop :aggressive Base.getproperty(sct::SubContextView, v::Symbol) = getproperty(sct, Val(v))
+
 
 const getprop_expr = Ref(Expr(:block))
 @inline @generated function Base.getproperty(sct::SCV, vl::Union{VarLocation{:subcontext}, VarLocation{:local}}) where SCV <: SubContextView
@@ -138,7 +141,6 @@ end
     return :( $has_key )
 end
 
-@inline Base.@constprop :aggressive Base.getproperty(sct::SubContextView, v::Symbol) = getproperty(sct, Val(v))
 @inline @generated function Base.getproperty(sct::SubContextView{CType, SubKey}, v::Val{key}) where {CType, SubKey, key}    
 
     locations = get_all_locations(sct)

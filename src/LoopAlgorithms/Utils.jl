@@ -39,6 +39,10 @@ end
 
 function instantiate(f)
     try
+        if Base.issingletontype(f)
+            return f.instance
+        end
+        
         return f isa Type ? f() : f
     catch err
         throw(InstantiateError(f, err))
