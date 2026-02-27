@@ -107,8 +107,8 @@ track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
 Increment the stepidx for the composite algorithm
 """
 @generated function inc!(ca::CompositeAlgorithm)
-    _max = max(intervals(ca)...)
-    return :(ca.inc[] = mod1(ca.inc[] + 1, $_max))
+    _lcm = lcm(intervals(ca)...)
+    return :(ca.inc[] = mod1(ca.inc[] + 1, $_lcm))
 end
 function reset!(ca::CompositeAlgorithm)
     ca.inc[] = 1

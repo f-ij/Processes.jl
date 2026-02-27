@@ -109,6 +109,15 @@ end
 
 @inline Base.@constprop :aggressive Base.getproperty(sct::SubContextView, v::Symbol) = getproperty(sct, Val(v))
 
+# """
+# Equivalent to getproperty(sct, Val(name)), but allows for inlining and constant propagation on the name argument
+# """
+# function Base.getproperty(sct::SubContextView, symb::S) where S <: Symbol
+#     locations = get_all_locations(sct)
+#     subcontext_name = algo_to_subcontext_names(sct, symb)
+#     varlocation = @inline getproperty(locations, subcontext_name)
+#     return @inline getproperty(sct, varlocation)
+# end
 
 const getprop_expr = Ref(Expr(:block))
 @inline @generated function Base.getproperty(sct::SCV, vl::Union{VarLocation{:subcontext}, VarLocation{:local}}) where SCV <: SubContextView

@@ -47,23 +47,29 @@ registry_entrytype(::Type{<:SubPackage}) = PackagedAlgo
 ####### Init-Step-Cleanup #######
 ####################################
 
-function init(ps::SubPackage, context)
-    viewed = view(context, ps)
-    returnvals = init(getalgo(ps), viewed)
-    merge(viewed, returnvals)
+@inline function init(ps::SubPackage, context::C) where C
+    viewed = @inline view(context, ps)
+    returnvals = @inline init(getalgo(ps), viewed)
+    @inline merge(viewed, returnvals)
 end
 
-function step!(ps::SubPackage, context)
-    viewed = view(context, ps)
-    returnvals = step!(getalgo(ps), viewed)
-    merge(viewed, returnvals)
+@inline function step!(ps::SP, context::C) where {SP<:SubPackage, C}
+    viewed = @inline view(context, ps)
+    returnvals = @inline step!(getalgo(ps), viewed)
+    @inline merge(viewed, returnvals)
 end
 
-function cleanup(ps::SubPackage, context)
-    viewed = view(context, ps)
-    returnvals = cleanup(getalgo(ps), viewed)
-    merge(viewed, returnvals)
+@inline function cleanup(ps::SubPackage, context::C) where C
+    viewed = @inline view(context, ps)
+    returnvals = @inline cleanup(getalgo(ps), viewed)
+    @inline merge(viewed, returnvals)
 end
 
-
-
+@inline step!_expr(ps::Type{<:SubPackage}, context::Type{C}, funcname::Symbol) where {C<:AbstractContext} = quote
+    $(LineNumberNode(@__LINE__, @__FILE__))
+    # viewed = @inline view(context, $funcname)
+    context = @inline getcontext(context)
+    viewed = @inline view(context, $funcname)
+    returnvals = @inline step!(getalgo($funcname), viewed)
+    context = @inline merge(viewed, returnvals)
+end
