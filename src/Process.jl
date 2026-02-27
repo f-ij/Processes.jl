@@ -32,10 +32,10 @@ Set value of run of a process, denoting wether it should run or not
 shouldrun(p::Process, val) = @atomic p.shouldrun = val
 
 # Loop counting
-looptick!(p::Process) = p.tickidx += 1
-tick!(p::Process) = p.tickidx += 1
-getticks(p::Process) = p.tickidx
-reset_ticks!(p::Process) = p.tickidx = 1
+@inline looptick!(p::Process) = p.tickidx += Int(1)
+@inline tick!(p::Process) = p.tickidx += Int(1)
+@inline getticks(p::Process) = p.tickidx
+@inline reset_ticks!(p::Process) = p.tickidx = Int(1)
 
 
 function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides...; context = nothing, lifetime = Indefinite(), timeout = 1.0)
