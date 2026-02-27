@@ -11,8 +11,9 @@ function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symb
     # `ca.parameters[1]` is the function-tuple type that stores the child algorithms.
    
     exprs = Any[]
+    this_inc = gensym(:this_inc)
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
-    push!(exprs, :(this_inc = inc($name)))
+    push!(exprs, :($this_inc = inc($name)))
     for i in 1:numalgos(ca)
         interval = Processes.interval(ca, i)
         local_name = gensym(:algo)
@@ -30,7 +31,7 @@ function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symb
             #   end
             push!(exprs, quote
                 # Only run this child every `interval` composite steps.
-                if this_inc % $(interval) == 0
+                if $this_inc % $(interval) == 0
                     $(step!_expr(this_functype, C, local_name))
                 end
             end)
