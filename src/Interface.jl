@@ -4,7 +4,7 @@ export start, restart, quit, pause, syncclose, reprepare
 function Base.run(p::Process, lifetime = nothing)
     @assert isidle(p) "Process is already in use"
     @atomic p.shouldrun = true
-    if !ispaused(p)
+    if !p.paused
         makecontext!(p)
     end
 
