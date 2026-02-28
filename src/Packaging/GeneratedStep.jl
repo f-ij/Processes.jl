@@ -13,12 +13,12 @@ function step!_expr(ca::Type{<:PackagedAlgo}, context::Type{C}, name::Symbol) wh
     exprs = Any[]
     this_inc = gensym(:this_inc)
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
-    push!(exprs, :($this_inc = inc($name)))
+    push!(exprs, :($this_inc = @inline inc($name)))
     for i in 1:length(ft.parameters)
         interval = intervals[i]
         local_name = gensym(:algo)
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
-        push!(exprs, :(local $local_name = getalgo($name, $i)))
+        push!(exprs, :(local $local_name = @inline getalgo($name, $i)))
         fti = ft.parameters[i]
         if interval == 1
             # Generated block: the child algorithm's `step!` body (always executed).

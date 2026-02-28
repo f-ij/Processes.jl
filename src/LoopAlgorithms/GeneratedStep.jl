@@ -13,12 +13,12 @@ function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symb
     exprs = Any[]
     this_inc = gensym(:this_inc)
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
-    push!(exprs, :($this_inc = inc($name)))
+    push!(exprs, :($this_inc = @inline inc($name)))
     for i in 1:numalgos(ca)
         interval = Processes.interval(ca, i)
         local_name = gensym(:algo)
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
-        push!(exprs, :(local $local_name = getalgo($name, $i)))
+        push!(exprs, :(local $local_name = @inline getalgo($name, $i)))
         # fti = ft.parameters[i]
         this_functype = getalgotype(ca, i)
         if interval == 1
@@ -62,7 +62,7 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) wh
         
 
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
-        push!(exprs, :(local $local_name = getalgo($name, $i)))
+        push!(exprs, :(local $local_name = @inline getalgo($name, $i)))
 
         # Generated block: a repeat-loop for this child algorithm.
         # - If `shouldrun(process)` is false, record the resume point (child index i) and return early.
@@ -71,7 +71,7 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) wh
 
             for lidx in 1:$(this_repeat)
                 # Pause/stop check: if the process is not running, record which child we were on.
-                if !shouldrun(process)
+                if @inline !shouldrun(process)
                     set_resume_point!($name, $i, lidx)
                     return context
                 end
@@ -79,7 +79,7 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) wh
                 $(step!_expr(this_functype, C, local_name))
                 
                 # Assumes process is defined in the top level
-                tick!(process) # Tick counter
+                @inline tick!(process) # Tick counter
                 # GC.safepoint()
             end
         end)
