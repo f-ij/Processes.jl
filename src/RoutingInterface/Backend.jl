@@ -31,7 +31,11 @@ function to_sharedvar(reg::NameSpaceRegistry, r::Route)
         to_matcher = to_match_by(r)
         
         fromobj = get_by_matcher(reg, from_matcher)
-        toobj = get_by_matcher(reg, to_matcher)
+        try
+            toobj = get_by_matcher(reg, to_matcher)
+        catch e
+            error("Error finding target of route: $(to_matcher)\n in registry: $(reg). Original error: $(e)")
+        end
 
         toname = getkey(toobj)
         fromname = getkey(fromobj)
