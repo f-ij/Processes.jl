@@ -1,8 +1,26 @@
+# function init(pack::PackagedAlgo, context::C) where C <: AbstractContext
+#     all_entities = get_processentities(pack)
+#     context = @inline unrollreplace(context, all_entities...) do context, entity
+#         init(entity, context)
+#     end
+# end
+
+@inline filter_nt(nt::NT, keys...) where NT = Base.structdiff(nt, NamedTuple{tuple(keys...)})
+
 function init(pack::PackagedAlgo, context::C) where C <: AbstractContext
     all_entities = get_processentities(pack)
     context = @inline unrollreplace(context, all_entities...) do context, entity
         init(entity, context)
     end
+    viewed = @inline view(context, pack)
+    allfields = (;viewed...)
+    # Filter out to_all
+    filtered = @inline filter_nt(allfields, :algo, :lifetime)
+    # @show context
+    # @show viewed
+
+    context = replace(viewed, (;getkey(pack) => filtered))
+    return context
 end
 
 """

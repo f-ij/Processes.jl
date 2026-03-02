@@ -121,8 +121,7 @@ This is to be used during the init phase, where entire subcontexts are replaced
     end
 
     return quote
-        newsubcontext = @inline newdata(subcontext_type(scv), getproperty(args, SubKey))
         old_context = @inline getcontext(scv)
-        return replace(old_context, (; SubKey => newsubcontext))
+        return replace(old_context, (; SubKey => getproperty(args, SubKey)))
     end
 end

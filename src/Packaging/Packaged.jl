@@ -53,7 +53,7 @@ function PackagedAlgo(comp::CompositeAlgorithm, name="")
 end
 
 
-Base.getindex(ca::PackagedAlgo, i) = getalgos(ca)[i]
+@inline Base.getindex(ca::PackagedAlgo, i) = getalgos(ca)[i]
 
 function Autokey(pa::PackagedAlgo, i::Int, prefix = Symbol())
     nameof = getname(pa) == Symbol() ? :PackagedAlgo : getname(pa)
@@ -82,12 +82,12 @@ end
 @inline match_by(::Union{Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}, PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
 @inline registry_entrytype(::Type{<:PackagedAlgo}) = PackagedAlgo
 
-reset!(ca::PackagedAlgo) = (ca.inc[] = 1; reset!.(ca.funcs))
+@inline reset!(ca::PackagedAlgo) = (ca.inc[] = 1; reset!.(ca.funcs))
 
 get_processentities(ca::PackagedAlgo) = getentries(getregistry(ca))
 
 @inline inc(ca::PackagedAlgo) = ca.inc[]
-@generated function inc!(ca::PackagedAlgo)
+@inline @generated function inc!(ca::PackagedAlgo)
     _lcm = lcm(intervals(ca)...)
     return :(ca.inc[] = mod1(ca.inc[] + 1, $_lcm))
 end

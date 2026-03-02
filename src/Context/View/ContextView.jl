@@ -37,11 +37,11 @@ end
 Get a subcontext view for a specific subcontext
 """
 @inline function Base.view(pc::ProcessContext, instance::SA; inject = (;)) where SA <: AbstractIdentifiableAlgo
-    key = getkey(instance)
+    key = @inline getkey(instance)
     # TODO: no key should always be nothing
-    if key == Symbol() || isnothing(key)
-        key = getkey(getregistry(pc)[instance])
-    end
+    # if key == Symbol() || isnothing(key)
+    #     key = getkey(getregistry(pc)[instance])
+    # end
     SubContextView{typeof(pc), key, typeof(instance), typeof(inject)}(pc, instance; inject)
 end
 

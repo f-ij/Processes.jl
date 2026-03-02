@@ -23,12 +23,12 @@ Key of subpackage not set by registry
 """
 
 Autokey(ps::SubPackage{F}, i::Int, prefix = "") where {F} = ps
-getkey(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,Aliases,ContextKey}}}) where {F, ID, Aliases, ContextKey} = ContextKey
-getalgo(ps::SubPackage{F}) where {F} = ps.func
-setcontextkey(ps::SubPackage, key::Symbol) = setparameter(ps, 4, key)
-setid(ps::SubPackage, newid) = setparameter(ps, 2, newid)
-getvaraliases(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,Aliases,ContextKey}}}) where {F, ID, Aliases, ContextKey} = Aliases
-setvaraliases(ps::SubPackage, newaliases) = setparameter(ps, 3, newaliases)
+@inline getkey(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,Aliases,ContextKey}}}) where {F, ID, Aliases, ContextKey} = ContextKey
+@inline getalgo(ps::SubPackage{F}) where {F} = ps.func
+@inline setcontextkey(ps::SubPackage, key::Symbol) = setparameter(ps, 4, key)
+@inline setid(ps::SubPackage, newid) = setparameter(ps, 2, newid)
+@inline getvaraliases(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,Aliases,ContextKey}}}) where {F, ID, Aliases, ContextKey} = Aliases
+@inline setvaraliases(ps::SubPackage, newaliases) = setparameter(ps, 3, newaliases)
 """
 SubPackages match with their parent and themselves
     This is to allow for matching with the parent package in a registry

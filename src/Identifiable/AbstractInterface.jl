@@ -23,7 +23,7 @@ staticmach_by(::Union{<:AbstractIdentifiableAlgo{F,Id},Type{<:AbstractIdentifiab
 @inline algotype(::Union{AbstractIdentifiableAlgo{F},Type{<:AbstractIdentifiableAlgo{F}}}) where {F} = F
 
 
-algoname(sa::AbstractIdentifiableAlgo{F,Id,Aliases,AlgoName}) where {F,Id,Aliases,AlgoName} = AlgoName == Symbol() ? nothing : AlgoName
+@inline algoname(sa::AbstractIdentifiableAlgo{F,Id,Aliases,AlgoName}) where {F,Id,Aliases,AlgoName} = AlgoName == Symbol() ? nothing : AlgoName
 
 
 @inline function getkey(sat::Type{<:AbstractIdentifiableAlgo{F,Id,Aliases,AlgoName,ContextKey}}) where {F,Id,Aliases,AlgoName,ContextKey}

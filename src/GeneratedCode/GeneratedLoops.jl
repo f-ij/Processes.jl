@@ -14,7 +14,7 @@ Generated process loop that inlines the step! expression when available.
     return quote
         # println("Running generated process loop for $repeats times from thread $(Threads.threadid())")
         @inline before_while(process)
-        start_idx = loopidx(process)
+        start_idx = @inline loopidx(process)
         
         # if @inline resuming(process)
         #     context = @inline resume_step!(algo, context)
@@ -22,7 +22,7 @@ Generated process loop that inlines the step! expression when available.
         # end
 
         for _ in start_idx:repeats(r)
-            if !shouldrun(process)
+            if @inline !shouldrun(process)
                 break
             end
             $(algo_name) = algo

@@ -11,7 +11,8 @@ function SubContext(name, data::NamedTuple, sharedcontexts, sharedvars)
 end
 
 function newdata(sc::SubContext, data::NamedTuple)
-    SubContext{getkey(sc), typeof(data), getsharedcontext_types(sc), getsharedvars_types(sc)}(data, getsharedcontexts(sc), getsharedvars(sc))
+    # SubContext{getkey(sc), typeof(data), getsharedcontext_types(sc), getsharedvars_types(sc)}(data, getsharedcontexts(sc), getsharedvars(sc))
+    setfield(sc, :data, data)
 end
 
 @inline Base.isempty(sc::SubContext) = isempty(get_data(sc))
