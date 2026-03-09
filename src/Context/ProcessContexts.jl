@@ -141,6 +141,7 @@ end
 
 function _subcontext_var_lines(sc::SubContext; io::IO = stdout)
     lines = String[]
+    show_ctx = IOContext(io, :limit => get(io, :limit, false), :color => get(io, :color, false))
     shared_types = getsharedcontext_types(typeof(sc))
     shared_names = shared_types === Tuple{} ? Symbol[] : filter(!isnothing, contextname.(shared_types))
     if !isempty(shared_names)
@@ -167,7 +168,7 @@ function _subcontext_var_lines(sc::SubContext; io::IO = stdout)
             if val isa Tuple && all(_is_input_like, val)
                 push!(lines, string(name, " = ", _format_inputs_tuple(val)))
             else
-                push!(lines, string(name, " = ", summary(val)))
+                push!(lines, string(name, " = ", sprint(summary, val; context = show_ctx)))
             end
         end
     end
@@ -180,6 +181,7 @@ end
 
 function _subcontext_var_lines(sc::NamedTuple; io::IO = stdout)
     lines = String[]
+    show_ctx = IOContext(io, :limit => get(io, :limit, false), :color => get(io, :color, false))
     data_names = propertynames(sc)
     if isempty(data_names)
         push!(lines, "vars: ∅")
@@ -189,7 +191,7 @@ function _subcontext_var_lines(sc::NamedTuple; io::IO = stdout)
             if val isa Tuple && all(_is_input_like, val)
                 push!(lines, string(name, " = ", _format_inputs_tuple(val)))
             else
-                push!(lines, string(name, " = ", summary(val)))
+                push!(lines, string(name, " = ", sprint(summary, val; context = show_ctx)))
             end
         end
     end
@@ -204,6 +206,7 @@ function Base.show(io::IO, sc::SubContext)
     return nothing
 end
 
+#=
 function Base.show(io::IO, pc::ProcessContext)
     println(io, "ProcessContext")
     subs = get_subcontexts(pc)
@@ -211,11 +214,53 @@ function Base.show(io::IO, pc::ProcessContext)
     last_idx = length(names)
     for (idx, name) in enumerate(names)
         sc = getproperty(subs, name)
-        branch = idx == last_idx ? "`-- " : "|-- "
-        stem = idx == last_idx ? "    " : "|   "
-        println(io, branch, name)
-        for line in _subcontext_var_lines(sc; io)
-            println(io, stem, "| ", line)
+        branch = idx == last_idx ? "└── " : "├── "
+        stem = idx == last_idx ? "    " : "│   "
+        println(io, branch, "[", idx, "]: ", name)
+
+        var_lines = _subcontext_var_lines(sc; io)
+        var_last_idx = length(var_lines)
+        for (var_idx, line) in enumerate(var_lines)
+            var_branch = var_idx == var_last_idx ? " └── " : " ├── "
+            var_stem = var_idx == var_last_idx ? "    " : "│   "
+            split_lines = split(line, '\n')
+            println(io, stem, var_branch, split_lines[1])
+            for continuation in Iterators.drop(split_lines, 1)
+                println(io, stem, var_stem, lstrip(continuation))
+            end
+        end
+    end
+    return nothing
+end
+=#
+
+function Base.show(io::IO, pc::ProcessContext)
+    println(io, "ProcessContext")
+    show_ctx = IOContext(io, :limit => get(io, :limit, false), :color => get(io, :color, false))
+    subs = get_subcontexts(pc)
+    names = collect(propertynames(subs))
+    last_idx = length(names)
+
+    for (idx, name) in enumerate(names)
+        sc = getproperty(subs, name)
+        branch = idx == last_idx ? "└── " : "├── "
+        stem = idx == last_idx ? "    " : "│   "
+        println(io, branch, "[", idx, "]: ", name)
+
+        var_lines = _subcontext_var_lines(sc; io = show_ctx)
+        var_last_idx = length(var_lines)
+        for (var_idx, line) in enumerate(var_lines)
+            var_branch = var_idx == var_last_idx ? " └── " : " ├── "
+            continuation_stem = var_idx == var_last_idx ? "    " : "│   "
+            split_lines = split(line, '\n')
+            println(io, stem, var_branch, split_lines[1])
+            align_prefix = begin
+                eqidx = findfirst(" = ", split_lines[1])
+                isnothing(eqidx) ? "" : repeat(" ", last(eqidx)+1)
+            end
+            for continuation in Iterators.drop(split_lines, 1)
+                println(io, stem, continuation_stem, align_prefix, continuation)
+            end
         end
     end
     return nothing
