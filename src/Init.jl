@@ -22,7 +22,7 @@ function init_context(algo::F, c::ProcessContext, overrides_and_inputs::Union{Na
     inputs = filter(x -> x isa NamedInput, overrides_and_inputs)
     overrides = filter(x -> x isa NamedOverride, overrides_and_inputs)
     
-    input_context = merge(c, inputs...; to_all = (;algo, lifetime))
+    input_context = initmerge(c, inputs...; to_all = (;algo, lifetime))
 
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"
     @DebugMode "Overrides are $overrides"
@@ -30,9 +30,13 @@ function init_context(algo::F, c::ProcessContext, overrides_and_inputs::Union{Na
     prepared_context = init(algo, input_context)
     @DebugMode "Prepared in init_context context is $prepared_context"
 
-    overridden_context = merge(prepared_context, overrides...)
+    overridden_context = initmerge(prepared_context, overrides...)
 
     return overridden_context
+end
+
+@inline function initmerge(context::ProcessContext, overrides_or_inputs::Union{NamedOverride, NamedInput}...; to_all = (;))
+    @inline merge(context, overrides_or_inputs...; to_all = to_all)
 end
 
 @inline function init_context(p::AbstractProcess)

@@ -50,7 +50,7 @@ registry_entrytype(::Type{<:SubPackage}) = PackagedAlgo
 @inline function init(ps::SubPackage, context::C) where C
     viewed = @inline view(context, ps)
     returnvals = @inline init(getalgo(ps), viewed)
-    @inline merge(viewed, returnvals)
+    @inline initmerge(viewed, returnvals)
 end
 
 @inline function step!(ps::SP, context::C) where {SP<:SubPackage, C}
