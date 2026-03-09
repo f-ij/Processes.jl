@@ -256,10 +256,12 @@ function Base.show(io::IO, pc::ProcessContext)
             println(io, stem, var_branch, split_lines[1])
             align_prefix = begin
                 eqidx = findfirst(" = ", split_lines[1])
-                isnothing(eqidx) ? "" : repeat(" ", last(eqidx)+1)
+                isnothing(eqidx) ? "" : repeat(" ", last(eqidx))
             end
             for continuation in Iterators.drop(split_lines, 1)
-                println(io, stem, continuation_stem, align_prefix, continuation)
+                leading_ws = length(continuation) - length(lstrip(continuation))
+                pad = isempty(align_prefix) ? 0 : max(length(align_prefix) - leading_ws, 0)
+                println(io, stem, continuation_stem, repeat(" ", pad), continuation)
             end
         end
     end

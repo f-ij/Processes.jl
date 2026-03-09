@@ -6,25 +6,38 @@
     return sprint(summary, f)
 end
 
+@inline function _tree_prefix(idx::Int, total::Int)
+    branch = idx == total ? "└── " : "├── "
+    stem = idx == total ? "    " : "│   "
+    return branch, stem
+end
+
+function _print_tree_lines(io::IO, idx::Int, total::Int, lines::AbstractVector{<:AbstractString}; suffix::AbstractString = "")
+    branch, stem = _tree_prefix(idx, total)
+    print(io, branch, lines[1], suffix)
+    for line in Iterators.drop(lines, 1)
+        print(io, "\n", stem, line)
+    end
+end
+
 function Base.show(io::IO, ca::CompositeAlgorithm)
     println(io, "CompositeAlgorithm")
     funcs = ca.funcs
     if isempty(funcs)
-        print(io, "  (empty)")
+        print(io, "└── (empty)")
         return
     end
     _intervals = Processes.intervals(ca)
     limit = get(io, :limit, false)
+    show_ctx = IOContext(io, :limit => limit, :color => get(io, :color, false))
+    total = length(funcs)
     for (idx, thisfunc) in enumerate(funcs)
         interval = _intervals[idx]
-        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
+        func_str = repr(thisfunc; context = show_ctx)
         lines = split(func_str, '\n')
         suffix = " (every " * string(interval) * " time(s))"
-        print(io, "  | ", lines[1], suffix)
-        for line in Iterators.drop(lines, 1)
-            print(io, "\n  | ", line)
-        end
-        if idx < length(funcs)
+        _print_tree_lines(io, idx, total, lines; suffix)
+        if idx < total
             print(io, "\n")
         end
     end
@@ -56,22 +69,21 @@ function Base.show(io::IO, r::Routine)
     println(io, "Routine")
     funcs = r.funcs
     if isempty(funcs)
-        print(io, "  (empty)")
+        print(io, "└── (empty)")
         return
     end
     reps = repeats(r)
     reps_is_type = reps isa Type
     limit = get(io, :limit, false)
+    show_ctx = IOContext(io, :limit => limit, :color => get(io, :color, false))
+    total = length(funcs)
     for (idx, thisfunc) in enumerate(funcs)
         rep = reps_is_type ? reps : reps[idx]
         suffix = reps_is_type ? " (repeats " * string(rep) * ")" : " (repeats " * string(rep) * " time(s))"
-        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
+        func_str = repr(thisfunc; context = show_ctx)
         lines = split(func_str, '\n')
-        print(io, "  | ", lines[1], suffix)
-        for line in Iterators.drop(lines, 1)
-            print(io, "\n  |   ", line)
-        end
-        if idx < length(funcs)
+        _print_tree_lines(io, idx, total, lines; suffix)
+        if idx < total
             print(io, "\n")
         end
     end
@@ -118,11 +130,13 @@ function Base.summary(io::IO, ca::CompositeAlgorithm)
     end
     _intervals = Processes.intervals(ca)
     println(io, "CompositeAlgorithm")
+    total = length(funcs)
     for (idx, f) in enumerate(funcs)
         interval = _intervals[idx]
         suffix = " (every " * string(interval) * " time(s))"
-        print(io, "  | ", _algo_label(f), suffix)
-        if idx < length(funcs)
+        lines = split(_algo_label(f), '\n')
+        _print_tree_lines(io, idx, total, lines; suffix)
+        if idx < total
             print(io, "\n")
         end
     end
@@ -189,16 +203,15 @@ function Base.summary(io::IO, r::Routine)
     reps_is_type = reps isa Type
     println(io, "Routine")
     limit = get(io, :limit, false)
+    show_ctx = IOContext(io, :limit => limit, :color => get(io, :color, false))
+    total = length(funcs)
     for (idx, f) in enumerate(funcs)
         rep = reps_is_type ? reps : reps[idx]
         suffix = reps_is_type ? " (repeats " * string(rep) * ")" : " (repeats " * string(rep) * " time(s))"
-        func_str = repr(f; context = IOContext(io, :limit => limit))
+        func_str = repr(f; context = show_ctx)
         lines = split(func_str, '\n')
-        print(io, "  | ", lines[1], suffix)
-        for line in Iterators.drop(lines, 1)
-            print(io, "\n  |   ", line)
-        end
-        if idx < length(funcs)
+        _print_tree_lines(io, idx, total, lines; suffix)
+        if idx < total
             print(io, "\n")
         end
     end
@@ -228,11 +241,13 @@ function Base.show(io::IO, sa::IdentifiableAlgo{F, Id, Aliases, AlgoName, ScopeN
     ca = getalgo(sa)
     funcs = getalgos(ca)
     _intervals = intervals(ca)
+    total = length(funcs)
     for (idx, f) in enumerate(funcs)
         interval = _intervals[idx]
         suffix = " (every " * string(interval) * " time(s))"
-        print(io, "  | ", _algo_label(f), suffix)
-        if idx < length(funcs)
+        lines = split(_algo_label(f), '\n')
+        _print_tree_lines(io, idx, total, lines; suffix)
+        if idx < total
             print(io, "\n")
         end
     end

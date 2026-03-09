@@ -42,12 +42,12 @@ Generated process loop that inlines the step! expression when available.
 @generated function generated_processloop(process::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
     step_expr = step!_expr(F, C, :func)
     return quote
-        # println("Running generated process loop indefinitely from thread $(Threads.threadid())")
+        println("Running generated process loop indefinitely from thread $(Threads.threadid())")
         @inline before_while(process)
         # if resuming(process)
         #     context = @inline resume_step!(func, context)
         # end
-
+        
         while shouldrun(process)
             $(step_expr)
             @inline inc!(process)

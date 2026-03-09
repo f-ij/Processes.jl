@@ -22,6 +22,20 @@ end
     return sprint(summary, f)
 end
 
+@inline function _packaged_tree_prefix(idx::Int, total::Int)
+    branch = idx == total ? "└── " : "├── "
+    stem = idx == total ? "    " : "│   "
+    return branch, stem
+end
+
+function _print_packaged_tree_lines(io::IO, idx::Int, total::Int, lines::AbstractVector{<:AbstractString}; suffix::AbstractString = "")
+    branch, stem = _packaged_tree_prefix(idx, total)
+    print(io, branch, lines[1], suffix)
+    for line in Iterators.drop(lines, 1)
+        print(io, "\n", stem, line)
+    end
+end
+
 function Base.show(io::IO, sp::SubPackage)
     algo_repr = sprint(show, getalgo(sp))
     print(io, _abstract_identifiable_label(sp), ": ", algo_repr)
@@ -42,21 +56,20 @@ function Base.show(io::IO, pa::PackagedAlgo)
     println(io, "PackagedAlgo")
     funcs = pa.funcs
     if isempty(funcs)
-        print(io, "  (empty)")
+        print(io, "└── (empty)")
         return
     end
     _intervals = _packaged_intervals(pa)
     limit = get(io, :limit, false)
+    show_ctx = IOContext(io, :limit => limit, :color => get(io, :color, false))
+    total = length(funcs)
     for (idx, thisfunc) in enumerate(funcs)
         interval = _intervals[idx]
-        func_str = repr(thisfunc; context = IOContext(io, :limit => limit))
+        func_str = repr(thisfunc; context = show_ctx)
         lines = split(func_str, '\n')
         suffix = " (every " * string(interval) * " time(s))"
-        print(io, "  | ", lines[1], suffix)
-        for line in Iterators.drop(lines, 1)
-            print(io, "\n  | ", line)
-        end
-        if idx < length(funcs)
+        _print_packaged_tree_lines(io, idx, total, lines; suffix)
+        if idx < total
             print(io, "\n")
         end
     end
@@ -70,11 +83,13 @@ function Base.summary(io::IO, pa::PackagedAlgo)
     end
     _intervals = _packaged_intervals(pa)
     println(io, "PackagedAlgo")
+    total = length(funcs)
     for (idx, f) in enumerate(funcs)
         interval = _intervals[idx]
         suffix = " (every " * string(interval) * " time(s))"
-        print(io, "  | ", _packaged_algo_label(f), suffix)
-        if idx < length(funcs)
+        lines = split(_packaged_algo_label(f), '\n')
+        _print_packaged_tree_lines(io, idx, total, lines; suffix)
+        if idx < total
             print(io, "\n")
         end
     end

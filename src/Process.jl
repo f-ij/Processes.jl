@@ -175,6 +175,11 @@ end
 @inline lock(f, p::Process) = lock(f, p.lock)
 @inline unlock(p::Process) =  unlock(p.lock)
 
+@inline function precompile_loop!(p::Process, func, context, lt)
+    Base.precompile(generated_processloop, (typeof(p), typeof(func), typeof(context), typeof(lt)))
+    return nothing
+end
+
 
 """
 Runs the prepared task of a process on a thread
@@ -183,11 +188,14 @@ function makeloop!(p::Process; threaded = true)
     @atomic p.paused = false
     @atomic p.shouldrun = true
 
+    func = p.taskdata.func
+    lt = lifetime(p)
     context = merge_into_globals(p.context, (;process = p))
+    @inline precompile_loop!(p, func, context, lt)
     if threaded
-        p.task = spawnloop(p, p.taskdata.func, context, lifetime(p))
+        p.task = @inline spawnloop(p, func, context, lt)
     else
-        p.task = @async runloop(p, p.taskdata.func, context, lifetime(p))
+        p.task = @async runloop(p, func, context, lt)
     end
     return p
 end
