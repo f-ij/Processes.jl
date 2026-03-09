@@ -48,6 +48,7 @@ Returns a merged context by merging the provided named tuple into the appropriat
         $(LineNumberNode(@__LINE__, @__FILE__))
         mergetuple = $mergetuple_expr
         newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
+        @assert typeof(newcontext) == typeof(getcontext(scv)) "A variable type in a subcontext was changed. This is prohibited for performance reasons. If type mutation is needed, set the variable up as a Ref"
         return newcontext
     end
 end
