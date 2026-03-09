@@ -25,31 +25,35 @@ Base.values(sv::Union{SharedVars{from_name, varnames, aliases}, Type{<:SharedVar
 contextname(sv::Type{<:SharedVars{from_name}}) where {from_name} = from_name
 contextname(sv::SharedVars{from_name}) where {from_name} = from_name
 
-## TODO MOVE
-function to_sharedvar(reg::NameSpaceRegistry, r::Route)
-        from_matcher = from_match_by(r)
-        to_matcher = to_match_by(r)
-        
-        fromobj = get_by_matcher(reg, from_matcher)
-        toobj = nothing
-        try
-            toobj = get_by_matcher(reg, to_matcher)
-        catch e
-            error("Error finding target of route: $(to_matcher)\n in registry: $(reg). Original error: $(e)")
-        end
+@noinline function _route_target_lookup_error(to_matcher, reg::NameSpaceRegistry, e)
+    error("Error finding target of route: $(to_matcher)\n in registry: $(reg). Original error: $(e)")
+end
 
-        toname = getkey(toobj)
-        fromname = getkey(fromobj)
-        if isnothing(fromname) || isnothing(toname)
-            available = all_keys(reg)
-            available_str = isempty(available) ? "<none>" : join(string.(available), ", ")
-            msg = "Route references algo(s) not found in registry.\n" *
-                  "Requested: " * string(r.from) * " (type: " * string(typeof(r.from)) * "), " *
-                  string(r.to) * " (type: " * string(typeof(r.to)) * ")\n" *
-                  "Available names: " * available_str
-            error(msg)
-        end
-        # (; toname => tuple(SharedVars(fromname, getvarnames(r), getaliases(r)) ))
-        toname => SharedVars(fromname, getvarnames(r), getaliases(r), gettransform(r))
-        # (;toname => SharedVars{fromname, r.varnames, r.aliases}())
+@noinline function _route_missing_algos_error(reg::NameSpaceRegistry, r::Route)
+    available = all_keys(reg)
+    available_str = isempty(available) ? "<none>" : join(string.(available), ", ")
+    msg = "Route references algo(s) not found in registry.\n" *
+          "Requested: " * string(r.from) * " (type: " * string(typeof(r.from)) * "), " *
+          string(r.to) * " (type: " * string(typeof(r.to)) * ")\n" *
+          "Available names: " * available_str
+    error(msg)
+end
+
+@inline function to_sharedvar(
+    reg::NameSpaceRegistry,
+    r::Route{F, T, FT, varnames, aliases, Fmatch, Tmatch},
+) where {F, T, FT, varnames, aliases, Fmatch, Tmatch}
+    fromobj = get_by_matcher(reg, Fmatch)
+    toobj = try
+        get_by_matcher(reg, Tmatch)
+    catch e
+        _route_target_lookup_error(Tmatch, reg, e)
+    end
+
+    toname = getkey(toobj)
+    fromname = getkey(fromobj)
+    if isnothing(fromname) || isnothing(toname)
+        _route_missing_algos_error(reg, r)
+    end
+    return toname => SharedVars(fromname, varnames, aliases, FT)
 end
