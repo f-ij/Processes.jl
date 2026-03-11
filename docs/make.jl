@@ -3,10 +3,6 @@ push!(LOAD_PATH, joinpath(@__DIR__, "..", "src"))
 using Documenter
 using Processes
 
-deploydocs(
-    repo = "github.com/f-ij/Processes.jl.git",
-)
-
 makedocs(
     sitename = "Processes",
     format = Documenter.HTML(),
@@ -28,4 +24,8 @@ makedocs(
         ],
         "Usage Guide (Legacy)" => "man/usage.md",
     ],
+)
+
+deploydocs(
+    repo = "github.com/f-ij/Processes.jl.git",
 )
