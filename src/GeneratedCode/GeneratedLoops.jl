@@ -22,13 +22,16 @@ Generated process loop that inlines the step! expression when available.
         # end
 
         for _ in start_idx:repeats(r)
-            if @inline !shouldrun(process)
-                break
-            end
+            # if @inline !shouldrun(process)
+            #     break
+            # end
             $(algo_name) = algo
             $(step_expr)
             @inline inc!(process)
             @inline tick!(process)
+            if @inline breakcondition(r, process, context)
+                break
+            end
         end
         return @inline after_while(process, algo, context)
     end
@@ -39,7 +42,7 @@ end
 """
 Generated process loop that inlines the step! expression when available.
 """
-@generated function generated_processloop(process::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
+@generated function generated_processloop(process::AbstractProcess, func::F, context::C, lt::LT) where {F, C, LT <: Union{Indefinite, Until}}
     step_expr = step!_expr(F, C, :func)
     return quote
         # println("Running generated process loop indefinitely from thread $(Threads.threadid())")
@@ -48,10 +51,13 @@ Generated process loop that inlines the step! expression when available.
         #     context = @inline resume_step!(func, context)
         # end
         
-        while shouldrun(process)
+        while true
             $(step_expr)
             @inline inc!(process)
             @inline tick!(process)
+            if @inline breakcondition(lt, process, context)
+                break
+            end
         end
         return @inline after_while(process, func, context)
     end

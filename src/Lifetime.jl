@@ -21,7 +21,7 @@ struct Until{Vars, F}
 end
 
 function breakcondition(lt::Union{Repeat, Indefinite}, process::P, context::C) where {P <: AbstractProcess, C}
-    if shouldrun(process)
+    if !shouldrun(process)
         return true
     else
         return false
@@ -29,10 +29,10 @@ function breakcondition(lt::Union{Repeat, Indefinite}, process::P, context::C) w
 end
 
 function breakcondition(u::Until{Vars},process::P, context::C) where {Vars, P <: AbstractProcess, C}
-    if shouldrun(process)
+    if !shouldrun(process)
         return true
     else
-        return u.cond(getindex(context, u.Vars...))
+        return !(u.cond(getindex(context, u.Vars...)))
     end
 end
 
