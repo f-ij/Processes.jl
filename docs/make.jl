@@ -29,5 +29,5 @@ makedocs(
 deploydocs(
     repo = "github.com/f-ij/Processes.jl.git",
     devbranch = "main",
-    versions = ["v#.#", "dev" => "dev"],
+    versions = ["stable" => "dev", "dev" => "dev"],
 )
