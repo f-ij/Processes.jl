@@ -39,4 +39,6 @@ p = Process(
 
 ## Targeting and Identity
 
-If multiple similar algorithms exist, use explicit instances/`Unique` wrappers in both composition and `Input`/`Override` to avoid ambiguity.
+When choosing targets, use the same references you used in composition.
+
+For exact patterns and examples, see [Referencing Algorithms](@ref referencing_algorithms_user).

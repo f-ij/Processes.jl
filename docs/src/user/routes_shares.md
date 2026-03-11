@@ -4,13 +4,12 @@
 
 ## Referencing Algorithms
 
-You can reference endpoints by:
+Recap:
 
-- type (`Fib`)
-- instance (`Fib()`)
-- explicitly unique wrapper (`u = Unique(Fib())`)
+- Use the same reference style you used in composition (type, saved instance, or saved `Unique` variable).
+- Do not target with a fresh object unless that exact object was inserted in the composition.
 
-These resolve against registry identities, so be consistent with how you register and reference endpoints.
+For full examples, see [Referencing Algorithms](@ref referencing_algorithms_user).
 
 ## `Route`: Specific Variables
 

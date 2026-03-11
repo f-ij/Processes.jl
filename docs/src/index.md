@@ -17,6 +17,7 @@ This documentation is split into two tracks:
 ## User API Docs
 
 - [Algorithms and States](@ref algorithms_states_user)
+- [Referencing Algorithms](@ref referencing_algorithms_user)
 - [Contexts and Indexing](@ref contexts_user)
 - [Routes and Shares](@ref routes_shares_user)
 - [Inputs and Overrides](@ref inputs_overrides_user)

@@ -16,6 +16,7 @@ makedocs(
         ],
         "User API" => [
             "Algorithms and States" => "user/algorithms_states.md",
+            "Referencing Algorithms" => "user/referencing_algorithms.md",
             "Contexts and Indexing" => "user/contexts.md",
             "Routes and Shares" => "user/routes_shares.md",
             "Inputs and Overrides" => "user/inputs_overrides.md",
