@@ -20,6 +20,8 @@ struct Until{Vars, F}
     cond::F
 end
 
+Until(cond::Function, Vars...) = Until{Vars, typeof(cond)}(cond)
+
 function breakcondition(lt::Union{Repeat, Indefinite}, process::P, context::C) where {P <: AbstractProcess, C}
     if !shouldrun(process)
         return true
