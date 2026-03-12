@@ -34,7 +34,7 @@ function breakcondition(u::Until{Vars},process::P, context::C) where {Vars, P <:
     if !shouldrun(process)
         return true
     else
-        return !(u.cond(getindex(context, u.Vars...)))
+        return !(u.cond(getindex(context, Vars...)))
     end
 end
 
