@@ -8,7 +8,7 @@ varaliases(scv::Union{SubContextView{CType, SubKey, T, NT, Aliases}, Type{<:SubC
 
 
 @inline getglobals(scv::SubContextView) = getglobals(getcontext(scv))
-@inline getglobal(scv::SubContextView, name::Symbol) = getglobals(getcontext(scv), name)
+@inline getglobals(scv::SubContextView, name::Symbol) = getglobals(getcontext(scv), name)
 
 @inline getcontext(scv::SubContextView) = @inline getfield(scv, :context)
 @inline getsubcontext(scv::SubContextView{CType, SubKey}) where {CType, SubKey} = @inline getproperty(getcontext(scv), SubKey)

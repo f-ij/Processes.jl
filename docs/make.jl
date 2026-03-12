@@ -20,6 +20,7 @@ makedocs(
             "Contexts and Indexing" => "user/contexts.md",
             "Routes and Shares" => "user/routes_shares.md",
             "Inputs and Overrides" => "user/inputs_overrides.md",
+            "Lifetime" => "user/lifetime.md",
             "Running, Wait, Fetch" => "user/running.md",
             "Value Semantics and Unique" => "user/value_semantics.md",
         ],

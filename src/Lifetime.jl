@@ -16,11 +16,6 @@ repeats(r::Repeat) = r.repeats
 repeats(::Indefinite) = Inf
 repeats(p::AbstractProcess) = repeats(lifetime(p))
 
-struct Until{Vars, F}
-    cond::F
-end
-
-Until(cond::Function, Vars...) = Until{Vars, typeof(cond)}(cond)
 
 function breakcondition(lt::Union{Repeat, Indefinite}, process::P, context::C) where {P <: AbstractProcess, C}
     if !shouldrun(process)
@@ -29,14 +24,31 @@ function breakcondition(lt::Union{Repeat, Indefinite}, process::P, context::C) w
         return false
     end
 end
+struct Until{Vars, F}
+    cond::F
+end
 
-function breakcondition(u::Until{Vars},process::P, context::C) where {Vars, P <: AbstractProcess, C}
+Until(cond::Function, Vars...) = Until{Vars, typeof(cond)}(cond)
+
+
+function breakcondition(u::Until{Vars}, process::P, context::C) where {Vars, P <: AbstractProcess, C}
     if !shouldrun(process)
         return true
     else
-        return !(u.cond(getindex(context, Vars...)))
+        return u.cond(getindex(context, Vars...))
     end
 end
+
+struct RepeatOrUntil{Vars, F}
+    repeats::Int
+    cond::F
+end
+
+RepeatOrUntil(cond::Function, repeats::Int, Vars...) = RepeatOrUntil{Vars, typeof(cond)}(repeats, cond)
+
+function 
+
+
 
 
 

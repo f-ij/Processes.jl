@@ -66,7 +66,7 @@ SimpleAlgo(args...) = CompositeAlgorithm(args...)
 # end
 
 # @inline Base.@constprop :aggressive function unroll_funcs(sf::SimpleAlgo, headf::F, tailf::T, context::C) where {F, T, C}
-#     (;process) = @inline getglobal(context)
+#     (;process) = @inline getglobals(context)
 #     if @inline isnothing(headf)
 #         return context
 #     end
