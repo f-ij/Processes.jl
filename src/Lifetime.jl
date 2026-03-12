@@ -1,5 +1,7 @@
 export repeats
 
+abstract type Lifetime end
+
 abstract type RepeatLifetime <: Lifetime end
 abstract type IndefiniteLifetime <: Lifetime end
 
@@ -14,7 +16,6 @@ repeats(p::AbstractProcess) = repeats(lifetime(p))
 Struct to define the lifetime of a process
 Is a struct so that dispatch can be used to choose the appropriate loop during compile time
 """
-abstract type Lifetime end
 struct Indefinite <: IndefiniteLifetime end
 struct Repeat <: RepeatLifetime
     repeats::Int
