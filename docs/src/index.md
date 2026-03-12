@@ -21,6 +21,7 @@ This documentation is split into two tracks:
 - [Contexts and Indexing](@ref contexts_user)
 - [Routes and Shares](@ref routes_shares_user)
 - [Inputs and Overrides](@ref inputs_overrides_user)
+- [Vars (`Var` Selectors)](@ref vars_user)
 - [Lifetime](@ref lifetime_user)
 - [Running, Wait, Fetch](@ref running_user)
 - [Value Semantics and `Unique`](@ref value_semantics_user)

@@ -56,3 +56,6 @@ Common globals used internally:
 - `process` (in runtime loop context)
 
 Use `getglobals(context)` inside entity methods when you need them.
+
+You can also select globals with `Var(:name)` in APIs like `Processes.Until(...)`.
+See [Vars (`Var` Selectors)](@ref vars_user).
