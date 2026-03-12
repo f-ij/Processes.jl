@@ -5,10 +5,10 @@ abstract type Lifetime end
 abstract type RepeatLifetime <: Lifetime end
 abstract type IndefiniteLifetime <: Lifetime end
 
-Base.:(/)(r::Repeat, n) = r.repeats / n
-repeats(r::Repeat) = r.repeats
+Base.:(/)(r::RepeatLifetime, n) = r.repeats / n
+repeats(r::RepeatLifetime) = r.repeats
 
-repeats(::Indefinite) = Inf
+repeats(::IndefiniteLifetime) = Inf
 repeats(p::AbstractProcess) = repeats(lifetime(p))
 
 
@@ -20,7 +20,6 @@ struct Indefinite <: IndefiniteLifetime end
 struct Repeat <: RepeatLifetime
     repeats::Int
 end
-
 
 
 function breakcondition(lt::Union{Repeat, Indefinite}, process::P, context::C) where {P <: AbstractProcess, C}
