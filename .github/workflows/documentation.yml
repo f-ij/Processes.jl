@@ -9,6 +9,9 @@ on:
 
 jobs:
   build:
+    # These permissions are needed to:
+    # - Deploy the documentation: https://documenter.juliadocs.org/stable/man/hosting/#Permissions
+    # - Delete old caches: https://github.com/julia-actions/cache#usage
     permissions:
       actions: write
       contents: write
@@ -22,32 +25,13 @@ jobs:
           version: '1'
       - uses: julia-actions/cache@v2
       - name: Install dependencies
-        run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
+        shell: julia --color=yes --project=docs {0}
+        run: |
+          using Pkg
+          Pkg.develop(PackageSpec(path=pwd()))
+          Pkg.instantiate()
       - name: Build and deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # If authenticating with GitHub Actions token
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # If authenticating with SSH deploy key
-        run: julia --project=docs/ docs/make.jl
-      - name: Fix git symlinks in gh-pages for GitHub Pages compatibility
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages
-          git checkout gh-pages
-          CHANGED=false
-          while IFS= read -r -d '' LINK; do
-            LINK="${LINK#./}"
-            TARGET=$(readlink "$LINK")
-            TARGET="${TARGET#./}"
-            echo "Replacing symlink: $LINK -> $TARGET"
-            git rm -f "$LINK"
-            mkdir -p "$LINK"
-            printf '<meta http-equiv="refresh" content="0; url=../%s/"/>\n' "$TARGET" > "$LINK/index.html"
-            git add "$LINK/index.html"
-            CHANGED=true
-          done < <(find . -maxdepth 1 -type l ! -name '.*' -print0)
-          if [ "$CHANGED" = "true" ]; then
-            git commit -m "Fix: replace git symlinks with HTML redirects for GitHub Pages"
-            git push origin gh-pages
-          fi
+        run: julia --color=yes --project=docs docs/make.jl
