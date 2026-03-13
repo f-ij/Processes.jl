@@ -1,17 +1,10 @@
 # [Usage Guide](@id usage)
 
-This page is now a legacy entry point.
+This page is kept only as a compatibility entry point for older links.
 
-Use the split docs for up-to-date behavior:
+For current documentation, use the split docs below.
 
-## Internal Docs
-
-- [Registry Internals](@ref registry_internals)
-- [Context Internals](@ref context_internals)
-- [Routes and Shares Internals](@ref routes_shares_internals)
-- [Process Pipeline Internals](@ref process_pipeline_internals)
-
-## User API Docs
+## User Documentation
 
 - [Algorithms and States](@ref algorithms_states_user)
 - [Referencing Algorithms](@ref referencing_algorithms_user)
@@ -22,3 +15,10 @@ Use the split docs for up-to-date behavior:
 - [Lifetime](@ref lifetime_user)
 - [Running, Wait, Fetch](@ref running_user)
 - [Value Semantics and `Unique`](@ref value_semantics_user)
+
+## Internals
+
+- [Registry Internals](@ref registry_internals)
+- [Context Internals](@ref context_internals)
+- [Routes and Shares Internals](@ref routes_shares_internals)
+- [Process Pipeline Internals](@ref process_pipeline_internals)

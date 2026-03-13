@@ -1,13 +1,22 @@
 # [Running, Wait, Fetch](@id running_user)
 
-## Create and Run
+This page covers the normal runtime flow: create a `Process`, run it, wait for it, and inspect the result.
+
+## Create a Process
 
 ```julia
 p = Process(algo, Input(...), Override(...); lifetime = 1_000)
+```
+
+`Process(...)` constructs the runtime context immediately, applying inputs, running `init`, and then applying overrides.
+
+## Run and Resume
+
+```julia
 run(p)
 ```
 
-`run(p)` starts the process loop task.
+`run(p)` starts the process loop task. If the process was paused, `run(p)` resumes it.
 
 ## Lifetime
 
@@ -20,19 +29,23 @@ The `lifetime` keyword defines stop behavior:
 See [Lifetime](@ref lifetime_user) for full details.
 For selector syntax used in `Until`, see [Vars (`Var` Selectors)](@ref vars_user).
 
-## Control
+## Control Operations
 
 - `pause(p)`: stop loop while keeping resumable state.
-- `run(p)`: resume after pause.
-- `close(p)`: stop and finalize task state.
-- `reinit(p)`: pause, rebuild context with init pipeline, run again.
+- `run(p)`: start or resume.
+- `close(p)`: stop the process and collect the final task result into the stored process context.
+- `reinit(p)`: pause, rebuild context through the init pipeline, and run again.
 
 ## Waiting and Fetching
 
 - `wait(p)`: block until task completes.
-- `fetch(p)`: return task return value (the loop return context).
+- `fetch(p)`: return the task return value.
 
-For typical inspection, use `getcontext(p)`.
+In practice:
+
+- use `wait(p)` when you just want to block until completion,
+- use `fetch(p)` when you want the task's return value,
+- use `getcontext(p)` when you want the process context in the most convenient form for inspection.
 
 ## Status Helpers
 

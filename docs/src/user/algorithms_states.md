@@ -1,37 +1,31 @@
 # [Algorithms and States](@id algorithms_states_user)
 
-## `ProcessAlgorithm` and `ProcessState`
+`ProcessAlgorithm` and `ProcessState` are the two main building blocks you compose into a process.
 
-- `ProcessAlgorithm`: defines runtime step behavior via `Processes.step!`.
-- `ProcessState`: defines initialization-only state via `Processes.init`.
+- Use `ProcessAlgorithm` for something that actively participates in the loop by implementing `Processes.step!`.
+- Use `ProcessState` for data that should be initialized into a subcontext and then shared or read by algorithms.
 
-Both are process entities and are registered into subcontexts.
+Both are process entities, and both are registered into subcontexts inside the final `ProcessContext`.
 
-## Lifecycle
+## Lifecycle Hooks
 
-Framework lifecycle is:
+The framework lifecycle is:
 
 1. `init` phase
 2. looped `step!` phase
 3. `cleanup` phase
 
-Init/cleanup traversal order follows registry order (states first, then algorithms).
+Registry order matters here: states are initialized first, then algorithms. Cleanup follows the same order.
 
-Notes:
+Two details from the implementation are worth knowing:
 
 - `cleanup` runs on natural finite completion.
-- If stopped/paused/indefinite branch exits, loop exits without automatic cleanup in `after_while`.
+- If a process is interrupted, paused, or runs under `Indefinite()`, `after_while` stores the current context and returns without automatic cleanup.
 
-### Optional `prepare!` Stage (User Pattern)
+There is no built-in `prepare!` hook in the current pipeline.
+If you want a one-time preparation step, fold it into `init` or guard the first `step!` with a flag in state.
 
-There is no built-in framework callback named `prepare!` in the current core pipeline.
-
-If you want an extra stage between init and stepping, use a user convention, for example:
-
-- run it inside `init`, or
-- guard it on first `step!` with a boolean flag in state.
-
-## Full Declaration Style
+## Full Definitions
 
 ```julia
 struct MyAlgo <: ProcessAlgorithm
@@ -66,7 +60,7 @@ end
 
 ### `@ProcessAlgorithm`
 
-`@ProcessAlgorithm` creates the struct and a `step!` method from a function signature (`src/ProcessEntities/ProcessAlgorithms.jl`).
+`@ProcessAlgorithm` creates the struct and a `step!` method from a function signature.
 
 ```julia
 @ProcessAlgorithm function Accumulate(x, gain)
@@ -79,7 +73,7 @@ You can still define `init` and `cleanup` manually for the generated type.
 
 ### `@ProcessState`
 
-`@ProcessState` creates a `ProcessState` and an `init` method (`src/ProcessEntities/ProcessStates/ProcessStateMacros.jl`).
+`@ProcessState` creates a `ProcessState` and an `init` method.
 
 ```julia
 @ProcessState function SharedParams(dt)
@@ -89,9 +83,9 @@ end
 
 ## Composition
 
-Use loop algorithms to compose entities:
+Compose entities with loop algorithms:
 
 - `CompositeAlgorithm(...)` for interleaved stepping with intervals.
 - `Routine(...)` for sequential blocks with repeats.
 
-Both can include `ProcessState`s and options (`Route`, `Share`).
+Both can include `ProcessState`s and user options such as `Route` and `Share`.
