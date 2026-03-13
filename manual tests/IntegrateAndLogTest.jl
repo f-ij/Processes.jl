@@ -15,6 +15,11 @@ IntegrateAndLogger = IntegrateAndLog()
     return (;output = val)
 end
 
+function Processes.init(::generate_values, context)
+    println("Initializing generate_values")
+    (;output = 0.0)
+end
+
 comp = CompositeAlgorithm(generate_values, IntegrateAndLogger, (1,1), Route(generate_values => IntegrateAndLogger, :output => :Δvalue))
 
 p = Processes.Process(comp, lifetime = 10, Input(IntegrateAndLogger, initialvalue = 101f0))

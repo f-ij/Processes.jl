@@ -1,4 +1,4 @@
-export ProcessContext
+export ProcessContext, ContextTypeDiff
 
 
 include("StructDefs.jl")

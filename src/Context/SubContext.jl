@@ -61,9 +61,12 @@ end
     @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
 end
 
+"""
+Merge subcontext into a NamedTuple
+"""
 @inline function Base.merge(args::NamedTuple, sc::SubContext{Name, T, S, R}) where {Name, T, S, R}
     merged = merge(args, get_data(sc))
-    @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
+    # @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
 end
 
 @inline function Base.replace(sc::SubContext{Name, T, S, R}, args::NamedTuple = (;)) where {Name, T, S, R}
@@ -77,10 +80,7 @@ end
 @inline Base.keys(sct::Type{<:SubContext}) = fieldnames(sct.parameters[2])
 @inline Base.keys(sc::SubContext) = propertynames(get_data(sc))
 
-
-
-
-
+@inline Base.iterate(sc::SubContext) = iterate(get_data(sc))
 
 ########################
 ####### Setters ########
