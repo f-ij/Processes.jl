@@ -25,7 +25,7 @@ For selector syntax used in `Until`, see [Vars (`Var` Selectors)](@ref vars_user
 - `pause(p)`: stop loop while keeping resumable state.
 - `run(p)`: resume after pause.
 - `close(p)`: stop and finalize task state.
-- `reprepare(p)`: pause, rebuild context with init pipeline, run again.
+- `reinit(p)`: pause, rebuild context with init pipeline, run again.
 
 ## Waiting and Fetching
 

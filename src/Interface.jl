@@ -1,5 +1,5 @@
 
-export start, restart, quit, pause, syncclose, reprepare
+export start, restart, quit, pause, syncclose, reinit
 
 function Base.run(p::Process, lifetime = nothing)
     @assert isidle(p) "Process is already in use"
@@ -66,7 +66,7 @@ end
 function restart(p::Process)
     close(p)
     wait(p)
-    @atomic p.paused = false # Force reprepare
+    @atomic p.paused = false # Force reinit
     run!(p)
 end
 
@@ -120,7 +120,7 @@ This will cause the computed properties to re-compute.
 This may be used also to levarge the dispatch system, if the types of the data change
 so that the new loop function is newly compiled
 """
-function reprepare(p::Process)
+function reinit(p::Process)
     # TODO: Allow for only preparing of subset of context
     @assert !isnothing(p.taskdata) "No task to run"
     pause(p)
