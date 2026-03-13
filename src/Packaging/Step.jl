@@ -14,9 +14,7 @@ function init(pack::PackagedAlgo, context::C) where C <: AbstractContext
     end
     viewed = @inline view(context, pack)
     subcontext = getsubcontext(viewed)
-    @show subcontext
     allfields = (;subcontext...)
-    @show allfields
     # Filter out to_all
     filtered = @inline filter_nt(allfields, :algo, :lifetime)
     # @show context

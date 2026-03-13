@@ -20,7 +20,7 @@ function Processes.init(::generate_values, context)
     (;output = 0.0)
 end
 
-comp = CompositeAlgorithm(generate_values, IntegrateAndLogger, (1,1), Route(generate_values => IntegrateAndLogger, :output => :Δvalue))
+comp = CompositeAlgorithm(generate_values, IntegrateAndLogger, (1,1), Route(generate_values => IntegrateAndLogger, :output => :Δvalue, transform = x -> begin println("x: ", x); x end))
 
 p = Processes.Process(comp, lifetime = 10, Input(IntegrateAndLogger, initialvalue = 101f0))
 run(p)
