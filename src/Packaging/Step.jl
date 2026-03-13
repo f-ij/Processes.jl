@@ -13,7 +13,7 @@ function init(pack::PackagedAlgo, context::C) where C <: AbstractContext
         init(entity, context)
     end
     viewed = @inline view(context, pack)
-    allfields = (;viewed...)
+    allfields = (;getsubcontext(viewed)...)
     # Filter out to_all
     filtered = @inline filter_nt(allfields, :algo, :lifetime)
     # @show context
