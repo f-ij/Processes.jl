@@ -56,9 +56,12 @@ In practice:
 
 ## Inline Process
 
-Use `InlineProcess` when you want synchronous execution without a separate process task:
+Use `InlineProcess` when you want synchronous execution without a separate process task.
+It accepts the same positional `Input(...)` and `Override(...)` arguments as `Process(...)`:
 
 ```julia
-ip = InlineProcess(algo; repeats = 10_000)
+ip = InlineProcess(algo, Input(...), Override(...); repeats = 10_000)
 run(ip)
 ```
+
+For constructor parity with `Process(...)`, `lifetime = 10_000` is also accepted here.
