@@ -1,4 +1,4 @@
-export InlineProcess, InlineProcessAlgorithm, isthreaded, run, reset!
+export InlineProcess, InlineProcessAlgorithm, isthreaded, isasync, run, reset!
 """
 A fully typed process that is meant for inlining into other Functions
 Mainly used to compose algorithms in tight loops, plugging into the ProcessLoopAlgorithm system
