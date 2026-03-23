@@ -46,11 +46,11 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
             @assert length(firstargs) == length(processalgos) "If passing intervals as a tuple, there must be one interval per function, but got $(firstargs) for functions $(processalgos)"
             intervals_or_repeats = firstargs
             args = args[2:end] # Remove the intervals from the arguments list for further processing
-        elseif laType <: CompositeAlgorithm
+        elseif iscomposite(laType)
             intervals_or_repeats = RepeatOne{length(processalgos)}
         end
 
-    elseif laType <: CompositeAlgorithm
+    elseif iscomposite(laType)
         intervals_or_repeats = RepeatOne{length(processalgos)}
     else
         error("For routines, please pass the number of repeats after all ProcessAlgorithms as a tuple, even if it's just one repeat, e.g. (10,). Got: $firstargs")
@@ -60,7 +60,7 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
 
 
     ### FLATTEN ###
-    if laType <: CompositeAlgorithm
+    if iscomposite(laType)
 
         processalgos, intervals_or_repeats = flatten_comp_funcs(processalgos, tuple(intervals_or_repeats...))
         if all(x -> x == 1, intervals_or_repeats)

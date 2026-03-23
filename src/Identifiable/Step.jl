@@ -4,6 +4,9 @@
     @inline merge(contextview, retval) # Merge into view
 end
 
+@inline _profile_step_algo(sa::AbstractIdentifiableAlgo) = getalgo(sa)
+@inline _profile_step_context(sa::AbstractIdentifiableAlgo, context) = view(context, sa)
+
 """
 Expression form of the scoped step! to inline view/merge and the inner step! call.
 """

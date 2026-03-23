@@ -38,44 +38,11 @@ shouldrun(p::Process, val) = @atomic p.shouldrun = val
 @inline reset_ticks!(p::Process) = (p.tickidx = UInt(1))
 
 
-function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides...; context = nothing, lifetime = Indefinite(), timeout = 1.0)
+function Process(func, inputs_overrides...; context = nothing, lifetime = Indefinite(), timeout = 1.0)
+    prepared = prepare_process_constructor(func, inputs_overrides...; lifetime, context)
+    td = prepared.taskdata
+    context = prepared.context
 
-    # Wrap in a LoopAlgorithm to get all
-    # features
-    if !(func isa LoopAlgorithm)
-        func = SimpleAlgo(func)
-    end
-    
-    if lifetime isa Integer
-        lifetime = Repeat(lifetime)
-    elseif isnothing(lifetime)
-        if func isa Routine # Standard lifetime for routines is 1
-            lifetime = Repeat(1)
-        else
-            lifetime = Indefinite()
-        end
-    end
-
-    empty_context = ProcessContext(func)
-    reg = getregistry(empty_context)
-
-    inputs = filter(x -> x isa Input, inputs_overrides)
-    overrides = filter(x -> x isa Override, inputs_overrides)
-
-    # TODO: Should they already be converted to NamedInput/NamedOverride before passing to taskdata?
-    named_inputs = to_named(reg, inputs...)
-    named_overrides = to_named(reg, overrides...)
-    @DebugMode "Named_inputs: $(named_inputs)"
-    @DebugMode "Named overrides: $(named_overrides)"
-
-    # func = update_keys(func, reg)
-    td = TaskData(func; lifetime, overrides = named_overrides, inputs = named_inputs)
-
-    context = init_context(td)
-
-    if isnothing(context)
-         context = init_context(td)
-    end
     # p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
     p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, RuntimeListeners(), 0)
 
@@ -86,9 +53,9 @@ function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, inputs_overrides.
     return p
 end
 
-function Process(func::Union{ProcessAlgorithm, LoopAlgorithm}, repeats::Int; overrides = (;), timeout = 1.0, context...) 
-    lifetime = repeats == 0 ? Indefinite() : Repeat(repeats)
-    return Process(func; lifetime, overrides, timeout, context...)
+function Process(func, repeats::Int; overrides = tuple(), timeout = 1.0, context = nothing)
+    overrides_tuple = overrides isa Tuple ? overrides : (overrides,)
+    return Process(func, overrides_tuple...; lifetime = repeats, timeout, context)
 end
 
 Base.:(==)(p1::Process, p2::Process) = p1.id == p2.id

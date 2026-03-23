@@ -4,7 +4,7 @@ include("ContextExt.jl")
 
 function flatten_comp_funcs(funcs, _intervals)
     flat_funcs, flat_intervals = flat_tree_property_recursion(funcs, _intervals) do el, trait
-        if !(el isa CompositeAlgorithm)
+        if !iscomposite(el)
             return nothing, nothing
         end
         newels = getalgos(el)

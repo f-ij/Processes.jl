@@ -1,0 +1,88 @@
+export ThreadedCompositeAlgorithm, BarrieredCompositeAlgorithm
+
+"""
+Composite loop algorithm that evaluates child `step!` calls through threaded dependency
+layers.
+
+The constructor API mirrors [`CompositeAlgorithm`](@ref): pass child algorithms, then an
+interval tuple, then any states and options.
+"""
+struct ThreadedCompositeAlgorithm{T, Intervals, S, O, id} <: LoopAlgorithm
+    funcs::T
+    states::S
+    options::O
+    inc::Base.RefValue{Int}
+end
+
+const BarrieredCompositeAlgorithm = ThreadedCompositeAlgorithm
+
+iscomposite(::Type{<:ThreadedCompositeAlgorithm}) = true
+
+ThreadedCompositeAlgorithm(args...) = parse_la_input(ThreadedCompositeAlgorithm, args...)
+
+function LoopAlgorithm(::Type{ThreadedCompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where {F}
+    return ThreadedCompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), id}(funcs, states, options, Ref(1))
+end
+
+subalgorithms(tca::ThreadedCompositeAlgorithm) = tca.funcs
+subalgotypes(tca::ThreadedCompositeAlgorithm{FT}) where {FT} = FT.parameters
+subalgotypes(::Type{<:ThreadedCompositeAlgorithm{FT}}) where {FT} = FT.parameters
+
+getinc(tca::ThreadedCompositeAlgorithm) = tca.inc
+getoptions(tca::ThreadedCompositeAlgorithm) = tca.options
+
+getid(tca::Union{ThreadedCompositeAlgorithm{T,I,S,O,id}, Type{<:ThreadedCompositeAlgorithm{T,I,S,O,id}}}) where {T,I,S,O,id} = id
+setid(tca::TCA, id = uuid4()) where {TCA<:ThreadedCompositeAlgorithm} = setparameter(tca, 5, id)
+
+@inline functypes(::Union{ThreadedCompositeAlgorithm{T,I}, Type{<:ThreadedCompositeAlgorithm{T,I}}}) where {T,I} = tuple(T.parameters...)
+@inline getalgotype(::Union{ThreadedCompositeAlgorithm{T,I}, Type{<:ThreadedCompositeAlgorithm{T,I}}}, idx) where {T,I} = T.parameters[idx]
+@inline numalgos(::Union{ThreadedCompositeAlgorithm{T,I}, Type{<:ThreadedCompositeAlgorithm{T,I}}}) where {T,I} = length(T.parameters)
+
+@inline function intervals(::Union{ThreadedCompositeAlgorithm{T,I}, Type{<:ThreadedCompositeAlgorithm{T,I}}}) where {T,I}
+    if I isa Tuple
+        return I
+    else
+        return ntuple(_ -> 1, length(T.parameters))
+    end
+end
+
+@inline intervals(tca::Union{ThreadedCompositeAlgorithm, Type{<:ThreadedCompositeAlgorithm}}, ::Val{Idx}) where {Idx} = intervals(tca)[Idx]
+@inline interval(tca::Union{ThreadedCompositeAlgorithm{T,I}, Type{<:ThreadedCompositeAlgorithm{T,I}}}, idx) where {T,I} = I[idx]
+
+function setintervals(tca::TCA, new_intervals) where {TCA<:ThreadedCompositeAlgorithm}
+    @assert length(new_intervals) == length(tca.funcs)
+    setparameter(tca, 2, new_intervals)
+end
+
+function setinterval(tca::TCA, idx::Int, new_interval) where {TCA<:ThreadedCompositeAlgorithm}
+    new_intervals = ntuple(i -> i == idx ? new_interval : interval(tca, i), length(tca.funcs))
+    setparameter(tca, 2, new_intervals)
+end
+
+hasid(tca::Union{ThreadedCompositeAlgorithm{T,I,S,O,id}, Type{<:ThreadedCompositeAlgorithm{T,I,S,O,id}}}) where {T,I,S,O,id} = !isnothing(id)
+id(tca::Union{ThreadedCompositeAlgorithm{T,I,S,O,id}, Type{<:ThreadedCompositeAlgorithm{T,I,S,O,id}}}) where {T,I,S,O,id} = id
+
+Base.length(tca::ThreadedCompositeAlgorithm) = length(tca.funcs)
+Base.eachindex(tca::ThreadedCompositeAlgorithm) = Base.eachindex(tca.funcs)
+getalgo(tca::ThreadedCompositeAlgorithm, idx) = tca.funcs[idx]
+getalgos(tca::ThreadedCompositeAlgorithm) = tca.funcs
+
+@generated function inc!(tca::ThreadedCompositeAlgorithm)
+    _lcm = lcm(intervals(tca)...)
+    return :(tca.inc[] = mod1(tca.inc[] + 1, $_lcm))
+end
+
+function reset!(tca::ThreadedCompositeAlgorithm)
+    tca.inc[] = 1
+    reset!.(tca.funcs)
+end
+
+multipliers(tca::ThreadedCompositeAlgorithm) = 1 ./ intervals(tca)
+multipliers(tcaT::Type{<:ThreadedCompositeAlgorithm}) = 1 ./ intervals(tcaT)
+multiplier(tca::ThreadedCompositeAlgorithm, idx) = 1 / interval(tca, idx)
+
+@inline function getvals(tca::ThreadedCompositeAlgorithm{FT, Is}) where {FT, Is}
+    return Val.(Is)
+end
+
+inc(tca::ThreadedCompositeAlgorithm) = tca.inc[]

@@ -33,6 +33,16 @@ function Route(from_to::Pair, originalname_or_aliaspairs::Union{Symbol, Pair{Sym
     Route{typeof(from), typeof(to), transform, varnames, aliases, Fmatch, Tmatch}(from, to)
 end
 
+# AI
+function update_keys(r::Route, reg::NameSpaceRegistry)
+    newfrom = update_keys(getfrom(r), reg)
+    newto = update_keys(getto(r), reg)
+    varnames = getvarnames(r)
+    aliases = getaliases(r)
+    mappings = ntuple(i -> varnames[i] == aliases[i] ? varnames[i] : (varnames[i] => aliases[i]), length(varnames))
+    return Route(newfrom => newto, mappings...; transform = gettransform(r))
+end
+
 @inline function _route_endpoint_label(x)
     if x isa IdentifiableAlgo
         return IdentifiableAlgo_label(x)

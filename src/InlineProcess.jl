@@ -30,37 +30,19 @@ end
 @inline function _inline_process_lifetime(func, repeats, lifetime)
     if !isnothing(repeats)
         isnothing(lifetime) || error("Pass either `repeats` or `lifetime` to `InlineProcess`, not both.")
-        lifetime = repeats
+        return normalize_process_lifetime(func, repeats)
     elseif isnothing(lifetime)
-        lifetime = 1
-    end
-
-    if lifetime isa Integer
-        return lifetime == 0 ? Indefinite() : Repeat(lifetime)
-    elseif lifetime isa Lifetime
-        return lifetime
+        return normalize_process_lifetime(func, 1)
     else
-        error("Unsupported InlineProcess lifetime `$lifetime` for `$func`.")
+        return normalize_process_lifetime(func, lifetime)
     end
 end
 
 function InlineProcess(func, inputs_overrides...; threaded=false, repeats=nothing, lifetime=nothing, context=nothing)
-    if !(func isa LoopAlgorithm || func isa Type{<:LoopAlgorithm})
-        func = SimpleAlgo(func)
-    end
-
     lifetime = _inline_process_lifetime(func, repeats, lifetime)
-    empty_context = ProcessContext(func)
-    reg = getregistry(empty_context)
-
-    inputs = filter(x -> x isa Input, inputs_overrides)
-    overrides = filter(x -> x isa Override, inputs_overrides)
-
-    named_inputs = to_named(reg, inputs...)
-    named_overrides = to_named(reg, overrides...)
-
-    tf = TaskData(func; lifetime, overrides=named_overrides, inputs=named_inputs)
-    prepared_context = isnothing(context) ? init_context(tf) : context
+    prepared = prepare_process_constructor(func, inputs_overrides...; lifetime, context)
+    tf = prepared.taskdata
+    prepared_context = prepared.context
     mode = _inline_process_mode(threaded)
 
     p = InlineProcess{typeof(tf),typeof(prepared_context),typeof(lifetime),mode}(uuid1(), tf, prepared_context, UInt(1), lifetime, nothing, nothing)

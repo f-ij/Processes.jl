@@ -3,7 +3,23 @@ push!(LOAD_PATH, joinpath(@__DIR__, "..", "src"))
 using Documenter
 using Processes
 
+module ProcessesExtensionsDocs
+using UUIDs
+using JLD2
+using Processes
+
+import ..Processes: Process, TaskData, Input, Override, NamedInput, NamedOverride,
+    ProcessContext, normalize_process_algo, getregistry, to_named, get_target_name,
+    getinputs, getoverrides, getlifetime, getalgo, taskdata, init_context,
+    processlist, remove_process!, RuntimeListeners, context, task, deletekeys
+
+include(joinpath(@__DIR__, "..", "src", "Copy.jl"))
+include(joinpath(@__DIR__, "..", "src", "ProcessManager.jl"))
+end
+
 makedocs(
+    modules = [ProcessesExtensionsDocs],
+    checkdocs = :exports,
     sitename = "Processes",
     format = Documenter.HTML(),
     pages = [
@@ -17,6 +33,7 @@ makedocs(
             "Vars (Var Selectors)" => "user/vars.md",
             "Lifetime" => "user/lifetime.md",
             "Running, Wait, Fetch" => "user/running.md",
+            "Copying and Process Management" => "user/copying_and_management.md",
             "Value Semantics and Unique" => "user/value_semantics.md",
         ],
         "Internals" => [

@@ -4,6 +4,8 @@ init(::ProcessEntity, context) = (;)
 step!(pe::ProcessEntity, context) = error("step! not implemented for $(typeof(pe))")
 cleanup(::ProcessEntity, context) = (;)
 
+include("Utils.jl")
+
 
 
 """
@@ -17,3 +19,4 @@ match_by(t::Type{<:ProcessEntity}) = t
 
 include("ProcessStates/ProcessStates.jl")
 include("ProcessAlgorithms.jl")
+include("ProcessAlgorithmsNew.jl")

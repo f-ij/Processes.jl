@@ -11,6 +11,11 @@ get_states(cla::LoopAlgorithm) = getfield(cla, :states)
 
 getoptions(la::LoopAlgorithm, T::Type{O}) where O = filter(x -> x isa O, getoptions(la))
 
+iscomposite(::Any) = false
+iscomposite(::Type{<:LoopAlgorithm}) = false
+iscomposite(::Type{<:CompositeAlgorithm}) = true
+iscomposite(la::LoopAlgorithm) = iscomposite(typeof(la))
+
 # Reset needs to be implemented
 reset!(a::Any) = a
 

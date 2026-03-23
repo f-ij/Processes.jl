@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.4"
+julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "520d15956becb6c95652d5eb46436b3a78dc8b2e"
+project_hash = "b2c97a8bead9a6fbe13631ff76579ceb82b7de12"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
@@ -320,7 +320,7 @@ version = "1.11.0"
 
 [[deps.Processes]]
 deps = ["DataStructures", "Documenter", "JLD2", "MacroTools", "PrecompileTools", "Preferences", "StaticArrays", "UUIDs"]
-path = "C:\\Users\\fenje\\dev\\Processes.jl"
+path = "/Users/fabian/Documents/GitHub/Processes.jl"
 uuid = "6a369836-0793-447d-b7ee-625716f2d05b"
 version = "0.1.2"
 

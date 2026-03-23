@@ -15,6 +15,7 @@ The internals section is for understanding how registries, contexts, routing, an
 - [Vars (`Var` Selectors)](@ref vars_user)
 - [Lifetime](@ref lifetime_user)
 - [Running, Wait, Fetch](@ref running_user)
+- [Copying and Process Management](@ref copying_and_management_user)
 - [Value Semantics and `Unique`](@ref value_semantics_user)
 
 ## Internals
