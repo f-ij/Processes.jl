@@ -36,7 +36,7 @@ function update_keys(func::F, reg::NameSpaceRegistry) where {F <: ProcessEntity}
     # return func
 end
 
-function update_keys(::Type{F}, reg::NameSpaceRegistry) where {F <: Union{ProcessEntity, Type}}
+function update_keys(::Type{F}, reg::NameSpaceRegistry) where {F <: ProcessEntity}
     reg[F]
 end
 

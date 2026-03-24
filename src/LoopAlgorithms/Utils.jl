@@ -4,7 +4,7 @@ function replace_name!(pa::LoopAlgorithm, idx, newname::Symbol)
     pa.names = newnames
 end
 
-getregistry(pa::LoopAlgorithm) = pa.registry
+# getregistry(pa::LoopAlgorithm) = pa.registry
 getregistry(a::Any) = error("No registry found for object of type $(typeof(a))")
 
 """

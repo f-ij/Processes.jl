@@ -1,7 +1,7 @@
 ######################################
 ########## Scoped Algorithms #########
 ######################################
-export IdentifiableAlgo, Unique
+export IdentifiableAlgo, Unique, Identified
 
 """
 Algorithm assigned to a namespace in a context
@@ -32,7 +32,7 @@ Set an explicit name for an algorithm
 @inline function IdentifiableAlgo(f::F, contextkey::Symbol, id::Union{Nothing, Symbol, UUID} = nothing; customname = Symbol(), aliases...) where F
     if f isa AbstractIdentifiableAlgo # Don't wrap a IdentifiableAlgo again, just setid
         # return IdentifiableAlgo(getalgo(f), contextkey, id(f); aliases...)
-        if !isnothing(id) && !isnothing(getid(f))
+        if !isnothing(id) && !isnothing(id(f))
             error("Trying to wrap an IdentifiableAlgo with a new id")
         end
         return setcontextkey(f, contextkey)
@@ -70,7 +70,26 @@ function Autokey(f::IA, i::Int; customname = Symbol(), aliases...) where IA <: I
 end
 
 
+## USER WRAPPERS ##
+
+function Identified(f::F; customname = Symbol(), aliases...) where F
+    if f isa IdentifiableAlgo && !isbits(f)
+        wrapped = f.func
+        @assert objectid(wrapped) == id(f) "Trying to identify an already identifiable algorithm with a different id"
+        # TODO: Add aliases/customname
+        return f
+    elseif f isa AbstractIdentifiableAlgo || f isa Type
+        return f 
+    end
+
+    # Otherwise a plain mutable value, so we id it by objectid
+    IdentifiableAlgo{F, objectid(f), VarAliases(;aliases...), customname, Symbol()}(f)
+end
+
 function Unique(f; customname = Symbol(), aliases...)
     f = instantiate(f)
+    if !isbits(f)
+        f = deepcopy(f) # Mutable types match by identity
+    end
     IdentifiableAlgo{typeof(f), uuid4(), VarAliases(;aliases...), customname, Symbol()}(f)
 end

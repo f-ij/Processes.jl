@@ -66,16 +66,11 @@ end
 ############################
 
 @inline function static_findfirst_match(rte::RegistryTypeEntry, val)
-    @DebugMode "Looking for static match of value: $val in RegistryTypeEntry $(rte)"
-    if !(val isa Type) && !isbits(val)
-        # TODO: This is a bit hacky
-        @DebugMode "Value: $val is not bits, matching by type instead"
-        return static_findfirst_match(rte, Val(typeof(val)))
-
-    end
-    static_findfirst_match(rte, Val(val))
+    id = @inline match_by(val)
+    @inline static_findfirst_match(rte, Val(id))
 end
 
+## IN GENERATEDFUNCTIONS
 # @inline @generated function static_findfirst_match(rte::RegistryTypeEntry{T,S}, v::Val{value}) where {T,S,value}
 #     idx = findfirst(x -> match(value, x), entry_types(rte))
 #     return :($idx)
@@ -86,7 +81,12 @@ end
 ##########################
 ######## GETTERS #########
 ##########################
-Base.getindex(te::RegistryTypeEntry, obj) = static_get(te, obj)
+function Base.getindex(te::RegistryTypeEntry, obj)
+    if !isbits(obj)
+        obj = Identified(obj)
+    end
+    static_get(te, obj)
+end
 
 function Base.getindex(te::RegistryTypeEntry, idx::Int)
     getentries(te)[idx]
@@ -96,9 +96,9 @@ end
 Match Exact with value
 """
 @inline function static_get(rte::RegistryTypeEntry, val::V) where V 
-    idx = static_findfirst_match(rte, Val(val))
+    idx = static_findfirst_match(rte, val)
     if isnothing(idx)
-        error("No matching entry found for value: $val")
+        error("No matching entry found for value: $val with matcher $(match_by(val))\nin RegistryTypeEntry of type $(gettype(rte))\nwith entries: $(getentries(rte))\nand matchers $(match_by.(getentries(rte)))")
     end
     return getentries(rte)[idx]
 end

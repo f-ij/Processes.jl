@@ -1,46 +1,15 @@
 
-#=
-Matching trait that can be extended
-
-Will be used for matching algorithms to ones in a registry
-
-Generally, a struct that extends match_by should have a static parameter that uniquely identifies it
-
-Normal objects match by normal equality
-=#
-
-
-# Fallback
-"""
-Types extend this
-"""
-# match_id(a::Any) = match_id(typeof(a))
-# match_id(t::Type) = t
-# # match_by(tt::Type{Type{T}}) where T = match_by(T) # For generated function compatibility
-
-# function match_by(obj)
-#     id = nothing
-#     if obj isa Type
-#         id = match_id(obj)
-#     else
-#         id = match_id(typeof(obj))
-#     end
-#     if isnothing(id)
-#         return obj
-#     else
-#         return id
-#     end
-# end
-
 """
 Standard behavior: types match by themselves, objects match by their type
+
+Reminder: This is not how ProcessEntities match
 """
-match_by(obj) = match_by(typeof(obj))
+match_by(obj::O) where O = match_by(typeof(obj))
 match_by(t::Type{T}) where T = T
 
-function match(obj1, obj2)
-    id1 = match_by(obj1)
-    id2 = match_by(obj2)
+function match(obj1::O1, obj2::O2) where {O1,O2}
+    id1 = obj1 isa AbstractMatcher ? obj1 : match_by(obj1)
+    id2 = obj2 isa AbstractMatcher ? obj2 : match_by(obj2)
     return id1 == id2
 end
 
