@@ -38,7 +38,7 @@ end
     end
 end
 
-function InlineProcess(func, inputs_overrides...; threaded=false, repeats=nothing, lifetime=nothing, context=nothing)
+@inline function InlineProcess(func, inputs_overrides...; threaded=false, repeats=nothing, lifetime=nothing, context=nothing)
     lifetime = _inline_process_lifetime(func, repeats, lifetime)
     prepared = prepare_process_constructor(func, inputs_overrides...; lifetime, context)
     tf = prepared.taskdata

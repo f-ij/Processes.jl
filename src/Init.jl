@@ -1,3 +1,4 @@
+export initcontext
 """
 So that warnings are only printed once per type per session
 """
@@ -22,7 +23,8 @@ function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), override
     inputs = filter(x -> x isa NamedInput, overrides_and_inputs)
     overrides = filter(x -> x isa NamedOverride, overrides_and_inputs)
     
-    input_context = merge(c, inputs...; to_all = (;algo, lifetime))
+    input_context = merge_into_globals(c, (;algo, lifetime))
+    input_context = merge(input_context, inputs...)
 
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"
     @DebugMode "Overrides are $overrides"

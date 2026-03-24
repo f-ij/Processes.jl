@@ -29,7 +29,7 @@ end
 """
 Set an explicit name for an algorithm
 """
-@inline function IdentifiableAlgo(f::F, contextkey::Symbol, id::Union{Nothing, Symbol, UUID} = nothing; customname = Symbol(), aliases...) where F
+@inline function IdentifiableAlgo(f::F, contextkey::Symbol, id = nothing; customname = Symbol(), aliases...) where F
     if f isa AbstractIdentifiableAlgo # Don't wrap a IdentifiableAlgo again, just setid
         # return IdentifiableAlgo(getalgo(f), contextkey, id(f); aliases...)
         if !isnothing(id) && !isnothing(id(f))
@@ -41,6 +41,8 @@ Set an explicit name for an algorithm
     if isnothing(id) # Not unique so auto matching
         id = match_by(f) # Either match by f, or get the matching behavior of f if set
         # if 
+    elseif id isa UUID
+        id = SimpleId(id)
     end
     f = instantiate(f) # Don't wrap a type
     aliases = VarAliases(;aliases...)
@@ -91,5 +93,5 @@ function Unique(f; customname = Symbol(), aliases...)
     if !isbits(f)
         f = deepcopy(f) # Mutable types match by identity
     end
-    IdentifiableAlgo{typeof(f), uuid4(), VarAliases(;aliases...), customname, Symbol()}(f)
+    IdentifiableAlgo{typeof(f), SimpleId(), VarAliases(;aliases...), customname, Symbol()}(f)
 end

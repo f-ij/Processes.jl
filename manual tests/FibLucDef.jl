@@ -6,26 +6,26 @@ include("_env.jl")
 struct Fib <: ProcessAlgorithm end
 struct Luc <: ProcessAlgorithm end
 
-function Processes.step!(::Fib, context)
+function Processes.step!(::Fib, context::C) where C
     fiblist = context.fiblist
     push!(fiblist, fiblist[end] + fiblist[end-1])
     return (;)
 end
 
-function Processes.init(::Fib, context)
+function Processes.init(::Fib, context::C) where C
     n_calls = num_calls(context)
     fiblist = Int[0, 1]
     processsizehint!(fiblist, context)
     return (;fiblist)
 end
 
-function Processes.step!(::Luc, context)
+function Processes.step!(::Luc, context::C) where C
     luclist = context.luclist
     push!(luclist, luclist[end] + luclist[end-1])
     return (;)
 end
 
-function Processes.init(::Luc, context)
+function Processes.init(::Luc, context::C) where C
     luclist = Int[2, 1]
     processsizehint!(luclist,context)
     return (;luclist)

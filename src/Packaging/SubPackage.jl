@@ -26,7 +26,7 @@ Autokey(ps::SubPackage{F}, i::Int, prefix = "") where {F} = ps
 @inline getkey(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,Aliases,ContextKey}}}) where {F, ID, Aliases, ContextKey} = ContextKey
 @inline getalgo(ps::SubPackage{F}) where {F} = ps.func
 @inline setcontextkey(ps::SubPackage, key::Symbol) = setparameter(ps, 4, key)
-@inline setid(ps::SubPackage, newid) = setparameter(ps, 2, newid)
+@inline setid(ps::SubPackage, newid) = setparameter(ps, 2, newid isa UUID ? SimpleId(newid) : newid)
 @inline getvaraliases(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,Aliases,ContextKey}}}) where {F, ID, Aliases, ContextKey} = Aliases
 @inline setvaraliases(ps::SubPackage, newaliases) = setparameter(ps, 3, newaliases)
 """

@@ -19,6 +19,10 @@ end
 abstract type AbstractMatcher{A} end
 getmatchers(m::AbstractMatcher{A}) where {A} = A
 
+struct SimpleId{id} <: AbstractMatcher{id} end
+SimpleId() = SimpleId{uuid4()}()
+SimpleId(id) = SimpleId{id}()
+
 struct MatchAny{A} <: AbstractMatcher{A} end
 MatchAny(matchers...) = MatchAny(tuple(matchers...))
 function Base.:(==)(m1::MatchAny, a)

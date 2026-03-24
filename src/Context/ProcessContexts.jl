@@ -236,15 +236,27 @@ end
 Args should name subcontext they want to replace, check if all names are in the original context
     since we can only replace existing subcontexts
 """
-function Base.replace(pc::ProcessContext{D, Reg}, args::NamedTuple) where {D, Reg}
-    names_to_replace = propertynames(args)
-    @assert all( n -> hasproperty(get_subcontexts(pc), n), names_to_replace) "Trying to replace unknown subcontext(s) $(setdiff(names_to_replace, propertynames(get_subcontexts(pc)))) in ProcessContext"
-    old_subs = get_subcontexts(pc)
-    replaced_gen = (name => 
-            begin haskey(args, name) ? replace(getproperty(old_subs, name), getproperty(args, name)) : getproperty(old_subs, name) end  for name in propertynames(old_subs))
-    newsubs = (;old_subs..., replaced_gen...)
-    return setfield(pc, :subcontexts, newsubs)
+@inline @generated function _replace_subcontexts(pc::ProcessContext{D, Reg}, args::As) where {D, Reg, As<:NamedTuple}
+    sc_names = get_subcontexts_fieldnames(pc)
+    replacenames = fieldnames(args)
+    getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(name)))) for name in sc_names]
+
+    for replacename in replacenames
+        found_idx = findfirst(n -> n == replacename, sc_names)
+        if isnothing(found_idx)
+            error("Trying to replace unknown subcontext $(QuoteNode(replacename)) in ProcessContext. Available subcontexts are: $(sc_names) and args has names: $(replacenames)")
+        end
+        getproperty_exprs[found_idx] = :(replace(getproperty(get_subcontexts(pc), $(QuoteNode(replacename))), getproperty(args, $(QuoteNode(replacename)))))
+    end
+
+    ntnames = tuple(sc_names...)
+    return quote
+        new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
+        @inline setfield(pc, :subcontexts, new_subcontexts)
+    end
 end
+
+@inline Base.replace(pc::ProcessContext{D, Reg}, args::NamedTuple) where {D, Reg} = @inline _replace_subcontexts(pc, args)
 
 ### BASE EXTENSIONS
 
@@ -252,166 +264,3 @@ end
 # @inline Base.pairs(pc::ProcessContext) = pairs(pc.subcontexts)
 # @inline Base.getproperty(pc::ProcessContext, name::Symbol) = getproperty(pc.subcontexts, name)
 
-
-
-########################
-### DISPLAY ###
-########################
-
-@inline _is_input_like(x) = x isa NamedInput || x isa NamedOverride
-
-function _format_inputs_tuple(t::Tuple)
-    isempty(t) && return "Inputs: ∅"
-    items = String[]
-    for it in t
-        if _is_input_like(it)
-            push!(items, string(get_target_name(it), " ", get_vars(it)))
-        else
-            push!(items, sprint(summary, it))
-        end
-    end
-    return "Inputs: " * join(items, ", ")
-end
-
-function _sharedvars_display(sharedvars_types)
-    sharedvars_types === Tuple{} && return String[]
-    items = String[]
-    for sv in sharedvars_types
-        from = get_fromname(sv)
-        varnames = subvarcontextnames(sv)
-        aliases = localnames(sv)
-        for (varname, alias) in zip(varnames, aliases)
-            push!(items, string(alias, "@", from, ".", varname))
-        end
-    end
-    return items
-end
-
-function _subcontext_var_lines(sc::SubContext; io::IO = stdout)
-    lines = String[]
-    show_ctx = IOContext(io, :limit => get(io, :limit, false), :color => get(io, :color, false))
-    shared_types = getsharedcontext_types(typeof(sc))
-    shared_names = shared_types === Tuple{} ? Symbol[] : filter(!isnothing, contextname.(shared_types))
-    if !isempty(shared_names)
-        # Emit styling only when the *caller IO* supports it; otherwise keep plain text.
-        if get(io, :color, false)
-            buf = IOBuffer()
-            # `printstyled` consults `:color` on the IO it is writing to, so wrap the buffer
-            # in an IOContext that explicitly enables color/styling.
-            cio = IOContext(buf, :color => true)
-            printstyled(cio, "shared:"; bold = true)
-            print(cio, " ", join(shared_names, ", "))
-            push!(lines, String(take!(buf)))
-        else
-            push!(lines, "shared: " * join(shared_names, ", "))
-        end
-    end
-    data = get_data(sc)
-    data_names = propertynames(data)
-    if isempty(data_names)
-        push!(lines, "vars: ∅")
-    else
-        for name in data_names
-            val = getproperty(data, name)
-            if val isa Tuple && all(_is_input_like, val)
-                push!(lines, string(name, " = ", _format_inputs_tuple(val)))
-            else
-                push!(lines, string(name, " = ", sprint(summary, val; context = show_ctx)))
-            end
-        end
-    end
-    sharedvars_items = _sharedvars_display(getsharedvars_types(typeof(sc)))
-    for item in sharedvars_items
-        push!(lines, ":" * item)
-    end
-    return lines
-end
-
-function _subcontext_var_lines(sc::NamedTuple; io::IO = stdout)
-    lines = String[]
-    show_ctx = IOContext(io, :limit => get(io, :limit, false), :color => get(io, :color, false))
-    data_names = propertynames(sc)
-    if isempty(data_names)
-        push!(lines, "vars: ∅")
-    else
-        for name in data_names
-            val = getproperty(sc, name)
-            if val isa Tuple && all(_is_input_like, val)
-                push!(lines, string(name, " = ", _format_inputs_tuple(val)))
-            else
-                push!(lines, string(name, " = ", sprint(summary, val; context = show_ctx)))
-            end
-        end
-    end
-    return lines
-end
-
-function Base.show(io::IO, sc::SubContext)
-    println(io, "SubContext ", getkey(sc))
-    for line in _subcontext_var_lines(sc; io)
-        println(io, "  ", line)
-    end
-    return nothing
-end
-
-#=
-function Base.show(io::IO, pc::ProcessContext)
-    println(io, "ProcessContext")
-    subs = get_subcontexts(pc)
-    names = collect(propertynames(subs))
-    last_idx = length(names)
-    for (idx, name) in enumerate(names)
-        sc = getproperty(subs, name)
-        branch = idx == last_idx ? "└── " : "├── "
-        stem = idx == last_idx ? "    " : "│   "
-        println(io, branch, "[", idx, "]: ", name)
-
-        var_lines = _subcontext_var_lines(sc; io)
-        var_last_idx = length(var_lines)
-        for (var_idx, line) in enumerate(var_lines)
-            var_branch = var_idx == var_last_idx ? " └── " : " ├── "
-            var_stem = var_idx == var_last_idx ? "    " : "│   "
-            split_lines = split(line, '\n')
-            println(io, stem, var_branch, split_lines[1])
-            for continuation in Iterators.drop(split_lines, 1)
-                println(io, stem, var_stem, lstrip(continuation))
-            end
-        end
-    end
-    return nothing
-end
-=#
-
-function Base.show(io::IO, pc::ProcessContext)
-    println(io, "ProcessContext")
-    show_ctx = IOContext(io, :limit => get(io, :limit, false), :color => get(io, :color, false))
-    subs = get_subcontexts(pc)
-    names = collect(propertynames(subs))
-    last_idx = length(names)
-
-    for (idx, name) in enumerate(names)
-        sc = getproperty(subs, name)
-        branch = idx == last_idx ? "└── " : "├── "
-        stem = idx == last_idx ? "    " : "│   "
-        println(io, branch, "[", idx, "]: ", name)
-
-        var_lines = _subcontext_var_lines(sc; io = show_ctx)
-        var_last_idx = length(var_lines)
-        for (var_idx, line) in enumerate(var_lines)
-            var_branch = var_idx == var_last_idx ? " └── " : " ├── "
-            continuation_stem = var_idx == var_last_idx ? "    " : "│   "
-            split_lines = split(line, '\n')
-            println(io, stem, var_branch, split_lines[1])
-            align_prefix = begin
-                eqidx = findfirst(" = ", split_lines[1])
-                isnothing(eqidx) ? "" : repeat(" ", last(eqidx))
-            end
-            for continuation in Iterators.drop(split_lines, 1)
-                leading_ws = length(continuation) - length(lstrip(continuation))
-                pad = isempty(align_prefix) ? 0 : max(length(align_prefix) - leading_ws, 0)
-                println(io, stem, continuation_stem, repeat(" ", pad), continuation)
-            end
-        end
-    end
-    return nothing
-end

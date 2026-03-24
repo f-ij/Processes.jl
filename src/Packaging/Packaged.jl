@@ -101,7 +101,7 @@ end
 @inline getalgos(ca::PackagedAlgo) = ca.funcs
 @inline getalgo(sa::PackagedAlgo{F}, i) where {F} = getalgos(sa)[i]
 
-@inline setid(sa::PackagedAlgo, newid) = setparameter(sa, 4, newid)
+@inline setid(sa::PackagedAlgo, newid) = setparameter(sa, 4, newid isa UUID ? SimpleId(newid) : newid)
 
 function setcontextkey(package::PackagedAlgo, key::Symbol)
     # newfuncs = map(func -> setcontextkey(func, key), package.funcs)
