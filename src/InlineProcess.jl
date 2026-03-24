@@ -88,4 +88,9 @@ end
     end
 end
 
+@inline function init_and_run(p::InlineProcess, inputs...)
+    @inline makecontext!(p)
+    return run(p)
+end
+
     

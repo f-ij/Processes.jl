@@ -13,7 +13,7 @@ Targets are resolved through the composed algorithm registry.
 
 ## When They Apply
 
-`init_context` applies them in this order:
+`initcontext` applies them in this order:
 
 1. Inputs merged first.
 2. `init(...)` executes.

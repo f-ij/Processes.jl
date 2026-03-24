@@ -20,7 +20,7 @@ end
 Scoped Algorithms or thin_wrapped scoped algorithms that need an updated name
     Can be matched with a new registry and rebuilt accordingly
 """
-function update_keys(func::F, reg::NameSpaceRegistry) where {F}
+function update_keys(func::F, reg::NameSpaceRegistry) where {F <: ProcessEntity}
     reg[func]
     # if func isa IdentifiableAlgo
     #     @DebugMode println("Updating name for IdentifiableAlgo: $func using registry: $reg")
@@ -34,6 +34,10 @@ function update_keys(func::F, reg::NameSpaceRegistry) where {F}
     # end
     # # Default: keep non-Identifiable algorithms unchanged.
     # return func
+end
+
+function update_keys(::Type{F}, reg::NameSpaceRegistry) where {F <: Union{ProcessEntity, Type}}
+    reg[F]
 end
 
 """

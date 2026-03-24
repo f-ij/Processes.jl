@@ -52,7 +52,7 @@ using Processes
     )
 
     p = Process(algo, lifetime = 10, Input(Walker, :dt => 0.01))
-    start(p; threaded = false)
+    run(p)
     wait(p)
     c = fetch(p)
 

@@ -36,7 +36,7 @@ using Processes
     )
 
     p = Process(shared_algo, lifetime = 20, Input(Oscillator, :dt => 0.1))
-    start(p; threaded = false)
+    run(p)
     wait(p)
 
     actual_traj = p.context[Oscillator].trajectory

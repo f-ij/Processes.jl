@@ -200,7 +200,7 @@ function copyprocess(td::TaskData, inputs_overrides...; keep_inputs = true, keep
     elseif !isnothing(context_builder)
         _copy_context(context_builder, copied_td, nothing)
     else
-        init_context(copied_td)
+        initcontext(copied_td)
     end
 
     return _makecopiedprocess(copied_td, prepared_context, timeout)
@@ -215,7 +215,7 @@ function copyprocess(p::Process, inputs_overrides...; keep_inputs = true, keep_o
     elseif !isnothing(context_builder)
         _copy_context(context_builder, copied_td, p)
     else
-        init_context(copied_td)
+        initcontext(copied_td)
     end
 
     return _makecopiedprocess(copied_td, prepared_context, timeout)

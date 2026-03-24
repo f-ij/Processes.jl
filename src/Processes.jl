@@ -10,7 +10,7 @@ module Processes
 
     import DataStructures: Queue, dequeue!, enqueue!
 
-    export ProcessAlgorithm, ProcessState, profile_step_return
+    export ProcessAlgorithm, ProcessState, profile_step_return, filter_args
 
     const DEBUG_MODE = @load_preference("debug", false)
     debug_mode() = @load_preference("debug", false)
@@ -20,6 +20,7 @@ module Processes
 
     include("AbstractTypeDefs.jl")
 
+    include("Utils.jl")
     include("Functions.jl")
     include("Unroll.jl")
     include("Printing.jl")

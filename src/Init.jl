@@ -16,32 +16,28 @@ function init(t::T, c::Any) where T
 end
 
 """
-previously prepare_args
+Make a context from an algo
 """
-function init_context(algo::F, c::ProcessContext, overrides_and_inputs::Union{NamedInput, NamedOverride}...; lifetime = Indefinite()) where {F}
+function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{NamedInput, NamedOverride}...; lifetime = Indefinite()) where {F}
     inputs = filter(x -> x isa NamedInput, overrides_and_inputs)
     overrides = filter(x -> x isa NamedOverride, overrides_and_inputs)
     
-    input_context = initmerge(c, inputs...; to_all = (;algo, lifetime))
+    input_context = merge(c, inputs...; to_all = (;algo, lifetime))
 
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"
     @DebugMode "Overrides are $overrides"
 
     prepared_context = init(algo, input_context)
-    @DebugMode "Prepared in init_context context is $prepared_context"
+    @DebugMode "Prepared in initcontext context is $prepared_context"
 
-    overridden_context = initmerge(prepared_context, overrides...)
+    overridden_context = merge(prepared_context, overrides...)
 
     return overridden_context
 end
 
-@inline function initmerge(context::ProcessContext, overrides_or_inputs::Union{NamedOverride, NamedInput}...; to_all = (;))
-    @inline merge(context, overrides_or_inputs...; to_all = to_all)
-end
-
-@inline function init_context(p::AbstractProcess)
+@inline function initcontext(p::AbstractProcess)
     td = taskdata(p)
-    c = init_context(td)
+    c = initcontext(td)
     @DebugMode "Prepared context is $c"
     return c
 end
@@ -49,17 +45,17 @@ end
 """
 Init context from TaskData
 """
-function init_context(td::TD) where {TD<:TaskData}
+function initcontext(td::TD) where {TD<:TaskData}
     lifetime = getlifetime(td)
     overrides = getoverrides(td)
     inputs = getinputs(td)
     empty_c = getcontext(td)
     
-    return init_context(td.func, empty_c, overrides..., inputs...; lifetime = lifetime)
+    return initcontext(td.func, empty_c, overrides..., inputs...; lifetime = lifetime)
 end
 
 function makecontext(p::AbstractProcess)
-    init_context(taskdata(p))
+    initcontext(taskdata(p))
 end
 
 function makecontext!(p::AbstractProcess)

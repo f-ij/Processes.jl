@@ -111,6 +111,9 @@ end
 
 """
 Returns a merged context by merging the provided named tuple into the appropriate subcontexts
+
+This doesn't check for type stability, and allows overwriting existing variables. 
+
 """
 @inline @generated function initmerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
     algo_varnames = fieldnames(args)

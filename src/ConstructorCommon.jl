@@ -26,8 +26,8 @@ function resolve_process_inputs_overrides(func, inputs_overrides...)
     empty_context = ProcessContext(func)
     reg = getregistry(empty_context)
 
-    inputs = filter(x -> x isa Input, inputs_overrides)
-    overrides = filter(x -> x isa Override, inputs_overrides)
+    inputs = @inline filter_args(Input, inputs_overrides)
+    overrides = @inline filter_args(Override, inputs_overrides)
 
     named_inputs = to_named(reg, inputs...)
     named_overrides = to_named(reg, overrides...)
@@ -44,7 +44,7 @@ function prepare_process_constructor(func, inputs_overrides...; lifetime = Indef
     @DebugMode "Named overrides: $(named_overrides)"
 
     taskdata = TaskData(func; lifetime, overrides = named_overrides, inputs = named_inputs)
-    prepared_context = isnothing(context) ? init_context(taskdata) : context
+    prepared_context = isnothing(context) ? initcontext(taskdata) : context
 
     return (; func, lifetime, taskdata, context = prepared_context)
 end

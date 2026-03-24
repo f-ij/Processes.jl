@@ -10,11 +10,11 @@ This page documents the runtime path from `Process(...)` to loop execution.
 2. Normalize lifetime (`Repeat(n)`/`Indefinite()`, with `Routine` default `Repeat(1)` when `lifetime = nothing`).
 3. Build empty context: `ProcessContext(func)`.
 4. Convert `Input`/`Override` into named backend forms via registry (`to_named`).
-5. Build `TaskData` and initialize context via `init_context(td)`.
+5. Build `TaskData` and initialize context via `initcontext(td)`.
 
 ## 2. Init Phase
 
-`init_context` (`src/Init.jl`) applies:
+`initcontext` (`src/Init.jl`) applies:
 
 1. Inputs merge (plus `algo` and `lifetime` into every target subcontext).
 2. `init(algo, input_context)`.

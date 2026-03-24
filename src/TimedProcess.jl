@@ -8,7 +8,7 @@ end
 
 function TimedProcess(func::F; lifetime = Indefinite(), interval::Real = 0., context = nothing) where F
     tf = TaskData(func; lifetime = Repeat(1), context...)
-    prepared_context = init_context(tf)
+    prepared_context = initcontext(tf)
 
     callback = let context = prepared_context
         timer -> @inline step!(func, context)
@@ -18,7 +18,7 @@ function TimedProcess(func::F; lifetime = Indefinite(), interval::Real = 0., con
 end
 
 function init!(tp::TimedProcess)
-    tp.context = init_context(tp.taskdata)
+    tp.context = initcontext(tp.taskdata)
     tp.callback = let context = tp.context
         timer -> @inline step!(tp.taskdata.func, context)
     end

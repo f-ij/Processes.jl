@@ -11,6 +11,12 @@ function Share(algo1, algo2; directional::Bool=false)
     Share{typeof(algo1), typeof(algo2)}(algo1, algo2, directional)
 end
 
+function update_keys(s::Share, reg::NameSpaceRegistry)
+    newalgo1 = update_keys(get_firstalgo(s), reg)
+    newalgo2 = update_keys(get_secondalgo(s), reg)
+    Share(newalgo1, newalgo2; directional = is_directional(s))
+end
+
 function to_sharedcontext(reg::NameSpaceRegistry, s::Share)
     names = (static_findkey(reg, s.algo1), static_findkey(reg, s.algo2))
     if any(isnothing, names)
