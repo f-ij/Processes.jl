@@ -3,6 +3,7 @@ export getregistry, add, add, find_typeidx
 include("Utils.jl")
 include("PreferStrongKeyDict.jl")
 include("Traits.jl")
+include("Findability.jl")
 
 include("StructDefs.jl")
 include("ScopedValueEntry.jl")
@@ -11,4 +12,3 @@ include("Registries.jl")
 include("SimpleRegistry.jl")
 include("Updating.jl")
 # include("Init.jl")
-

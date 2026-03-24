@@ -230,6 +230,11 @@ function dynamic_lookup(reg::NameSpaceRegistry, val)
     return dynamic_lookup(entries, val)
 end
 
+function dynamic_get(reg::NameSpaceRegistry, val)
+    entries = get_type_entries(reg, val)
+    return dynamic_get(entries, val)
+end
+
 @inline function static_get_match(reg::NameSpaceRegistry, val)
     entries = get_type_entries(reg, val)
     @DebugMode "Static get match for value: $val in entries: $entries"
@@ -282,7 +287,7 @@ Statically Find the name in the registry
 end
 
 @inline function Base.in(val, reg::NameSpaceRegistry)
-    found_scoped_value = @inline static_get(reg, val)
+    found_scoped_value = @inline get(reg, val, nothing)
     return !isnothing(found_scoped_value)
 end
 
@@ -335,7 +340,11 @@ end
 
 function getmultiplier(reg::NameSpaceRegistry, val)
     entries = get_type_entries(reg, val)
-    entry_idx = static_findfirst_match(entries, val)
+    entry_idx = if isstaticallyfindable(val)
+        static_findfirst_match(entries, val)
+    else
+        dynamic_lookup(entries, val)
+    end
     if isnothing(entry_idx)
         return 0
     end
@@ -346,7 +355,7 @@ end
 Statically Get the name from the registry
 """
 @inline function getkey(reg::NameSpaceRegistry, val)
-    entry = static_get(reg, val)
+    entry = get(reg, val, nothing)
     if isnothing(entry)
         return nothing
     end
@@ -362,18 +371,17 @@ end
 Get the value from the registry
 """
 @inline function Base.getindex(reg::NameSpaceRegistry{T}, obj) where {T}
-    if isbits(obj) || obj isa Type || obj isa AbstractIdentifiableAlgo
+    if isstaticallyfindable(obj)
         return static_get(reg, obj)
     else
-        # return static_get(reg, typeof(obj)) 
-        matcher = typeof(Identified(obj))
-        return static_get(reg, matcher)
-        # return dynamic_get(reg, obj)
+        entry = dynamic_get(reg, obj)
+        isnothing(entry) && error("No matching entry found for value: $obj in registry: $reg")
+        return entry
     end
 end
 
 @inline function Base.get(reg::NameSpaceRegistry, obj, default = nothing)
-    if obj isa Type || isbits(obj)
+    if isstaticallyfindable(obj)
         try
             return static_get(reg, obj)
         catch e

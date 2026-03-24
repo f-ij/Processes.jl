@@ -5,6 +5,6 @@ FibLuc = CompositeAlgorithm( Fib, Luc, (1,1) )
 
 Pack = ps.PackagedAlgo(FibLuc, "FLPack")
 p = InlineProcess(Pack, lifetime = 100000)
-start(p)
+run(p)
 
 # benchmark(Pack, 100000, 100; print_outer = true)

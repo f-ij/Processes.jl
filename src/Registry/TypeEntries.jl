@@ -32,16 +32,8 @@ Get the types of static entries
 """
 entry_types(rte::Type{<:RegistryTypeEntry{T,E}}) where {T,E} = E.parameters
 
-"""
-Is a registry type the same as another
-"""
-same_entry_type(rte1::RegistryTypeEntry{T1}, rte2::RegistryTypeEntry{T2}) where {T1,T2} = T1 == T2
-
 gettype(rte::Type{<:RegistryTypeEntry{T}}) where T = T
 gettype(rte::RegistryTypeEntry) = gettype(typeof(rte))
-
-hasdefault(rtetype::Type{<:RegistryTypeEntry{T,Td}}) where {T,Td} = !(Td <: Nothing)
-hasdefault(rte::RegistryTypeEntry{T,Td}) where {T,Td} = !(Td <: Nothing)
 
 ###############################
 ##### CHANGING MULTIPLIER #####
@@ -76,16 +68,19 @@ end
 #     return :($idx)
 # end
 
-@inline dynamic_find_match(rte::RegistryTypeEntry{T}, val) where {T} = get(getdynamiclookup(rte), val, nothing)
+@inline dynamic_find_match(rte::RegistryTypeEntry{T}, val) where {T} = get(getdynamiclookup(rte), match_by(val), nothing)
+@inline findfirst_match(rte::RegistryTypeEntry, val) = isstaticallyfindable(val) ? static_findfirst_match(rte, val) : dynamic_find_match(rte, val)
 
 ##########################
 ######## GETTERS #########
 ##########################
 function Base.getindex(te::RegistryTypeEntry, obj)
-    if !isbits(obj)
-        obj = Identified(obj)
+    if isstaticallyfindable(obj)
+        return static_get(te, obj)
     end
-    static_get(te, obj)
+    entry = dynamic_get(te, obj)
+    isnothing(entry) && error("No matching entry found for value: $obj with matcher $(match_by(obj))\nin RegistryTypeEntry of type $(gettype(te))\nwith entries: $(getentries(te))\nand matchers $(match_by.(getentries(te)))")
+    return entry
 end
 
 function Base.getindex(te::RegistryTypeEntry, idx::Int)
@@ -114,7 +109,7 @@ function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withkey::WK = noth
         error("Trying to add `nothing` to RegistryTypeEntry of type $T")
     end
 
-    fidx = static_findfirst_match(rte, obj)
+    fidx = findfirst_match(rte, obj)
     if isnothing(fidx) #add new
         entries = getentries(rte)
         current_length = length(entries)
@@ -165,15 +160,14 @@ Match either a scoped or non scope value with one of the entries
 This is faster for runtime, slower for inlining
 =#
 
-dynamic_lookup(rte::RegistryTypeEntry{T}, val) where {T} = get(getdynamiclookup(rte), val, nothing)
+dynamic_lookup(rte::RegistryTypeEntry{T}, val) where {T} = get(getdynamiclookup(rte), match_by(val), nothing)
 
 @inline function dynamic_get(rte::RegistryTypeEntry{T}, val) where {T}
-    loc_idx = dynamic_lookup(rte, val)
-    if isnothing(loc_idx)
+    idx = dynamic_lookup(rte, val)
+    if isnothing(idx)
         return nothing
     end
-    location, idx = loc_idx
-    return getvalue(rte, location, idx)
+    return getentries(rte)[idx]
 end
 
 
@@ -204,12 +198,6 @@ Context names
 function all_keys(te::Union{RegistryTypeEntry, Type{<:RegistryTypeEntry}})
     getkey.(getentries(te))
 end
-
-# function findname_idx(te::RegistryTypeEntry, name::Symbol)
-#     l = length(te)
-#     entry_name = getkey(te[idx])
-#     return findfirst(==(name), entry_name)
-# end
 
 """
 Change the context name of an entry
