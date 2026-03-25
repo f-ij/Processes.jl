@@ -7,11 +7,12 @@ layers.
 The constructor API mirrors [`CompositeAlgorithm`](@ref): pass child algorithms, then an
 interval tuple, then any states and options.
 """
-struct ThreadedCompositeAlgorithm{T, Intervals, S, O, id} <: LoopAlgorithm
+struct ThreadedCompositeAlgorithm{T, Intervals, S, O, R, id} <: LoopAlgorithm
     funcs::T
     states::S
     options::O
     inc::Base.RefValue{Int}
+    reg::R
 end
 
 const BarrieredCompositeAlgorithm = ThreadedCompositeAlgorithm
@@ -21,7 +22,7 @@ iscomposite(::Type{<:ThreadedCompositeAlgorithm}) = true
 ThreadedCompositeAlgorithm(args...) = parse_la_input(ThreadedCompositeAlgorithm, args...)
 
 function LoopAlgorithm(::Type{ThreadedCompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where {F}
-    return ThreadedCompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), id}(funcs, states, options, Ref(1))
+    return ThreadedCompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), Nothing, id}(funcs, states, options, Ref(1), nothing)
 end
 
 subalgorithms(tca::ThreadedCompositeAlgorithm) = tca.funcs
@@ -30,9 +31,12 @@ subalgotypes(::Type{<:ThreadedCompositeAlgorithm{FT}}) where {FT} = FT.parameter
 
 getinc(tca::ThreadedCompositeAlgorithm) = tca.inc
 getoptions(tca::ThreadedCompositeAlgorithm) = tca.options
+@inline getregistry(tca::ThreadedCompositeAlgorithm) = getfield(tca, :reg)
+@inline _attach_registry(tca::ThreadedCompositeAlgorithm, registry::NameSpaceRegistry) = setfield(tca, :reg, registry)
+@inline ismaterialized(tca::ThreadedCompositeAlgorithm) = !isnothing(getregistry(tca))
 
-getid(tca::Union{ThreadedCompositeAlgorithm{T,I,S,O,id}, Type{<:ThreadedCompositeAlgorithm{T,I,S,O,id}}}) where {T,I,S,O,id} = id
-setid(tca::TCA, id = uuid4()) where {TCA<:ThreadedCompositeAlgorithm} = setparameter(tca, 5, id)
+getid(tca::Union{ThreadedCompositeAlgorithm{T,I,S,O,R,id}, Type{<:ThreadedCompositeAlgorithm{T,I,S,O,R,id}}}) where {T,I,S,O,R,id} = id
+setid(tca::TCA, id = uuid4()) where {TCA<:ThreadedCompositeAlgorithm} = setparameter(tca, 6, id)
 
 @inline functypes(::Union{ThreadedCompositeAlgorithm{T,I}, Type{<:ThreadedCompositeAlgorithm{T,I}}}) where {T,I} = tuple(T.parameters...)
 @inline getalgotype(::Union{ThreadedCompositeAlgorithm{T,I}, Type{<:ThreadedCompositeAlgorithm{T,I}}}, idx) where {T,I} = T.parameters[idx]
@@ -59,8 +63,8 @@ function setinterval(tca::TCA, idx::Int, new_interval) where {TCA<:ThreadedCompo
     setparameter(tca, 2, new_intervals)
 end
 
-hasid(tca::Union{ThreadedCompositeAlgorithm{T,I,S,O,id}, Type{<:ThreadedCompositeAlgorithm{T,I,S,O,id}}}) where {T,I,S,O,id} = !isnothing(id)
-id(tca::Union{ThreadedCompositeAlgorithm{T,I,S,O,id}, Type{<:ThreadedCompositeAlgorithm{T,I,S,O,id}}}) where {T,I,S,O,id} = id
+hasid(tca::Union{ThreadedCompositeAlgorithm{T,I,S,O,R,id}, Type{<:ThreadedCompositeAlgorithm{T,I,S,O,R,id}}}) where {T,I,S,O,R,id} = !isnothing(id)
+id(tca::Union{ThreadedCompositeAlgorithm{T,I,S,O,R,id}, Type{<:ThreadedCompositeAlgorithm{T,I,S,O,R,id}}}) where {T,I,S,O,R,id} = id
 
 Base.length(tca::ThreadedCompositeAlgorithm) = length(tca.funcs)
 Base.eachindex(tca::ThreadedCompositeAlgorithm) = Base.eachindex(tca.funcs)

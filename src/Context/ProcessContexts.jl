@@ -257,10 +257,3 @@ Args should name subcontext they want to replace, check if all names are in the 
 end
 
 @inline Base.replace(pc::ProcessContext{D, Reg}, args::NamedTuple) where {D, Reg} = @inline _replace_subcontexts(pc, args)
-
-### BASE EXTENSIONS
-
-
-# @inline Base.pairs(pc::ProcessContext) = pairs(pc.subcontexts)
-# @inline Base.getproperty(pc::ProcessContext, name::Symbol) = getproperty(pc.subcontexts, name)
-

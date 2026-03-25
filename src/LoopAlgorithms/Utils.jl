@@ -7,6 +7,8 @@ end
 # getregistry(pa::LoopAlgorithm) = pa.registry
 getregistry(a::Any) = error("No registry found for object of type $(typeof(a))")
 
+@inline _attach_registry(cla::LoopAlgorithm, ::NameSpaceRegistry) = cla
+
 """
 Obtain all the registriees, merge them and update the names downwards in the algorithm accordingly
 """
@@ -20,7 +22,7 @@ function update_keys(cla::LoopAlgorithm, base_registry::NameSpaceRegistry)
     # updated_registry = update_keys(getregistry(cla), base_registry)
     cla = setfield(cla, :funcs, newfuncs)
     cla = setfield(cla, :options, newoptions)
-    # cla = setfield(cla, :registry, updated_registry)
+    cla = _attach_registry(cla, base_registry)
     return cla
     # pa_new = newfuncs(pa, funcs)
     # update_keys(pa_new, base_registry)

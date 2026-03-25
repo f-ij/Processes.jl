@@ -1,28 +1,17 @@
 
 export start, restart, quit, pause, syncclose, reinit
 
-function Base.run(p::Process, lifetime = nothing)
+function Base.run(p::Process, lifetime = nothing, reinit = nothing, inputs_and_overrides...)
     @assert isidle(p) "Process is already in use"
     @atomic p.shouldrun = true
-    if !p.paused
-        makecontext!(p)
+    if (isnothing(reinit) && p.paused) || reinit == true
+        makecontext!(p, inputs_and_overrides...)
     end
-
     @atomic p.paused = false
     
     if !isnothing(lifetime)
         p.lifetime = lifetime
     end
-
-     # ## Only run one start at a time to prevent hanging
-    # ## Some processes may hang if the main thread continues executing
-    # ## while the process is starting on a new thread
-    # if prevent_hanging
-    #     while !start_finished[]
-    #         yield()
-    #     end
-    # end
-    # start_finished[] = false
 
     makeloop!(p)
 end

@@ -15,7 +15,7 @@ give the array a size hint based on the lifetime and the number of updates per s
 
     globals = getglobals(contextview)
     lifetime = globals.lifetime
-    if lifetime isa Indefinite
+    if lifetime isa IndefiniteLifetime
         return sizehint!(array, 2^16)
     end
 
@@ -66,7 +66,7 @@ end
 
 function num_calls(contextview, lifetime, instance)
     multiplier = getmultiplier(contextview, instance)
-    if lifetime isa Indefinite
+    if lifetime isa IndefiniteLifetime
         return typemax(Int)
     end
     floor(Int, repeats(lifetime)*multiplier)
@@ -74,7 +74,7 @@ end
 
 function num_calls(contextview, lifetime, instance::SubPackage)
     multiplier = getmultiplier(contextview, instance)
-    if lifetime isa Indefinite
+    if lifetime isa IndefiniteLifetime
         return typemax(Int)
     end
     # @show multiplier

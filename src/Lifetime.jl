@@ -1,4 +1,5 @@
-export repeats
+export Repeat, Indefinite, Until, AtLeast, RepeatOrUntil, AtLeastAtMost
+export repeats, breakcondition
 
 abstract type Lifetime end
 
@@ -44,6 +45,25 @@ function breakcondition(u::Until{Vars}, process::P, context::C) where {Vars, P <
     end
 end
 
+struct AtLeast{Vars, F} <: IndefiniteLifetime
+    atleast::Int
+    cond::F
+end
+
+AtLeast(cond::Function, atleast::Int, Vars...) = AtLeast{Vars, typeof(cond)}(atleast, cond)
+
+@inline _atleast_reached(process::AbstractProcess, atleast::Int) = loopint(process) > atleast
+
+function breakcondition(al::AtLeast{Vars}, process::P, context::C) where {Vars, P <: AbstractProcess, C}
+    if !shouldrun(process)
+        return true
+    elseif !_atleast_reached(process, al.atleast)
+        return false
+    else
+        return al.cond(getindex(context, Vars...))
+    end
+end
+
 struct RepeatOrUntil{Vars, F} <: RepeatLifetime
     repeats::Int
     cond::F
@@ -61,6 +81,24 @@ function breakcondition(ru::RepeatOrUntil{Vars}, process::P, context::C) where {
     end
 end
 
+struct AtLeastAtMost{Vars, F} <: RepeatLifetime
+    atleast::Int
+    repeats::Int
+    cond::F
+end
+repeats(aam::AtLeastAtMost) = aam.repeats
+
+AtLeastAtMost(cond::Function, atleast::Int, atmost::Int, Vars...) = AtLeastAtMost{Vars, typeof(cond)}(atleast, atmost, cond)
+
+function breakcondition(aam::AtLeastAtMost{Vars}, process::P, context::C) where {Vars, P <: AbstractProcess, C}
+    if !shouldrun(process)
+        return true
+    elseif !_atleast_reached(process, aam.atleast)
+        return false
+    else
+        return aam.cond(getindex(context, Vars...))
+    end
+end
 
 
 

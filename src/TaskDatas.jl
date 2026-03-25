@@ -14,8 +14,14 @@ function TaskData(algo; overrides = tuple(), inputs = tuple(), lifetime = Indefi
     if algo isa Type # For convenience, allow passing types
         algo = algo()
     end
-    c = ProcessContext(algo; globals = (;lifetime, algo))
-    algo = update_keys(algo, getregistry(c))
+    algo = materialize(algo)
+    sharedcontexts, sharedvars = _resolve_materialized_links(algo)
+    c = _build_process_context(
+        getregistry(algo),
+        sharedcontexts,
+        sharedvars;
+        globals = (;lifetime, algo),
+    )
     # TaskData(algo, args, (;), overrides, lifetime, Ref(true))
     if !(inputs isa Tuple)
         # println("Making inputs a tuple")

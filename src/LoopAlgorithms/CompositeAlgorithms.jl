@@ -1,41 +1,29 @@
 #AlgoTracker
 export inc!, nextalgo!, intervals, interval
 export CompositeAlgorithm
-struct CompositeAlgorithm{T, Intervals, S , O, id} <: LoopAlgorithm
+struct CompositeAlgorithm{T, Intervals, S , O, R,id} <: LoopAlgorithm
     funcs::T
     states::S
     options::O
     inc::Base.RefValue{Int} # To track the intervals
+    reg::R
 end
 
 getmultipliers_from_specification_num(::Type{<:CompositeAlgorithm}, specification_num) = 1 ./(Float64.(specification_num))
 
 CompositeAlgorithm(args...) = parse_la_input(CompositeAlgorithm, args...)
 function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
-    return CompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), id}(funcs, states, options, Ref(1))
+    return CompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), Nothing, id}(funcs, states, options, Ref(1), nothing)
 end
-
-# function CompositeAlgorithm(funcs::NTuple{N, Any}, 
-#                             intervals::NTuple{N, Real} = ntuple(_ -> 1, N), 
-#                             options::Union{Share, Route, ProcessState, Type{<:ProcessState}}...; id = nothing, customname = Symbol()) where {N}
-#     (;functuple, registry, options) = setup(CompositeAlgorithm, funcs, intervals, options...)
-#     if all(x -> x == 1, intervals)
-#         intervals = RepeatOne() # Set to simpleAlgo
-#     end
-#     if any(x -> x isa CompositeAlgorithm, functuple) # Flatten nested composites
-#         functuple, intervals = flatten_comp_funcs(functuple, intervals)    
-#     end
-
-#     if intervals isa Tuple
-#         intervals = Int.(intervals)
-#     end
-#     CompositeAlgorithm{typeof(functuple), intervals, typeof(registry), typeof(options), nothing, customname}(functuple, Ref(1), registry, options)
-# end
 
 function newfuncs(ca::CompositeAlgorithm, funcs)
     # CompositeAlgorithm{typeof(funcs), intervals(ca), typeof(ca.registry), typeof(ca.options)}(funcs, ca.inc, ca.registry , ca.options)
     setfield(ca, :funcs, funcs)
 end
+
+@inline getregistry(ca::CompositeAlgorithm) = getfield(ca, :reg)
+@inline _attach_registry(ca::CompositeAlgorithm, registry::NameSpaceRegistry) = setfield(ca, :reg, registry)
+@inline ismaterialized(ca::CompositeAlgorithm) = !isnothing(getregistry(ca))
 
 subalgorithms(ca::CompositeAlgorithm) = ca.funcs
 subalgotypes(ca::CompositeAlgorithm{FT}) where FT = FT.parameters
@@ -44,11 +32,11 @@ subalgotypes(caT::Type{<:CompositeAlgorithm{FT}}) where FT = FT.parameters
 getinc(ca::CompositeAlgorithm) = ca.inc
 getoptions(ca::CompositeAlgorithm) = ca.options
 
-getid(ca::Union{CompositeAlgorithm{T,I,NSR,O,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,id}}}) where {T,I,NSR,O,id} = id
-setid(ca::CA, id = uuid4()) where CA = setparameter(ca, 5, id)
+getid(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id}}}) where {T,I,NSR,O,R,id} = id
+setid(ca::CA, id = uuid4()) where CA = setparameter(ca, 6, id)
 
 # setname(ca::CA, name::Symbol) where CA <: CompositeAlgorithm = setparameter(ca, 6, name)
-# getname(ca::Union{CompositeAlgorithm{T,I,NSR,O,id,CustomName}, Type{<:CompositeAlgorithm{T,I,NSR,O,id,CustomName}}}) where {T,I,NSR,O,id,CustomName} = CustomName
+# getname(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}}}) where {T,I,NSR,O,R,id,CustomName} = CustomName
 
 interval(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, idx) where {T,I} = I[idx]
 
@@ -91,14 +79,14 @@ end
 # intervals(caT::Type{<:CompositeAlgorithm}) = caT.parameters[2]
 get_intervals(ca) = intervals(ca)
 
-hasid(ca::Union{CompositeAlgorithm{T,I,NSR,O,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,id}}}) where {T,I,NSR,O,id} = !isnothing(id)
-id(ca::Union{CompositeAlgorithm{T,I,NSR,O,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,id}}}) where {T,I,NSR,O,id} = id
+hasid(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id}}}) where {T,I,NSR,O,R,id} = !isnothing(id)
+id(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id}}}) where {T,I,NSR,O,R,id} = id
 
 
 
 # getnames(ca::CompositeAlgorithm{T, I, N}) where {T, I, N} = N
 Base.length(ca::CompositeAlgorithm) = length(ca.funcs)
-Base.eachindex(ca::CompositeAlgorithm) = Base.eachindex(ca.funcs)
+Base.eachindex(ca::CompositeAlgorithm) = eachindex(ca.funcs)
 getalgo(ca::CompositeAlgorithm, idx) = ca.funcs[idx]
 getalgos(ca::CompositeAlgorithm) = ca.funcs
 hasflag(ca::CompositeAlgorithm, flag) = flag in ca.flags

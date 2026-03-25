@@ -3,11 +3,12 @@ export Routine
 """
 Struct to create routines
 """
-struct Routine{T, Repeats, S, MV, O, id} <: LoopAlgorithm
+struct Routine{T, Repeats, S, MV, O, R, id} <: LoopAlgorithm
     funcs::T     
     states::S
     options::O
     resume_idxs::MV
+    reg::R
 end
 
 function Routine(args...)
@@ -16,7 +17,7 @@ end
 
 function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple, repeats; id = nothing) where F
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
-    return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), id}(funcs, states, options, resume_idxs)
+    return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), Nothing, id}(funcs, states, options, resume_idxs, nothing)
 end
 
 # function Routine(funcs::NTuple{N,Any},
@@ -35,6 +36,10 @@ end
 function newfuncs(r::Routine, funcs)
     setfield(r, :funcs, funcs)
 end
+
+@inline getregistry(r::Routine) = getfield(r, :reg)
+@inline _attach_registry(r::Routine, registry::NameSpaceRegistry) = setfield(r, :reg, registry)
+@inline ismaterialized(r::Routine) = !isnothing(getregistry(r))
 
 getalgos(r::Routine) = r.funcs
 @inline getalgo(r::Routine, idx) = r.funcs[idx]
@@ -70,7 +75,7 @@ end
 
 multipliers(r::Routine) = repeats(r)
 multipliers(rT::Type{<:Routine}) = repeats(rT)
-getid(r::Union{Routine{T,R,MV,NSR,O,id},Type{<:Routine{T,R,MV,NSR,O,id}}}) where {T,R,MV,NSR,O,id} = id
+getid(r::Union{Routine{T,R,S,MV,O,Reg,id},Type{<:Routine{T,R,S,MV,O,Reg,id}}}) where {T,R,S,MV,O,Reg,id} = id
 
 @inline repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}) where {F,R} = R
 repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, idx::Int) where {F,R} = R[idx]

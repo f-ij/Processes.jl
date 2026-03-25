@@ -70,26 +70,27 @@ taskdata(ip::InlineProcess) = ip.taskdata
     return true
 end
 
-@inline function Base.run(p::InlineProcess, repeat=nothing)
+@inline function Base.run(p::InlineProcess, inputs_overrides...; threaded=nothing, repeats=nothing, lifetime=nothing)
     algo = p.taskdata.func
     context = p.context
     p.loopidx = 1
     runtime_context = @inline merge_into_globals(context, (; process=p))
-    loopdispatch = isnothing(repeat) ? lifetime(p) : _inline_process_lifetime(algo, repeat, nothing)
+    # loopdispatch = isnothing(repeat) ? lifetime(p) : _inline_process_lifetime(algo, repeat, nothing)
+    inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
+    lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
-    # @inline processloop(p, algo, runtime_context, (@inline repeats(p)))
 
-    if isthreaded(p)
-        return Threads.@spawn generated_processloop(p, algo, runtime_context, loopdispatch)
-    elseif isasync(p)
-        return @async generated_processloop(p, algo, runtime_context, loopdispatch)
-    else
-        return @inline generated_processloop(p, algo, runtime_context, loopdispatch)
+    if (isnothing(threaded) && isthreaded(p)) || threaded === true
+        return Threads.@spawn generated_processloop(p, algo, runtime_context, lifetime)
+    elseif (isnothing(threaded) && isasync(p)) || threaded === :async
+        return @async generated_processloop(p, algo, runtime_context, lifetime)
+    else 
+        return @inline generated_processloop(p, algo, runtime_context, lifetime)
     end
 end
 
-@inline function init_and_run(p::InlineProcess, inputs...)
-    @inline makecontext!(p)
+@inline function init_and_run(p::InlineProcess, inputs_overrides...)
+    @inline makecontext!(p, inputs_overrides...)
     return run(p)
 end
 

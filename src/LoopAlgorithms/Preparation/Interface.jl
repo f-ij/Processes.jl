@@ -1,0 +1,1 @@
+@inline ismaterialized(::LoopAlgorithm) = false

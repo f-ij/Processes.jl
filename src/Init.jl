@@ -37,31 +37,42 @@ function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), override
     return overridden_context
 end
 
-@inline function initcontext(p::AbstractProcess)
-    td = taskdata(p)
-    c = initcontext(td)
-    @DebugMode "Prepared context is $c"
-    return c
-end
-
 """
 Init context from TaskData
 """
-function initcontext(td::TD) where {TD<:TaskData}
+function initcontext(td::TD, new_inputs_overrides::Union{NamedInput, NamedOverride}...; lifetime=nothing) where {TD<:TaskData}
     lifetime = getlifetime(td)
     overrides = getoverrides(td)
     inputs = getinputs(td)
     empty_c = getcontext(td)
-    
-    return initcontext(td.func, empty_c, overrides..., inputs...; lifetime = lifetime)
+
+    if isempty(new_inputs_overrides)
+        return initcontext(getalgo(td), empty_c, overrides..., inputs...; lifetime = lifetime)
+    else # Override inputs and overrides with new ones 
+        # TODO: Do we set the new inputs and overrides to the TaskData? Or do we just use them for this context? 
+        # For now, just use them for this context
+        return initcontext(getalgo(td), empty_c, new_inputs_overrides...; lifetime = lifetime)
+    end
+
 end
 
-function makecontext(p::AbstractProcess)
-    initcontext(taskdata(p))
-end
+# """
+# """
+# @inline function initcontext(p::AbstractProcess)
+#     td = taskdata(p)
+#     c = initcontext(td)
+#     @DebugMode "Prepared context is $c"
+#     return c
+# end
 
-function makecontext!(p::AbstractProcess)
-    c = makecontext(p)
+function makecontext(p::AbstractProcess, inputs_overrides...; lifetime=nothing)
+    initcontext(taskdata(p), inputs_overrides...; lifetime=lifetime)
+end
+"""
+From a process and its taskdata, make a context and set it to the process
+"""
+function makecontext!(p::AbstractProcess, inputs_overrides...; lifetime=nothing)
+    c = makecontext(p, inputs_overrides...; lifetime)
     context(p,c)
 end
 

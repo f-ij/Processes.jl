@@ -6,7 +6,7 @@ using Processes
 
     function Processes.init(::InlineAccumulator, context)
         (; start) = context
-        return (; value = start)
+        return (; value = start, delta = 0)
     end
 
     function Processes.step!(::InlineAccumulator, context)
@@ -22,5 +22,7 @@ using Processes
 
     ctx = run(ip)
 
+    @test ctx[InlineAccumulator].delta == 2
+    @test ip.loopidx == 5
     @test ctx[InlineAccumulator].value == 11
 end
