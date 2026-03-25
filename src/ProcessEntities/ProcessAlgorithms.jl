@@ -3,7 +3,7 @@ Macro to define a simple ProcessAlgorithm from a function definition.
     This creates a struct of the function name subtype of ProcessAlgorithm,
     with an implicit step! method that calls the function with the provided arguments.    
 """
-macro ProcessAlgorithm(ex)
+macro ProcessAlgorithmOld(ex)
     F, args, body = nothing, nothing, nothing
     @capture(ex, function F_(args__) body_ end )
     if isnothing(F)

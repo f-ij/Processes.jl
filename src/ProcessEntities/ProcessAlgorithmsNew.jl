@@ -157,7 +157,7 @@ end
 provided through the process context or through the standalone bootstrap call
 `MyAlgo(...; @init((; ...)))`.
 """
-macro ProcessAlgorithmNew(ex)
+macro ProcessAlgorithm(ex)
     ex isa Expr && ex.head == :function || error("@ProcessAlgorithmNew expects a function definition")
 
     signature = _pa_new_parse_signature(ex.args[1])
@@ -235,8 +235,8 @@ macro ProcessAlgorithmNew(ex)
         $init_def
         $step_def
     end
-    println(q)
+    # println(q)
     return esc(q)
 end
 
-export @ProcessAlgorithmNew, @init
+export @ProcessAlgorithm, @init
