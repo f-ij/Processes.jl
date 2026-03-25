@@ -1,13 +1,15 @@
 include("_env.jl")
 
-Processes.@ProcessAlgorithmNew function CopyArray(a::Vector, @managed(buffer = type[]); @init((;type = Float64)))
+Processes.@ProcessAlgorithmNew function CopyArray(a, @managed(buffer = type[]); @init((;type = Float64)))
     resize!(buffer, size(a)...)
     buffer .= a
     return 
 end
 
-Processes.@ProcessAlgorithmNew function ProvideArray(@managed(array = rand(10,10)); @init (;type = Float64))
-    return 
+Processes.@ProcessAlgorithmNew function ProvideArray(@managed(array = type[]); @init (;type = Float64))
+    resize!(array, 1000)
+    array .= rand(1000)
+    return
 end
 
 c1 = Unique(CopyArray())
