@@ -8,14 +8,14 @@ This doesn't provide the multitasking features of Process, but is faster to rest
 mutable struct InlineProcess{TD,ContextType, Lt,Mode} <: AbstractProcess
     const id::UUID
     const taskdata::TD
-    lastcontext::ContextType
+    context::ContextType
     consumed::Bool
     loopidx::UInt
     lifetime::Lt
     starttime::Union{Nothing,Float64,UInt64}
     endtime::Union{Nothing,Float64,UInt64}
 end
-#TODO Improve lastcontext semantics
+#TODO Improve context semantics
 contexttype(::Union{InlineProcess{TD,ContextType}, Type{<:InlineProcess{TD,ContextType}}}) where {TD,ContextType} = ContextType
 
 @inline function _inline_process_mode(threaded)
@@ -60,7 +60,6 @@ end
 @inline shouldrun(ip::InlineProcess) = true
 @inline lifetime(ip::InlineProcess) = ip.lifetime
 @inline getcontext(ip::InlineProcess) = ip.context::contexttype(ip)
-@inline lastcontext(ip::InlineProcess) = ip.lastcontext::contexttype(ip)
 
 @inline set_starttime!(ip::InlineProcess) = (ip.starttime = time_ns())
 @inline set_endtime!(ip::InlineProcess) = (ip.endtime = time_ns())
@@ -69,9 +68,10 @@ taskdata(ip::InlineProcess) = ip.taskdata
 @inline context(ip::InlineProcess, c) = (ip.context = c)
 @inline context(ip::InlineProcess) = ip.context::contexttype(ip)
 
-@inline function reset!(p::InlineProcess)
+@inline function reset!(p::InlineProcess, inputs_overrides...)
     p.loopidx = 1
-    p.lastcontext = makecontext(p)
+    p.context = makecontext(p, inputs_overrides...)
+    # TODO: Probably remove consumed flag
     p.consumed = false
     return true
 end
@@ -80,13 +80,7 @@ end
     algo = p.taskdata.func
 
     if isnothing(context)
-        if p.consumed
-             context = @inline makecontext(p, inputs_overrides...; lifetime)
-        else
-            context = @inline lastcontext(p)
-        end
-    elseif context == :reuse
-        context = @inline lastcontext(p)
+        context = context(p)
     else
         @assert context isa contexttype(p) "Wrong context shape for this process\n Context is of type $(typeof(context)), but expected $(contexttype(p))."
     end

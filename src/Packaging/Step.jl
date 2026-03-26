@@ -29,7 +29,7 @@ Running a composite algorithm allows for static unrolling and inlining of all su
     recursive calls
 """
 @generated function step!(pack::PackagedAlgo{T, Is}, context::C) where {T, Is, C<:AbstractContext}
-    return step!_expr(pack, C, :pack)
+    return step!_expr(pack, C, :pack, :stable)
 end
 
 # Base.@constprop :aggressive @inline function step!(pa::PackagedAlgo{T, Is}, context::C) where {T,Is,C<:AbstractContext}

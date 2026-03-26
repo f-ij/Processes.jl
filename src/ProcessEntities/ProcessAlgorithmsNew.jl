@@ -134,7 +134,7 @@ function _pa_bootstrap_init_assignment(field, initsym)
     getexpr = field.required ? _pa_required_get_expr(initsym, field.name) : _pa_local_get_expr(initsym, field.name, field.default)
     return _pa_typed_assignment(field.name, field.typeexpr, getexpr)
 end
-
+# TODO: MAKE IT EASIER TO PASS THROUGH INPUTS TO step!!! Currently we have to re-declare all inputs as init inputs and then pull them into an @managed state
 """
 Function-first ProcessAlgorithm definition with explicit managed runtime state and init-only
 inputs.

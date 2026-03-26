@@ -1,4 +1,4 @@
-function step!_expr(ca::Type{<:PackagedAlgo}, context::Type{C}, name::Symbol) where {C<:AbstractContext}
+function step!_expr(ca::Type{<:PackagedAlgo}, context::Type{C}, name::Symbol, stability::Symbol) where {C<:AbstractContext}
     # This method does not execute the algorithm directly. Instead, it *builds an Expr*
     # representing the body of a `step!` method specialized to:
     # - the CompositeAlgorithm type `ca`
@@ -22,7 +22,7 @@ function step!_expr(ca::Type{<:PackagedAlgo}, context::Type{C}, name::Symbol) wh
         fti = ft.parameters[i]
         if interval == 1
             # Generated block: the child algorithm's `step!` body (always executed).
-            push!(exprs, step!_expr(fti, C, local_name))
+            push!(exprs, step!_expr(fti, C, local_name, stability))
         else
             # Generated block:
             #   if this_inc % interval == 0
@@ -31,7 +31,7 @@ function step!_expr(ca::Type{<:PackagedAlgo}, context::Type{C}, name::Symbol) wh
             push!(exprs, quote
                 # Only run this child every `interval` composite steps.
                 if $this_inc % $(interval) == 0
-                    $(step!_expr(fti, C, local_name))
+                    $(step!_expr(fti, C, local_name, stability))
                 end
             end)
         end

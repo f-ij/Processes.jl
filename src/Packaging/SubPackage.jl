@@ -50,7 +50,7 @@ registry_entrytype(::Type{<:SubPackage}) = PackagedAlgo
 @inline function init(ps::SubPackage, context::C) where C
     viewed = @inline view(context, ps)
     returnvals = @inline init(getalgo(ps), viewed)
-    @inline initmerge(viewed, returnvals)
+    @inline unstablemerge(viewed, returnvals)
 end
 
 @inline function step!(ps::SP, context::C) where {SP<:SubPackage, C}
@@ -65,10 +65,19 @@ end
     @inline merge(viewed, returnvals)
 end
 
-@inline step!_expr(ps::Type{<:SubPackage}, context::Type{C}, funcname::Symbol) where {C<:AbstractContext} = quote
-    $(LineNumberNode(@__LINE__, @__FILE__))
-    viewed = @inline view(context, $funcname)
+@inline function step!_expr(ps::Type{<:SubPackage}, context::Type{C}, funcname::Symbol, stability::Symbol) where {C<:AbstractContext}
+    merge_expr = if stability === :stable
+        :(context = @inline stablemerge(viewed, returnvals))
+    elseif stability === :unstable
+        :(context = @inline unstablemerge(viewed, returnvals))
+    else
+        error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
+    end
 
-    returnvals = @inline step!(getalgo($funcname), viewed)
-    context = @inline merge(viewed, returnvals)
+    return quote
+        $(LineNumberNode(@__LINE__, @__FILE__))
+        viewed = @inline view(context, $funcname)
+        returnvals = @inline step!(getalgo($funcname), viewed)
+        $merge_expr
+    end
 end
