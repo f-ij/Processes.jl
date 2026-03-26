@@ -1,7 +1,7 @@
 """
 Generated expression form of the composite step! with a caller-provided name binding.
 """
-function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symbol) where {C<:AbstractContext}
+function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symbol, stability::Symbol) where {C<:AbstractContext}
     # This method does not execute the algorithm directly. Instead, it *builds an Expr*
     # representing the body of a `step!` method specialized to:
     # - the CompositeAlgorithm type `ca`
@@ -23,7 +23,7 @@ function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symb
         this_functype = getalgotype(ca, i)
         if interval == 1
             # Generated block: the child algorithm's `step!` body (always executed).
-            push!(exprs, step!_expr(this_functype, C, local_name))
+            push!(exprs, step!_expr(this_functype, C, local_name, stability))
         else
             # Generated block:
             #   if this_inc % interval == 0
@@ -32,7 +32,7 @@ function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symb
             push!(exprs, quote
                 # Only run this child every `interval` composite steps.
                 if $this_inc % $(interval) == 0
-                    $(step!_expr(this_functype, C, local_name))
+                    $(step!_expr(this_functype, C, local_name, stability))
                 end
             end)
         end
@@ -48,7 +48,7 @@ end
 """
 Generated expression form of the routine step! with a caller-provided name binding.
 """
-function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) where {C<:AbstractContext}
+function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol, stability::Symbol) where {C<:AbstractContext}
     # Builds an Expr representing the body of `step!` for a Routine:
     # each child algorithm runs `reps[i]` times before moving to the next.
 
@@ -76,7 +76,7 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol) wh
                     return context
                 end
                 # Inline the child's `step!` body, specialized to the child's algorithm type and the context type.
-                $(step!_expr(this_functype, C, local_name))
+                $(step!_expr(this_functype, C, local_name, stability))
                 
                 # Assumes process is defined in the top level
                 @inline tick!(process) # Tick counter
@@ -93,7 +93,7 @@ end
 """
 Fallback expression form for non-CLA algorithms.
 """
-function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol) where {T, C<:AbstractContext}
+function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, ::Symbol) where {T, C<:AbstractContext}
     # Generated single line:
     #   context = step!(funcname, context)
     # This is the non-generated fallback that just dispatches to an existing runtime `step!`.
