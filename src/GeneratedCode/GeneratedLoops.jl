@@ -1,62 +1,33 @@
 """
 Generated process loop that inlines the step! expression when available.
 """
-
-# Previous monolithic repeat-lifetime implementation kept for reference while the
-# bootstrap step and steady-state loop are split for better specialization.
-
-"""
-Execute exactly one generated step for repeat lifetimes.
-
-This grows the context once, after which the steady-state loop specializes on the
-post-bootstrap context type.
-"""
-@inline @generated function generated_firststep(process::AbstractProcess, algo::F, context::C, ::RL) where {F, C, RL <: RepeatLifetime}
+@inline @generated function generated_processloop(process::AbstractProcess, algo::F, context::C, r::RL) where {F, C, RL <: RepeatLifetime}
     algo_name = gensym(:algo)
-    step_expr = step!_expr(F, C, algo_name, :unstable)
+    first_step_expr = step!_expr(F, C, algo_name, :unstable)
+    for_step_expr = step!_expr(F, C, algo_name, :stable)
 
     return quote
+        # First we do ONE step which is allowed to change the context,
+        # After this we're not allowed to
+        @inline before_while(process)
         $(algo_name) = algo
-        $(step_expr)
+        $(first_step_expr)
         @inline inc!(process)
         @inline tick!(process)
-        return context
-    end
-end
 
-"""
-Run the remaining iterations for a repeat lifetime.
-"""
-@inline @generated function generated_forloop(process::AbstractProcess, algo::F, context::C, r::RL, start_idx::UInt) where {F, C, RL <: RepeatLifetime}
-    algo_name = gensym(:algo)
-    step_expr = step!_expr(F, C, algo_name, :stable)
-
-    return quote
-        for _ in start_idx:repeats(r)
+        first_step_idx = @inline loopidx(process)
+        for _ in first_step_idx:repeats(r)
             $(algo_name) = algo
-            $(step_expr)
-            @inline tick!(process)
+            $(for_step_expr)
             @inline inc!(process)
+            @inline tick!(process)
             if @inline breakcondition(r, process, context)
                 break
             end
         end
-        return context
+        return @inline after_while(process, algo, context)
     end
-end
-
-@inline function generated_processloop(process::AbstractProcess, algo::F, context::C, r::RL) where {F, C, RL <: RepeatLifetime}
-    @inline before_while(process)
-
-    grown_context = @inline generated_firststep(process, algo, context, r)
-    if @inline breakcondition(r, process, grown_context)
-        return @inline after_while(process, algo, grown_context)
-    end
-
-    start_idx = @inline loopidx(process)
-    final_context = @inline generated_forloop(process, algo, grown_context, r, start_idx)
-
-    return @inline after_while(process, algo, final_context)
+    
 end
 
 
