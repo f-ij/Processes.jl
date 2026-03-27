@@ -14,8 +14,8 @@ function TaskData(algo; overrides = tuple(), inputs = tuple(), lifetime = Indefi
     if algo isa Type # For convenience, allow passing types
         algo = algo()
     end
-    algo = materialize(algo)
-    sharedcontexts, sharedvars = _resolve_materialized_links(algo)
+    algo = resolve(algo)
+    sharedcontexts, sharedvars = _resolve_options(algo)
     c = _build_process_context(
         getregistry(algo),
         sharedcontexts,

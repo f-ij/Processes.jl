@@ -26,8 +26,8 @@ function resolve_process_inputs_overrides(func, inputs_overrides...)
     empty_context = ProcessContext(func)
     reg = getregistry(empty_context)
 
-    inputs = @inline filter_args(Input, inputs_overrides)
-    overrides = @inline filter_args(Override, inputs_overrides)
+    inputs = @inline filter_by_type(Input, inputs_overrides)
+    overrides = @inline filter_by_type(Override, inputs_overrides)
 
     named_inputs = to_named(reg, inputs...)
     named_overrides = to_named(reg, overrides...)

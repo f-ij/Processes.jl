@@ -68,8 +68,8 @@ function _build_process_context(registry, sharedcontexts, sharedvars; globals = 
 end
 
 function ProcessContext(la::LoopAlgorithm; globals = (;))
-    la = materialize(la)
-    sharedcontexts, sharedvars = _resolve_materialized_links(la)
+    la = resolve(la)
+    sharedcontexts, sharedvars = _resolve_options(la)
     return _build_process_context(
         getregistry(la),
         sharedcontexts,

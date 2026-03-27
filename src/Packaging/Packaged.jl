@@ -72,24 +72,22 @@ end
 @inline interval(ca::Union{PackagedAlgo{T,I},Type{<:PackagedAlgo{T,I}}}, i) where {T,I} = intervals(ca)[i]
 @inline getalgotype(::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}, idx) where {T,I} = T.parameters[idx]
 @inline numalgos(ca::Union{PackagedAlgo{T,I}, Type{<:PackagedAlgo{T,I}}}) where {T,I} = length(T.parameters)
-# @inline match_id(::Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
-
 @inline getname(::Union{PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}, Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}}) where {T,I,NSR,id,CustomName,ContextKey} = CustomName
 @inline getmultiplier(ca::PackagedAlgo, subpackage::SubPackage) = static_get_multiplier(getregistry(ca), subpackage)
-
+@inline getinc(ca::PackagedAlgo) = getfield(ca, :inc)
 @inline getregistry(ca::PackagedAlgo) = getfield(ca, :simplereg)
 #### FOR REGISTRY ###
 @inline match_by(::Union{Type{<:PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}, PackagedAlgo{T,I,NSR,id,CustomName,ContextKey}}) where {T,I,NSR,id,CustomName,ContextKey} = id
 @inline registry_entrytype(::Type{<:PackagedAlgo}) = PackagedAlgo
 
-@inline reset!(ca::PackagedAlgo) = (ca.inc[] = 1; reset!.(ca.funcs))
+@inline reset!(ca::PackagedAlgo) = (ca.inc[] = 1; reset!.(getalgos(ca)))
 
 get_processentities(ca::PackagedAlgo) = getentries(getregistry(ca))
 
 @inline inc(ca::PackagedAlgo) = ca.inc[]
 @inline @generated function inc!(ca::PackagedAlgo)
     _lcm = lcm(intervals(ca)...)
-    return :(ca.inc[] = mod1(ca.inc[] + 1, $_lcm))
+    return :(getinc(ca)[] = mod1(getinc(ca)[] + 1, $_lcm))
 end
 ########################################
 ####### Identifiable Interface  ########
@@ -98,14 +96,14 @@ end
 @inline getkey(sa::Union{<:PackagedAlgo{T, I, NSR, id, CustomName, ContextKey}, Type{<:PackagedAlgo{T, I, NSR, id, CustomName, ContextKey}}}) where {T,I,NSR,id,CustomName,ContextKey} = ContextKey
 @inline setkey(sa::PackagedAlgo, newkey) = setparameter(sa, 6, newkey)
 @inline getalgo(sa::PackagedAlgo{F}) where {F} = error("Cannot get singular algo from a PackagedAlgo. Use `getalgos` instead.")
-@inline getalgos(ca::PackagedAlgo) = ca.funcs
+@inline getalgos(ca::PackagedAlgo) = getfield(ca, :funcs)
 @inline getalgo(sa::PackagedAlgo{F}, i) where {F} = getalgos(sa)[i]
 
 @inline setid(sa::PackagedAlgo, newid) = setparameter(sa, 4, newid isa UUID ? SimpleId(newid) : newid)
 
 function setcontextkey(package::PackagedAlgo, key::Symbol)
     # newfuncs = map(func -> setcontextkey(func, key), package.funcs)
-    newfuncs = setcontextkey.(package.funcs, key)
+    newfuncs = setcontextkey.(getalgos(package), key)
     newreg = replace_all_keys(getregistry(package), key)
 
     pack = setfield(package, :funcs, newfuncs)

@@ -1,1 +1,1 @@
-@inline ismaterialized(::LoopAlgorithm) = false
+@inline isresolved(::LoopAlgorithm) = false

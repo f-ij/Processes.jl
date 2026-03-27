@@ -202,6 +202,59 @@ end
     end
 end
 
+"""
+Like `typefilter`, but if an element is a tuple it filters one level deeper inside that
+tuple by type as well.
+
+Top-level matches are kept as-is. Inner tuple matches are returned grouped in their
+original outer slot. Empty inner results are dropped.
+"""
+@inline inner_typefilter(::Type{T}, elements) where {T} = _inner_typefilter(T, elements)
+
+@inline _inner_typefilter(::Type{T}, ::Tuple{}) where {T} = ()
+
+@inline function _inner_typefilter(::Type{T}, elements::Tuple) where {T}
+    first_el = gethead(elements)
+    tail_filtered = _inner_typefilter(T, gettail(elements))
+
+    if first_el isa T
+        return (first_el, tail_filtered...)
+    elseif first_el isa Tuple
+        inner_filtered = typefilter(T, first_el)
+        if isempty(inner_filtered)
+            return tail_filtered
+        else
+            return (inner_filtered, tail_filtered...)
+        end
+    else
+        return tail_filtered
+    end
+end
+
+@inline Base.keys(::Type{<:NamedTuple{Names}}) where {Names} = Names
+
+Base.@constprop :aggressive @generated function _inner_typefilter(::Type{T}, elements::NT) where {T, NT<:NamedTuple}
+    names = fieldnames(NT)
+    field_exprs = Any[]
+
+    for name in names
+        FT = fieldtype(NT, name)
+        value_expr = if FT <: T
+            :(getproperty(elements, $(QuoteNode(name))))
+        elseif FT <: Tuple
+            inner_names = FT.parameters
+            kept = [:(getfield(getproperty(elements, $(QuoteNode(name))), $i)) for (i, innerT) in enumerate(inner_names) if innerT <: T]
+            isempty(kept) ? nothing : Expr(:tuple, kept...)
+        else
+            nothing
+        end
+
+        isnothing(value_expr) || push!(field_exprs, Expr(:kw, name, value_expr))
+    end
+
+    return Expr(:tuple, Expr(:parameters, field_exprs...))
+end
+
 
 
 """

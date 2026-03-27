@@ -1,20 +1,23 @@
 export SimpleAlgo, CompositeAlgorithm, Routine
-export getkey, step!, init, getmultiplier, getoptions, get_shares, get_routes
+export getkey, step!, init, getmultiplier, getoptions, setoptions, get_shares, get_routes
 
 getmultiplier(cla::LoopAlgorithm, obj) = getmultiplier(getregistry(cla), obj)
 getkey(cla::LoopAlgorithm, obj) = getkey(getregistry(cla), obj)
 getoptions(cla::LoopAlgorithm) = getfield(cla, :options)
-
-get_shares(cla::LoopAlgorithm) = @inline filter_args(Share, getoptions(cla))
-get_routes(cla::LoopAlgorithm) = @inline filter_args(Route, getoptions(cla)) 
+get_shares(cla::LoopAlgorithm) = @inline filter_by_type(Share, getoptions(cla))
+get_routes(cla::LoopAlgorithm) = @inline filter_by_type(Route, getoptions(cla))
 get_states(cla::LoopAlgorithm) = getfield(cla, :states)
 
-getoptions(la::LoopAlgorithm, T::Type{O}) where O = @inline filter_args(O, getoptions(la))
+getoptions(la::LoopAlgorithm, T::Type{O}) where O = @inline filter_by_type(O, getoptions(la))
+setoptions(la::LoopAlgorithm, options) = error("setoptions not implemented for $(typeof(la))")
 
 iscomposite(::Any) = false
 iscomposite(::Type{<:LoopAlgorithm}) = false
 iscomposite(::Type{<:CompositeAlgorithm}) = true
 iscomposite(la::LoopAlgorithm) = iscomposite(typeof(la))
+
+statetypes(::Type{LoopAlgorithm}) = error("statetypes not implemented for LoopAlgorithm, got $(la)")
+algotypes(::Type{LoopAlgorithm}) = error("algotypes not implemented for LoopAlgorithm, got $(la)")
 
 # Reset needs to be implemented
 reset!(a::Any) = a
@@ -29,4 +32,38 @@ end
 
 @inline function Base.getindex(cla::LoopAlgorithm, idx)
     getalgos(cla)[idx]
+end
+
+@inline @generated function Base.keys(ca::LA) where LA <: LoopAlgorithm
+    Fs = algotypes(ca)
+    States = statetypes(ca)
+    f_names = getkey.(Fs)
+    f_names = filter(s -> s != Symbol(""), f_names)
+    f_names = QuoteNode.(f_names)
+
+    s_names = getkey.(States)
+    s_names = filter(s -> s != Symbol(""), s_names)
+    s_names = QuoteNode.(s_names)
+    return quote
+        $(LineNumberNode(@__LINE__, @__FILE__))
+        ($(f_names...), $(s_names...))
+    end
+end
+
+Base.@constprop :aggressive @inline Base.getproperty(ca::LoopAlgorithm, name::Symbol) = getproperty(ca, Val(name))
+"""
+Get an algo by name
+"""
+@inline @generated function Base.getproperty(ca::LoopAlgorithm, ::Val{name}) where {name}
+    Fs = algotypes(ca)
+    States = statetypes(ca)
+    fidx = findfirst(==(name), getkey.(Fs))
+    if !isnothing(fidx)
+        return :(getindex(getalgos(ca), $fidx))
+    end
+    sidx = findfirst(==(name), getkey.(States))
+    if !isnothing(sidx)
+        return :(getindex(get_states(ca), $sidx))
+    end
+    return :(error("No algorithm or state with name $(name) found in LoopAlgorithm $(ca)"))
 end

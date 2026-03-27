@@ -37,12 +37,18 @@ function newfuncs(r::Routine, funcs)
     setfield(r, :funcs, funcs)
 end
 
+function setoptions(r::Routine{T, Repeats, S, MV, O, R, id}, options) where {T, Repeats, S, MV, O, R, id}
+    Routine{T, Repeats, S, MV, typeof(options), R, id}(getalgos(r), get_states(r), options, get_resume_idxs(r), getregistry(r))
+end
+
 @inline getregistry(r::Routine) = getfield(r, :reg)
 @inline _attach_registry(r::Routine, registry::NameSpaceRegistry) = setfield(r, :reg, registry)
-@inline ismaterialized(r::Routine) = !isnothing(getregistry(r))
+@inline isresolved(r::Routine) = !isnothing(getregistry(r))
 
-getalgos(r::Routine) = r.funcs
-@inline getalgo(r::Routine, idx) = r.funcs[idx]
+@inline getalgos(r::Routine) = getfield(r, :funcs)
+@inline getalgo(r::Routine, idx) = getfield(r, :funcs)[idx]
+@inline getoptions(r::Routine) = getfield(r, :options)
+@inline subalgorithms(r::Routine) = getfield(r, :funcs)
 
 function Base.getindex(r::Routine, idx)
    getalgos(r)[idx]
@@ -50,20 +56,20 @@ end
 
 
 getmultipliers_from_specification_num(::Type{<:Routine}, specification_num) = Float64.(specification_num)
-get_resume_idxs(r::Routine) = r.resume_idxs
+get_resume_idxs(r::Routine) = getfield(r, :resume_idxs)
+resume_idx(r::Routine, idx) = getfield(r, :resume_idxs)[idx]
 resumable(r::Routine) = true
 
-# subalgorithms(r::Routine) = r.funcs
 # TODO: This is only used in treesctructure, try to deprecate
 subalgotypes(r::Routine{FT}) where FT = FT.parameters
 subalgotypes(rT::Type{<:Routine{FT}}) where FT = FT.parameters
 
 # getnames(r::Routine{T, R, NT, N}) where {T, R, NT, N} = N
-Base.length(r::Routine) = length(r.funcs)
+Base.length(r::Routine) = length(getfield(r, :funcs))
 
 function reset!(r::Routine)
-    r.resume_idxs .= 1
-    reset!.(r.funcs)
+    getfield(r, :resume_idxs) .= 1
+    reset!.(getalgos(r))
 end
 #############################################
 ################ Type Info ###############
@@ -84,13 +90,13 @@ repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, ::Val{idx}) where {F,R,idx
 
 
 function resume_idxs(r::Routine)
-    r.resume_idxs
+    getfield(r, :resume_idxs)
 end
 
 function set_resume_point!(r::Routine, idx::Int, loopidx::Int)
-    r.resume_idxs[idx] = loopidx
+    getfield(r, :resume_idxs)[idx] = loopidx
 end
 
 @inline function get_resume_point(r::Routine, idx::Int)
-    r.resume_idxs[idx]
+    getfield(r, :resume_idxs)[idx]
 end

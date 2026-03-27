@@ -22,7 +22,7 @@ end
 
 function Base.show(io::IO, ca::CompositeAlgorithm)
     println(io, "CompositeAlgorithm")
-    funcs = ca.funcs
+    funcs = getalgos(ca)
     if isempty(funcs)
         print(io, "└── (empty)")
         return
@@ -44,7 +44,7 @@ function Base.show(io::IO, ca::CompositeAlgorithm)
 end
 
 function Base.show(io::IO, sa::SimpleAlgo)
-    funcs = sa.funcs
+    funcs = getalgos(sa)
     if isempty(funcs)
         print(io, "SimpleAlgo (empty)")
         return
@@ -67,7 +67,7 @@ end
 
 function Base.show(io::IO, r::Routine)
     println(io, "Routine")
-    funcs = r.funcs
+    funcs = getalgos(r)
     if isempty(funcs)
         print(io, "└── (empty)")
         return
@@ -123,7 +123,7 @@ function _composite_algo_type_labels(types::Core.SimpleVector)
 end
 
 function Base.summary(io::IO, ca::CompositeAlgorithm)
-    funcs = ca.funcs
+    funcs = getalgos(ca)
     if isempty(funcs)
         print(io, "CompositeAlgorithm (empty)")
         return
@@ -158,7 +158,7 @@ function Base.show(io::IO, caT::Type{<:CompositeAlgorithm})
 end
 
 function Base.summary(io::IO, sa::SimpleAlgo)
-    funcs = sa.funcs
+    funcs = getalgos(sa)
     if isempty(funcs)
         print(io, "SimpleAlgo (empty)")
         return
@@ -194,7 +194,7 @@ function Base.show(io::IO, saT::Type{<:SimpleAlgo})
 end
 
 function Base.summary(io::IO, r::Routine)
-    funcs = r.funcs
+    funcs = getalgos(r)
     if isempty(funcs)
         print(io, "Routine (empty)")
         return

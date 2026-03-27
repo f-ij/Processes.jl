@@ -103,3 +103,19 @@ function merge_sharedvars(sctuple::NamedTuple, sharedvars::NamedTuple)
     end
     return sctuple
 end
+
+
+################################################
+####### Replacing ROUTES/SHARES ########
+################################################
+
+@inline function replace_routes(sc::SubContext, routes::R) where R
+    setfield(sc, :sharedvars, routes)::SubContext{getkey(sc), get_datatype(sc), getsharedcontext_types(sc), R}
+end
+
+@inline function replace_shares(sc::SubContext{K, T, Ss, R}, shares::S) where {K, T, Ss, R, S}
+    if Ss == S
+        return sc
+    end
+    setfield(sc, :sharedcontexts, shares)::SubContext{getkey(sc), get_datatype(sc), S, getsharedvars_types(sc)}
+end

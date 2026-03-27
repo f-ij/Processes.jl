@@ -4,12 +4,12 @@ is_decomposable(ca::CompositeAlgorithm) = true
 # is_decomposable(sr::SubRoutine) = is_decomposable(sr.func)
 
 # getbranch(::Any, idx) = nothing
-getbranch(r::Routine, idx) = r.funcs[idx]
-getbranch(ca::CompositeAlgorithm, idx) = ca.funcs[idx]
+getbranch(r::Routine, idx) = getalgos(r)[idx]
+getbranch(ca::CompositeAlgorithm, idx) = getalgos(ca)[idx]
 # getbranch(sr::SubRoutine, idx) = getbranch(sr.func, idx)
 
 nbranches(::Any) = 0
-nbranches(r::Routine) = length(r.funcs)
+nbranches(r::Routine) = length(getalgos(r))
 nbranches(ca::CompositeAlgorithm) = numalgos(ca)
 
 """

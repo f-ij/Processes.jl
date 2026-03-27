@@ -14,22 +14,22 @@ using Processes
         Route(PrepSource => PrepTarget, :value => :target),
     )
 
-    materialized = Processes.materialize(algo)
-    registry = Processes.getregistry(materialized)
+    resolved = Processes.resolve(algo)
+    registry = Processes.getregistry(resolved)
 
     source_name = Processes.static_findkey(registry, PrepSource)
     target_name = Processes.static_findkey(registry, PrepTarget)
 
-    @test materialized isa Processes.CompositeAlgorithm
-    @test Processes.ismaterialized(materialized)
+    @test resolved isa Processes.CompositeAlgorithm
+    @test Processes.isresolved(resolved)
     @test !isnothing(source_name)
     @test !isnothing(target_name)
 
-    route = only(Processes.getoptions(materialized, Processes.Route))
+    route = only(Processes.getoptions(resolved, Processes.Route))
     @test Processes.getkey(Processes.getfrom(route)) == source_name
     @test Processes.getkey(Processes.getto(route)) == target_name
 
-    sharedcontexts, sharedvars = Processes._resolve_materialized_links(materialized)
+    sharedcontexts, sharedvars = Processes._resolve_options(resolved)
     @test Processes.contextname(sharedcontexts[source_name]) == target_name
     @test Processes.contextname(sharedcontexts[target_name]) == source_name
 
@@ -38,18 +38,18 @@ using Processes
     @test Processes.get_fromname(only(sharedvars[target_name])) == source_name
 
     routine = Routine(algo, PrepOther, (2, 3))
-    materialized_routine = Processes.materialize(routine)
-    nested_comp = first(Processes.getalgos(materialized_routine))
+    resolved_routine = Processes.resolve(routine)
+    nested_comp = first(Processes.getalgos(resolved_routine))
 
-    @test materialized_routine isa Processes.Routine
-    @test Processes.ismaterialized(materialized_routine)
+    @test resolved_routine isa Processes.Routine
+    @test Processes.isresolved(resolved_routine)
     @test nested_comp isa Processes.CompositeAlgorithm
-    @test Processes.all_keys(Processes.getregistry(nested_comp)) == Processes.all_keys(Processes.getregistry(materialized_routine))
+    @test Processes.all_keys(Processes.getregistry(nested_comp)) == Processes.all_keys(Processes.getregistry(resolved_routine))
     @test all(Processes.getkey.(Processes.getalgos(nested_comp)) .!= Ref(Symbol()))
 
     threaded = ThreadedCompositeAlgorithm(PrepSource, PrepTarget, (1, 1))
-    materialized_threaded = Processes.materialize(threaded)
-    @test materialized_threaded isa Processes.ThreadedCompositeAlgorithm
-    @test Processes.ismaterialized(materialized_threaded)
-    @test Processes.all_keys(Processes.getregistry(materialized_threaded)) == (source_name, target_name)
+    resolved_threaded = Processes.resolve(threaded)
+    @test resolved_threaded isa Processes.ThreadedCompositeAlgorithm
+    @test Processes.isresolved(resolved_threaded)
+    @test Processes.all_keys(Processes.getregistry(resolved_threaded)) == (source_name, target_name)
 end

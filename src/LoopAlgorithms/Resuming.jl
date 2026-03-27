@@ -5,7 +5,7 @@ end
 @inline function resume_step!(r::Routine, context::C) where {C<:AbstractContext}
     unroll_idx = 1
     r_idxs = resume_idxs(r)
-    @inline _resume_step!(r, context, unroll_idx, gethead(r.funcs), gettail(r.funcs), gethead(repeats(r)), gettail(repeats(r)), gethead(r_idxs), gettail(r_idxs))
+    @inline _resume_step!(r, context, unroll_idx, gethead(getalgos(r)), gettail(getalgos(r)), gethead(repeats(r)), gettail(repeats(r)), gethead(r_idxs), gettail(r_idxs))
 end
 
 @inline function _resume_step!(r::Routine, context::C, unroll_idx, func::F, tail, this_repeat, repeats, this_resume_idx, resume_idxs_tail) where {F, C<:AbstractContext}

@@ -56,7 +56,11 @@ end
 @inline getalgo(sa::AbstractIdentifiableAlgo{F}) where {F} = error("Not implemented for type: $(typeof(sa))")
 @inline getalgos(sa::AbstractIdentifiableAlgo) = error("Not implemented for type: $(typeof(sa))")
 
-
+@inline function hasautokey(sa::AbstractIdentifiableAlgo)
+    getkey(sa) != Symbol() && startswith(string(getkey(sa)), "$(nameof(typeof(getalgo(sa))))_")
+end
+@inline Base.haskey(sa::AbstractIdentifiableAlgo) = getkey(sa) != Symbol()
+@inline hasgivenkey(sa::AbstractIdentifiableAlgo) = haskey(sa) && !hasautokey(sa)
 
 ################################################
 ########## SETTING PROPERTIES/TRAITS ###########

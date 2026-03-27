@@ -68,19 +68,33 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol, st
         # - If `shouldrun(process)` is false, record the resume point (child index i) and return early.
         # - Otherwise execute the child's generated `step!` body.
         push!(exprs, quote
-
-            for lidx in 1:$(this_repeat)
-                # Pause/stop check: if the process is not running, record which child we were on.
-                if @inline !shouldrun(process)
-                    set_resume_point!($name, $i, lidx)
-                    return context
-                end
-                # Inline the child's `step!` body, specialized to the child's algorithm type and the context type.
-                $(step!_expr(this_functype, C, local_name, stability))
+            if resume_idx($name, $i) < $this_repeat
+                # One unstable step allowed
+                $(step!_expr(this_functype, C, local_name, :unstable))
                 
                 # Assumes process is defined in the top level
                 @inline tick!(process) # Tick counter
-                # GC.safepoint()
+                if @inline breakcondition(lifetime, process, context)
+                    set_resume_point!($name, $i, 2)
+                    return context
+                end
+
+                start_idx = @inline resume_idx($name, $i) + UInt(1)
+                for lidx in start_idx:$(this_repeat)
+                    # Pause/stop check: if the process is not running, record which child we were on.
+
+                    # Inline the child's `step!` body, specialized to the child's algorithm type and the context type.
+                    $(step!_expr(this_functype, C, local_name, stability))
+                    
+                    # Assumes process is defined in the top level
+                    @inline tick!(process) # Tick counter
+                    if @inline breakcondition(lifetime, process, context)
+                        set_resume_point!($name, $i, lidx+UInt(1))
+                        return context
+                    end
+                    # GC.safepoint()
+                end
+            else
             end
         end)
     end

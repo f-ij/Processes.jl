@@ -38,7 +38,16 @@ shouldrun(p::Process, val) = @atomic p.shouldrun = val
 @inline reset_ticks!(p::Process) = (p.tickidx = UInt(1))
 
 
-function Process(func, inputs_overrides...; context = nothing, lifetime = Indefinite(), timeout = 1.0)
+function Process(func, inputs_overrides...; context = nothing, lifetime = Indefinite(), repeat = nothing, timeout = 1.0)
+    if !isnothing(repeat)
+        lifetime == Indefinite() || error("Pass either `repeat = ...` or `lifetime = ...`, not both.")
+        if repeat isa AbstractFloat && isinf(repeat)
+            lifetime = Indefinite()
+        else
+            lifetime = repeat
+        end
+    end
+
     prepared = prepare_process_constructor(func, inputs_overrides...; lifetime, context)
     td = prepared.taskdata
     context = prepared.context

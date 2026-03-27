@@ -21,16 +21,24 @@ function newfuncs(ca::CompositeAlgorithm, funcs)
     setfield(ca, :funcs, funcs)
 end
 
+function setoptions(ca::CompositeAlgorithm{T, Intervals, S, O, R, id}, options) where {T, Intervals, S, O, R, id}
+    CompositeAlgorithm{T, Intervals, S, typeof(options), R, id}(getalgos(ca), get_states(ca), options, getinc(ca), getregistry(ca))
+end
+
 @inline getregistry(ca::CompositeAlgorithm) = getfield(ca, :reg)
 @inline _attach_registry(ca::CompositeAlgorithm, registry::NameSpaceRegistry) = setfield(ca, :reg, registry)
-@inline ismaterialized(ca::CompositeAlgorithm) = !isnothing(getregistry(ca))
+@inline isresolved(ca::CompositeAlgorithm) = !isnothing(getregistry(ca))
 
-subalgorithms(ca::CompositeAlgorithm) = ca.funcs
+subalgorithms(ca::CompositeAlgorithm) = getfield(ca, :funcs)
+algotypes(ca::Union{CompositeAlgorithm{FT}, Type{<:CompositeAlgorithm{FT}}}) where FT = FT.parameters
+statetypes(ca::Union{CompositeAlgorithm{FT, I, S}, Type{<:CompositeAlgorithm{FT, I, S}}}) where {FT, I, S} = S.parameters
 subalgotypes(ca::CompositeAlgorithm{FT}) where FT = FT.parameters
 subalgotypes(caT::Type{<:CompositeAlgorithm{FT}}) where FT = FT.parameters
+@inline getstates(ca::CompositeAlgorithm) = getfield(ca, :states)
 
-getinc(ca::CompositeAlgorithm) = ca.inc
-getoptions(ca::CompositeAlgorithm) = ca.options
+
+getinc(ca::CompositeAlgorithm) = getfield(ca, :inc)
+getoptions(ca::CompositeAlgorithm) = getfield(ca, :options)
 
 getid(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id}}}) where {T,I,NSR,O,R,id} = id
 setid(ca::CA, id = uuid4()) where CA = setparameter(ca, 6, id)
@@ -62,12 +70,12 @@ end
 get_this_interval(args) = interval(getalgo(args.process), algoidx(args))
 
 function setintervals(ca::C, new_intervals) where {C<:CompositeAlgorithm}
-    @assert length(new_intervals) == length(ca.funcs)
+    @assert length(new_intervals) == length(getalgos(ca)) "Length of new intervals must match number of functions in the composite algorithm, but got $(length(new_intervals)) intervals for $(length(getalgos(ca))) functions"
     setparameter(ca, 2, new_intervals)
 end
 
 function setinterval(ca::C, idx::Int, new_interval) where {C<:CompositeAlgorithm}
-    new_intervals = ntuple(i -> i == idx ? new_interval : interval(ca, i), length(ca.funcs))
+    new_intervals = ntuple(i -> i == idx ? new_interval : interval(ca, i), length(getalgos(ca)))
     setparameter(ca, 2, new_intervals)
 end
 
@@ -85,34 +93,28 @@ id(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id}, Type{<:CompositeAlgorithm{T,I,N
 
 
 # getnames(ca::CompositeAlgorithm{T, I, N}) where {T, I, N} = N
-Base.length(ca::CompositeAlgorithm) = length(ca.funcs)
-Base.eachindex(ca::CompositeAlgorithm) = eachindex(ca.funcs)
-getalgo(ca::CompositeAlgorithm, idx) = ca.funcs[idx]
-getalgos(ca::CompositeAlgorithm) = ca.funcs
-hasflag(ca::CompositeAlgorithm, flag) = flag in ca.flags
+Base.length(ca::CompositeAlgorithm) = length(getfield(ca, :funcs))
+Base.eachindex(ca::CompositeAlgorithm) = eachindex(getfield(ca, :funcs))
+getalgo(ca::CompositeAlgorithm, idx) = getfield(ca, :funcs)[idx]
+getalgos(ca::CompositeAlgorithm) = getfield(ca, :funcs)
+hasflag(ca::CompositeAlgorithm, flag) = flag in getfield(ca, :flags)
 track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
 """
 Increment the stepidx for the composite algorithm
 """
 @generated function inc!(ca::CompositeAlgorithm)
     _lcm = lcm(intervals(ca)...)
-    return :(ca.inc[] = mod1(ca.inc[] + 1, $_lcm))
+    return :(getinc(ca)[] = mod1(getinc(ca)[] + 1, $_lcm))
 end
 function reset!(ca::CompositeAlgorithm)
-    ca.inc[] = 1
-    reset!.(ca.funcs)
+    getinc(ca)[] = 1
+    reset!.(getalgos(ca))
 end
-
-
-# Change the names
-setnames(ca::CompositeAlgorithm{T,Int}, names::NTuple{N, Symbol}) where {T,N} = CompositeAlgorithm{T,Int,names}(ca.funcs, ca.inc, ca.flags)
-
-
-export CompositeAlgorithm, CompositeAlgorithmPA, CompositeAlgorithmFuncType
 
 num_funcs(ca::CompositeAlgorithm{FA}) where FA = fieldcount(FA)
 
-type_instances(ca::CompositeAlgorithm{FT}) where FT = ca.funcs
+# TODO: WHAT IS THIS
+type_instances(ca::CompositeAlgorithm{FT}) where FT = getfield(ca, :funcs)
 get_funcs(ca::CompositeAlgorithm{FT}) where FT = FT.parameters 
 
 # CompositeAlgorithm{FS, Intervals}() where {FS, Intervals} = CompositeAlgorithm{FS, Intervals}(call_all(FS)) 
@@ -132,7 +134,7 @@ get_intervals(ct::Type{<:CompositeAlgorithm}) = ct.parameters[2]
     return Val.(Is)
 end
 
-inc(ca::CompositeAlgorithm) = ca.inc[]
+inc(ca::CompositeAlgorithm) = getinc(ca)[]
 
 
 # CompositeAlgorithm(f, interval::Int, flags...) = CompositeAlgorithm((f,), (interval,), flags...)

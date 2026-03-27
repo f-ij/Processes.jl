@@ -54,7 +54,7 @@ end
 
 function Base.show(io::IO, pa::PackagedAlgo)
     println(io, "PackagedAlgo")
-    funcs = pa.funcs
+    funcs = getalgos(pa)
     if isempty(funcs)
         print(io, "└── (empty)")
         return
@@ -76,7 +76,7 @@ function Base.show(io::IO, pa::PackagedAlgo)
 end
 
 function Base.summary(io::IO, pa::PackagedAlgo)
-    funcs = pa.funcs
+    funcs = getalgos(pa)
     if isempty(funcs)
         print(io, "PackagedAlgo (empty)")
         return

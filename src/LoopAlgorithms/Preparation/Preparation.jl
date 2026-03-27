@@ -1,4 +1,3 @@
-export materialize, ismaterialized
-
+export ismeterialized
 include("Interface.jl")
 include("Constructor.jl")

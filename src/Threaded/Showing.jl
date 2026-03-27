@@ -1,6 +1,6 @@
 function Base.show(io::IO, tca::ThreadedCompositeAlgorithm)
     println(io, "BarrieredCompositeAlgorithm")
-    funcs = tca.funcs
+    funcs = getalgos(tca)
     if isempty(funcs)
         print(io, "└── (empty)")
         return
@@ -22,7 +22,7 @@ function Base.show(io::IO, tca::ThreadedCompositeAlgorithm)
 end
 
 function Base.summary(io::IO, tca::ThreadedCompositeAlgorithm)
-    funcs = tca.funcs
+    funcs = getalgos(tca)
     if isempty(funcs)
         print(io, "BarrieredCompositeAlgorithm (empty)")
         return

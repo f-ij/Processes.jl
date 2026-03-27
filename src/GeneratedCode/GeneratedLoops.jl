@@ -1,7 +1,7 @@
 """
 Generated process loop that inlines the step! expression when available.
 """
-@inline @generated function generated_processloop(process::AbstractProcess, algo::F, context::C, r::RL) where {F, C, RL <: RepeatLifetime}
+@inline @generated function generated_processloop(process::AbstractProcess, algo::F, context::C, lifetime::RL) where {F, C, RL <: RepeatLifetime}
     algo_name = gensym(:algo)
     first_step_expr = step!_expr(F, C, algo_name, :unstable)
     for_step_expr = step!_expr(F, C, algo_name, :stable)
@@ -16,12 +16,12 @@ Generated process loop that inlines the step! expression when available.
         @inline tick!(process)
 
         first_step_idx = @inline loopidx(process)
-        for _ in first_step_idx:repeats(r)
+        for _ in first_step_idx:repeats(lifetime)
             $(algo_name) = algo
             $(for_step_expr)
             @inline inc!(process)
             @inline tick!(process)
-            if @inline breakcondition(r, process, context)
+            if @inline breakcondition(lifetime, process, context)
                 break
             end
         end
@@ -89,7 +89,7 @@ end
 """
 Generated process loop that inlines the step! expression when available.
 """
-@generated function generated_processloop(process::AbstractProcess, func::F, context::C, lt::LT) where {F, C, LT <: IndefiniteLifetime}
+@generated function generated_processloop(process::AbstractProcess, func::F, context::C, lifetime::LT) where {F, C, LT <: IndefiniteLifetime}
     step_expr = step!_expr(F, C, :func, :unstable)
     return quote
         # println("Running generated process loop indefinitely from thread $(Threads.threadid())")
@@ -98,7 +98,7 @@ Generated process loop that inlines the step! expression when available.
             $(step_expr)
             @inline inc!(process)
             @inline tick!(process)
-            if @inline breakcondition(lt, process, context)
+            if @inline breakcondition(lifetime, process, context)
                 break
             end
         end

@@ -12,4 +12,5 @@ Pkg.activate((@__DIR__ )*"/..")
     include("RouteWalkerTest.jl")
     include("ShareContextTest.jl")
     include("MaterializeLoopAlgorithmTest.jl")
+    include("InnerTypeFilterTest.jl")
 end

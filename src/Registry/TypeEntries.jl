@@ -4,7 +4,8 @@ end
 
 @inline function Base.setindex(rte::RegistryTypeEntry, new::N , idx::Int) where {N}
     entries = getentries(rte)
-    Base.tuple_setindex(entries, new, idx)
+    new_entries = setindex(entries, new, idx)
+    return setfield(rte, :entries, new_entries)
 end
 
 @inline getentries(rte::RegistryTypeEntry) = getfield(rte, :entries)
@@ -21,6 +22,19 @@ function add_dynamic_link!(obj, location::Symbol, idx::Int, rte::RegistryTypeEnt
     matching_obj = match_by(obj)
     getdynamiclookup(rte)[matching_obj] = idx
     return nothing
+end
+
+function remove_dynamic_link!(obj, rte::RegistryTypeEntry)
+    matching_obj = match_by(obj)
+    delete!(getdynamiclookup(rte), matching_obj)
+    return nothing
+end
+
+function Base.replace(rte::RegistryTypeEntry{T}, idx::Int, newobj) where {T}
+    oldobj = getentries(rte)[idx]
+    remove_dynamic_link!(oldobj, rte)
+    add_dynamic_link!(newobj, :entries, idx, rte)
+    return setindex(rte, newobj, idx)
 end
 
 ###############################
@@ -128,6 +142,20 @@ function add(rte::RegistryTypeEntry{T}, obj, multiplier = 1.; withkey::WK = noth
         add_dynamic_link!(identifiable, :entries, current_length + 1, rte)
         return setfield(rte, :entries, newentries)::RegistryTypeEntry{T, typeof(newentries)}, identifiable
     else # Existing instance, bump multiplier and get the named version
+
+        # The named version is decided as follows:
+        # Given keys are preffered over autokeys but they need to be consistent
+        # If the existing entry has an autokey, and the new one has a key, replace it with the new one
+        # If the existing entry has a given key, and the new one has a given key, they need to match
+        
+        if hasautokey(rte[fidx]) && haskey(obj) # If the existing entry has an autokey, and the new one has a key, replace it with the new one
+           rte = replace(rte, fidx, obj) # Replace the entry with the new one, and update dynamic lookup
+        end
+
+        if hasgivenkey(rte[fidx]) && hasgivenkey(obj) 
+            @assert getkey(rte[fidx]) == getkey(obj) "Trying to add an entry with name $(getkey(obj)) but an entry with the same type already exists with name $(getkey(rte[fidx]))"
+        end
+
         if !isnothing(withkey) # Check name match, cannot add two matching objects with different names
             name = getkey(rte[fidx])
             if name != withkey
