@@ -1,50 +1,30 @@
 const start_finished = Ref(false)
 
-@inline function before_while(p::AbstractProcess)
+@inline function before_while(p::P) where P <: AbstractProcess
     start_finished[] = true
     p.threadid = Threads.threadid()
-    # @atomic p.paused = false
-    # _runtimelisteners = runtimelisteners(p)
-    # start(_runtimelisteners)
-    # start.(get_linked_processes(p)) # TODO OBSOLETE?
     set_starttime!(p)
 end
 
-@inline function before_while(ip::InlineProcess)
+@inline function before_while(ip::IP) where IP <: InlineProcess
     @inline set_starttime!(ip)
 end
 
-@inline function after_while(p::AbstractProcess, func::F, context) where {F}
+@inline function after_while(p::AbstractProcess, func::F, context::C) where {F, C}
     @inline set_endtime!(p)
-    # _runtimelisteners = runtimelisteners(p)
-    # close(_runtimelisteners)
-    # close.(get_linked_processes(p)) # TODO OBSOLETE?
     if !shouldrun(p) || lifetime(p) isa Indefinite # If user interrupted, or lifetime is indefinite
         Processes.context(p, context)
         return context
     else
-        # return cleanup(getalgo(p), context)
         Processes.context(p, @inline cleanup(func, context))
         return context
     end
 end
 
-@inline function after_while(ip::InlineProcess, func::F, context) where {F}
+@inline function after_while(ip::InlineProcess, func::F, context::C) where {F, C}
     @inline set_endtime!(ip)
     @inline cleanup(func, context)
 end
-
-
-# resuming(::Any) = false
-# function resuming(p::Process)
-#     if p.paused
-#         @atomic p.paused = false
-#         return true
-#     else
-#         return false
-#     end
-# end
-
 
 """
 Run a single function in a loop indefinitely
@@ -92,9 +72,6 @@ Base.@constprop :aggressive function processloop(process::AbstractProcess, algo:
         @inline tick!(process)
         @inline inc!(process)
 
-        # if isthreaded(p) || isasync(p)
-        #     GC.safepoint()
-        # end
     end
     return @inline after_while(process, algo, context)
 end

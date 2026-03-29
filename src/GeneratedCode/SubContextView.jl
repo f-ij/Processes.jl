@@ -1,6 +1,13 @@
 
-function Base.merge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    return stablemerge(scv, args)
+@inline function Base.merge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:ProcessContext, SubKey}
+    return @inline getcontext(scv)
+end
+@inline function Base.merge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
+    return @inline stablemerge(scv, args)
+end
+
+@inline function stablemerge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:ProcessContext, SubKey}
+    return @inline getcontext(scv)
 end
 """
 Merge but error if a var would be overwritten and only allow local merging
@@ -112,6 +119,10 @@ This doesn't check for type stability, and allows overwriting existing variables
         newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
         return newcontext
     end
+end
+
+@inline function unstablemerge(scg::SCV, ::Nothing) where {SCV<:SubContextView}
+    return @inline getcontext(scg)
 end
 
 """

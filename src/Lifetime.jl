@@ -24,7 +24,7 @@ end
 
 
 function breakcondition(lt::Union{Repeat, Indefinite}, process::P, context::C) where {P <: AbstractProcess, C}
-    if !shouldrun(process)
+    if @inline !shouldrun(process)
         return true
     else
         return false
@@ -38,10 +38,10 @@ Until(cond::Function, Vars...) = Until{Vars, typeof(cond)}(cond)
 
 
 function breakcondition(u::Until{Vars}, process::P, context::C) where {Vars, P <: AbstractProcess, C}
-    if !shouldrun(process)
+    if @inline !shouldrun(process)
         return true
     else
-        return u.cond(getindex(context, Vars...))
+        return @inline u.cond(getindex(context, Vars...))
     end
 end
 
@@ -55,12 +55,12 @@ AtLeast(cond::Function, atleast::Int, Vars...) = AtLeast{Vars, typeof(cond)}(atl
 @inline _atleast_reached(process::AbstractProcess, atleast::Int) = loopint(process) > atleast
 
 function breakcondition(al::AtLeast{Vars}, process::P, context::C) where {Vars, P <: AbstractProcess, C}
-    if !shouldrun(process)
+    if @inline !shouldrun(process)
         return true
-    elseif !_atleast_reached(process, al.atleast)
+    elseif @inline !_atleast_reached(process, al.atleast)
         return false
     else
-        return al.cond(getindex(context, Vars...))
+        return @inline al.cond(getindex(context, Vars...))
     end
 end
 
@@ -74,10 +74,10 @@ repeats(rou::RepeatOrUntil) = rou.repeats
 RepeatOrUntil(cond::Function, repeats::Int, Vars...) = RepeatOrUntil{Vars, typeof(cond)}(repeats, cond)
 
 function breakcondition(ru::RepeatOrUntil{Vars}, process::P, context::C) where {Vars, P <: AbstractProcess, C}
-    if !shouldrun(process)
+    if @inline !shouldrun(process)
         return true
     else
-        return ru.cond(getindex(context, Vars...))
+        return @inline ru.cond(getindex(context, Vars...))
     end
 end
 
@@ -91,12 +91,12 @@ repeats(aam::AtLeastAtMost) = aam.repeats
 AtLeastAtMost(cond::Function, atleast::Int, atmost::Int, Vars...) = AtLeastAtMost{Vars, typeof(cond)}(atleast, atmost, cond)
 
 function breakcondition(aam::AtLeastAtMost{Vars}, process::P, context::C) where {Vars, P <: AbstractProcess, C}
-    if !shouldrun(process)
+    if @inline !shouldrun(process)
         return true
-    elseif !_atleast_reached(process, aam.atleast)
+    elseif @inline !_atleast_reached(process, aam.atleast)
         return false
     else
-        return aam.cond(getindex(context, Vars...))
+        return @inline aam.cond(getindex(context, Vars...))
     end
 end
 

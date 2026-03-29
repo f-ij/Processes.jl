@@ -8,7 +8,7 @@ struct InlineLuc <: Processes.ProcessAlgorithm end
 function Processes.step!(::InlineFib, context::C) where C
     fiblist = context.fiblist
     push!(fiblist, fiblist[end] + fiblist[end - 1])
-    return (;)
+    return nothing
 end
 
 function Processes.init(::InlineFib, context::C) where C
@@ -20,7 +20,7 @@ end
 function Processes.step!(::InlineLuc, context::C) where C
     luclist = context.luclist
     push!(luclist, luclist[end] + luclist[end - 1])
-    return (;)
+    return nothing
 end
 
 function Processes.init(::InlineLuc, context::C) where C
@@ -81,3 +81,4 @@ end
     @info "InlineProcess is $((inline_time/naive_time)*100 ) % of Naive time"
     @test inline_time <= naive_time * 1.2
 end
+    
