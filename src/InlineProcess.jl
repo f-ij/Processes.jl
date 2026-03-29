@@ -78,9 +78,9 @@ end
 
 @inline function Base.run(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing)
     algo = p.taskdata.func
-
+    
     if isnothing(context)
-        context = context(p)
+        context = Processes.context(p)
     else
         @assert context isa contexttype(p) "Wrong context shape for this process\n Context is of type $(typeof(context)), but expected $(contexttype(p))."
     end
