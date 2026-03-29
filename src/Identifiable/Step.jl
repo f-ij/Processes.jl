@@ -1,7 +1,15 @@
-@inline function step!(sa::IdentifiableAlgo{F}, context::C) where {F, C <: AbstractContext}
+@inline step!(sa::IdentifiableAlgo{F}, context::C) where {F, C <: AbstractContext} = @inline step!(sa, context, Stable())
+
+@inline function step!(sa::IdentifiableAlgo{F}, context::C, ::Stable) where {F, C <: AbstractContext}
     contextview = @inline view(context, sa)
     retval = @inline step!(getalgo(sa), contextview)
     @inline merge(contextview, retval) # Merge into view
+end
+
+@inline function step!(sa::IdentifiableAlgo{F}, context::C, ::Unstable) where {F, C <: AbstractContext}
+    contextview = @inline view(context, sa)
+    retval = @inline step!(getalgo(sa), contextview)
+    @inline unstablemerge(contextview, retval) # Merge into view
 end
 
 @inline _profile_step_algo(sa::AbstractIdentifiableAlgo) = getalgo(sa)

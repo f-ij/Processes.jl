@@ -46,3 +46,21 @@ getkey(r::AbstractRegistry, obj) = error("getkey not implemented for $(typeof(r)
 Find a key, returns nothing if not present
 """
 static_findkey(r::AbstractRegistry, obj) = error("static_findkey not implemented for $(typeof(r))")
+
+#### Processloop type
+abstract type FunctionType end
+struct Generated <: FunctionType end
+struct NonGenerated <: FunctionType end
+"""
+The type of loop to use for a process. This is determined by the system and can be used to switch between generated and non-generated loops.
+"""
+const sys_looptype = @static if Sys.isapple() || Sys.iswindows()
+    NonGenerated
+else
+    Generated
+    
+
+#### Type Stabliity of steps
+abstract type Stability end
+struct Stable <: Stability end
+struct Unstable <: Stability end

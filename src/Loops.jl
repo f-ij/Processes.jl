@@ -29,50 +29,60 @@ end
 """
 Run a single function in a loop indefinitely
 """
-@inline function processloop(process::AbstractProcess, func::F, context::C, ::Indefinite) where {F, C}
+@inline function loop(process::AbstractProcess, func::F, context::C, lt::LT, ::Generated) where {F, C, LT <: IndefiniteLifetime}
     # @static if DEBUG_MODE
-        println("Running process loop indefinitely from thread $(Threads.threadid())")
+        # println("Running process loop indefinitely from thread $(Threads.threadid())")
     # end
 
     @inline before_while(process)
 
-    # if resuming(process)
-    #     context = @inline resume_step!(func, context)
-    # end
+    context = @inline step!(func, context, Unstable())
+    @inline tick!(process)
+    @inline inc!(process)
 
     while shouldrun(process)
-        context = @inline step!(func, context)
+        context = @inline step!(func, context, Stable())
         @inline tick!(process)
         @inline inc!(process) 
-        # if isthreaded(p) || isasync(p)
-        #     GC.safepoint()
-        # end
+        if @inline breakcondition(lt, process, context)
+            break
+        end
     end
-    return @inline after_while(process, func, context)
+
+    if shouldrun(process)
+        return context
+    else
+        return @inline after_while(process, func, context)
+    end
 end
 
 """
 Run a single function in a loop for a given number of times
 """
-Base.@constprop :aggressive function processloop(process::AbstractProcess, algo::F, context::C, r::Repeat) where {F, C}
+Base.@constprop :aggressive function loop(process::AbstractProcess, algo::F, context::C, r::R, ::NonGenerated) where {F, C, R <: RepeatLifetime}
     @DebugMode "Running process loop for $repeats times from thread $(Threads.threadid())"
     @inline before_while(process)
+    
+    context = @inline step!(algo, context, Unstable())
+    @inline tick!(process)
+    @inline inc!(process)
+    
     start_idx = loopidx(process)
     
-    # if resuming(process)
-    #     context = @inline resume_step!(algo, context)
-    #     start_idx += 1
-    # end
-
     for _ in start_idx:repeats(r)
-        if !shouldrun(process)
-            break
-        end
-        context = @inline step!(algo, context)
+    
+        context = @inline step!(algo, context, Stable())
         @inline tick!(process)
         @inline inc!(process)
+        if @inline breakcondition(r, process, context)
+            break
+        end
 
     end
-    return @inline after_while(process, algo, context)
+    if shouldrun(process)
+        return context
+    else
+        return @inline after_while(process, algo, context)
+    end
 end
 

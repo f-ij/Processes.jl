@@ -68,7 +68,7 @@ function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol, st
         # - If `shouldrun(process)` is false, record the resume point (child index i) and return early.
         # - Otherwise execute the child's generated `step!` body.
         push!(exprs, quote
-            if resume_idx($name, $i) < $this_repeat
+            if resume_idx($name, $i) <= $this_repeat
                 # One unstable step allowed
                 $(step!_expr(this_functype, C, local_name, :unstable))
                 

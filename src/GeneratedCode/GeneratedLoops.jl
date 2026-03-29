@@ -1,7 +1,7 @@
 """
 Generated process loop that inlines the step! expression when available.
 """
-@inline @generated function generated_processloop(process::AbstractProcess, algo::F, context::C, lifetime::RL) where {F, C, RL <: RepeatLifetime}
+@inline @generated function loop(process::AbstractProcess, algo::F, context::C, lifetime::RL, ::Generated) where {F, C, RL <: RepeatLifetime}
     algo_name = gensym(:algo)
     first_step_expr = step!_expr(F, C, algo_name, :unstable)
     for_step_expr = step!_expr(F, C, algo_name, :stable)
@@ -9,6 +9,7 @@ Generated process loop that inlines the step! expression when available.
     return quote
         # First we do ONE step which is allowed to change the context,
         # After this we're not allowed to
+
         @inline before_while(process)
         $(algo_name) = algo
         $(first_step_expr)
@@ -16,7 +17,8 @@ Generated process loop that inlines the step! expression when available.
         @inline tick!(process)
 
         first_step_idx = @inline loopidx(process)
-        for _ in first_step_idx:repeats(lifetime)
+        final_idx = @inline repeats(lifetime)
+        for _ in first_step_idx:final_idx
             $(algo_name) = algo
             $(for_step_expr)
             @inline inc!(process)
@@ -89,7 +91,7 @@ end
 """
 Generated process loop that inlines the step! expression when available.
 """
-@generated function generated_processloop(process::AbstractProcess, func::F, context::C, lifetime::LT) where {F, C, LT <: IndefiniteLifetime}
+@generated function loop(process::AbstractProcess, func::F, context::C, lifetime::LT, ::Generated) where {F, C, LT <: IndefiniteLifetime}
     step_expr = step!_expr(F, C, :func, :unstable)
     return quote
         # println("Running generated process loop indefinitely from thread $(Threads.threadid())")
