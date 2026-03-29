@@ -29,18 +29,14 @@ end
 """
 Run a single function in a loop indefinitely
 """
-@inline function loop(process::AbstractProcess, func::F, context::C, lt::LT, ::Generated) where {F, C, LT <: IndefiniteLifetime}
-    # @static if DEBUG_MODE
-        # println("Running process loop indefinitely from thread $(Threads.threadid())")
-    # end
-
+@inline function loop(process::AbstractProcess, func::F, context::C, lt::LT, ::NonGenerated) where {F, C, LT <: IndefiniteLifetime}
     @inline before_while(process)
 
     context = @inline step!(func, context, Unstable())
     @inline tick!(process)
     @inline inc!(process)
 
-    while shouldrun(process)
+    while true
         context = @inline step!(func, context, Stable())
         @inline tick!(process)
         @inline inc!(process) 
@@ -49,7 +45,7 @@ Run a single function in a loop indefinitely
         end
     end
 
-    if shouldrun(process)
+    if @inline shouldrun(process)
         return context
     else
         return @inline after_while(process, func, context)
@@ -67,9 +63,10 @@ Base.@constprop :aggressive function loop(process::AbstractProcess, algo::F, con
     @inline tick!(process)
     @inline inc!(process)
     
-    start_idx = loopidx(process)
+    start_idx = @inline loopidx(process)
+    end_idx = @inline repeats(r)
     
-    for _ in start_idx:repeats(r)
+    for _ in start_idx:end_idx
     
         context = @inline step!(algo, context, Stable())
         @inline tick!(process)
@@ -79,7 +76,7 @@ Base.@constprop :aggressive function loop(process::AbstractProcess, algo::F, con
         end
 
     end
-    if shouldrun(process)
+    if @inline shouldrun(process)
         return context
     else
         return @inline after_while(process, algo, context)
