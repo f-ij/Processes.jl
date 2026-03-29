@@ -58,6 +58,7 @@ const sys_looptype = @static if Sys.isapple() || Sys.iswindows()
     NonGenerated
 else
     Generated
+end
     
 
 #### Type Stabliity of steps
