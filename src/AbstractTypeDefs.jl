@@ -55,9 +55,9 @@ struct NonGenerated <: FunctionType end
 The type of loop to use for a process. This is determined by the system and can be used to switch between generated and non-generated loops.
 """
 const sys_looptype = @static if Sys.isapple() || Sys.iswindows()
-    NonGenerated
+    NonGenerated()
 else
-    Generated
+    Generated()
 end
     
 
