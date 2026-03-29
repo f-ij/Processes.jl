@@ -71,9 +71,9 @@ end
 
 @inline function Base.replace(sc::SubContext{Name, T, S, R}, args::NamedTuple = (;)) where {Name, T, S, R}
     # println("Replace called from SubContext: $Name with args: $args")
-    if isempty(args)
-        @warn "Replacing SubContext: $Name with empty NamedTuple"
-    end
+    # if isempty(args)
+    #     @warn "Replacing SubContext: $Name with empty NamedTuple"
+    # end
     @inline setfield(sc, :data, args)
 end
 

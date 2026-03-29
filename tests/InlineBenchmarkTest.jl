@@ -5,25 +5,25 @@ using Processes
 struct InlineFib <: Processes.ProcessAlgorithm end
 struct InlineLuc <: Processes.ProcessAlgorithm end
 
-function Processes.step!(::InlineFib, context)
+function Processes.step!(::InlineFib, context::C) where C
     fiblist = context.fiblist
     push!(fiblist, fiblist[end] + fiblist[end - 1])
     return (;)
 end
 
-function Processes.init(::InlineFib, context)
+function Processes.init(::InlineFib, context::C) where C
     fiblist = Int[0, 1]
     processsizehint!(fiblist, context)
     return (;fiblist)
 end
 
-function Processes.step!(::InlineLuc, context)
+function Processes.step!(::InlineLuc, context::C) where C
     luclist = context.luclist
     push!(luclist, luclist[end] + luclist[end - 1])
     return (;)
 end
 
-function Processes.init(::InlineLuc, context)
+function Processes.init(::InlineLuc, context::C) where C
     luclist = Int[2, 1]
     processsizehint!(luclist, context)
     return (;luclist)

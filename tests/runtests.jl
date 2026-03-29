@@ -13,4 +13,5 @@ Pkg.activate((@__DIR__ )*"/..")
     include("ShareContextTest.jl")
     include("MaterializeLoopAlgorithmTest.jl")
     include("InnerTypeFilterTest.jl")
+    include("CompositeDSLTest.jl")
 end
