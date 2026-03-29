@@ -152,7 +152,9 @@ end
 @inline unlock(p::Process) =  unlock(p.lock)
 
 @inline function precompile_loop!(p::Process, func, context, lt)
-    Base.precompile(generated_processloop, (typeof(p), typeof(func), typeof(context), typeof(lt)))
+    Base.precompile(loop, (typeof(p), typeof(func), typeof(context), typeof(lt), NonGenerated))
+    Base.precompile(loop, (typeof(p), typeof(func), typeof(context), typeof(lt), Generated))
+
     return nothing
 end
 
