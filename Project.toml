@@ -23,6 +23,7 @@ MacroTools = "~0.5.16"
 PrecompileTools = "1.3.3"
 Preferences = "~1.4.3"
 StaticArrays = "1.9.16"
+Test = "1.11.0"
 UUIDs = "~1.11.0"
 
 [extras]
