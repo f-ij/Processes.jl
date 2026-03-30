@@ -41,6 +41,15 @@ end
     return block
 end
 
+@inline @generated function unrollreplace_withargs(f::F, to_replace::C, as::Vararg{Any,N}; args) where {F,C,N}
+    block = Expr(:block, :(r = to_replace))
+    for i in 1:N
+        push!(block.args, :(r = f(r, args... , getfield(as, $i))))
+    end
+    push!(block.args, :r)
+    return block
+end
+
 """
 For a function that will return a viariable number of outputs
     that is broadcasted over a variable number of inputs,

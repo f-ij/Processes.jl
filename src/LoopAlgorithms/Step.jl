@@ -6,16 +6,14 @@ Base.@constprop :aggressive @inline function step!(ca::CompositeAlgorithm{T, Is}
     this_inc = inc(ca)
     algos_and_intervals = @inline algo_and_interval_iterator(ca)
     
-    return @inline unrollreplace_withcallback(context, context -> begin
-            @inline inc!(ca)
-            context
-        end , algos_and_intervals... ) do context, (func, interval)
-
-        if @inline divides(this_inc, interval)
+    context = @inline unrollreplace_withargs(context, algos_and_intervals..., args = (this_inc,)) do context, _inc, (func, interval)
+        if @inline divides(_inc, interval)
             context = @inline step!(func, context, typestable)
         end
         return context
     end
+    @inline inc!(ca)
+    return context
 end
 
 """

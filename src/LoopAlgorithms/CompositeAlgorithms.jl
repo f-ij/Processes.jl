@@ -101,11 +101,15 @@ track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
 """
 Increment the stepidx for the composite algorithm
 """
-@generated function inc!(ca::CompositeAlgorithm)
+@inline @generated function inc!(ca::CA) where CA <: CompositeAlgorithm
     _lcm = lcm(intervals(ca)...)
-    return :(getinc(ca)[] = mod1(getinc(ca)[] + 1, $_lcm))
+    return quote
+        cainc = getinc(ca)
+        cainc[] = mod1(cainc[] + 1, $_lcm)
+    end
 end
-function reset!(ca::CompositeAlgorithm)
+
+function reset!(ca::CA) where CA <: CompositeAlgorithm
     getinc(ca)[] = 1
     reset!.(getalgos(ca))
 end
@@ -135,7 +139,7 @@ get_intervals(ct::Type{<:CompositeAlgorithm}) = ct.parameters[2]
     return Val.(Is)
 end
 
-inc(ca::CompositeAlgorithm) = getinc(ca)[]
+@inline inc(ca::CA) where {CA<:CompositeAlgorithm} = getinc(ca)[]
 
 
 # CompositeAlgorithm(f, interval::Int, flags...) = CompositeAlgorithm((f,), (interval,), flags...)

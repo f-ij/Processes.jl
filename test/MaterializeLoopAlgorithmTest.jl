@@ -9,33 +9,37 @@ using Processes
     algo = CompositeAlgorithm(
         PrepSource,
         PrepTarget,
-        (1, 1),
+        PrepOther,
+        (1, 1, 1),
         Share(PrepSource, PrepTarget),
-        Route(PrepSource => PrepTarget, :value => :target),
+        Route(PrepSource => PrepOther, :value => :target),
     )
+
+    @test length(Processes.getoptions(algo, Processes.Route)) == 1
 
     resolved = Processes.resolve(algo)
     registry = Processes.getregistry(resolved)
 
     source_name = Processes.static_findkey(registry, PrepSource)
     target_name = Processes.static_findkey(registry, PrepTarget)
+    other_name = Processes.static_findkey(registry, PrepOther)
 
     @test resolved isa Processes.CompositeAlgorithm
     @test Processes.isresolved(resolved)
     @test !isnothing(source_name)
     @test !isnothing(target_name)
+    @test !isnothing(other_name)
+    @test isempty(Processes.getoptions(resolved, Processes.Route))
 
-    route = only(Processes.getoptions(resolved, Processes.Route))
-    @test Processes.getkey(Processes.getfrom(route)) == source_name
-    @test Processes.getkey(Processes.getto(route)) == target_name
-
+    opts = Processes.getoptions(resolved)
     sharedcontexts, sharedvars = Processes._resolve_options(resolved)
+    @test opts == Processes.merge_nested_namedtuples(sharedvars, sharedcontexts)
     @test Processes.contextname(sharedcontexts[source_name]) == target_name
     @test Processes.contextname(sharedcontexts[target_name]) == source_name
 
-    @test haskey(sharedvars, target_name)
-    @test length(sharedvars[target_name]) == 1
-    @test Processes.get_fromname(only(sharedvars[target_name])) == source_name
+    @test haskey(sharedvars, other_name)
+    @test length(sharedvars[other_name]) == 1
+    @test Processes.get_fromname(only(sharedvars[other_name])) == source_name
 
     routine = Routine(algo, PrepOther, (2, 3))
     resolved_routine = Processes.resolve(routine)
@@ -48,8 +52,7 @@ using Processes
     @test all(Processes.getkey.(Processes.getalgos(nested_comp)) .!= Ref(Symbol()))
 
     threaded = ThreadedCompositeAlgorithm(PrepSource, PrepTarget, (1, 1))
-    resolved_threaded = Processes.resolve(threaded)
-    @test resolved_threaded isa Processes.ThreadedCompositeAlgorithm
-    @test Processes.isresolved(resolved_threaded)
-    @test Processes.all_keys(Processes.getregistry(resolved_threaded)) == (source_name, target_name)
+    @test threaded isa Processes.ThreadedCompositeAlgorithm
+    @test !Processes.isresolved(threaded)
+    @test Processes.intervals(threaded) == (Processes.Interval(1), Processes.Interval(1))
 end

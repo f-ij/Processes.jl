@@ -99,14 +99,18 @@ Base.@constprop :aggressive function _threaded_merge_child_payload(merged::Named
     return @inline merge(merged, payload)
 end
 
-Base.@constprop :aggressive function _threaded_run_layer(base_context::C, tca::TCA, ::ThreadedLayer{Idxs}, this_inc::Int) where {C<:ProcessContext, TCA<:ThreadedCompositeAlgorithm, Idxs}
+Base.@constprop :aggressive function _threaded_run_layer(base_context::C, tca::TCA, ::ThreadedLayer{Idxs}, this_inc::Int, s::S) where {C<:ProcessContext, TCA<:ThreadedCompositeAlgorithm, Idxs, S}
     children = ntuple(i -> ThreadedIndex{Idxs[i]}(), length(Idxs))
     isempty(children) && return base_context
 
     if length(children) == 1
         merged_children = @inline _threaded_run_child(base_context, tca, getfield(children, 1), this_inc)
         isnothing(merged_children) && return base_context
-        return (@inline merge_into_subcontexts(base_context, merged_children))::C
+        if s isa Unstable
+            return @inline merge_into_subcontexts(base_context, merged_children)
+        else
+            return @inline merge_into_subcontexts(base_context, merged_children)::C
+        end
     end
 
     futures = ntuple(Val(length(children))) do i
@@ -123,17 +127,27 @@ Base.@constprop :aggressive function _threaded_run_layer(base_context::C, tca::T
     end
 
     isempty(merged_children) && return base_context
-    return (@inline merge_into_subcontexts(base_context, merged_children))::C
+    if s isa Unstable
+        return @inline merge_into_subcontexts(base_context, merged_children)
+    else
+        return (@inline merge_into_subcontexts(base_context, merged_children))::C
+    end
 end
 
-Base.@constprop :aggressive function step!(tca::ThreadedCompositeAlgorithm, context::C) where {C<:ProcessContext}
+Base.@constprop :aggressive function step!(tca::ThreadedCompositeAlgorithm, context::C, s::S) where {C<:ProcessContext, S}
     this_inc = inc(tca)
     layers = @inline _threaded_layers(tca, context)
 
-    current = @inline unrollreplace(context, layers...) do current, layer
-        @inline _threaded_run_layer(current, tca, layer, this_inc)::C
-    end
+    if s isa Unstable
+        current = @inline unrollreplace(context, layers...) do current, layer
+        @inline _threaded_run_layer(current, tca, layer, this_inc, s)
+        end
+    else
 
+        current = @inline unrollreplace(context, layers...) do current, layer
+            @inline _threaded_run_layer(current, tca, layer, this_inc, s)::C
+        end
+    end
     inc!(tca)
     return current
 end
