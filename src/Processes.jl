@@ -46,7 +46,7 @@ module Processes
     include("InputInterface/InputInterface.jl")
     include("Init.jl")
     include("ConstructorCommon.jl")
-    include("Running.jl")
+    # include("Running.jl")
     include("TriggerList.jl")
     include("Benchmark.jl")
     include("Debugging.jl")
