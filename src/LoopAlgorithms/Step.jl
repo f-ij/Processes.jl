@@ -27,7 +27,7 @@ Base.@constprop :aggressive @inline function step!(r::Routine, context::C, types
     process = globals.process
     lifetime = globals.lifetime
 
-    return @inline unrollreplace(context, algos_and_nums...) do context, (func, algo_num_val)
+    return @inline unrollreplace_withargs(context, algos_and_nums..., args = (lifetime, process)) do context, lifetime, process, (func, algo_num_val) 
         algo_idx = getvalue(algo_num_val)
         this_repeat = Processes.repeats(r, algo_num_val)
         start_idx = get_resume_point(r, algo_idx)
