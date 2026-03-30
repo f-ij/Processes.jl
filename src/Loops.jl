@@ -26,6 +26,8 @@ end
     @inline cleanup(func, context)
 end
 
+
+@inline loop(p::P, f::F, c::C, lt::LT) = loop(p, f, c, lt, sys_looptype)
 """
 Run a single function in a loop indefinitely
 """

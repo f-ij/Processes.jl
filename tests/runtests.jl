@@ -14,4 +14,5 @@ Pkg.activate((@__DIR__ )*"/..")
     include("MaterializeLoopAlgorithmTest.jl")
     include("InnerTypeFilterTest.jl")
     include("CompositeDSLTest.jl")
+    include("ProcessAlgorithmMacroTest.jl")
 end

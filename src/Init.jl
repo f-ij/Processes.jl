@@ -7,8 +7,6 @@ const warnset = Set{Any}()
 Fallback init
 """
 function init(t::T, c::Any) where T
-    # @show T
-    # @show c
     if !in(T, warnset)
         @warn "No init function defined for var $t with type $T, returning empty context"
         push!(warnset, T)
@@ -17,7 +15,7 @@ function init(t::T, c::Any) where T
 end
 
 """
-Make a context from an algo
+Make a context from an algo and empty context
 """
 function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{NamedInput, NamedOverride}...; lifetime = Indefinite()) where {F}
     inputs = filter(x -> x isa NamedInput, overrides_and_inputs)
@@ -55,15 +53,6 @@ function initcontext(td::TD, new_inputs_overrides::Union{NamedInput, NamedOverri
     end
 
 end
-
-# """
-# """
-# @inline function initcontext(p::AbstractProcess)
-#     td = taskdata(p)
-#     c = initcontext(td)
-#     @DebugMode "Prepared context is $c"
-#     return c
-# end
 
 function makecontext(p::AbstractProcess, inputs_overrides...; lifetime=nothing)
     initcontext(taskdata(p), inputs_overrides...; lifetime=lifetime)

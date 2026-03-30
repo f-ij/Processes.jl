@@ -1,12 +1,9 @@
 
 export start, restart, quit, pause, syncclose, reinit
 
-function Base.run(p::Process, lifetime = nothing, reinit = nothing, inputs_and_overrides...)
+function Base.run(p::AP, lifetime = nothing, inputs_and_overrides...) where AP <: AbstractProcess
     @assert isidle(p) "Process is already in use"
     @atomic p.shouldrun = true
-    if (isnothing(reinit) && p.paused) || reinit == true
-        makecontext!(p, inputs_and_overrides...)
-    end
     @atomic p.paused = false
     
     if !isnothing(lifetime)

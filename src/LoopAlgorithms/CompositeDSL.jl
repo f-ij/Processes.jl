@@ -46,19 +46,27 @@ struct _CompositeDSLResolved{Kind, Entity, Inputs}
     inputs::Inputs
 end
 
+"""Wrap an algorithm in `Unique`, using the DSL alias/name when one is available."""
 @inline _dsl_with_customname(algo, ::Val{Symbol()}) = Unique(algo)
 @inline _dsl_with_customname(algo, ::Val{Name}) where {Name} = Unique(algo; customname = Name)
 
+"""Resolve one non-function DSL entity into the internal representation used by the block builder."""
 function _resolve_composite_dsl_entity(spec, inputs::Tuple{Vararg{Pair{Symbol, Symbol}}}, output_symbols::Tuple{Vararg{Symbol}}, ::Val{Name}) where {Name}
     if spec isa Union{ProcessState, Type{<:ProcessState}}
+        # States participate in the block like algorithms, but they do not accept
+        # routed inputs through this syntax.
         isempty(inputs) || error("ProcessStates in the DSL cannot declare routed inputs.")
         return _CompositeDSLResolved{:state, typeof(spec), typeof(inputs)}(spec, inputs)
     elseif spec isa AbstractIdentifiableAlgo
+        # Already-named/unique algorithms can pass straight through.
         return _CompositeDSLResolved{:algo, typeof(spec), typeof(inputs)}(spec, inputs)
     elseif spec isa Union{ProcessAlgorithm, Type{<:ProcessAlgorithm}}
+        # Plain process algorithms are given a stable DSL-visible identity here.
         resolved = _dsl_with_customname(spec, Val(Name))
         return _CompositeDSLResolved{:algo, typeof(resolved), typeof(inputs)}(resolved, inputs)
     elseif spec isa Function
+        # Bare functions are wrapped so the rest of the system can treat them like
+        # normal algorithms with routed inputs/outputs.
         isempty(inputs) || error("Plain functions should use regular call syntax in the DSL, e.g. `f(x)` or `f(x; scale = 2)`.")
         wrapped = FuncWrapper(spec, (), output_symbols)
         resolved = _dsl_with_customname(wrapped, Val(Name))
@@ -68,6 +76,7 @@ function _resolve_composite_dsl_entity(spec, inputs::Tuple{Vararg{Pair{Symbol, S
     end
 end
 
+"""Resolve a plain Julia function call into a `FuncWrapper` plus its inferred routed inputs."""
 function _resolve_composite_dsl_function(
     spec,
     keyword_args::NamedTuple,
@@ -77,6 +86,8 @@ function _resolve_composite_dsl_function(
 ) where {Name}
     spec isa Function || error("Positional/semicolon call syntax in the DSL is reserved for plain functions. For ProcessAlgorithms use `Algo(routes...)` or `Algo(constructor...)(routes...)`.")
 
+    # FuncWrapper handles the runtime call; the DSL only has to recover how the
+    # wrapper should receive its routed inputs.
     wrapped = FuncWrapper(spec, input_symbols, output_symbols, keyword_args)
     resolved = _dsl_with_customname(wrapped, Val(Name))
 
@@ -90,26 +101,138 @@ function _resolve_composite_dsl_function(
     return _CompositeDSLResolved{:algo, typeof(resolved), typeof(routed_inputs)}(resolved, routed_inputs)
 end
 
-function _composite_dsl_add_routes!(options::Vector{Any}, producers::Dict{Symbol, Any}, external_inputs::Vector{Pair{Symbol, Symbol}}, target, inputs::Tuple)
-    for mapping in inputs
-        source, destination = mapping
-        if haskey(producers, source)
-            push!(options, Route(producers[source] => target, source => destination))
+"""
+Collect candidate routed symbols from a transform expression.
+
+Call heads and keyword names are ignored so `sin(a)` only contributes `:a`.
+"""
+function _dsl_collect_transform_symbols!(symbols::Vector{Symbol}, ex)
+    if ex isa Symbol
+        # Preserve first-seen order so the generated transform lambda arguments
+        # stay predictable and easy to reason about.
+        ex in symbols || push!(symbols, ex)
+    elseif ex isa Expr
+        if ex.head == :call
+            # Skip the callee itself; only the actual value arguments can become
+            # routed inputs.
+            for arg in ex.args[2:end]
+                _dsl_collect_transform_symbols!(symbols, arg)
+            end
+        elseif ex.head == :kw
+            _dsl_collect_transform_symbols!(symbols, ex.args[2])
         else
-            ext_mapping = source => source
-            ext_mapping in external_inputs || push!(external_inputs, ext_mapping)
+            for arg in ex.args
+                _dsl_collect_transform_symbols!(symbols, arg)
+            end
+        end
+    end
+    return symbols
+end
+
+"""Rewrite routed symbols in a transform body to the generated lambda arguments."""
+function _dsl_rewrite_transform_expr(ex, replacements::Dict{Symbol, Symbol})
+    if ex isa Symbol
+        return get(replacements, ex, ex)
+    elseif ex isa Expr
+        return Expr(ex.head, map(arg -> _dsl_rewrite_transform_expr(arg, replacements), ex.args)...)
+    end
+    return ex
+end
+
+"""
+Build the transform function for a routed expression.
+
+Only previously produced DSL symbols become lambda arguments; any other values in
+the expression are left as normal lexical captures.
+"""
+function _dsl_transform_lambda_expr(ex, routed_symbols::Tuple{Vararg{Symbol}})
+    arg_symbols = ntuple(_ -> gensym(:route_arg), length(routed_symbols))
+    replacements = Dict(routed_symbols[i] => arg_symbols[i] for i in eachindex(routed_symbols))
+    # Replace only the routed symbols. Any other names in the expression remain
+    # normal lexical captures of the surrounding scope.
+    body = _dsl_rewrite_transform_expr(ex, replacements)
+    args_expr = length(arg_symbols) == 1 ? arg_symbols[1] : Expr(:tuple, arg_symbols...)
+    return Expr(:->, args_expr, body)
+end
+
+"""Track which output symbols are available to later route expressions in the same DSL block."""
+function _dsl_known_outputs!(known_outputs::Set{Symbol}, stmt)
+    if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
+        _, fields = _dsl_parse_state_statement(stmt)
+        union!(known_outputs, getproperty.(fields, :name))
+    elseif stmt isa Expr && stmt.head == :(=)
+        union!(known_outputs, _dsl_parse_output_symbols(stmt.args[1]))
+    end
+    return known_outputs
+end
+
+"""Recreate parsed input specs inside the emitted DSL block."""
+function _dsl_inputs_expr(input_specs)
+    specs = map(input_specs) do spec
+        if spec.kind == :simple
+            # Keep the emitted structure plain NamedTuples so the builder-side
+            # route code stays easy to inspect at runtime.
+            :( (; kind = :simple, source = $(QuoteNode(spec.source)), destination = $(QuoteNode(spec.destination)) ) )
+        else
+            :( (; kind = :transform, sources = $(QuoteNode(spec.sources)), destination = $(QuoteNode(spec.destination)), transform = $(esc(spec.transform_expr)) ) )
+        end
+    end
+    return Expr(:tuple, specs...)
+end
+
+"""
+Turn parsed DSL input specs into concrete `Route` objects.
+
+Simple routes are converted directly. Transform routes remain intentionally
+conservative for now and only support sources that all belong to the same
+producer subcontext.
+"""
+function _composite_dsl_add_routes!(options::Vector{Any}, producers::Dict{Symbol, Any}, external_inputs::Vector{Pair{Symbol, Symbol}}, target, inputs::Tuple)
+    for input in inputs
+        if input.kind == :simple
+            source = input.source
+            destination = input.destination
+            if haskey(producers, source)
+                push!(options, Route(producers[source] => target, source => destination))
+            else
+                ext_mapping = source => source
+                ext_mapping in external_inputs || push!(external_inputs, ext_mapping)
+            end
+        else
+            sources = input.sources
+            isempty(sources) && error("Transform routes must reference at least one previously produced symbol.")
+
+            missing = filter(source -> !haskey(producers, source), sources)
+            isempty(missing) || error("Transform routes currently only support previously produced symbols. Missing: $(missing)")
+
+            # The current routing backend stores one origin subcontext per route.
+            # Keep the DSL syntax broad enough for future multi-context routes, but
+            # reject cross-producer transforms clearly for now.
+            owner = producers[first(sources)]
+            all(source -> producers[source] === owner, sources) || error("Transform routes currently require all source symbols to come from the same producer. Got $(sources)")
+
+            push!(options, Route(owner => target, (sources => input.destination); transform = input.transform))
         end
     end
     return options
 end
 
+"""Register outputs as the current producer for later routed lookups."""
 function _composite_dsl_register_outputs!(producers::Dict{Symbol, Any}, owner, outputs::Tuple{Vararg{Symbol}})
     for output in outputs
+        # Later statements resolve symbols by asking this table who currently
+        # owns a given output name.
         producers[output] = owner
     end
     return producers
 end
 
+"""
+Bind the outputs produced by one DSL statement.
+
+If the output already belongs to an inline `@state`, keep that state as the
+owner and add a writeback route instead of rebinding the symbol.
+"""
 function _composite_dsl_bind_outputs!(options::Vector{Any}, producers::Dict{Symbol, Any}, target, outputs::Tuple{Vararg{Symbol}})
     for output in outputs
         if haskey(producers, output) && producers[output] isa ProcessState
@@ -129,6 +252,7 @@ function _dsl_expand_state_expr(fields)
     defaults_expr = Expr(:tuple, Expr(:parameters, default_kws...))
 
     return quote
+        # The field metadata is kept in the type so init can stay fully inferred.
         Processes._make_inline_state($defaults_expr, Val{$field_names}(), Val{$required_names}())
     end
 end
@@ -206,6 +330,15 @@ function _dsl_state_setup_expr(state_fields, state_name::Symbol)
     end
 end
 
+"""
+Parse the left-hand side of a DSL assignment.
+
+Supported output bindings:
+- `x = ...`
+- `a, b = ...`
+
+Tuple bindings must contain only plain symbols.
+"""
 function _dsl_parse_output_symbols(lhs)
     if lhs isa Symbol
         return (lhs,)
@@ -216,6 +349,15 @@ function _dsl_parse_output_symbols(lhs)
     error("Unsupported left-hand side in the DSL: `$lhs`.")
 end
 
+"""
+Parse an alias declaration.
+
+Supported form:
+- `@alias name = SomeAlgo`
+- `@alias name = SomeAlgo(args...)`
+
+The alias name must be a plain symbol.
+"""
 function _dsl_parse_alias(stmt)
     stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias") || error("Invalid alias statement `$stmt`.")
     length(stmt.args) == 3 || error("@alias expects a single assignment like `@alias src = SourceAlgo`.")
@@ -226,6 +368,16 @@ function _dsl_parse_alias(stmt)
     return lhs => assign.args[2]
 end
 
+"""
+Parse optional scheduling wrappers around a DSL statement.
+
+Supported wrappers:
+- `@interval n expr`
+- `@every n expr`
+- `@repeat n expr`
+
+Anything without an explicit wrapper is treated as schedule `1`.
+"""
 function _dsl_parse_schedule(ex)
     if ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@interval")
         length(ex.args) == 4 || error("@interval expects `@interval n expr`.")
@@ -240,6 +392,7 @@ function _dsl_parse_schedule(ex)
     return (:default, :(1), ex)
 end
 
+"""Resolve a DSL alias when the callee is referenced by name."""
 function _dsl_resolve_alias(alias_map, ex)
     if ex isa Symbol && haskey(alias_map, ex)
         return alias_map[ex], ex
@@ -247,6 +400,7 @@ function _dsl_resolve_alias(alias_map, ex)
     return ex, Symbol()
 end
 
+"""Resolve constructor syntax while preserving alias-based custom names."""
 function _dsl_resolve_constructor_expr(alias_map, ex)
     if ex isa Symbol
         return _dsl_resolve_alias(alias_map, ex)
@@ -257,6 +411,18 @@ function _dsl_resolve_constructor_expr(alias_map, ex)
     return ex, Symbol()
 end
 
+"""
+Parse a plain Julia function call DSL entry.
+
+Supported function-call forms:
+- `f(x)`
+- `f(x, y)`
+- `f(x; scale = 2)`
+- `f(x, y; scale = 2, offset = bias)`
+
+All positional arguments must be plain symbols. Keyword values may be symbols or
+arbitrary Julia expressions and are forwarded to `FuncWrapper`.
+"""
 function _dsl_parse_function_call(alias_map, ex)
     callee, alias_name = _dsl_resolve_alias(alias_map, ex.args[1])
 
@@ -273,6 +439,8 @@ function _dsl_parse_function_call(alias_map, ex)
                 push!(keyword_pairs, name => value)
             end
         else
+            # Plain function positional arguments are routed by position; keep
+            # this syntax intentionally narrow so it stays readable.
             arg isa Symbol || error("Plain function positional arguments in the DSL must be routed symbols. Got `$arg`.")
             push!(input_symbols, arg)
         end
@@ -288,24 +456,73 @@ function _dsl_parse_function_call(alias_map, ex)
     )
 end
 
-function _dsl_split_route_kwargs(kwargs)
-    inputs = Pair{Symbol, Symbol}[]
+"""
+Parse ProcessAlgorithm keyword routes.
+
+Simple symbol values become normal routes. Expressions become transformed routes,
+using any already-known DSL outputs as routed inputs and leaving the rest of the
+expression captured normally.
+"""
+function _dsl_split_route_kwargs(kwargs, known_outputs::Set{Symbol})
+    inputs = Any[]
     for kw in kwargs
         kw isa Expr && kw.head == :kw || error("Only keyword-based routes are supported for ProcessAlgorithms in the DSL.")
         destination = kw.args[1]
-        source = kw.args[2]
         destination isa Symbol || error("Route targets must be symbols. Got `$destination`.")
-        source isa Symbol || error("Route sources must reference previously named outputs, got `$source`.")
-        push!(inputs, source => destination)
+        source = kw.args[2]
+
+        if source isa Symbol
+            # Plain `x = produced` stays a simple route and can still become an
+            # external input later if `produced` is not known yet.
+            push!(inputs, (; kind = :simple, source, destination))
+            continue
+        end
+
+        routed_symbols = Symbol[]
+        _dsl_collect_transform_symbols!(routed_symbols, source)
+        # Only previously-seen DSL outputs become routed inputs. Everything else
+        # in the expression remains a normal captured value.
+        filter!(in(known_outputs), routed_symbols)
+        isempty(routed_symbols) && error("Transform route for `$destination` must reference at least one previously named output.")
+
+        routed_tuple = tuple(routed_symbols...)
+        transform_expr = _dsl_transform_lambda_expr(source, routed_tuple)
+        push!(inputs, (; kind = :transform, sources = routed_tuple, destination, transform_expr))
     end
     return tuple(inputs...)
 end
 
-function _dsl_parse_invocation(alias_map, ex)
+"""
+Parse one right-hand-side DSL invocation.
+
+Accepted statement bodies:
+- `Algo`
+- `Algo()`
+- `Algo(routes...)`
+- `Algo(args...)(routes...)`
+- `alias`
+- `alias(routes...)`
+- `f(x)`
+- `f(x; kw = value)`
+- `@interval n expr`
+- `@every n expr`
+- `@repeat n expr`
+- `@repeat n begin ... end`
+
+Within ProcessAlgorithm route syntax:
+- `target = produced` becomes a simple route
+- `target = produced + other` becomes a transform route
+
+Only symbols already produced earlier in the same DSL block are treated as routed
+transform inputs. Any other values in the expression remain normal Julia captures.
+"""
+function _dsl_parse_invocation(alias_map, ex, known_outputs::Set{Symbol})
     if ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@repeat") && length(ex.args) == 4
         repeats_expr = ex.args[3]
         block = ex.args[4]
         if block isa Expr && block.head == :block
+            # Nested `@repeat n begin ... end` becomes one pre-resolved routable
+            # entity so the outer block can treat it like any other statement.
             return (
                 kind = :resolved_expr,
                 resolved_expr = _dsl_expand_repeated_block(block, repeats_expr),
@@ -322,6 +539,7 @@ function _dsl_parse_invocation(alias_map, ex)
     schedule_kind, schedule_value, inner = _dsl_parse_schedule(ex)
 
     parsed = if inner isa Symbol
+        # Bare names refer to either aliases or directly to algorithms/states.
         spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, inner)
         (
             kind = :entity,
@@ -336,8 +554,10 @@ function _dsl_parse_invocation(alias_map, ex)
         args = inner.args[2:end]
 
         if callee isa Expr && callee.head == :call
+            # `Algo(args...)(routes...)`: first build/resolve the entity, then
+            # parse the outer keyword routes against known DSL outputs.
             spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, callee)
-            inputs = _dsl_split_route_kwargs(args)
+            inputs = _dsl_split_route_kwargs(args, known_outputs)
             (
                 kind = :entity,
                 spec_expr,
@@ -360,10 +580,13 @@ function _dsl_parse_invocation(alias_map, ex)
             has_parameters = any(arg -> arg isa Expr && arg.head == :parameters, args)
             has_positional = any(arg -> !(arg isa Expr && arg.head == :kw), args)
             if has_parameters || has_positional
+                # Mixed positional/semicolon syntax is reserved for bare Julia
+                # functions that should be wrapped in `FuncWrapper`.
                 _dsl_parse_function_call(alias_map, inner)
             else
+                # Pure keyword calls are interpreted as ProcessAlgorithm routes.
                 spec_expr, alias_name = _dsl_resolve_alias(alias_map, callee)
-                inputs = _dsl_split_route_kwargs(args)
+                inputs = _dsl_split_route_kwargs(args, known_outputs)
                 (
                     kind = :entity,
                     spec_expr,
@@ -389,6 +612,7 @@ function _dsl_parse_invocation(alias_map, ex)
     return (; parsed..., schedule_kind, schedule_value)
 end
 
+"""Pick the most readable custom name for a DSL statement when no explicit alias is given."""
 function _dsl_customname(ex, alias_name::Symbol)
     alias_name != Symbol() && return alias_name
     if ex isa Symbol
@@ -401,6 +625,7 @@ function _dsl_customname(ex, alias_name::Symbol)
     return Symbol()
 end
 
+"""Validate schedule usage and turn it into the constructor specification entry."""
 function _dsl_schedule_expr(schedule_kind::Symbol, schedule_value, expected_schedule::Symbol, owner_name::Symbol)
     if schedule_kind == :default
         return :(1)
@@ -416,12 +641,24 @@ function _dsl_schedule_expr(schedule_kind::Symbol, schedule_value, expected_sche
     end
 end
 
+"""Emit either `algo` or `:alias => algo` for the target constructor call."""
 function _dsl_algorithm_entry_expr(alias_name::Symbol)
     alias_name == Symbol() ? :(_dsl_resolved.entity) : :($(QuoteNode(alias_name)) => _dsl_resolved.entity)
 end
 
-"""Build one executable DSL statement inside a composite or routine block."""
-function _dsl_build_statement(stmt, alias_map, expected_schedule::Symbol, owner_name::Symbol)
+"""
+Build one executable DSL statement inside a composite or routine block.
+
+Accepted top-level statements inside the block:
+- `@state ...`
+- `@alias ...`
+- bare algorithm/state/function entries
+- assignments like `x = ...` or `a, b = ...`
+- scheduled entries via `@interval`, `@every`, or `@repeat`
+
+`@finally` is recognized only to emit the current "not implemented" error.
+"""
+function _dsl_build_statement(stmt, alias_map, known_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol)
     if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
@@ -437,21 +674,27 @@ function _dsl_build_statement(stmt, alias_map, expected_schedule::Symbol, owner_
         rhs = stmt.args[2]
     end
 
-    parsed = _dsl_parse_invocation(alias_map, rhs)
+    parsed = _dsl_parse_invocation(alias_map, rhs, known_outputs)
     outputs_expr = Expr(:tuple, [QuoteNode(sym) for sym in outputs]...)
     schedule_expr = _dsl_schedule_expr(parsed.schedule_kind, parsed.schedule_value, expected_schedule, owner_name)
 
     if parsed.kind == :entity
         customname = _dsl_customname(parsed.spec_expr, parsed.alias_name)
         algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
-        inputs_expr = Expr(:tuple, [:( $(QuoteNode(src)) => $(QuoteNode(dst)) ) for (src, dst) in parsed.inputs]...)
+        inputs_expr = _dsl_inputs_expr(parsed.inputs)
         return quote
             local _dsl_outputs = $outputs_expr
+            # Resolve the user-facing DSL entity into a normal algorithm/state
+            # object plus the routed input metadata the builder needs.
             local _dsl_resolved = Processes._resolve_composite_dsl_entity($(esc(parsed.spec_expr)), $inputs_expr, _dsl_outputs, Val{$(QuoteNode(customname))}())
             if _dsl_resolved isa Processes._CompositeDSLResolved{:state}
+                # Inline states are stored separately and claim ownership of
+                # their outputs immediately.
                 push!(_dsl_states, _dsl_resolved.entity)
                 Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_resolved.entity, _dsl_outputs)
             else
+                # Algorithms are appended to the constructor argument list and
+                # then wired into the routing tables.
                 push!(_dsl_algos, $algo_entry_expr)
                 push!(_dsl_specification, Int($schedule_expr))
                 Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_resolved.entity, _dsl_resolved.inputs)
@@ -464,6 +707,8 @@ function _dsl_build_statement(stmt, alias_map, expected_schedule::Symbol, owner_
         algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
         return quote
             local _dsl_outputs = $outputs_expr
+            # Repeated inner blocks already expand to one resolved entity, so the
+            # outer builder only has to wire and register them.
             local _dsl_resolved = $(parsed.resolved_expr)
             push!(_dsl_algos, $algo_entry_expr)
             push!(_dsl_specification, Int($schedule_expr))
@@ -481,6 +726,8 @@ function _dsl_build_statement(stmt, alias_map, expected_schedule::Symbol, owner_
 
     return quote
         local _dsl_outputs = $outputs_expr
+        # Function-call syntax stays on a dedicated path so we can recover
+        # positional inputs and keyword captures for `FuncWrapper`.
         local _dsl_resolved = Processes._resolve_composite_dsl_function(
             $(esc(parsed.spec_expr)),
             $keyword_args_expr,
@@ -495,6 +742,41 @@ function _dsl_build_statement(stmt, alias_map, expected_schedule::Symbol, owner_
     end
 end
 
+"""
+Walk a DSL block once and collect the state declarations plus executable statements.
+
+This is shared by the top-level `@CompositeAlgorithm`/`@Routine` expansion and the
+inner `@repeat n begin ... end` block expansion so they stay in sync.
+"""
+function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::Symbol)
+    alias_map = Dict{Symbol, Any}()
+    known_outputs = Set{Symbol}()
+    step_exprs = Expr[]
+    state_fields = Any[]
+    state_name = :_state
+
+    for stmt in statements
+        if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
+            # States are collected first and emitted once for the whole block.
+            state_name = _dsl_merge_state_statement!(state_fields, state_name, stmt)
+            _dsl_known_outputs!(known_outputs, stmt)
+            continue
+        elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
+            # Aliases only affect later statements, so store them and keep moving.
+            alias = _dsl_parse_alias(stmt)
+            alias_map[alias.first] = alias.second
+            continue
+        end
+
+        step_expr = _dsl_build_statement(stmt, alias_map, known_outputs, expected_schedule, owner_name)
+        isnothing(step_expr) || push!(step_exprs, step_expr)
+        # Outputs become available to the statements that follow them.
+        _dsl_known_outputs!(known_outputs, stmt)
+    end
+
+    return (; step_exprs, state_fields, state_name)
+end
+
 """Create an `InlineState` value directly."""
 macro state(args...)
     fields = _dsl_collect_state_fields(args)
@@ -504,29 +786,14 @@ end
 """Expand a top-level DSL block into either a `CompositeAlgorithm` or a `Routine`."""
 function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_schedule::Symbol)
     statements = block isa Expr && block.head == :block ? [stmt for stmt in block.args if !(stmt isa LineNumberNode)] : [block]
-    alias_map = Dict{Symbol, Any}()
-    step_exprs = Expr[]
-    state_fields = Any[]
-    state_name = :_state
+    collected = _dsl_collect_block(statements, expected_schedule, constructor_name)
 
-    for stmt in statements
-        if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
-            state_name = _dsl_merge_state_statement!(state_fields, state_name, stmt)
-            continue
-        elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
-            alias = _dsl_parse_alias(stmt)
-            alias_map[alias.first] = alias.second
-            continue
-        end
-
-        step_expr = _dsl_build_statement(stmt, alias_map, expected_schedule, constructor_name)
-        isnothing(step_expr) || push!(step_exprs, step_expr)
-    end
-
-    state_setup_expr = _dsl_state_setup_expr(state_fields, state_name)
+    state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
 
     return quote
         let
+            # Keep the emitted block literal and local so the resulting macro
+            # expansion is easy to inspect in lowered code.
             local _dsl_algos = Any[]
             local _dsl_states = Any[]
             local _dsl_options = Any[]
@@ -535,9 +802,11 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
 
             $(isnothing(state_setup_expr) ? nothing : state_setup_expr)
-            $(step_exprs...)
+            $(collected.step_exprs...)
 
             isempty(_dsl_algos) && error("`@$constructor_name` requires at least one algorithm entry.")
+            # Build the final `CompositeAlgorithm`/`Routine` using the same
+            # constructor surface users would write by hand.
             getproperty(Processes, $(QuoteNode(constructor_name)))(_dsl_algos..., Tuple(_dsl_specification), _dsl_states..., _dsl_options...)
         end
     end
@@ -546,29 +815,14 @@ end
 """Expand the body used inside `@repeat n begin ... end` into a `SimpleAlgo`."""
 function _dsl_expand_simplealgorithm_resolved(block)
     statements = block isa Expr && block.head == :block ? [stmt for stmt in block.args if !(stmt isa LineNumberNode)] : [block]
-    alias_map = Dict{Symbol, Any}()
-    step_exprs = Expr[]
-    state_fields = Any[]
-    state_name = :_state
+    collected = _dsl_collect_block(statements, :none, :repeat)
 
-    for stmt in statements
-        if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
-            state_name = _dsl_merge_state_statement!(state_fields, state_name, stmt)
-            continue
-        elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
-            alias = _dsl_parse_alias(stmt)
-            alias_map[alias.first] = alias.second
-            continue
-        end
-
-        step_expr = _dsl_build_statement(stmt, alias_map, :none, :repeat)
-        isnothing(step_expr) || push!(step_exprs, step_expr)
-    end
-
-    state_setup_expr = _dsl_state_setup_expr(state_fields, state_name)
+    state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
 
     return quote
         let
+            # The inner repeated block is built exactly once as a plain
+            # `SimpleAlgo`, then wrapped by the outer `Routine`.
             local _dsl_algos = Any[]
             local _dsl_states = Any[]
             local _dsl_options = Any[]
@@ -577,10 +831,12 @@ function _dsl_expand_simplealgorithm_resolved(block)
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
 
             $(isnothing(state_setup_expr) ? nothing : state_setup_expr)
-            $(step_exprs...)
+            $(collected.step_exprs...)
 
             isempty(_dsl_algos) && error("`@repeat n begin ... end` requires at least one algorithm entry.")
             local _dsl_algo = Processes.SimpleAlgo(_dsl_algos..., _dsl_states..., _dsl_options...)
+            # Return the same resolved wrapper the outer builder expects from any
+            # other DSL statement.
             local _dsl_inputs = Tuple(_dsl_external_inputs)
             Processes._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
         end
@@ -594,6 +850,8 @@ function _dsl_expand_repeated_block(block, repeats_expr)
         let
             local _dsl_inner = $inner_expr
             local _dsl_repeats = Int($(esc(repeats_expr)))
+            # `Unique` gives the repeated block one stable identity so normal
+            # routes and aliases can target it from the outer DSL block.
             local _dsl_algo = Processes.Unique(Processes.Routine(_dsl_inner.entity, (_dsl_repeats,)))
             local _dsl_inputs = _dsl_inner.inputs
             Processes._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
@@ -601,12 +859,87 @@ function _dsl_expand_repeated_block(block, repeats_expr)
     end
 end
 
-"""Build a `CompositeAlgorithm` from a declarative DSL block."""
+"""
+Build a `CompositeAlgorithm` from a declarative DSL block.
+
+Supported block contents
+========================
+
+State declarations:
+- `@state x`
+- `@state x = 1`
+- `@state begin ... end`
+- `@state mystate begin ... end`
+
+Alias declarations:
+- `@alias source = SomeAlgo`
+- `@alias source = SomeAlgo(args...)`
+
+Plain entries:
+- `Algo`
+- `Algo()`
+- `alias`
+
+Assignments:
+- `x = Algo`
+- `x = Algo()`
+- `a, b = Algo(...)`
+
+ProcessAlgorithm routes:
+- `x = Algo(input = produced)`
+- `x = Algo(left = a, right = b)`
+- `x = Algo(value = produced * 2)`
+- `x = Algo(value = produced + passthrough + bias)`
+- `x = SomeAlgo(args...)(input = produced)`
+
+Plain-function entries:
+- `x = f(produced)`
+- `x = f(produced, other)`
+- `x = f(produced; scale = 2)`
+- `x = f(produced; scale = factor)`
+
+Scheduling:
+- `x = @interval n Algo(...)`
+- `x = @every n Algo(...)`
+- `x = @interval n f(produced)`
+- `x = @repeat n begin ... end`
+
+Current transform-route rules
+=============================
+
+When a ProcessAlgorithm keyword value is an expression instead of a plain symbol,
+the DSL treats it as a transformed route. For example:
+
+`consumer(value = a + b)`
+
+is parsed as a route into `value` with a generated transform function. At the
+moment, all routed symbols inside that transform must come from the same producer
+subcontext. Cross-producer transforms are intentionally left for later work.
+
+State rebinding
+===============
+
+If an output name already belongs to the inline DSL state, assigning to that name
+does not replace the state owner. Instead, the produced value is routed back into
+that state slot.
+"""
 macro CompositeAlgorithm(block)
     _dsl_expand_loopalgorithm(block, :CompositeAlgorithm, :every)
 end
 
-"""Build a `Routine` from a declarative DSL block."""
+"""
+Build a `Routine` from a declarative DSL block.
+
+The supported statement syntax is the same as `@CompositeAlgorithm`, except that
+the scheduling wrapper expected inside the block is `@repeat n expr` instead of
+`@interval n expr`.
+
+Examples:
+- `x = Algo(input = value)`
+- `x = @repeat 10 Algo(input = value)`
+- `y = @repeat 5 begin ... end`
+- `z = f(value; scale = 2)`
+"""
 macro Routine(block)
     _dsl_expand_loopalgorithm(block, :Routine, :repeat)
 end

@@ -87,21 +87,16 @@ end
 
     p.loopidx = 1
     runtime_context = @inline merge_into_globals(context, (; process=p))
-    # loopdispatch = isnothing(repeat) ? lifetime(p) : _inline_process_lifetime(algo, repeat, nothing)
     inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
     lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
-    # p.consumed = true
-    return @inline loop(p, algo, runtime_context, lifetime, Generated())
-    # return @noinline processloop(p, algo, runtime_context, lifetime)
-
-    # if (isnothing(threaded) && isthreaded(p)) || threaded === true
-    #     return Threads.@spawn generated_processloop(p, algo, runtime_context, lifetime)
-    # elseif (isnothing(threaded) && isasync(p)) || threaded === :async
-    #     return @async generated_processloop(p, algo, runtime_context, lifetime)
-    # else 
-    #     return @inline generated_processloop(p, algo, runtime_context, lifetime)
-    # end
+    if (isnothing(threaded) && isthreaded(p)) || threaded === true
+        return Threads.@spawn @inline loop(p, algo, runtime_context, lifetime)
+    elseif (isnothing(threaded) && isasync(p)) || threaded === :async
+        return @async @inline loop(p, algo, runtime_context, lifetime)
+    else 
+        return @inline @inline loop(p, algo, runtime_context, lifetime)
+    end
 end
 
 @inline function run_nogen(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing)

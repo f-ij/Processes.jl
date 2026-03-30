@@ -4,6 +4,7 @@ using Processes
 struct DSLSourceAlgo <: Processes.ProcessAlgorithm end
 struct DSLCombineAlgo <: Processes.ProcessAlgorithm end
 struct DSLSinkAlgo <: Processes.ProcessAlgorithm end
+struct DSLValueAlgo <: Processes.ProcessAlgorithm end
 
 function Processes.step!(::DSLSourceAlgo, context)
     return (; produced = 2, passthrough = context.seed)
@@ -15,6 +16,10 @@ end
 
 function Processes.step!(::DSLSinkAlgo, context)
     return (; seen = context.value)
+end
+
+function Processes.step!(::DSLValueAlgo, context)
+    return (; value = context.value)
 end
 
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
@@ -107,6 +112,44 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
 
         named_ctx = Processes.initcontext(resolved_named_state)
         @test named_ctx[:mystate].a == 1
+    end
+
+    @testset "Transform routes resolve from expressions" begin
+        one_var_transform = @CompositeAlgorithm begin
+            @state seed = 3
+            @alias source = DSLSourceAlgo
+            produced, passthrough = source(seed = seed)
+            DSLSinkAlgo(value = produced * 3)
+        end
+
+        resolved_one_var = resolve(one_var_transform)
+        one_var_opts = Processes.getoptions(resolved_one_var)
+        one_var_routes = one_var_opts[:DSLSinkAlgo_1]
+        @test length(one_var_routes) == 1
+        @test Processes.gettransform(first(one_var_routes)) !== nothing
+
+        p_one_var = Process(resolved_one_var, repeat = 1)
+        Processes.run(p_one_var)
+        ctx_one_var = fetch(p_one_var)
+        @test ctx_one_var[:DSLSinkAlgo_1].seen == 6
+
+        two_var_transform = @CompositeAlgorithm begin
+            @state seed = 3
+            @alias source = DSLSourceAlgo
+            produced, passthrough = source(seed = seed)
+            DSLValueAlgo(value = produced + passthrough)
+        end
+
+        resolved_two_var = resolve(two_var_transform)
+        two_var_opts = Processes.getoptions(resolved_two_var)
+        two_var_routes = two_var_opts[:DSLValueAlgo_1]
+        @test length(two_var_routes) == 1
+        @test Processes.gettransform(first(two_var_routes)) !== nothing
+
+        p_two_var = Process(resolved_two_var, repeat = 1)
+        Processes.run(p_two_var)
+        ctx_two_var = fetch(p_two_var)
+        @test ctx_two_var[:DSLValueAlgo_1].value == 5
     end
 
     @testset "Repeat forms expand correctly" begin
