@@ -1,5 +1,4 @@
-using Test, Pkg
-Pkg.activate((@__DIR__ )*"/..")
+using Test
 
 @testset "Processes" begin
     include("CompositeCompositionTest.jl")
