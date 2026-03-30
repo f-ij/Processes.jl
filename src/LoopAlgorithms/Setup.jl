@@ -59,29 +59,12 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
     end
     @assert !isempty(processalgos) "At least one ProcessAlgorithm must be provided, but got: $(args)"
 
-    # # First ProcessAlgorithms
-    # after_last_algo_idx = findlast(args) do x
-    #     if x isa Type
-    #         return x <: SteppableAlgorithm
-    #     else
-    #         return x isa SteppableAlgorithm
-    #     end
-    # end
-    # @assert !isnothing(after_last_algo_idx) "At least one argument must be a non-ProcessAlgorithm to separate the functions from the options, but got: $(args)"
-    # processalgos = tuple(args[1:after_last_algo_idx]...)
-    # processalgos = ntuple(i -> (processalgos[i] isa ProcessEntity || processalgos[i] isa Type{<:ProcessEntity}) ? IdentifiableAlgo(processalgos[i]) : processalgos[i], length(processalgos))
-    
     # Collect options from all LoopAlgorithms
     for algo in processalgos
         if algo isa LoopAlgorithm
             collected_options = (unique(collected_options)..., getoptions(algo)...)
         end
     end
-    # @show args
-
-    # args = args[after_last_algo_idx + 1:end] # Remove the ProcessAlgorithms from the arguments list for further processing
-
-
     ######### INTERVALS #########
     # Now we should have intervals/repeats if theres more than one function
     intervals_or_repeats = nothing
@@ -91,26 +74,28 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
         if firstargs isa Tuple
             @assert length(firstargs) == length(processalgos) "If passing intervals as a tuple, there must be one interval per function, but got $(firstargs) for functions $(processalgos)"
             intervals_or_repeats = firstargs
+            if iscomposite(laType)
+                intervals_or_repeats = map(x -> !(x isa Interval) ? Interval(x) : x, intervals_or_repeats)
+            end
             args = args[2:end] # Remove the intervals from the arguments list for further processing
         elseif iscomposite(laType)
-            intervals_or_repeats = RepeatOne{length(processalgos)}
+            intervals_or_repeats = IntervalOnes{length(processalgos)}
+            intervals_or_repeats = ntuple(i -> round(Int, intervals_or_repeats[i]), length(processalgos))
+
         end
 
     elseif iscomposite(laType)
-        intervals_or_repeats = RepeatOne{length(processalgos)}
+        intervals_or_repeats = IntervalOnes{length(processalgos)}
     else
         error("For routines, please pass the number of repeats after all ProcessAlgorithms as a tuple, even if it's just one repeat, e.g. (10,). Got: $firstargs")
     end
-    intervals_or_repeats = ntuple(i -> round(Int, intervals_or_repeats[i]), length(processalgos))
-
-
 
     ### FLATTEN ###
     if iscomposite(laType)
 
         processalgos, intervals_or_repeats = flatten_comp_funcs(processalgos, tuple(intervals_or_repeats...))
         if all(x -> x == 1, intervals_or_repeats)
-            intervals_or_repeats = RepeatOne{length(processalgos)}
+            intervals_or_repeats = IntervalOnes{length(processalgos)}
         end
     end
 

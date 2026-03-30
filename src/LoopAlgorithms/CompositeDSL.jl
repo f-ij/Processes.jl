@@ -46,12 +46,12 @@ struct _CompositeDSLResolved{Kind, Entity, Inputs}
     inputs::Inputs
 end
 
-"""Wrap an algorithm in `Unique`, using the DSL alias/name when one is available."""
-@inline _dsl_with_customname(algo, ::Val{Symbol()}) = Unique(algo)
-@inline _dsl_with_customname(algo, ::Val{Name}) where {Name} = Unique(algo; customname = Name)
+"""The DSL preserves the identity the user supplied instead of uniquifying it."""
+@inline _dsl_with_customname(algo, ::Val{Symbol()}) = algo
+@inline _dsl_with_customname(algo, ::Val{Name}) where {Name} = algo
 
 """Resolve one non-function DSL entity into the internal representation used by the block builder."""
-function _resolve_composite_dsl_entity(spec, inputs::Tuple{Vararg{Pair{Symbol, Symbol}}}, output_symbols::Tuple{Vararg{Symbol}}, ::Val{Name}) where {Name}
+function _resolve_composite_dsl_entity(spec, inputs::Tuple, output_symbols::Tuple{Vararg{Symbol}}, ::Val{Name}) where {Name}
     if spec isa Union{ProcessState, Type{<:ProcessState}}
         # States participate in the block like algorithms, but they do not accept
         # routed inputs through this syntax.
@@ -91,11 +91,11 @@ function _resolve_composite_dsl_function(
     wrapped = FuncWrapper(spec, input_symbols, output_symbols, keyword_args)
     resolved = _dsl_with_customname(wrapped, Val(Name))
 
-    inputs = Pair{Symbol, Symbol}[source => source for source in input_symbols]
+    inputs = Any[(; kind = :simple, source, destination = source) for source in input_symbols]
     for name in keys(keyword_args)
         source = getproperty(keyword_args, name)
         source isa Symbol || continue
-        push!(inputs, source => name)
+        push!(inputs, (; kind = :simple, source, destination = name))
     end
     routed_inputs = tuple(inputs...)
     return _CompositeDSLResolved{:algo, typeof(resolved), typeof(routed_inputs)}(resolved, routed_inputs)
@@ -457,6 +457,58 @@ function _dsl_parse_function_call(alias_map, ex)
 end
 
 """
+Parse a full-context share marker inside a ProcessAlgorithm call.
+
+Supported forms:
+- `@all(source)`
+- `@all(source...)`
+
+The source may be a plain algorithm/type name or a previously declared DSL alias.
+"""
+function _dsl_parse_all_share_arg(alias_map, arg)
+    arg isa Expr && arg.head == :macrocall && arg.args[1] == Symbol("@all") || error("Invalid share syntax `$arg`.")
+    length(arg.args) == 3 || error("@all expects exactly one source like `@all(source)` or `@all(source...)`.")
+
+    source_expr = arg.args[3]
+    if source_expr isa Expr && source_expr.head == :...
+        length(source_expr.args) == 1 || error("@all(source...) only supports one source.")
+        source_expr = source_expr.args[1]
+    end
+
+    resolved_source, source_name = _dsl_resolve_constructor_expr(alias_map, source_expr)
+    return source_name == Symbol() ? resolved_source : :(Processes.IdentifiableAlgo($(esc(resolved_source)), $(QuoteNode(source_name))))
+end
+
+"""
+Parse ProcessAlgorithm call arguments.
+
+Supported positional forms:
+- `@all(source)`
+- `@all(source...)`
+
+Supported keyword forms:
+- `target = produced`
+- `target = produced + other`
+"""
+function _dsl_parse_entity_call_args(alias_map, args, known_outputs::Set{Symbol})
+    share_sources = Any[]
+    route_kwargs = Any[]
+
+    for arg in args
+        if arg isa Expr && arg.head == :macrocall && arg.args[1] == Symbol("@all")
+            push!(share_sources, _dsl_parse_all_share_arg(alias_map, arg))
+        elseif arg isa Expr && arg.head == :kw
+            push!(route_kwargs, arg)
+        else
+            error("ProcessAlgorithm calls in the DSL only support keyword routes and `@all(...)` share markers. Got `$arg`.")
+        end
+    end
+
+    inputs = _dsl_split_route_kwargs(route_kwargs, known_outputs)
+    return inputs, tuple(share_sources...)
+end
+
+"""
 Parse ProcessAlgorithm keyword routes.
 
 Simple symbol values become normal routes. Expressions become transformed routes,
@@ -546,6 +598,7 @@ function _dsl_parse_invocation(alias_map, ex, known_outputs::Set{Symbol})
             spec_expr,
             alias_name,
             inputs = (),
+            shares = (),
             input_symbols = (),
             keyword_pairs = (),
         )
@@ -557,12 +610,13 @@ function _dsl_parse_invocation(alias_map, ex, known_outputs::Set{Symbol})
             # `Algo(args...)(routes...)`: first build/resolve the entity, then
             # parse the outer keyword routes against known DSL outputs.
             spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, callee)
-            inputs = _dsl_split_route_kwargs(args, known_outputs)
+            inputs, shares = _dsl_parse_entity_call_args(alias_map, args, known_outputs)
             (
                 kind = :entity,
                 spec_expr,
                 alias_name,
                 inputs,
+                shares,
                 input_symbols = (),
                 keyword_pairs = (),
             )
@@ -573,25 +627,28 @@ function _dsl_parse_invocation(alias_map, ex, known_outputs::Set{Symbol})
                 spec_expr,
                 alias_name,
                 inputs = (),
+                shares = (),
                 input_symbols = (),
                 keyword_pairs = (),
             )
         else
             has_parameters = any(arg -> arg isa Expr && arg.head == :parameters, args)
-            has_positional = any(arg -> !(arg isa Expr && arg.head == :kw), args)
-            if has_parameters || has_positional
+            has_share = any(arg -> arg isa Expr && arg.head == :macrocall && arg.args[1] == Symbol("@all"), args)
+            has_positional = any(arg -> !(arg isa Expr && arg.head == :kw) && !(arg isa Expr && arg.head == :macrocall && arg.args[1] == Symbol("@all")), args)
+            if has_parameters || (has_positional && !has_share)
                 # Mixed positional/semicolon syntax is reserved for bare Julia
                 # functions that should be wrapped in `FuncWrapper`.
                 _dsl_parse_function_call(alias_map, inner)
             else
                 # Pure keyword calls are interpreted as ProcessAlgorithm routes.
                 spec_expr, alias_name = _dsl_resolve_alias(alias_map, callee)
-                inputs = _dsl_split_route_kwargs(args, known_outputs)
+                inputs, shares = _dsl_parse_entity_call_args(alias_map, args, known_outputs)
                 (
                     kind = :entity,
                     spec_expr,
                     alias_name,
                     inputs,
+                    shares,
                     input_symbols = (),
                     keyword_pairs = (),
                 )
@@ -604,6 +661,7 @@ function _dsl_parse_invocation(alias_map, ex, known_outputs::Set{Symbol})
             spec_expr,
             alias_name,
             inputs = (),
+            shares = (),
             input_symbols = (),
             keyword_pairs = (),
         )
@@ -646,6 +704,11 @@ function _dsl_algorithm_entry_expr(alias_name::Symbol)
     alias_name == Symbol() ? :(_dsl_resolved.entity) : :($(QuoteNode(alias_name)) => _dsl_resolved.entity)
 end
 
+"""Emit the share endpoint expression matching the algorithm identity that will be registered."""
+function _dsl_share_endpoint_expr(alias_name::Symbol)
+    alias_name == Symbol() ? :(_dsl_resolved.entity) : :(Processes.IdentifiableAlgo(_dsl_resolved.entity, $(QuoteNode(alias_name))))
+end
+
 """
 Build one executable DSL statement inside a composite or routine block.
 
@@ -681,6 +744,7 @@ function _dsl_build_statement(stmt, alias_map, known_outputs::Set{Symbol}, expec
     if parsed.kind == :entity
         customname = _dsl_customname(parsed.spec_expr, parsed.alias_name)
         algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
+        share_target_expr = _dsl_share_endpoint_expr(parsed.alias_name)
         inputs_expr = _dsl_inputs_expr(parsed.inputs)
         return quote
             local _dsl_outputs = $outputs_expr
@@ -697,6 +761,9 @@ function _dsl_build_statement(stmt, alias_map, known_outputs::Set{Symbol}, expec
                 # then wired into the routing tables.
                 push!(_dsl_algos, $algo_entry_expr)
                 push!(_dsl_specification, Int($schedule_expr))
+                $(map(parsed.shares) do share_source
+                    :(push!(_dsl_options, Processes.Share($(share_source), $share_target_expr)))
+                end...)
                 Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_resolved.entity, _dsl_resolved.inputs)
                 Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_resolved.entity, _dsl_outputs)
             end
@@ -837,7 +904,7 @@ function _dsl_expand_simplealgorithm_resolved(block)
             local _dsl_algo = Processes.SimpleAlgo(_dsl_algos..., _dsl_states..., _dsl_options...)
             # Return the same resolved wrapper the outer builder expects from any
             # other DSL statement.
-            local _dsl_inputs = Tuple(_dsl_external_inputs)
+            local _dsl_inputs = Tuple((; kind = :simple, source = input.first, destination = input.second) for input in _dsl_external_inputs)
             Processes._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
         end
     end

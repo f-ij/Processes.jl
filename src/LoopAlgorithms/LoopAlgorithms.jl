@@ -1,4 +1,5 @@
 include("Utils.jl")
+include("Interval.jl")
 include("GetFirst.jl")
 include("CompositeAlgorithms.jl")
 include("SimpleAlgo.jl")
@@ -12,6 +13,7 @@ include("GeneratedStep.jl")
 include("CompositeDSL.jl")
 include("Fusing/Fusing.jl")
 include("Flatten.jl")
+include("Traits.jl")
 include("Showing.jl")
 
 

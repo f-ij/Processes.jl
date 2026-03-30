@@ -9,7 +9,10 @@ function flatten_comp_funcs(funcs, _intervals)
         end
         newels = getalgos(el)
         newtraits = intervals(el)
-        return newels, trait.*newtraits
+        multiplied_newtraits = map(x -> x*trait, newtraits)
+        return newels, multiplied_newtraits
+        # return newels, trait.*newtraits
+
     end
     return flat_funcs, flat_intervals
 end

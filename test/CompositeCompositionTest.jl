@@ -10,7 +10,7 @@ struct Luc <: Processes.ProcessAlgorithm end
     ldup = Processes.Unique(Luc)
 
     fibluc = CompositeAlgorithm( Fib(), Fib, Luc, (1, 1, 2))
-    @test Processes.intervals(fibluc) == (1, 1, 2)
+    @test Processes.intervals(fibluc) == (Processes.Interval(1), Processes.Interval(1), Processes.Interval(2))
 
     comp_unique = CompositeAlgorithm( Fib(), Fib, fdup_type , (1, 1, 1))
     # reg_unique = Processes.getregistry(comp_unique)
@@ -23,7 +23,14 @@ struct Luc <: Processes.ProcessAlgorithm end
     @test Processes.repeats(routine) == (10, 20, 30)
 
     ffluc = CompositeAlgorithm( fibluc, fdup_inst, Fib, ldup , (10, 5, 2, 1))
-    @test Processes.intervals(ffluc) == (10, 10, 20, 5, 2, 1)
+    @test Processes.intervals(ffluc) == (
+        Processes.Interval(10),
+        Processes.Interval(10),
+        Processes.Interval(20),
+        Processes.Interval(5),
+        Processes.Interval(2),
+        Processes.Interval(1),
+    )
     @test length(Processes.getalgos(ffluc)) == 6
 
     flat_funcs, flat_intervals = Processes.flatten(ffluc)

@@ -48,3 +48,42 @@ end
     stepped = Processes.step!(LegacyInputs(), (; a = 5, b = prepared.b, c = prepared.c))
     @test stepped.total == 10
 end
+
+@testset "ProcessAlgorithm macro can capture managed values directly from init context" begin
+    @ProcessAlgorithm function ContextCapture(
+        x,
+        @managed(state),
+        @managed(dt),
+        @managed(velocity = 0.0);
+        @input((; dt = 0.1))
+    )
+        return (; state = state + dt + velocity + x)
+    end
+
+    prepared = Processes.init(ContextCapture(), (; state = 1.0))
+    @test prepared.state == 1.0
+    @test prepared.dt == 0.1
+    @test prepared.velocity == 0.0
+
+    stepped = Processes.step!(ContextCapture(), (; x = 0.0, state = prepared.state, dt = prepared.dt, velocity = prepared.velocity))
+    @test stepped.state == 1.1
+end
+
+@testset "ProcessAlgorithm macro supports grouped @managed declarations" begin
+    @ProcessAlgorithm function GroupedManaged(
+        a,
+        @managed(b, c = b + 1, d = nothing);
+        @inputs((; b = 2))
+    )
+        return (; total = a + b + c, d)
+    end
+
+    prepared = Processes.init(GroupedManaged(), (;))
+    @test prepared.b == 2
+    @test prepared.c == 3
+    @test isnothing(prepared.d)
+
+    stepped = Processes.step!(GroupedManaged(), (; a = 5, b = prepared.b, c = prepared.c, d = prepared.d))
+    @test stepped.total == 10
+    @test isnothing(stepped.d)
+end

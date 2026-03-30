@@ -11,6 +11,9 @@ get_states(cla::LoopAlgorithm) = getfield(cla, :states)
 getoptions(la::LoopAlgorithm, T::Type{O}) where O = @inline filter_by_type(O, getoptions(la))
 setoptions(la::LoopAlgorithm, options) = error("setoptions not implemented for $(typeof(la))")
 
+"""
+Trait for setup
+"""
 iscomposite(::Any) = false
 iscomposite(::Type{<:LoopAlgorithm}) = false
 iscomposite(::Type{<:CompositeAlgorithm}) = true
@@ -67,3 +70,4 @@ Get an algo by name
     end
     return :(error("No algorithm or state with name $(name) found in LoopAlgorithm $(ca)"))
 end
+

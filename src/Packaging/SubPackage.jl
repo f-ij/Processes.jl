@@ -53,10 +53,14 @@ registry_entrytype(::Type{<:SubPackage}) = PackagedAlgo
     @inline unstablemerge(viewed, returnvals)
 end
 
-@inline function step!(ps::SP, context::C) where {SP<:SubPackage, C}
+@inline function step!(ps::SP, context::C, typestable::S = Stable()) where {SP<:SubPackage, C, S}
     viewed = @inline view(context, ps)
     returnvals = @inline step!(getalgo(ps), viewed)
-    @inline merge(viewed, returnvals)
+    if typestable isa Stable
+        return @inline stablemerge(viewed, returnvals)
+    else
+        return @inline unstablemerge(viewed, returnvals)
+    end
 end
 
 @inline function cleanup(ps::SubPackage, context::C) where C

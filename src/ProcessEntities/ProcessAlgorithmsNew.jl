@@ -13,6 +13,15 @@ macro init(ex)
 end
 
 """
+Turn `@input((; ...))` into a keyword assignment `_init = (; ...)`.
+
+Compatibility alias for older macro call sites that used the singular form.
+"""
+macro input(ex)
+    return Expr(:kw, :_init, esc(ex))
+end
+
+"""
 Turn `@inputs((; ...))` into a keyword assignment `_init = (; ...)`.
 
 This is the clearer public alias for the init-time input declarations consumed by
@@ -25,7 +34,8 @@ end
 _pa_is_macrocall(ex, names::Symbol...) =
     ex isa Expr && ex.head == :macrocall && any(name -> ex.args[1] == name, names)
 
-_pa_is_inputs_macro(ex) = _pa_is_macrocall(ex, Symbol("@init"), Symbol("@inputs"))
+_pa_is_inputs_macro(ex) = _pa_is_macrocall(ex, Symbol("@init"), Symbol("@input"), Symbol("@inputs"))
+_pa_macro_args(ex) = [arg for arg in ex.args[2:end] if !(arg isa LineNumberNode)]
 
 function _pa_binding_parts(ex)
     if ex isa Symbol
@@ -45,10 +55,10 @@ function _pa_parse_kw_decl(ex)
 end
 
 function _pa_parse_init_tuple(ex)
-    ex isa Expr && ex.head == :tuple || error("@inputs/@init expects a named tuple style payload, got $ex")
+    ex isa Expr && ex.head == :tuple || error("@input/@inputs/@init expects a named tuple style payload, got $ex")
     !isempty(ex.args) || return NamedTuple[]
     params = ex.args[1]
-    params isa Expr && params.head == :parameters || error("@inputs/@init expects a named tuple style payload, got $ex")
+    params isa Expr && params.head == :parameters || error("@input/@inputs/@init expects a named tuple style payload, got $ex")
 
     fields = NamedTuple[]
     for arg in params.args
@@ -63,20 +73,23 @@ function _pa_parse_init_tuple(ex)
     return fields
 end
 
+function _pa_parse_managed_arg(ex)
+    if ex isa Expr && ex.head == :(=)
+        name, typeexpr = _pa_binding_parts(ex.args[1])
+        return (; kind = :managed, name, typeexpr, default = ex.args[2], has_default = true, capture_input = true)
+    end
+    name, typeexpr = _pa_binding_parts(ex)
+    return (; kind = :managed, name, typeexpr, default = nothing, has_default = false, capture_input = true)
+end
+
 function _pa_parse_positional_arg(ex)
     if _pa_is_macrocall(ex, Symbol("@managed"))
-        inner = ex.args[end]
-        if inner isa Expr && inner.head == :(=)
-            name, typeexpr = _pa_binding_parts(inner.args[1])
-            return (; kind = :managed, name, typeexpr, default = inner.args[2], capture_input = false)
-        end
-        name, typeexpr = _pa_binding_parts(inner)
-        return (; kind = :managed, name, typeexpr, default = nothing, capture_input = true)
+        return map(_pa_parse_managed_arg, _pa_macro_args(ex))
     elseif ex isa Expr && ex.head == :(=)
         error("Only @managed positional arguments may have defaults, got $ex")
     else
         name, typeexpr = _pa_binding_parts(ex)
-        return (; kind = :plain, name, typeexpr, default = nothing, capture_input = false)
+        return [(; kind = :plain, name, typeexpr, default = nothing, has_default = false, capture_input = false)]
     end
 end
 
@@ -91,7 +104,10 @@ function _pa_new_parse_signature(call_ex)
         args = args[2:end]
     end
 
-    positional = map(_pa_parse_positional_arg, args)
+    positional = Any[]
+    for arg in args
+        append!(positional, _pa_parse_positional_arg(arg))
+    end
     plain_pos = filter(x -> x.kind == :plain, positional)
     managed_pos = filter(x -> x.kind == :managed, positional)
 
@@ -100,8 +116,8 @@ function _pa_new_parse_signature(call_ex)
     if !isnothing(params)
         for (idx, arg) in enumerate(params.args)
             if _pa_is_inputs_macro(arg)
-                idx == length(params.args) || error("@inputs/@init must be the last keyword-like argument in @ProcessAlgorithm")
-                isempty(input_fields) || error("Only one @inputs/@init block is allowed in @ProcessAlgorithm")
+                idx == length(params.args) || error("@input/@inputs/@init must be the last keyword-like argument in @ProcessAlgorithm")
+                isempty(input_fields) || error("Only one @input/@inputs/@init block is allowed in @ProcessAlgorithm")
                 input_fields = _pa_parse_init_tuple(arg.args[end])
             else
                 push!(normal_kwargs, _pa_parse_kw_decl(arg))
@@ -130,16 +146,21 @@ function _pa_typed_assignment(name::Symbol, typeexpr, value_expr)
     return :(local $(Expr(:(::), name, typeexpr)) = $value_expr)
 end
 
-function _pa_input_assignment_exprs(field, ctxsym, tempsym)
+function _pa_input_assignment_exprs(field, ctxsym, tempsym; bind_public = true)
     getexpr = field.required ? _pa_required_get_expr(ctxsym, field.name) : _pa_local_get_expr(ctxsym, field.name, field.default)
-    return Any[
-        :(local $tempsym = $getexpr),
-        _pa_typed_assignment(field.name, field.typeexpr, tempsym),
-    ]
+    exprs = Any[:(local $tempsym = $getexpr)]
+    bind_public && push!(exprs, _pa_typed_assignment(field.name, field.typeexpr, tempsym))
+    return exprs
 end
 
-function _pa_managed_assignment(field, input_temps)
-    value_expr = field.capture_input ? input_temps[field.name] : field.default
+function _pa_managed_assignment(field, input_temps, ctxsym)
+    value_expr = if field.has_default
+        field.default
+    elseif haskey(input_temps, field.name)
+        input_temps[field.name]
+    else
+        _pa_required_get_expr(ctxsym, field.name)
+    end
     return _pa_typed_assignment(field.name, field.typeexpr, value_expr)
 end
 
@@ -170,7 +191,8 @@ end
 ```
 
 `@managed(...)` marks positional arguments that live in the local subcontext and are created by
-`Processes.init`. `@managed(name)` captures a same-named declared input into local state. The
+`Processes.init`. `@managed(name)` captures a same-named value from the init context into local
+state, and `@managed(a = ..., b = ...)` can declare multiple managed locals at once. The
 trailing `@inputs((; ...))` block declares init-only inputs that may be
 provided through the process context or through the standalone bootstrap call
 `MyAlgo(...; @inputs((; ...)))`.
@@ -183,12 +205,6 @@ macro ProcessAlgorithm(ex)
 
     fname = signature.fname
     impl_name = gensym(Symbol(fname, :_impl))
-    input_names = Set(field.name for field in signature.input_fields)
-    for field in signature.managed_pos
-        if field.capture_input && !(field.name in input_names)
-            error("`@managed($(field.name))` requires `$(field.name)` to be declared in @inputs/@init")
-        end
-    end
     input_temps = Dict(field.name => gensym(Symbol(field.name, :_input)) for field in signature.input_fields)
 
     positional_bindings = [_pa_binding_expr(arg.name, arg.typeexpr) for arg in signature.positional]
@@ -209,7 +225,7 @@ macro ProcessAlgorithm(ex)
     piped_kw_forward = [Expr(:kw, kw.name, kw.name) for kw in signature.normal_kwargs]
     piped_def = Expr(:function, public_piped_signature, quote
             if !isnothing(_init)
-                error("Cannot pass both managed positional arguments and @inputs/@init values to $(string($fname))")
+                error("Cannot pass both managed positional arguments and @input/@inputs/@init values to $(string($fname))")
             end
             return $impl_name($(map(x -> x.name, signature.positional)...); $(piped_kw_forward...))
         end)
@@ -219,10 +235,13 @@ macro ProcessAlgorithm(ex)
     push!(bootstrap_kw_bindings, Expr(:kw, :_init, Expr(:tuple, Expr(:parameters))))
     insert!(bootstrap_signature.args, 2, Expr(:parameters, bootstrap_kw_bindings...))
     bootstrap_input_assignments = Any[]
+    bootstrap_bound_names = Set{Symbol}(arg.name for arg in signature.plain_pos)
+    union!(bootstrap_bound_names, (kw.name for kw in signature.normal_kwargs))
     for field in signature.input_fields
-        append!(bootstrap_input_assignments, _pa_input_assignment_exprs(field, :_init, input_temps[field.name]))
+        bind_public = !(field.name in bootstrap_bound_names)
+        append!(bootstrap_input_assignments, _pa_input_assignment_exprs(field, :_init, input_temps[field.name]; bind_public))
     end
-    bootstrap_managed_assignments = [_pa_managed_assignment(field, input_temps) for field in signature.managed_pos]
+    bootstrap_managed_assignments = [_pa_managed_assignment(field, input_temps, :_init) for field in signature.managed_pos]
     bootstrap_kw_forward = [Expr(:kw, kw.name, kw.name) for kw in signature.normal_kwargs]
     bootstrap_call_args = [arg.name for arg in signature.plain_pos]
     append!(bootstrap_call_args, [arg.name for arg in signature.managed_pos])
@@ -236,7 +255,7 @@ macro ProcessAlgorithm(ex)
     for field in signature.input_fields
         append!(input_assignments, _pa_input_assignment_exprs(field, :context, input_temps[field.name]))
     end
-    managed_assignments = [_pa_managed_assignment(field, input_temps) for field in signature.managed_pos]
+    managed_assignments = [_pa_managed_assignment(field, input_temps, :context) for field in signature.managed_pos]
     managed_tuple_expr = Expr(:tuple, Expr(:parameters, [Expr(:kw, field.name, field.name) for field in signature.managed_pos]...))
     init_def = quote
         function Processes.init(_algo::$fname, context::C) where {C <: Union{Processes.AbstractContext, NamedTuple}}
@@ -270,4 +289,4 @@ macro ProcessAlgorithm(ex)
     return esc(q)
 end
 
-export @ProcessAlgorithm, @init, @inputs
+export @ProcessAlgorithm, @init, @input, @inputs

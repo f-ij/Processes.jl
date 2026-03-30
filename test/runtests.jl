@@ -1,4 +1,5 @@
 using Test
+using Processes
 
 @testset "Processes" begin
     include("CompositeCompositionTest.jl")

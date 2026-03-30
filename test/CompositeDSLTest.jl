@@ -19,7 +19,7 @@ function Processes.step!(::DSLSinkAlgo, context)
 end
 
 function Processes.step!(::DSLValueAlgo, context)
-    return (; value = context.value)
+    return (; result = context.value)
 end
 
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
@@ -68,7 +68,12 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
         resolved = resolve(algo)
 
         @test resolved isa CompositeAlgorithm
-        @test intervals(resolved) == (1, 10, 1, 1)
+        @test intervals(resolved) == (
+            Processes.Interval(1),
+            Processes.Interval(10),
+            Processes.Interval(1),
+            Processes.Interval(1),
+        )
         @test Processes.getkey(Processes.getalgo(resolved, 1)) == :source
         @test length(Processes.getstates(resolved)) == 1
         @test Processes.getkey(first(Processes.getstates(resolved))) == :_state
@@ -149,7 +154,7 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
         p_two_var = Process(resolved_two_var, repeat = 1)
         Processes.run(p_two_var)
         ctx_two_var = fetch(p_two_var)
-        @test ctx_two_var[:DSLValueAlgo_1].value == 5
+        @test ctx_two_var[:DSLValueAlgo_1].result == 5
     end
 
     @testset "Repeat forms expand correctly" begin

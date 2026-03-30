@@ -28,38 +28,25 @@ end
 Running a composite algorithm allows for static unrolling and inlining of all sub-algorithms through 
     recursive calls
 """
-@generated function step!(pack::PackagedAlgo{T, Is}, context::C) where {T, Is, C<:AbstractContext}
-    return step!_expr(pack, C, :pack, :stable)
+Base.@constprop :aggressive @inline function step!(ca::PackagedAlgo{T, Is}, context::C, typestable::S = Stable()) where {T,Is,C<:AbstractContext, S}
+    this_inc = inc(ca)
+    algos_and_intervals = @inline algo_and_interval_iterator(ca)
+    
+    return @inline unrollreplace_withcallback(context, context -> begin
+            @inline inc!(ca)
+            context
+        end , algos_and_intervals... ) do context, (func, interval)
+
+        if @inline divides(this_inc, interval)
+            context = @inline step!(func, context, typestable)
+        end
+        return context
+    end
 end
 
-# Base.@constprop :aggressive @inline function step!(pa::PackagedAlgo{T, Is}, context::C) where {T,Is,C<:AbstractContext}
-#     algoidx = 1
-#     this_inc = inc(pa)
-#     allfuncs = getalgos(pa)
-#     return @inline _comp_dispatch(pa, context::C, algoidx, this_inc, gethead(allfuncs), gettail(allfuncs))
-# end
-
-# """
-# Dispatch on a composite function
-#     Made such that the functions will be completely inlined at compile time
-# """
-# Base.@constprop :aggressive @inline function _comp_dispatch(pa::PackagedAlgo{T,Is}, context::C, algoidx::Int, this_inc::Int, thisfunc::TF, funcs) where {T, Is, TF,C<:AbstractContext}
-#     if isnothing(thisfunc)
-#         inc!(pa)
-#         return context
-#     end
-#     if interval(pa, algoidx) == 1
-#         context = step!(thisfunc, context)
-#     else
-#         if this_inc % interval(pa, algoidx) == 0
-#             context = step!(thisfunc, context)
-#         end
-#     end
-#     return @inline _comp_dispatch(pa, context, algoidx + 1, this_inc, gethead(funcs), gettail(funcs))
-# end
 
 function cleanup(pa::PackagedAlgo, context::C) where C <: AbstractContext
-    all_algos = getalgos(pa)
+    all_algos = @inline getalgos(pa)
     context = unrollreplace(context, all_algos...) do context, algo
         @inline cleanup(algo, context)
     end
