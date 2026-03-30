@@ -2,18 +2,48 @@
 Running a composite algorithm allows for static unrolling and inlining of all sub-algorithms through 
     recursive calls
 """
-Base.@constprop :aggressive @inline function step!(ca::CompositeAlgorithm{T, Is}, context::C, typestable::S = Stable()) where {T,Is,C<:AbstractContext, S}
-    this_inc = inc(ca)
-    algos_and_intervals = @inline algo_and_interval_iterator(ca)
-    
-    context = @inline unrollreplace_withargs(context, algos_and_intervals..., args = (this_inc,)) do context, _inc, (func, interval)
-        if @inline divides(_inc, interval)
-            context = @inline step!(func, context, typestable)
+# Base.@constprop :aggressive @inline function step!(ca::CompositeAlgorithm{T, Is}, context::C, typestable::S = Stable()) where {T,Is,C<:AbstractContext, S}
+#     this_inc = inc(ca)
+#     algos_and_intervals = @inline algo_and_interval_iterator(ca)
+#
+#     context = @inline unrollreplace(context, algos_and_intervals...) do context, (func, interval)
+#         if @inline divides(this_inc, interval)
+#             context = @inline step!(func, context, S())
+#         end
+#         return context
+#     end
+#     @inline inc!(ca)
+#     return context
+# end
+
+Base.@constprop :aggressive @inline @generated function step!(ca::CompositeAlgorithm{T, Is}, context::C, typestable::S = Stable()) where {T, Is, C<:AbstractContext, S}
+    intervals = Is 
+    exprs = Any[]
+    this_inc = gensym(:this_inc)
+
+    push!(exprs, :($this_inc = @inline inc(ca)))
+
+    for i in 1:length(T.parameters)
+        algo_name = gensym(:algo)
+        interval = intervals[i]
+
+        push!(exprs, :(local $algo_name = @inline getalgo(ca, $i)))
+
+        if interval isa Interval{1}
+            push!(exprs, :(context = @inline step!($algo_name, context, typestable)))
+        else
+            push!(exprs, quote
+                if @inline divides($this_inc, $interval)
+                    context = @inline step!($algo_name, context, typestable)
+                end
+            end)
         end
-        return context
     end
-    @inline inc!(ca)
-    return context
+
+    push!(exprs, :(@inline inc!(ca)))
+    push!(exprs, :(context))
+
+    return Expr(:block, exprs...)
 end
 
 """
