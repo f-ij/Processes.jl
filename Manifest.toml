@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "d6ac7d946dd9531017785fff8e9828a9e246c53b"
+project_hash = "f62b4e9415830a403ee3ccab60114bd4f412c617"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
@@ -359,7 +359,7 @@ uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 version = "1.11.0"
 
 [[deps.Processes]]
-deps = ["DataStructures", "Documenter", "JLD2", "MacroTools", "PrecompileTools", "Preferences", "StaticArrays", "UUIDs"]
+deps = ["Accessors", "DataStructures", "Documenter", "JLD2", "MacroTools", "PrecompileTools", "Preferences", "StaticArrays", "UUIDs"]
 path = "."
 uuid = "6a369836-0793-447d-b7ee-625716f2d05b"
 version = "0.1.2"

@@ -12,6 +12,7 @@ MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
 Preferences = "21216c6a-2e73-6563-6e65-726566657250"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [compat]
@@ -23,6 +24,7 @@ MacroTools = "~0.5.16"
 PrecompileTools = "1.3.3"
 Preferences = "~1.4.3"
 StaticArrays = "1.9.16"
+Test = "1.11.0"
 UUIDs = "~1.11.0"
 
 [extras]
