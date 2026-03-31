@@ -101,6 +101,6 @@ end
     @test graph == [0, 0, 0]
 
     graph2 = [4, 5]
-    Processes.step!(resetgraph!(), (; isingraph = graph2))
+    Processes.step!(resetgraph!(), (; isinggraph = graph2))
     @test graph2 == [0, 0]
 end

@@ -92,10 +92,10 @@ end
 function _pa_parse_managed_arg(ex)
     if ex isa Expr && ex.head == :(=)
         name, typeexpr = _pa_binding_parts(ex.args[1])
-        return (; kind = :managed, name, typeexpr, init_source = :default, init_expr = ex.args[2])
+        return (; kind = :managed, name, typeexpr, default = ex.args[2], has_default = true, capture_input = true)
     end
     name, typeexpr = _pa_binding_parts(ex)
-    return (; kind = :managed, name, typeexpr, init_source = :context, init_expr = nothing)
+    return (; kind = :managed, name, typeexpr, default = nothing, has_default = false, capture_input = true)
 end
 
 function _pa_parse_positional_arg(ex)
@@ -105,11 +105,11 @@ function _pa_parse_positional_arg(ex)
         error("Only @managed positional arguments may have defaults, got $ex")
     else
         name, typeexpr = _pa_binding_parts(ex)
-        return [(; kind = :plain, name, typeexpr)]
+        return [(; kind = :plain, name, typeexpr, default = nothing, has_default = false, capture_input = false)]
     end
 end
 
-function _pa_parse_signature(call_ex)
+function _pa_new_parse_signature(call_ex)
     call_ex, where_params = _pa_unwrap_where(call_ex)
     call_ex isa Expr && call_ex.head == :call || error("@ProcessAlgorithm expects a function definition")
 
@@ -156,41 +156,33 @@ function _pa_required_get_expr(ctx, name::Symbol)
     end
 end
 
-_pa_local_assignment(name::Symbol, value_expr) = :(local $name = $value_expr)
+_pa_typed_assignment(name::Symbol, typeexpr, value_expr) = :(local $name = $value_expr)
 
-function _pa_bind_input_field(field, ctxsym, tempsym; bind_public = true)
+function _pa_input_assignment_exprs(field, ctxsym, tempsym; bind_public = true)
     getexpr = field.required ? _pa_required_get_expr(ctxsym, field.name) : _pa_local_get_expr(ctxsym, field.name, field.default)
     exprs = Any[:(local $tempsym = $getexpr)]
-    bind_public && push!(exprs, _pa_local_assignment(field.name, tempsym))
+    bind_public && push!(exprs, _pa_typed_assignment(field.name, field.typeexpr, tempsym))
     return exprs
 end
 
-function _pa_bind_input_fields(fields, ctxsym, input_temps; public_names = nothing)
-    assignments = Any[]
-    for field in fields
-        bind_public = isnothing(public_names) || (field.name in public_names)
-        append!(assignments, _pa_bind_input_field(field, ctxsym, input_temps[field.name]; bind_public))
-    end
-    return assignments
-end
-
-function _pa_bind_managed_field(field, input_temps, ctxsym)
-    value_expr = if field.init_source == :default
-        field.init_expr
+function _pa_managed_assignment(field, input_temps, ctxsym)
+    value_expr = if field.has_default
+        field.default
     elseif haskey(input_temps, field.name)
         input_temps[field.name]
     else
         _pa_required_get_expr(ctxsym, field.name)
     end
-    return _pa_local_assignment(field.name, value_expr)
+    return _pa_typed_assignment(field.name, field.typeexpr, value_expr)
 end
 
-function _pa_bind_runtime_keyword(field, ctxsym)
-    return _pa_local_assignment(field.name, _pa_local_get_expr(ctxsym, field.name, field.default))
+function _pa_runtime_kw_assignment(field, ctxsym)
+    getexpr = _pa_local_get_expr(ctxsym, field.name, field.default)
+    return _pa_typed_assignment(field.name, field.typeexpr, getexpr)
 end
 
-function _pa_bind_runtime_positional(field, ctxsym)
-    return _pa_local_assignment(field.name, :(getproperty($ctxsym, $(QuoteNode(field.name)))))
+function _pa_runtime_pos_assignment(field, ctxsym)
+    return _pa_typed_assignment(field.name, field.typeexpr, :(getproperty($ctxsym, $(QuoteNode(field.name)))))
 end
 
 """
@@ -366,7 +358,7 @@ bindings themselves are intentionally kept simple and untyped.
 macro ProcessAlgorithm(ex)
     ex isa Expr && ex.head == :function || error("@ProcessAlgorithm expects a function definition")
 
-    signature = _pa_parse_signature(ex.args[1])
+    signature = _pa_new_parse_signature(ex.args[1])
     body = ex.args[2]
 
     fname = signature.fname
@@ -403,11 +395,14 @@ macro ProcessAlgorithm(ex)
     push!(bootstrap_kw_bindings, Expr(:kw, :_init, Expr(:tuple, Expr(:parameters))))
     insert!(bootstrap_signature.args, 2, Expr(:parameters, bootstrap_kw_bindings...))
     bootstrap_signature = _pa_rewrap_where(bootstrap_signature, signature.where_params)
+    bootstrap_input_assignments = Any[]
     bootstrap_bound_names = Set{Symbol}(arg.name for arg in signature.plain_pos)
     union!(bootstrap_bound_names, (kw.name for kw in signature.normal_kwargs))
-    bootstrap_public_names = Set(field.name for field in signature.input_fields if !(field.name in bootstrap_bound_names))
-    bootstrap_input_assignments = _pa_bind_input_fields(signature.input_fields, :_init, input_temps; public_names = bootstrap_public_names)
-    bootstrap_managed_assignments = [_pa_bind_managed_field(field, input_temps, :_init) for field in signature.managed_pos]
+    for field in signature.input_fields
+        bind_public = !(field.name in bootstrap_bound_names)
+        append!(bootstrap_input_assignments, _pa_input_assignment_exprs(field, :_init, input_temps[field.name]; bind_public))
+    end
+    bootstrap_managed_assignments = [_pa_managed_assignment(field, input_temps, :_init) for field in signature.managed_pos]
     bootstrap_kw_forward = [Expr(:kw, kw.name, kw.name) for kw in signature.normal_kwargs]
     bootstrap_call_args = [arg.name for arg in signature.plain_pos]
     append!(bootstrap_call_args, [arg.name for arg in signature.managed_pos])
@@ -417,9 +412,11 @@ macro ProcessAlgorithm(ex)
             return $impl_name($(bootstrap_call_args...); $(bootstrap_kw_forward...))
         end)
 
-    input_public_names = Set(field.name for field in signature.input_fields)
-    input_assignments = _pa_bind_input_fields(signature.input_fields, :context, input_temps; public_names = input_public_names)
-    managed_assignments = [_pa_bind_managed_field(field, input_temps, :context) for field in signature.managed_pos]
+    input_assignments = Any[]
+    for field in signature.input_fields
+        append!(input_assignments, _pa_input_assignment_exprs(field, :context, input_temps[field.name]))
+    end
+    managed_assignments = [_pa_managed_assignment(field, input_temps, :context) for field in signature.managed_pos]
     managed_tuple_expr = Expr(:tuple, Expr(:parameters, [Expr(:kw, field.name, field.name) for field in signature.managed_pos]...))
     init_def = quote
         function Processes.init(_algo::$fname, context::C) where {C <: Union{Processes.AbstractContext, NamedTuple}}
@@ -429,8 +426,8 @@ macro ProcessAlgorithm(ex)
         end
     end
 
-    step_pos_assignments = [_pa_bind_runtime_positional(field, :context) for field in signature.positional]
-    step_kw_assignments = [_pa_bind_runtime_keyword(field, :context) for field in signature.normal_kwargs]
+    step_pos_assignments = [_pa_runtime_pos_assignment(field, :context) for field in signature.positional]
+    step_kw_assignments = [_pa_runtime_kw_assignment(field, :context) for field in signature.normal_kwargs]
     step_kw_forward = [Expr(:kw, kw.name, kw.name) for kw in signature.normal_kwargs]
     step_call_args = [arg.name for arg in signature.positional]
     step_def = quote
@@ -449,6 +446,7 @@ macro ProcessAlgorithm(ex)
         $init_def
         $step_def
     end
+    # println(q)
     return esc(q)
 end
 
