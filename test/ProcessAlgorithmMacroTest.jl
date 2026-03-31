@@ -87,3 +87,20 @@ end
     @test stepped.total == 10
     @test isnothing(stepped.d)
 end
+
+@testset "ProcessAlgorithm macro supports where signatures" begin
+    resetstate!(graph::AbstractVector) = fill!(graph, 0)
+
+    @ProcessAlgorithm function resetgraph!(isinggraph::G) where G
+        resetstate!(isinggraph)
+        return
+    end
+
+    graph = [1, 2, 3]
+    resetgraph!(graph)
+    @test graph == [0, 0, 0]
+
+    graph2 = [4, 5]
+    Processes.step!(resetgraph!(), (; isingraph = graph2))
+    @test graph2 == [0, 0]
+end

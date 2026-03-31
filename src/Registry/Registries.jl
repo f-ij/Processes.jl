@@ -304,7 +304,9 @@ end
     return !isnothing(found_scoped_value)
 end
 
-
+"""
+Look up a registered entry by its assigned symbol key, e.g. `reg[:Fib_1]`.
+"""
 @inline Base.getindex(reg::NameSpaceRegistry{T}, s::Symbol) where T = _getsymbolindex(reg, Val(s))
 """
 Find by key

@@ -12,6 +12,7 @@ using Processes
     include("RouteWalkerTest.jl")
     include("ShareContextTest.jl")
     include("MaterializeLoopAlgorithmTest.jl")
+    include("SymbolIndexingTest.jl")
     include("InnerTypeFilterTest.jl")
     include("CompositeDSLTest.jl")
     include("ProcessAlgorithmMacroTest.jl")

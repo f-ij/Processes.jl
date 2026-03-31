@@ -49,6 +49,15 @@ This is the mechanism used when you need multiple logically separate instances o
 
 `ProcessContext` lookups by value/type eventually call registry `getindex` (`src/Context/ProcessContexts.jl`, `src/Registry/Registries.jl`).
 
+The registry also supports direct symbol-key lookup:
+
+- `reg[:Fib_1]` returns the registered `IdentifiableAlgo`
+
+That is the same key space used by:
+
+- `resolved[:Fib_1]` on resolved loop algorithms
+- `ctx[:Fib_1]` on process contexts
+
 Important runtime detail in `NameSpaceRegistry.getindex`:
 
 - `obj isa Type || isbits(obj)`: lookup by full static match.

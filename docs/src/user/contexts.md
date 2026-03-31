@@ -45,6 +45,37 @@ From a context, index by:
 
 This behavior comes from `ProcessContext.getindex(pc, obj)` resolving through the registry key.
 
+Related symbol-based lookup also works on resolved loop algorithms and registries:
+
+```julia
+resolved = resolve(CompositeAlgorithm(Fib, Noise, (1, 2)))
+reg = getregistry(resolved)
+
+resolved[:Fib_1]   # same object as resolved.Fib_1
+reg[:Fib_1]        # registered IdentifiableAlgo
+ctx[:Fib_1]        # subcontext
+```
+
+Use loop-algorithm indexing when you want the registered algorithm/state object, and
+context indexing when you want its current subcontext data.
+
+## Re-Initializing One Subcontext
+
+You can re-run `init` for one registered algorithm inside an existing context:
+
+```julia
+ctx = initcontext(resolved)
+
+ctx = initcontext(ctx, :Fib_1)
+ctx = initcontext(ctx, :Fib_1; inputs = (; seed = 123))
+ctx = initcontext(ctx, resolved[:Fib_1]; overrides = (; value = 0.0))
+```
+
+This updates only the targeted subcontext.
+
+- `inputs` are merged into that subcontext before `init(...)` runs.
+- `overrides` are merged into that subcontext after `init(...)` returns.
+
 ## Globals
 
 `ProcessContext` includes a `globals` field.

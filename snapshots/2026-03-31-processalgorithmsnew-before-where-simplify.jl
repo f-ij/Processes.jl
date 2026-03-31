@@ -37,22 +37,6 @@ _pa_is_macrocall(ex, names::Symbol...) =
 _pa_is_inputs_macro(ex) = _pa_is_macrocall(ex, Symbol("@init"), Symbol("@input"), Symbol("@inputs"))
 _pa_macro_args(ex) = [arg for arg in ex.args[2:end] if !(arg isa LineNumberNode)]
 
-function _pa_unwrap_where(ex)
-    where_params = Any[]
-    while ex isa Expr && ex.head == :where
-        push!(where_params, ex.args[2])
-        ex = ex.args[1]
-    end
-    return ex, reverse(where_params)
-end
-
-function _pa_rewrap_where(ex, where_params)
-    for param in where_params
-        ex = Expr(:where, ex, param)
-    end
-    return ex
-end
-
 function _pa_binding_parts(ex)
     if ex isa Symbol
         return ex, nothing
@@ -110,8 +94,7 @@ function _pa_parse_positional_arg(ex)
 end
 
 function _pa_new_parse_signature(call_ex)
-    call_ex, where_params = _pa_unwrap_where(call_ex)
-    call_ex isa Expr && call_ex.head == :call || error("@ProcessAlgorithm expects a function definition")
+    call_ex isa Expr && call_ex.head == :call || error("@ProcessAlgorithmNew expects a function definition")
 
     fname = call_ex.args[1]
     args = call_ex.args[2:end]
@@ -142,7 +125,7 @@ function _pa_new_parse_signature(call_ex)
         end
     end
 
-    return (; fname, positional, plain_pos, managed_pos, normal_kwargs, input_fields, where_params)
+    return (; fname, positional, plain_pos, managed_pos, normal_kwargs, input_fields)
 end
 
 _pa_local_get_expr(ctx, name::Symbol, default) = :(get($ctx, $(QuoteNode(name)), $default))
@@ -156,7 +139,12 @@ function _pa_required_get_expr(ctx, name::Symbol)
     end
 end
 
-_pa_typed_assignment(name::Symbol, typeexpr, value_expr) = :(local $name = $value_expr)
+function _pa_typed_assignment(name::Symbol, typeexpr, value_expr)
+    if isnothing(typeexpr)
+        return :(local $name = $value_expr)
+    end
+    return :(local $(Expr(:(::), name, typeexpr)) = $value_expr)
+end
 
 function _pa_input_assignment_exprs(field, ctxsym, tempsym; bind_public = true)
     getexpr = field.required ? _pa_required_get_expr(ctxsym, field.name) : _pa_local_get_expr(ctxsym, field.name, field.default)
@@ -227,7 +215,6 @@ macro ProcessAlgorithm(ex)
     if !isempty(kw_bindings)
         insert!(impl_signature.args, 2, Expr(:parameters, kw_bindings...))
     end
-    impl_signature = _pa_rewrap_where(impl_signature, signature.where_params)
 
     impl_def = Expr(:function, impl_signature, body)
 
@@ -235,7 +222,6 @@ macro ProcessAlgorithm(ex)
     piped_kw_bindings = copy(kw_bindings)
     push!(piped_kw_bindings, Expr(:kw, :_init, nothing))
     insert!(public_piped_signature.args, 2, Expr(:parameters, piped_kw_bindings...))
-    public_piped_signature = _pa_rewrap_where(public_piped_signature, signature.where_params)
     piped_kw_forward = [Expr(:kw, kw.name, kw.name) for kw in signature.normal_kwargs]
     piped_def = Expr(:function, public_piped_signature, quote
             if !isnothing(_init)
@@ -248,7 +234,6 @@ macro ProcessAlgorithm(ex)
     bootstrap_kw_bindings = copy(kw_bindings)
     push!(bootstrap_kw_bindings, Expr(:kw, :_init, Expr(:tuple, Expr(:parameters))))
     insert!(bootstrap_signature.args, 2, Expr(:parameters, bootstrap_kw_bindings...))
-    bootstrap_signature = _pa_rewrap_where(bootstrap_signature, signature.where_params)
     bootstrap_input_assignments = Any[]
     bootstrap_bound_names = Set{Symbol}(arg.name for arg in signature.plain_pos)
     union!(bootstrap_bound_names, (kw.name for kw in signature.normal_kwargs))

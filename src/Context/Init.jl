@@ -1,3 +1,10 @@
+"""
+Re-initialize one registered subcontext inside an existing `ProcessContext`.
+
+The target can be provided either as its symbol key or as the registered algorithm
+reference. `inputs` are merged into that subcontext before `init`, and `overrides`
+are merged afterwards.
+"""
 Base.@constprop :aggressive function initcontext(context::ProcessContext, s::Symbol; inputs = (;), overrides = (;))
     reg = @inline getregistry(context)
     identified_algo = reg[s]
@@ -12,7 +19,7 @@ end
 
 function initcontext(context::ProcessContext, identified_algo::IdentifiableAlgo; inputs = (;), overrides = (;))
     key = getkey(identified_algo)
-    initcontext = replace(context, (;key => identified_algo))
-    c = init(identified_algo, initcontext)
-    return merge_into_subcontexts(context, (;key => c))
+    inputcontext = isempty(inputs) ? context : merge_into_subcontexts(context, (;key => inputs))
+    prepared_context = init(identified_algo, inputcontext)
+    return isempty(overrides) ? prepared_context : merge_into_subcontexts(prepared_context, (;key => overrides))
 end

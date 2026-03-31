@@ -33,6 +33,16 @@ Get the numbers Val(1), Val(2), ... Val(N) for the N algorithms in a composite o
     return :($nums)
 end
 
+"""
+Index a resolved loop algorithm by its registered symbol key.
+
+This is equivalent to property access like `algo.some_key`, but works for keys that
+are only available at runtime.
+"""
+Base.@constprop :aggressive @inline function Base.getindex(cla::LoopAlgorithm, name::Symbol)
+    getproperty(cla, Val(name))
+end
+
 @inline function Base.getindex(cla::LoopAlgorithm, idx)
     getalgos(cla)[idx]
 end
@@ -70,4 +80,3 @@ Get an algo by name
     end
     return :(error("No algorithm or state with name $(name) found in LoopAlgorithm $(ca)"))
 end
-
