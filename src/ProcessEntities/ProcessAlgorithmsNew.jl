@@ -186,28 +186,174 @@ function _pa_runtime_pos_assignment(field, ctxsym)
 end
 
 """
-Function-first ProcessAlgorithm definition with explicit managed runtime state and init-only
-inputs.
+    @ProcessAlgorithm function Name(...)
+        ...
+    end
 
-Supported surface syntax:
+Define a `ProcessAlgorithm` from a function-like signature.
+
+The macro splits the signature into three groups:
+
+1. Plain positional arguments:
+   Runtime values read from the process context during `Processes.step!`.
+2. `@managed(...)` positional arguments:
+   Local algorithm state created during `Processes.init` and then read back from the
+   algorithm's own subcontext during `Processes.step!`.
+3. Normal keyword arguments:
+   Runtime keyword-style values looked up from the context during `Processes.step!`, with
+   the declared default used when the key is missing.
+
+An optional trailing `@input((; ...))`, `@inputs((; ...))`, or `@init((; ...))` block declares
+init-time inputs. These are only available while building managed state and in the bootstrap
+call form; they are not automatically runtime arguments unless you also capture them into
+managed state.
+
+# Supported signature forms
+
+The macro accepts normal function signatures and `where` signatures:
 
 ```julia
-@ProcessAlgorithm function MyAlgo(
-    input_signal,
-    @managed(state = 0.0);
-    gain::Float64 = 1.0,
-    @inputs((; n::Int, scale0::Float64 = 1.0))
+@ProcessAlgorithm function Accumulate(x)
+    return (; x = x + 1)
+end
+
+@ProcessAlgorithm function resetgraph!(isinggraph::G) where G
+    resetstate!(isinggraph)
+    return
+end
+```
+
+# Positional parsing rules
+
+Plain positional arguments:
+
+```julia
+@ProcessAlgorithm function F(a, b)
+    ...
+end
+```
+
+These are treated as runtime values and are looked up from the context inside `Processes.step!`.
+
+Managed positional arguments:
+
+```julia
+@ProcessAlgorithm function F(
+    a,
+    @managed(state = 0.0),
+    @managed(cache),
+    @managed(buffer = zeros(n), metric = 0.0);
+    @inputs((; n = 8))
 )
     ...
 end
 ```
 
-`@managed(...)` marks positional arguments that live in the local subcontext and are created by
-`Processes.init`. `@managed(name)` captures a same-named value from the init context into local
-state, and `@managed(a = ..., b = ...)` can declare multiple managed locals at once. The
-trailing `@inputs((; ...))` block declares init-only inputs that may be
-provided through the process context or through the standalone bootstrap call
-`MyAlgo(...; @inputs((; ...)))`.
+The managed forms mean:
+
+- `@managed(name)`:
+  create a managed local called `name` by reading `name` from the init context.
+- `@managed(name = expr)`:
+  create a managed local called `name` by evaluating `expr` during `Processes.init`.
+- `@managed(a, b = expr, c = expr2)`:
+  expand to multiple managed locals in the written order.
+
+Managed initializer expressions run during `Processes.init`, so they may refer to:
+
+- init-time inputs declared by `@input/@inputs/@init`
+- earlier managed locals in the same generated init block
+- plain Julia globals/functions in scope
+
+They do not read plain runtime positional arguments from `step!`.
+
+# Keyword parsing rules
+
+Regular keyword arguments:
+
+```julia
+@ProcessAlgorithm function F(a; gain = 1.0, offset::Float64 = 0.0)
+    ...
+end
+```
+
+These are runtime keyword-style values. During `Processes.step!`, the macro reads them from the
+context with `get(context, :name, default)`.
+
+Init-time input block:
+
+```julia
+@ProcessAlgorithm function F(
+    a,
+    @managed(scale = scale0);
+    gain = 1.0,
+    @inputs((; scale0::Float64 = 2.0, n::Int))
+)
+    ...
+end
+```
+
+Rules:
+
+- only one of `@input`, `@inputs`, or `@init` is allowed
+- it must be the last keyword-like entry in the signature
+- entries may be required (`n`) or defaulted (`scale0 = 2.0`)
+
+# What the macro defines
+
+For a declaration like:
+
+```julia
+@ProcessAlgorithm function MyAlgo(...)
+    body
+end
+```
+
+the macro generates:
+
+- `struct MyAlgo <: Processes.ProcessAlgorithm end`
+- a hidden implementation function that contains `body`
+- a public bootstrap call `MyAlgo(...)` that can be called directly
+- `Processes.init(::MyAlgo, context)` to build the managed local subcontext
+- `Processes.step!(::MyAlgo, context)` to read runtime values and call the hidden implementation
+
+# User entrypoints
+
+There are three main ways users interact with a macro-generated algorithm:
+
+1. Direct/bootstrap call:
+
+```julia
+MyAlgo(a; @inputs((; n = 4)))
+```
+
+This evaluates the managed init path immediately and then calls the generated implementation.
+
+2. Process init hook:
+
+```julia
+Processes.init(MyAlgo(), context)
+```
+
+This reads the declared init inputs from `context` and returns the managed local named tuple.
+
+3. Process step hook:
+
+```julia
+Processes.step!(MyAlgo(), context)
+```
+
+This reads plain positional and runtime keyword arguments from `context`, reads managed values
+from the algorithm subcontext, and forwards everything to the generated implementation.
+
+# Type annotations and `where`
+
+Argument type annotations are preserved on the generated public call signatures and on the hidden
+implementation function. `where` clauses are also preserved there.
+
+The generated `Processes.init` and `Processes.step!` methods currently extract values from the
+context into local bindings before calling the typed implementation. That means the original
+argument annotations still constrain the implementation entrypoint, but the context extraction
+bindings themselves are intentionally kept simple and untyped.
 """
 macro ProcessAlgorithm(ex)
     ex isa Expr && ex.head == :function || error("@ProcessAlgorithm expects a function definition")

@@ -71,6 +71,62 @@ end
 
 You can still define `init` and `cleanup` manually for the generated type.
 
+#### Macro-Generated Algorithm Semantics
+
+`@ProcessAlgorithm` supports a richer function-first DSL than the simple example above.
+
+The signature is split into:
+
+- plain positional arguments: runtime values read during `Processes.step!`
+- `@managed(...)` positional arguments: local algorithm state created during `Processes.init`
+- normal keyword arguments: runtime keyword-style values read during `Processes.step!`
+- optional trailing `@input((; ...))` / `@inputs((; ...))` / `@init((; ...))`: init-time inputs used while constructing managed state
+
+Example:
+
+```julia
+@ProcessAlgorithm function MyAlgo(
+    signal,
+    @managed(buffer = zeros(n)),
+    @managed(scale),
+    @managed(metric = 0.0);
+    damp = 1.0,
+    @inputs((; n::Int, scale = 2.0))
+)
+    @inbounds for i in eachindex(signal)
+        buffer[i] = damp * scale * signal[i]
+    end
+    metric = sum(buffer)
+    return (; buffer, scale, metric)
+end
+```
+
+Rules worth knowing:
+
+- `@managed(name)` captures `name` from the init context into local managed state.
+- `@managed(name = expr)` evaluates `expr` during `Processes.init`.
+- `@managed(a, b = expr, c = expr2)` expands to multiple managed locals in order.
+- `@input/@inputs/@init` may only appear once and must be the last keyword-like item.
+- plain positional arguments are runtime-only and are not available while constructing managed state.
+- `where` signatures are supported.
+
+For a macro-generated algorithm `MyAlgo`, the main entrypoints are:
+
+- direct/bootstrap call: `MyAlgo(args...; @inputs((; ...)))`
+- init hook: `Processes.init(MyAlgo(), context)`
+- step hook: `Processes.step!(MyAlgo(), context)`
+
+Internally the macro defines:
+
+- `struct MyAlgo <: ProcessAlgorithm end`
+- a hidden implementation function containing the user body
+- a bootstrap method for direct calls
+- generated `Processes.init` and `Processes.step!` methods that feed the implementation
+
+Type annotations and `where` clauses are preserved on the generated public call signatures and
+the hidden implementation function. The runtime context extraction methods currently bind simple
+locals before forwarding into that typed implementation.
+
 ### `@ProcessState`
 
 `@ProcessState` creates a `ProcessState` and an `init` method.
