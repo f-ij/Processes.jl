@@ -385,37 +385,56 @@ macro ProcessAlgorithm(ex)
 
     impl_def = Expr(:function, impl_signature, body)
 
-    public_piped_signature = Expr(:call, fname, positional_bindings...)
-    piped_kw_bindings = copy(kw_bindings)
-    push!(piped_kw_bindings, Expr(:kw, :_init, nothing))
-    insert!(public_piped_signature.args, 2, Expr(:parameters, piped_kw_bindings...))
-    public_piped_signature = _pa_rewrap_where(public_piped_signature, signature.where_params)
-    piped_kw_forward = [Expr(:kw, kw.name, kw.name) for kw in signature.normal_kwargs]
-    piped_def = Expr(:function, public_piped_signature, quote
-            if !isnothing(_init)
-                error("Cannot pass both managed positional arguments and @input/@inputs/@init values to $(string($fname))")
-            end
-            return $impl_name($(map(x -> x.name, signature.positional)...); $(piped_kw_forward...))
-        end)
+    public_defs = Any[]
+    kw_forward = [Expr(:kw, kw.name, kw.name) for kw in signature.normal_kwargs]
 
-    bootstrap_signature = Expr(:call, fname, plain_pos_bindings...)
-    bootstrap_kw_bindings = copy(kw_bindings)
-    push!(bootstrap_kw_bindings, Expr(:kw, :_init, Expr(:tuple, Expr(:parameters))))
-    insert!(bootstrap_signature.args, 2, Expr(:parameters, bootstrap_kw_bindings...))
-    bootstrap_signature = _pa_rewrap_where(bootstrap_signature, signature.where_params)
-    bootstrap_bound_names = Set{Symbol}(arg.name for arg in signature.plain_pos)
-    union!(bootstrap_bound_names, (kw.name for kw in signature.normal_kwargs))
-    bootstrap_public_names = Set(field.name for field in signature.input_fields if !(field.name in bootstrap_bound_names))
-    bootstrap_input_assignments = _pa_bind_input_fields(signature.input_fields, :_init, input_temps; public_names = bootstrap_public_names)
-    bootstrap_managed_assignments = [_pa_bind_managed_field(field, input_temps, :_init) for field in signature.managed_pos]
-    bootstrap_kw_forward = [Expr(:kw, kw.name, kw.name) for kw in signature.normal_kwargs]
-    bootstrap_call_args = [arg.name for arg in signature.plain_pos]
-    append!(bootstrap_call_args, [arg.name for arg in signature.managed_pos])
-    bootstrap_def = Expr(:function, bootstrap_signature, quote
-            $(bootstrap_input_assignments...)
-            $(bootstrap_managed_assignments...)
-            return $impl_name($(bootstrap_call_args...); $(bootstrap_kw_forward...))
-        end)
+    if isempty(signature.managed_pos)
+        public_signature = Expr(:call, fname, positional_bindings...)
+        public_kw_bindings = copy(kw_bindings)
+        push!(public_kw_bindings, Expr(:kw, :_init, nothing))
+        insert!(public_signature.args, 2, Expr(:parameters, public_kw_bindings...))
+        public_signature = _pa_rewrap_where(public_signature, signature.where_params)
+
+        public_def = Expr(:function, public_signature, quote
+                if !(isnothing(_init) || isempty(_init))
+                    error("Cannot pass @input/@inputs/@init values to $(string($fname)) without any @managed arguments")
+                end
+                return $impl_name($(map(x -> x.name, signature.positional)...); $(kw_forward...))
+            end)
+        push!(public_defs, public_def)
+    else
+        public_piped_signature = Expr(:call, fname, positional_bindings...)
+        piped_kw_bindings = copy(kw_bindings)
+        push!(piped_kw_bindings, Expr(:kw, :_init, nothing))
+        insert!(public_piped_signature.args, 2, Expr(:parameters, piped_kw_bindings...))
+        public_piped_signature = _pa_rewrap_where(public_piped_signature, signature.where_params)
+        piped_def = Expr(:function, public_piped_signature, quote
+                if !isnothing(_init)
+                    error("Cannot pass both managed positional arguments and @input/@inputs/@init values to $(string($fname))")
+                end
+                return $impl_name($(map(x -> x.name, signature.positional)...); $(kw_forward...))
+            end)
+
+        bootstrap_signature = Expr(:call, fname, plain_pos_bindings...)
+        bootstrap_kw_bindings = copy(kw_bindings)
+        push!(bootstrap_kw_bindings, Expr(:kw, :_init, Expr(:tuple, Expr(:parameters))))
+        insert!(bootstrap_signature.args, 2, Expr(:parameters, bootstrap_kw_bindings...))
+        bootstrap_signature = _pa_rewrap_where(bootstrap_signature, signature.where_params)
+        bootstrap_bound_names = Set{Symbol}(arg.name for arg in signature.plain_pos)
+        union!(bootstrap_bound_names, (kw.name for kw in signature.normal_kwargs))
+        bootstrap_public_names = Set(field.name for field in signature.input_fields if !(field.name in bootstrap_bound_names))
+        bootstrap_input_assignments = _pa_bind_input_fields(signature.input_fields, :_init, input_temps; public_names = bootstrap_public_names)
+        bootstrap_managed_assignments = [_pa_bind_managed_field(field, input_temps, :_init) for field in signature.managed_pos]
+        bootstrap_call_args = [arg.name for arg in signature.plain_pos]
+        append!(bootstrap_call_args, [arg.name for arg in signature.managed_pos])
+        bootstrap_def = Expr(:function, bootstrap_signature, quote
+                $(bootstrap_input_assignments...)
+                $(bootstrap_managed_assignments...)
+                return $impl_name($(bootstrap_call_args...); $(kw_forward...))
+            end)
+
+        append!(public_defs, (piped_def, bootstrap_def))
+    end
 
     input_public_names = Set(field.name for field in signature.input_fields)
     input_assignments = _pa_bind_input_fields(signature.input_fields, :context, input_temps; public_names = input_public_names)
@@ -444,8 +463,7 @@ macro ProcessAlgorithm(ex)
     q = quote
         struct $fname <: Processes.ProcessAlgorithm end
         $impl_def
-        $piped_def
-        $bootstrap_def
+        $(public_defs...)
         $init_def
         $step_def
     end
