@@ -199,6 +199,9 @@ end
      _ttf(nodefunc, Base.tail(nodes), Base.tail(traits))...)
 end
 
+"""
+Inlineable filter by type
+"""
 @inline function typefilter(type::Type{T}, elements) where T
     if isempty(elements)
         return tuple()

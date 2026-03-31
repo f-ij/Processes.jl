@@ -6,24 +6,11 @@ Resolving goes from Share and Route objects to SharedContext and SharedVars obje
 ################################################
 #################  RESOLVING  ##################
 ################################################
-
+@inline resolve(reg::NameSpaceRegistry, options...) = @inline resolve_options(reg, options...)
 
 function resolve_options(reg::NameSpaceRegistry)
     return (;)
 end
-
-# @inline function resolve_options(reg::NameSpaceRegistry, options::AbstractOption...)
-#     if isempty(options)
-#         return (;)
-#     end
-#     # shares = filter(x -> x isa Share, options)
-#     shares = typefilter(Share, options)
-#     # routes = filter(x -> x isa Route, options)
-#     routes = typefilter(Route, options)
-
-
-#     return (resolve_options(reg, shares...)..., resolve_options(reg, routes...)...)
-# end
 
 """
 From a collection of Share objects
@@ -70,10 +57,3 @@ Go from single route to SharedVar
     tosubcontextname, sharedvar = to_sharedvar(reg, route)
     return (;tosubcontextname => tuple(sharedvar))
 end
-
-# @generated function resolve_options(reg::NameSpaceRegistry, route::R) where R <: Route
-#     matcher_from = from_match_by(route)
-#     matcher_to = to_match_by(route)
-
-    
-# end

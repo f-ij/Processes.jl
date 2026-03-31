@@ -250,6 +250,19 @@ function replacecontextkeyss(te::RegistryTypeEntry, changed_names::Dict{Symbol,S
     end
 end
 
+@inline findkey(te::Union{RTE, Type{<:RTE}}, key::Symbol) where RTE <: RegistryTypeEntry = findkey(te, Val(key))
+@inline @generated function findkey(te::Union{RTE, Type{<:RTE}}, ::Val{key}) where {RTE <: RegistryTypeEntry, key}
+    entries = getentries(RTE)
+    idx = findfirst(x -> getkey(x) == key, entries)
+    if isnothing(idx)
+        return :(nothing)
+    else
+        return :($idx)
+    end
+end
+
+@inline Base.haskey(te::Union{RTE, Type{<:RTE}}, key::Symbol) where RTE <: RegistryTypeEntry = !isnothing(findkey(te, key))
+
 ###################################
 ########## REBUILDING #############
 ###################################

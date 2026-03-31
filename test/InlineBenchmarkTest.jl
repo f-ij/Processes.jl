@@ -96,4 +96,3 @@ end
     @info "NoGen InlineProcess is $((nogen_time/naive_time)*100 ) % of Naive time"
     @test inline_time <= naive_time * 1.2 || nogen_time <= naive_time * 1.2 
 end
-    

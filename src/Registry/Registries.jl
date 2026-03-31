@@ -41,6 +41,19 @@ end
 end
 
 """
+Get the actual types of the typeentries
+"""
+@inline function typeentry_types(reg::Union{NameSpaceRegistry{T}, Type{NameSpaceRegistry{T}}}) where {T}
+    param_svec = T.parameters
+    if isempty(param_svec)
+        return Tuple{}
+    end
+    entrytypes = T.parameters
+    tuple(entrytypes...)
+end
+
+
+"""
 Types of entries as a tuple type Tuple{Type1, Type2, ...}
 """
 @inline function entrytypes(reg::Union{NameSpaceRegistry{T}, Type{NameSpaceRegistry{T}}}) where {T}
@@ -48,7 +61,7 @@ Types of entries as a tuple type Tuple{Type1, Type2, ...}
     if isempty(param_svec)
         return Tuple{}
     end
-    entrytypes = T.parameters[1].parameters
+    entrytypes = T.parameters
     datatypes = gettype.(entrytypes)
     Tt = Tuple{datatypes...}
     return Tt
@@ -291,24 +304,29 @@ end
     return !isnothing(found_scoped_value)
 end
 
-# function findfirst_match(reg::NameSpaceRegistry, val)
-#     function _findfirst_match_in_t(reg, first_idx)
-#         this_match = static_findfirst_match(reg[first_idx], val)
-#         return this_match
-#     end 
-#     function outer_recursion(reg, val, idx1, idx2)
-#         if idx1 > length(reg)
-#             return nothing, nothing
-#         end
-#         if !isnothing(idx2)
-#             return idx1-1, idx2
-#         end
-#         this_match = _findfirst_match_in_t(reg, idx1)
-#         return outer_recursion(reg, val, idx1 + 1, this_match)
-#     end
 
-#     return outer_recursion(reg, val, 1, nothing)
-# end
+@inline Base.getindex(reg::NameSpaceRegistry{T}, s::Symbol) where T = _getsymbolindex(reg, Val(s))
+"""
+Find by key
+"""
+@inline @generated function _getsymbolindex(reg::NameSpaceRegistry{Ty}, v::Val{key}) where {Ty, key}
+    etypes = typeentry_types(reg)
+    T = nothing
+    found_idx = nothing
+    for entry in etypes
+        fidx = findkey(entry, key)
+        if !isnothing(fidx)
+            T = gettype(entry)
+            found_idx = fidx
+            break
+        end
+    end
+    if isnothing(T)
+        error("No entry with key: $key found in registry: $reg")
+    end
+    loc = RegistryLocation(T, found_idx)
+    return :(getindex(reg, $loc))
+end
 #########################
     ##### GETTERS #####
 #########################
