@@ -320,7 +320,8 @@ the macro generates:
 
 - `struct MyAlgo <: Processes.ProcessAlgorithm end`
 - a hidden implementation function that contains `body`
-- a public bootstrap call `MyAlgo(...)` that can be called directly
+- a public bootstrap call `MyAlgo(...)` that can be called directly when the
+  signature has at least one positional argument
 - `Processes.init(::MyAlgo, context)` to build the managed local subcontext
 - `Processes.step!(::MyAlgo, context)` to read runtime values and call the hidden implementation
 
@@ -335,6 +336,9 @@ MyAlgo(a; @inputs((; n = 4)))
 ```
 
 This evaluates the managed init path immediately and then calls the generated implementation.
+The direct-call surface is only generated when the signature has at least one positional
+argument. Pure zero-argument or keyword-only forms keep `MyAlgo()` as the normal zero-field
+algorithm constructor so the macro does not overwrite it.
 
 2. Process init hook:
 
@@ -401,7 +405,7 @@ macro ProcessAlgorithm(ex)
                 end
                 return $impl_name($(map(x -> x.name, signature.positional)...); $(kw_forward...))
             end)
-        push!(public_defs, public_def)
+        isempty(signature.positional) || push!(public_defs, public_def)
     else
         public_piped_signature = Expr(:call, fname, positional_bindings...)
         piped_kw_bindings = copy(kw_bindings)
@@ -433,7 +437,8 @@ macro ProcessAlgorithm(ex)
                 return $impl_name($(bootstrap_call_args...); $(kw_forward...))
             end)
 
-        append!(public_defs, (piped_def, bootstrap_def))
+        push!(public_defs, piped_def)
+        isempty(signature.plain_pos) || push!(public_defs, bootstrap_def)
     end
 
     input_public_names = Set(field.name for field in signature.input_fields)
@@ -452,6 +457,11 @@ macro ProcessAlgorithm(ex)
     step_kw_assignments = [_pa_bind_runtime_keyword(field, :context) for field in signature.normal_kwargs]
     step_kw_forward = [Expr(:kw, kw.name, kw.name) for kw in signature.normal_kwargs]
     step_call_args = [arg.name for arg in signature.positional]
+    positional_name_tuple = Expr(:tuple, [QuoteNode(arg.name) for arg in signature.positional]...)
+    dsl_metadata_defs = quote
+        Processes._dsl_processalgorithm_positional_names(::$fname) = $positional_name_tuple
+        Processes._dsl_processalgorithm_positional_names(::Type{$fname}) = $positional_name_tuple
+    end
     step_def = quote
         function Processes.step!(_algo::$fname, context::C) where {C <: Union{Processes.AbstractContext, NamedTuple}}
             $(step_pos_assignments...)
@@ -466,6 +476,7 @@ macro ProcessAlgorithm(ex)
         $(public_defs...)
         $init_def
         $step_def
+        $dsl_metadata_defs
     end
     return esc(q)
 end

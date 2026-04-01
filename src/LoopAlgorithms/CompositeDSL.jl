@@ -46,9 +46,39 @@ struct _CompositeDSLResolved{Kind, Entity, Inputs}
     inputs::Inputs
 end
 
+"""ProcessAlgorithm direct-call metadata used by the DSL."""
+@inline _dsl_processalgorithm_positional_names(::Type{<:ProcessAlgorithm}) = ()
+@inline _dsl_processalgorithm_positional_names(algo::ProcessAlgorithm) = _dsl_processalgorithm_positional_names(typeof(algo))
+
 """The DSL preserves the identity the user supplied instead of uniquifying it."""
 @inline _dsl_with_customname(algo, ::Val{Symbol()}) = algo
 @inline _dsl_with_customname(algo, ::Val{Name}) where {Name} = algo
+
+"""Resolve direct-call DSL syntax for a `ProcessAlgorithm` using its declared positional names."""
+function _resolve_composite_dsl_algorithm_call(
+    spec,
+    keyword_args::NamedTuple,
+    input_symbols::Tuple{Vararg{Symbol}},
+    ::Val{Name},
+) where {Name}
+    positional_names = _dsl_processalgorithm_positional_names(spec)
+    length(input_symbols) <= length(positional_names) || error("Too many positional DSL inputs for `$spec`. Expected at most $(length(positional_names)), got $(length(input_symbols)).")
+
+    resolved = _dsl_with_customname(spec, Val(Name))
+    inputs = Any[
+        (; kind = :simple, source = input_symbols[idx], destination = positional_names[idx])
+        for idx in eachindex(input_symbols)
+    ]
+
+    for destination in keys(keyword_args)
+        source = getproperty(keyword_args, destination)
+        source isa Symbol || error("Keyword arguments in direct ProcessAlgorithm call syntax must be routed symbols. Use `Algo(name = source)` for route syntax or plain function call syntax for literal keyword captures.")
+        push!(inputs, (; kind = :simple, source, destination))
+    end
+
+    routed_inputs = tuple(inputs...)
+    return _CompositeDSLResolved{:algo, typeof(resolved), typeof(routed_inputs)}(resolved, routed_inputs)
+end
 
 """Resolve one non-function DSL entity into the internal representation used by the block builder."""
 function _resolve_composite_dsl_entity(spec, inputs::Tuple, output_symbols::Tuple{Vararg{Symbol}}, ::Val{Name}) where {Name}
@@ -76,15 +106,19 @@ function _resolve_composite_dsl_entity(spec, inputs::Tuple, output_symbols::Tupl
     end
 end
 
-"""Resolve a plain Julia function call into a `FuncWrapper` plus its inferred routed inputs."""
-function _resolve_composite_dsl_function(
+"""Resolve direct-call DSL syntax for either a `ProcessAlgorithm` or a plain Julia function."""
+function _resolve_composite_dsl_call(
     spec,
     keyword_args::NamedTuple,
     input_symbols::Tuple{Vararg{Symbol}},
     output_symbols::Tuple{Vararg{Symbol}},
     ::Val{Name},
 ) where {Name}
-    spec isa Function || error("Positional/semicolon call syntax in the DSL is reserved for plain functions. For ProcessAlgorithms use `Algo(routes...)` or `Algo(constructor...)(routes...)`.")
+    if spec isa Union{ProcessAlgorithm, Type{<:ProcessAlgorithm}}
+        return _resolve_composite_dsl_algorithm_call(spec, keyword_args, input_symbols, Val(Name))
+    end
+
+    spec isa Function || error("Direct-call DSL syntax requires either a plain function or a ProcessAlgorithm. Got `$spec`.")
 
     # FuncWrapper handles the runtime call; the DSL only has to recover how the
     # wrapper should receive its routed inputs.
@@ -179,6 +213,9 @@ function _dsl_inputs_expr(input_specs)
     end
     return Expr(:tuple, specs...)
 end
+
+"""Emit keyword values for direct-call DSL syntax."""
+_dsl_keyword_value_expr(value) = value isa Symbol ? QuoteNode(value) : esc(value)
 
 """
 Turn parsed DSL input specs into concrete `Route` objects.
@@ -786,7 +823,7 @@ function _dsl_build_statement(stmt, alias_map, known_outputs::Set{Symbol}, expec
 
     input_symbols_expr = Expr(:tuple, [QuoteNode(sym) for sym in parsed.input_symbols]...)
     keyword_args_expr = Expr(:tuple, Expr(:parameters, [
-        Expr(:kw, name, esc(value)) for (name, value) in parsed.keyword_pairs
+        Expr(:kw, name, _dsl_keyword_value_expr(value)) for (name, value) in parsed.keyword_pairs
     ]...))
     customname = _dsl_customname(parsed.spec_expr, parsed.alias_name)
     algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
@@ -795,7 +832,7 @@ function _dsl_build_statement(stmt, alias_map, known_outputs::Set{Symbol}, expec
         local _dsl_outputs = $outputs_expr
         # Function-call syntax stays on a dedicated path so we can recover
         # positional inputs and keyword captures for `FuncWrapper`.
-        local _dsl_resolved = Processes._resolve_composite_dsl_function(
+        local _dsl_resolved = Processes._resolve_composite_dsl_call(
             $(esc(parsed.spec_expr)),
             $keyword_args_expr,
             $input_symbols_expr,

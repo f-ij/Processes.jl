@@ -24,6 +24,14 @@ end
 
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
 
+@ProcessAlgorithm function DSLPositionalCallAlgo(value)
+    return (; seen = value)
+end
+
+@ProcessAlgorithm function DSLKeywordCallAlgo(value; scale = 1)
+    return (; seen = value * scale)
+end
+
 @testset "Composite DSL" begin
     @testset "FuncWrapper supports init and step" begin
         wrapped = FuncWrapper(x -> 2x, (:x,), (:y,))
@@ -179,5 +187,32 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
         resolved_routine = resolve(routine)
         @test resolved_routine isa Routine
         @test repeats(resolved_routine) == (3,)
+    end
+
+    @testset "Routine DSL accepts direct ProcessAlgorithm call syntax" begin
+        positional_routine = @Routine begin
+            @state input = 5
+            seen = @repeat 2 DSLPositionalCallAlgo(input)
+        end
+
+        resolved_positional = resolve(positional_routine)
+        p_positional = Process(resolved_positional, repeat = 1)
+        Processes.run(p_positional)
+        ctx_positional = fetch(p_positional)
+        @test ctx_positional[:DSLPositionalCallAlgo_1].seen == 5
+
+        keyword_routine = @Routine begin
+            @state begin
+                input = 5
+                factor = 3
+            end
+            seen = @repeat 2 DSLKeywordCallAlgo(input; scale = factor)
+        end
+
+        resolved_keyword = resolve(keyword_routine)
+        p_keyword = Process(resolved_keyword, repeat = 1)
+        Processes.run(p_keyword)
+        ctx_keyword = fetch(p_keyword)
+        @test ctx_keyword[:DSLKeywordCallAlgo_1].seen == 15
     end
 end

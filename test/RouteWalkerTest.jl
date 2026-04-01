@@ -78,21 +78,21 @@ using Processes
 
 
     # Route functions test
-    struct Logger{T} <: ProcessAlgorithm end
-    Logger(name::Symbol) = Logger{name}()
+    struct RouteLogger{T} <: ProcessAlgorithm end
+    RouteLogger(name::Symbol) = RouteLogger{name}()
 
-    function Processes.init(::Logger{T}, _input) where {T}
+    function Processes.init(::RouteLogger{T}, _input) where {T}
         log = Vector{Any}()
         return (;log)
     end
-    function Processes.step!(::Logger{T}, context) where {T}
+    function Processes.step!(::RouteLogger{T}, context) where {T}
         (;log, targetnum) = context
         push!(log, targetnum)
         return (;)
     end
 
-    Logger1 = Logger(:normal)
-    Logger2 = Logger(:squared)
+    Logger1 = RouteLogger(:normal)
+    Logger2 = RouteLogger(:squared)
 
     algo2 = CompositeAlgorithm(
         Walker, InsertNoise, Logger1, Logger2,
