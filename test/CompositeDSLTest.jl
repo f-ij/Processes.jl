@@ -23,6 +23,8 @@ function Processes.step!(::DSLValueAlgo, context)
 end
 
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
+zero_input_dsl_test() = 7
+keyword_only_capture_dsl_test(; plus_capture, minus_capture, β, buffers) = plus_capture + minus_capture + β + buffers
 
 @ProcessAlgorithm function DSLPositionalCallAlgo(value)
     return (; seen = value)
@@ -189,6 +191,43 @@ end
         @test repeats(resolved_routine) == (3,)
     end
 
+    @testset "Zero-input plain functions are routable" begin
+        generated = @CompositeAlgorithm begin
+            result = zero_input_dsl_test()
+        end
+
+        p_generated = Process(resolve(generated), repeat = 1)
+        Processes.run(p_generated)
+        ctx_generated = fetch(p_generated)
+        @test ctx_generated[:FuncWrapper_1].result == 7
+    end
+
+    @testset "Constructor expression left of final route call is preserved" begin
+        expanded_ctor = macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                state = DSLSourceAlgo()
+            end
+        end)
+        expanded_ctor_str = sprint(show, Base.remove_linenums!(expanded_ctor))
+        @test occursin("_resolve_composite_dsl_entity(DSLSourceAlgo,", expanded_ctor_str)
+
+        expanded_nested = macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                DSLCombineAlgo(1)(left = produced)
+            end
+        end)
+        expanded_nested_str = sprint(show, Base.remove_linenums!(expanded_nested))
+        @test occursin("_resolve_composite_dsl_entity(DSLCombineAlgo(1)", expanded_nested_str)
+
+        expanded_double = macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                state = DSLSourceAlgo()()
+            end
+        end)
+        expanded_double_str = sprint(show, Base.remove_linenums!(expanded_double))
+        @test occursin("_resolve_composite_dsl_entity(DSLSourceAlgo()", expanded_double_str)
+    end
+
     @testset "@context lowers to plain route owner expressions" begin
         expanded_property = macroexpand(@__MODULE__, quote
             @CompositeAlgorithm begin
@@ -211,6 +250,26 @@ end
         expanded_index_str = sprint(show, Base.remove_linenums!(expanded_index))
         @test occursin("owner = plus[plus_capture]", expanded_index_str)
         @test occursin("source = :buffer", expanded_index_str)
+    end
+
+    @testset "Keyword-only plain functions can mix @context routes and lexical captures" begin
+        expanded = macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                @state buffers
+                @alias plus = DSLSourceAlgo
+                @alias minus = DSLSourceAlgo
+                @context c1 = plus()
+                @context c2 = minus()
+                keyword_only_capture_dsl_test(plus_capture = c1.plus_capture.buffer, minus_capture = c2[minus_capture].buffer, β = beta, buffers = buffers)
+            end
+        end)
+        expanded_str = sprint(show, Base.remove_linenums!(expanded))
+        @test occursin("owner = plus.plus_capture", expanded_str)
+        @test occursin("owner = minus[minus_capture]", expanded_str)
+        @test occursin("plus_capture = :plus_capture", expanded_str)
+        @test occursin("minus_capture = :minus_capture", expanded_str)
+        @test occursin("β = beta", expanded_str)
+        @test occursin("buffers = :buffers", expanded_str)
     end
 
     @testset "Routine DSL accepts direct ProcessAlgorithm call syntax" begin

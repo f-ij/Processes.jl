@@ -22,12 +22,12 @@ using Processes
     @test stepped.c == 14
     @test stepped.total == 21
 
-    boot_inputs = CaptureInput(2; @inputs((; b = 4)))
+    boot_inputs = Processes.step!(CaptureInput(), 2; @inputs((; b = 4)))
     @test boot_inputs.b == 6
     @test boot_inputs.c == 22
     @test boot_inputs.total == 30
 
-    boot_init = CaptureInput(2; @init((; b = 4)))
+    boot_init = Processes.step!(CaptureInput(), 2; @init((; b = 4)))
     @test boot_init == boot_inputs
 end
 
@@ -97,10 +97,42 @@ end
     end
 
     graph = [1, 2, 3]
-    resetgraph!(graph)
+    Processes.step!(resetgraph!(), graph)
     @test graph == [0, 0, 0]
 
     graph2 = [4, 5]
     Processes.step!(resetgraph!(), (; isinggraph = graph2))
     @test graph2 == [0, 0]
+end
+
+@testset "ProcessAlgorithm macro supports @config-backed structs" begin
+    @ProcessAlgorithm @config seed::Int = 3 begin
+        @config begin
+            width::Int = 2
+        end
+        function ConfiguredNoise(
+            target,
+            @managed(buffer = fill(seed, width));
+            gain = 1,
+            @inputs((;))
+        )
+            total = target + sum(buffer) + gain + seed + width
+            return (; total, seed, width)
+        end
+    end
+
+    algo = ConfiguredNoise(seed = 5, width = 4)
+    @test algo.seed == 5
+    @test algo.width == 4
+
+    prepared = Processes.init(algo, (;))
+    @test prepared.buffer == fill(5, 4)
+
+    direct = Processes.step!(algo, 2; gain = 3)
+    @test direct.total == 34
+    @test direct.seed == 5
+    @test direct.width == 4
+
+    stepped = Processes.step!(algo, (; target = 2, buffer = prepared.buffer, gain = 3))
+    @test stepped == direct
 end

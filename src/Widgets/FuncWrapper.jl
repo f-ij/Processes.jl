@@ -15,10 +15,13 @@ end
     kwargvals = values(Kwargs)
     kwargvalnames = filter(x -> x isa Symbol, kwargvals)
     kwexprs = (Expr(:kw, kwargnames[i], kwargvals[i]) for i in 1:length(kwargnames))
+    call_expr = :(fw.func($(InputSymbols...); $(kwexprs...)))
+    output_assignment = isempty(OutputSymbols) ? call_expr : :($(OutputSymbols...) = $call_expr)
+    return_expr = isempty(OutputSymbols) ? :(return (;)) : :(return (;$(OutputSymbols...)))
     return quote
         (;$(InputSymbols...), $(kwargvalnames...)) = context
-        $(OutputSymbols...) = fw.func($(InputSymbols...); $(kwexprs...))
-        return (;$(OutputSymbols...))
+        $output_assignment
+        $return_expr
     end
     # error( quote
     #     (;$(InputSymbols...), $(kwargvalnames...)) = context
@@ -32,13 +35,16 @@ end
     kwargvals = values(Kwargs)
     kwargvalnames = filter(x -> x isa Symbol, kwargvals)
     kwexprs = (Expr(:kw, kwargnames[i], kwargvals[i]) for i in 1:length(kwargnames))
+    call_expr = :(fw.func($(InputSymbols...); $(kwexprs...)))
+    output_assignment = isempty(OutputSymbols) ? call_expr : :($(OutputSymbols...) = $call_expr)
+    return_expr = isempty(OutputSymbols) ? :(return (;)) : :(return (;$(OutputSymbols...)))
     return quote
         try
             # During init the routed inputs may not exist yet. In that case we just
             # skip seeding this wrapper and let step! populate it later.
             (;$(InputSymbols...), $(kwargvalnames...)) = context
-            $(OutputSymbols...) = fw.func($(InputSymbols...); $(kwexprs...))
-            return (;$(OutputSymbols...))
+            $output_assignment
+            $return_expr
         catch
             return (;)
         end
