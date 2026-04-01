@@ -206,6 +206,23 @@ function _resolve_composite_dsl_call(
     return _CompositeDSLResolved{:algo, typeof(resolved), typeof(routed_inputs)}(resolved, routed_inputs)
 end
 
+"""Resolve keyword-only DSL call syntax at runtime without macro-time type inspection."""
+function _resolve_composite_dsl_keyword_call(
+    spec,
+    keyword_args::NamedTuple,
+    routed_inputs::Tuple,
+    output_symbols::Tuple{Vararg{Symbol}},
+    ::Val{Name},
+) where {Name}
+    if spec isa Function
+        wrapped = FuncWrapper(spec, (), output_symbols, keyword_args)
+        resolved = _dsl_with_customname(wrapped, Val(Name))
+        return _CompositeDSLResolved{:algo, typeof(resolved), typeof(routed_inputs)}(resolved, routed_inputs)
+    end
+
+    return _resolve_composite_dsl_entity(spec, routed_inputs, output_symbols, Val(Name))
+end
+
 """
 Collect candidate routed symbols from a transform expression.
 
@@ -585,17 +602,6 @@ function _dsl_resolve_constructor_expr(alias_map, ex)
     return ex, Symbol()
 end
 
-"""Heuristic used only to choose between plain-function and algorithm DSL call lowering."""
-function _dsl_prefers_function_call(mod::Module, alias_map, callee)
-    if callee isa Symbol && haskey(alias_map, callee)
-        return false
-    elseif callee isa Symbol && isdefined(mod, callee)
-        binding = getfield(mod, callee)
-        return !(binding isa Union{ProcessAlgorithm, Type{<:ProcessAlgorithm}, ProcessState, Type{<:ProcessState}, AbstractIdentifiableAlgo})
-    end
-    return false
-end
-
 """
 Parse a plain Julia function call DSL entry.
 
@@ -804,7 +810,7 @@ Within ProcessAlgorithm route syntax:
 Only symbols already produced earlier in the same DSL block are treated as routed
 transform inputs. Any other values in the expression remain normal Julia captures.
 """
-function _dsl_parse_invocation(mod::Module, alias_map, context_map, ex, known_outputs::Set{Symbol})
+function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Symbol})
     if ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@repeat") && length(ex.args) == 4
         repeats_expr = ex.args[3]
         block = ex.args[4]
@@ -813,7 +819,7 @@ function _dsl_parse_invocation(mod::Module, alias_map, context_map, ex, known_ou
             # entity so the outer block can treat it like any other statement.
             return (
                 kind = :resolved_expr,
-                resolved_expr = _dsl_expand_repeated_block(mod, block, repeats_expr),
+                resolved_expr = _dsl_expand_repeated_block(block, repeats_expr),
                 alias_name = Symbol(),
                 inputs = (),
                 input_symbols = (),
@@ -857,24 +863,16 @@ function _dsl_parse_invocation(mod::Module, alias_map, context_map, ex, known_ou
                 keyword_specs = (),
             )
         elseif isempty(args)
-            if _dsl_prefers_function_call(mod, alias_map, callee)
-                _dsl_parse_function_call(alias_map, context_map, inner, known_outputs)
-            else
-                if callee isa Symbol || (callee isa Expr && callee.head == :call)
-                    spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, callee)
-                else
-                    spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, inner)
-                end
-                (
-                    kind = :entity,
-                    spec_expr,
-                    alias_name,
-                    inputs = (),
-                    shares = (),
-                    input_symbols = (),
-                    keyword_specs = (),
-                )
-            end
+            spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, callee)
+            (
+                kind = :keyword_call,
+                spec_expr,
+                alias_name,
+                inputs = (),
+                shares = (),
+                input_symbols = (),
+                keyword_specs = (),
+            )
         else
             has_parameters = any(arg -> arg isa Expr && arg.head == :parameters, args)
             has_share = any(arg -> arg isa Expr && arg.head == :macrocall && arg.args[1] == Symbol("@all"), args)
@@ -884,25 +882,20 @@ function _dsl_parse_invocation(mod::Module, alias_map, context_map, ex, known_ou
                 # functions that should be wrapped in `FuncWrapper`.
                 _dsl_parse_function_call(alias_map, context_map, inner, known_outputs)
             else
-                only_kwargs = all(arg -> arg isa Expr && arg.head == :kw, args)
-                use_function_call = only_kwargs && _dsl_prefers_function_call(mod, alias_map, callee)
-
-                if use_function_call
-                    _dsl_parse_function_call(alias_map, context_map, inner, known_outputs)
-                else
-                    # Pure keyword calls are interpreted as ProcessAlgorithm routes.
-                    spec_expr, alias_name = _dsl_resolve_alias(alias_map, callee)
-                    inputs, shares = _dsl_parse_entity_call_args(alias_map, context_map, args, known_outputs)
-                    (
-                        kind = :entity,
-                        spec_expr,
-                        alias_name,
-                        inputs,
-                        shares,
-                        input_symbols = (),
-                        keyword_specs = (),
-                    )
-                end
+                # Pure keyword calls are resolved at runtime: plain functions are
+                # wrapped, while ProcessAlgorithms/ProcessStates go through the
+                # normal entity route path. Keep the macro as syntax lowering only.
+                parsed_function = _dsl_parse_function_call(alias_map, context_map, inner, known_outputs)
+                spec_expr, alias_name = _dsl_resolve_alias(alias_map, callee)
+                (
+                    kind = :keyword_call,
+                    spec_expr,
+                    alias_name,
+                    inputs = parsed_function.inputs,
+                    shares = (),
+                    input_symbols = (),
+                    keyword_specs = parsed_function.keyword_specs,
+                )
             end
         end
     else
@@ -972,7 +965,7 @@ Accepted top-level statements inside the block:
 
 `@finally` is recognized only to emit the current "not implemented" error.
 """
-function _dsl_build_statement(mod::Module, stmt, alias_map, context_map, known_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol)
+function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol)
     if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
@@ -990,7 +983,7 @@ function _dsl_build_statement(mod::Module, stmt, alias_map, context_map, known_o
         rhs = stmt.args[2]
     end
 
-    parsed = _dsl_parse_invocation(mod, alias_map, context_map, rhs, known_outputs)
+    parsed = _dsl_parse_invocation(alias_map, context_map, rhs, known_outputs)
     outputs_expr = Expr(:tuple, [QuoteNode(sym) for sym in outputs]...)
     schedule_expr = _dsl_schedule_expr(parsed.schedule_kind, parsed.schedule_value, expected_schedule, owner_name)
 
@@ -1043,6 +1036,23 @@ function _dsl_build_statement(mod::Module, stmt, alias_map, context_map, known_o
     customname = _dsl_customname(parsed.spec_expr, parsed.alias_name)
     algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
 
+    if parsed.kind == :keyword_call
+        return quote
+            local _dsl_outputs = $outputs_expr
+            local _dsl_resolved = Processes._resolve_composite_dsl_keyword_call(
+                $(esc(parsed.spec_expr)),
+                $keyword_args_expr,
+                $inputs_expr,
+                _dsl_outputs,
+                Val{$(QuoteNode(customname))}(),
+            )
+            push!(_dsl_algos, $algo_entry_expr)
+            push!(_dsl_specification, Int($schedule_expr))
+            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_resolved.entity, _dsl_resolved.inputs)
+            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_resolved.entity, _dsl_outputs)
+        end
+    end
+
     return quote
         local _dsl_outputs = $outputs_expr
         # Function-call syntax stays on a dedicated path so we can recover
@@ -1068,7 +1078,7 @@ Walk a DSL block once and collect the state declarations plus executable stateme
 This is shared by the top-level `@CompositeAlgorithm`/`@Routine` expansion and the
 inner `@repeat n begin ... end` block expansion so they stay in sync.
 """
-function _dsl_collect_block(mod::Module, statements, expected_schedule::Symbol, owner_name::Symbol)
+function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::Symbol)
     alias_map = Dict{Symbol, Any}()
     context_map = Dict{Symbol, Any}()
     known_outputs = Set{Symbol}()
@@ -1093,7 +1103,7 @@ function _dsl_collect_block(mod::Module, statements, expected_schedule::Symbol, 
             continue
         end
 
-        step_expr = _dsl_build_statement(mod, stmt, alias_map, context_map, known_outputs, expected_schedule, owner_name)
+        step_expr = _dsl_build_statement(stmt, alias_map, context_map, known_outputs, expected_schedule, owner_name)
         isnothing(step_expr) || push!(step_exprs, step_expr)
         # Outputs become available to the statements that follow them.
         _dsl_known_outputs!(known_outputs, stmt)
@@ -1109,9 +1119,9 @@ macro state(args...)
 end
 
 """Expand a top-level DSL block into either a `CompositeAlgorithm` or a `Routine`."""
-function _dsl_expand_loopalgorithm(mod::Module, block, constructor_name::Symbol, expected_schedule::Symbol)
+function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_schedule::Symbol)
     statements = block isa Expr && block.head == :block ? [stmt for stmt in block.args if !(stmt isa LineNumberNode)] : [block]
-    collected = _dsl_collect_block(mod, statements, expected_schedule, constructor_name)
+    collected = _dsl_collect_block(statements, expected_schedule, constructor_name)
 
     state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
 
@@ -1138,9 +1148,9 @@ function _dsl_expand_loopalgorithm(mod::Module, block, constructor_name::Symbol,
 end
 
 """Expand the body used inside `@repeat n begin ... end` into a `SimpleAlgo`."""
-function _dsl_expand_simplealgorithm_resolved(mod::Module, block)
+function _dsl_expand_simplealgorithm_resolved(block)
     statements = block isa Expr && block.head == :block ? [stmt for stmt in block.args if !(stmt isa LineNumberNode)] : [block]
-    collected = _dsl_collect_block(mod, statements, :none, :repeat)
+    collected = _dsl_collect_block(statements, :none, :repeat)
 
     state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
 
@@ -1169,8 +1179,8 @@ function _dsl_expand_simplealgorithm_resolved(mod::Module, block)
 end
 
 """Wrap a repeated DSL block in a `Routine`, then expose it as one routable entity."""
-function _dsl_expand_repeated_block(mod::Module, block, repeats_expr)
-    inner_expr = _dsl_expand_simplealgorithm_resolved(mod, block)
+function _dsl_expand_repeated_block(block, repeats_expr)
+    inner_expr = _dsl_expand_simplealgorithm_resolved(block)
     return quote
         let
             local _dsl_inner = $inner_expr
@@ -1249,7 +1259,7 @@ does not replace the state owner. Instead, the produced value is routed back int
 that state slot.
 """
 macro CompositeAlgorithm(block)
-    _dsl_expand_loopalgorithm(__module__, block, :CompositeAlgorithm, :every)
+    _dsl_expand_loopalgorithm(block, :CompositeAlgorithm, :every)
 end
 
 """
@@ -1266,5 +1276,5 @@ Examples:
 - `z = f(value; scale = 2)`
 """
 macro Routine(block)
-    _dsl_expand_loopalgorithm(__module__, block, :Routine, :repeat)
+    _dsl_expand_loopalgorithm(block, :Routine, :repeat)
 end

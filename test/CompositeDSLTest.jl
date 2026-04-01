@@ -209,7 +209,7 @@ end
             end
         end)
         expanded_ctor_str = sprint(show, Base.remove_linenums!(expanded_ctor))
-        @test occursin("_resolve_composite_dsl_entity(DSLSourceAlgo,", expanded_ctor_str)
+        @test occursin("_resolve_composite_dsl_keyword_call(DSLSourceAlgo,", expanded_ctor_str)
 
         expanded_nested = macroexpand(@__MODULE__, quote
             @CompositeAlgorithm begin
