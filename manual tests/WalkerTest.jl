@@ -23,28 +23,45 @@ function Processes.init(::Walker, input::A) where A
     return (;state, momentum, dt)
 end
 
-struct InsertNoise <: ProcessAlgorithm
-    seed::Int64
+# struct InsertNoise <: ProcessAlgorithm
+#     seed::Int64
+# end
+
+# InsertNoise(seed = 1234) = InsertNoise(seed)
+
+# function Processes.init(::InsertNoise, input::A) where A
+#     rng = MersenneTwister(1234)
+#     return (;rng)
+# end
+
+# function Processes.step!(::InsertNoise, context::C) where C
+#     (;targetnum, scale, rng) = context
+#     T = typeof(targetnum)
+#     rand_num  = (rand(rng, T)-T(0.5))*T(2)*scale
+#     println("Adding noise: $rand_num")
+#     println("Scale: $scale")
+#     targetnum = targetnum + rand_num
+#     return (;targetnum)
+# end
+
+@ProcessAlgorithm 
+    @config seed = 1234
+    function InsertNoise(target, scale, @managed(rng = MersenneTwister(seed)))
+        T = typeof(target)
+        rand_num  = (rand(rng, T)-T(0.5))*T(2)*scale
+        println("Adding noise: $rand_num")
+        println("Scale: $scale")
+        target = target + rand_num
+        return (;target)Can 
+    end
+
+
+
+# RandomWalker = CompositeAlgorithm(Walker, InsertNoise, (1,2), Route(Walker => InsertNoise, :momentum => :targetnum, :dt => :scale))
+RandomWalker = @CompositeAlgorithm begin
+    momentum, dt,  = Walker()
+    InsertNoise(scale = dt, )
 end
-
-InsertNoise(seed = 1234) = InsertNoise(seed)
-
-function Processes.step!(::InsertNoise, context::C) where C
-    (;targetnum, scale, rng) = context
-    T = typeof(targetnum)
-    rand_num  = (rand(rng, T)-T(0.5))*T(2)*scale
-    println("Adding noise: $rand_num")
-    println("Scale: $scale")
-    targetnum = targetnum + rand_num
-    return (;targetnum)
-end
-
-function Processes.init(::InsertNoise, input::A) where A
-    rng = MersenneTwister(1234)
-    return (;rng)
-end
-
-RandomWalker = CompositeAlgorithm(Walker, InsertNoise, (1,2), Route(Walker => InsertNoise, :momentum => :targetnum, :dt => :scale))
 # RandomWalker = CompositeAlgorithm((Walker, InsertNoise), (1,2))
 p = Process(RandomWalker, lifetime = 10, Input(Walker, :dt => 0.01))
 run(p)

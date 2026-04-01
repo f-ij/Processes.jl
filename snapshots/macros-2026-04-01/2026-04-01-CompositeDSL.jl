@@ -1,46 +1,6 @@
 export @CompositeAlgorithm, @Routine, @state, InlineState
 
 """
-Strict DSL implementation requirement
-====================================
-
-This file must remain a pure syntax-to-constructor lowering layer.
-
-The DSL may only expand user syntax into the normal constructors, options, and
-existing runtime types already provided by the package. Do not add custom
-runtime behavior here: no new execution wrappers, no custom stepping/init
-logic, no hidden runtime carrier types, and no special-case runtime hooks.
-
-If some DSL syntax needs capabilities that the existing constructor/type surface
-cannot express, add those facilities elsewhere in the package first and then
-lower to them from this file.
-
-`@context` constraint
----------------------
-
-`@context` is macro-expansion-only syntax. It is not allowed to introduce any
-runtime wrapper, helper algorithm, carrier type, custom init/step logic, or
-other execution behavior in this file.
-
-Its job is only to let later DSL expressions refer to subcontexts that will
-eventually be reachable through a produced algorithm's registry surface. The
-lowered result must still be expressed only in terms of the package's normal
-constructors and options, ending up as ordinary route/share specifications.
-
-In particular, the intended lowering shape is along the lines of:
-
-- `c1.plus_capture.buffer` -> a normal route source like `plus.plus_capture`
-- `c1[plus_capture].buffer` -> a normal route source like `plus[plus_capture]`
-
-and from there the existing `Route`/`Share` resolution machinery is responsible
-for figuring out what those references map to later. The DSL layer must not add
-any `Var`-like intermediate structure for this, and it must not attempt to
-resolve the runtime registry itself. It also must not validate whether the
-lowered endpoint expression is already supported elsewhere; if the rest of the
-package rejects it later, that is outside the macro's responsibility.
-"""
-
-"""
 Lightweight inline state used by the DSL.
 
 `@state` declarations inside a DSL block are collected into one `InlineState`.
@@ -213,68 +173,6 @@ function _dsl_rewrite_transform_expr(ex, replacements::Dict{Symbol, Symbol})
     return ex
 end
 
-"""Rewrite DSL alias references inside expressions while preserving routed symbols."""
-function _dsl_rewrite_alias_expr(alias_map, ex, protected_symbols::Set{Symbol})
-    if ex isa Symbol
-        if ex in protected_symbols || !haskey(alias_map, ex)
-            return ex
-        end
-        return alias_map[ex]
-    elseif ex isa Expr
-        if ex.head == :kw
-            return Expr(:kw, ex.args[1], _dsl_rewrite_alias_expr(alias_map, ex.args[2], protected_symbols))
-        elseif ex.head == :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
-            return Expr(:., _dsl_rewrite_alias_expr(alias_map, ex.args[1], protected_symbols), ex.args[2])
-        end
-        return Expr(ex.head, map(arg -> _dsl_rewrite_alias_expr(alias_map, arg, protected_symbols), ex.args)...)
-    end
-    return ex
-end
-
-"""Normalize the algorithm reference used on the right-hand side of `@context`."""
-function _dsl_normalize_context_binding(ex)
-    if ex isa Expr && ex.head == :call && length(ex.args) == 1
-        return ex.args[1]
-    end
-    return ex
-end
-
-"""Parse one `@context name = algo()` declaration."""
-function _dsl_parse_context(stmt)
-    stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@context") || error("Invalid @context statement `$stmt`.")
-    length(stmt.args) == 3 || error("@context expects a single assignment like `@context c = plus()`.")
-    assign = stmt.args[3]
-    assign isa Expr && assign.head == :(=) || error("@context expects a single assignment like `@context c = plus()`.")
-    lhs = assign.args[1]
-    lhs isa Symbol || error("@context names must be symbols. Got `$lhs`.")
-    return lhs => _dsl_normalize_context_binding(assign.args[2])
-end
-
-"""Rewrite the root of a dotted/ref expression if it starts from a context alias."""
-function _dsl_rewrite_context_root(context_map, ex)
-    if ex isa Symbol
-        return get(context_map, ex, ex), haskey(context_map, ex)
-    elseif ex isa Expr && ex.head == :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
-        rewritten_base, changed = _dsl_rewrite_context_root(context_map, ex.args[1])
-        return changed ? Expr(:., rewritten_base, ex.args[2]) : ex, changed
-    elseif ex isa Expr && ex.head == :ref && !isempty(ex.args)
-        rewritten_base, changed = _dsl_rewrite_context_root(context_map, ex.args[1])
-        return changed ? Expr(:ref, rewritten_base, ex.args[2:end]...) : ex, changed
-    end
-    return ex, false
-end
-
-"""Extract a lowered route owner/source pair from a `@context` reference."""
-function _dsl_parse_context_route_expr(context_map, ex)
-    if ex isa Expr && ex.head == :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
-        source = ex.args[2].value
-        source isa Symbol || return nothing
-        owner, changed = _dsl_rewrite_context_root(context_map, ex.args[1])
-        return changed ? (; owner, source) : nothing
-    end
-    return nothing
-end
-
 """
 Build the transform function for a routed expression.
 
@@ -309,8 +207,6 @@ function _dsl_inputs_expr(input_specs)
             # Keep the emitted structure plain NamedTuples so the builder-side
             # route code stays easy to inspect at runtime.
             :( (; kind = :simple, source = $(QuoteNode(spec.source)), destination = $(QuoteNode(spec.destination)) ) )
-        elseif spec.kind == :context_simple
-            :( (; kind = :context_simple, owner = $(esc(spec.owner)), source = $(QuoteNode(spec.source)), destination = $(QuoteNode(spec.destination)) ) )
         else
             :( (; kind = :transform, sources = $(QuoteNode(spec.sources)), destination = $(QuoteNode(spec.destination)), transform = $(esc(spec.transform_expr)) ) )
         end
@@ -339,8 +235,6 @@ function _composite_dsl_add_routes!(options::Vector{Any}, producers::Dict{Symbol
                 ext_mapping = source => source
                 ext_mapping in external_inputs || push!(external_inputs, ext_mapping)
             end
-        elseif input.kind == :context_simple
-            push!(options, Route(input.owner => target, input.source => input.destination))
         else
             sources = input.sources
             isempty(sources) && error("Transform routes must reference at least one previously produced symbol.")
@@ -633,7 +527,7 @@ Supported keyword forms:
 - `target = produced`
 - `target = produced + other`
 """
-function _dsl_parse_entity_call_args(alias_map, context_map, args, known_outputs::Set{Symbol})
+function _dsl_parse_entity_call_args(alias_map, args, known_outputs::Set{Symbol})
     share_sources = Any[]
     route_kwargs = Any[]
 
@@ -647,7 +541,7 @@ function _dsl_parse_entity_call_args(alias_map, context_map, args, known_outputs
         end
     end
 
-    inputs = _dsl_split_route_kwargs(alias_map, context_map, route_kwargs, known_outputs)
+    inputs = _dsl_split_route_kwargs(route_kwargs, known_outputs)
     return inputs, tuple(share_sources...)
 end
 
@@ -658,7 +552,7 @@ Simple symbol values become normal routes. Expressions become transformed routes
 using any already-known DSL outputs as routed inputs and leaving the rest of the
 expression captured normally.
 """
-function _dsl_split_route_kwargs(alias_map, context_map, kwargs, known_outputs::Set{Symbol})
+function _dsl_split_route_kwargs(kwargs, known_outputs::Set{Symbol})
     inputs = Any[]
     for kw in kwargs
         kw isa Expr && kw.head == :kw || error("Only keyword-based routes are supported for ProcessAlgorithms in the DSL.")
@@ -672,15 +566,6 @@ function _dsl_split_route_kwargs(alias_map, context_map, kwargs, known_outputs::
             push!(inputs, (; kind = :simple, source, destination))
             continue
         end
-
-        context_route = _dsl_parse_context_route_expr(context_map, source)
-        if !isnothing(context_route)
-            push!(inputs, (; kind = :context_simple, owner = context_route.owner, source = context_route.source, destination))
-            continue
-        end
-
-        protected_symbols = Set(known_outputs)
-        source = _dsl_rewrite_alias_expr(alias_map, source, protected_symbols)
 
         routed_symbols = Symbol[]
         _dsl_collect_transform_symbols!(routed_symbols, source)
@@ -720,7 +605,7 @@ Within ProcessAlgorithm route syntax:
 Only symbols already produced earlier in the same DSL block are treated as routed
 transform inputs. Any other values in the expression remain normal Julia captures.
 """
-function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Symbol})
+function _dsl_parse_invocation(alias_map, ex, known_outputs::Set{Symbol})
     if ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@repeat") && length(ex.args) == 4
         repeats_expr = ex.args[3]
         block = ex.args[4]
@@ -762,7 +647,7 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
             # `Algo(args...)(routes...)`: first build/resolve the entity, then
             # parse the outer keyword routes against known DSL outputs.
             spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, callee)
-            inputs, shares = _dsl_parse_entity_call_args(alias_map, context_map, args, known_outputs)
+            inputs, shares = _dsl_parse_entity_call_args(alias_map, args, known_outputs)
             (
                 kind = :entity,
                 spec_expr,
@@ -794,7 +679,7 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
             else
                 # Pure keyword calls are interpreted as ProcessAlgorithm routes.
                 spec_expr, alias_name = _dsl_resolve_alias(alias_map, callee)
-                inputs, shares = _dsl_parse_entity_call_args(alias_map, context_map, args, known_outputs)
+                inputs, shares = _dsl_parse_entity_call_args(alias_map, args, known_outputs)
                 (
                     kind = :entity,
                     spec_expr,
@@ -873,12 +758,10 @@ Accepted top-level statements inside the block:
 
 `@finally` is recognized only to emit the current "not implemented" error.
 """
-function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol)
+function _dsl_build_statement(stmt, alias_map, known_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol)
     if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
-        return nothing
-    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@context")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@finally")
         error("@finally is not implemented yet.")
@@ -891,7 +774,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
         rhs = stmt.args[2]
     end
 
-    parsed = _dsl_parse_invocation(alias_map, context_map, rhs, known_outputs)
+    parsed = _dsl_parse_invocation(alias_map, rhs, known_outputs)
     outputs_expr = Expr(:tuple, [QuoteNode(sym) for sym in outputs]...)
     schedule_expr = _dsl_schedule_expr(parsed.schedule_kind, parsed.schedule_value, expected_schedule, owner_name)
 
@@ -971,7 +854,6 @@ inner `@repeat n begin ... end` block expansion so they stay in sync.
 """
 function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::Symbol)
     alias_map = Dict{Symbol, Any}()
-    context_map = Dict{Symbol, Any}()
     known_outputs = Set{Symbol}()
     step_exprs = Expr[]
     state_fields = Any[]
@@ -988,13 +870,9 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
             alias = _dsl_parse_alias(stmt)
             alias_map[alias.first] = alias.second
             continue
-        elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@context")
-            context = _dsl_parse_context(stmt)
-            context_map[context.first] = context.second
-            continue
         end
 
-        step_expr = _dsl_build_statement(stmt, alias_map, context_map, known_outputs, expected_schedule, owner_name)
+        step_expr = _dsl_build_statement(stmt, alias_map, known_outputs, expected_schedule, owner_name)
         isnothing(step_expr) || push!(step_exprs, step_expr)
         # Outputs become available to the statements that follow them.
         _dsl_known_outputs!(known_outputs, stmt)

@@ -189,6 +189,30 @@ end
         @test repeats(resolved_routine) == (3,)
     end
 
+    @testset "@context lowers to plain route owner expressions" begin
+        expanded_property = macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                @alias plus = DSLSourceAlgo
+                @context c1 = plus()
+                DSLSinkAlgo(value = c1.plus_capture.buffer)
+            end
+        end)
+        expanded_property_str = sprint(show, Base.remove_linenums!(expanded_property))
+        @test occursin("owner = plus.plus_capture", expanded_property_str)
+        @test occursin("source = :buffer", expanded_property_str)
+
+        expanded_index = macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                @alias plus = DSLSourceAlgo
+                @context c1 = plus()
+                DSLSinkAlgo(value = c1[plus_capture].buffer)
+            end
+        end)
+        expanded_index_str = sprint(show, Base.remove_linenums!(expanded_index))
+        @test occursin("owner = plus[plus_capture]", expanded_index_str)
+        @test occursin("source = :buffer", expanded_index_str)
+    end
+
     @testset "Routine DSL accepts direct ProcessAlgorithm call syntax" begin
         positional_routine = @Routine begin
             @state input = 5
@@ -215,4 +239,5 @@ end
         ctx_keyword = fetch(p_keyword)
         @test ctx_keyword[:DSLKeywordCallAlgo_1].seen == 15
     end
+
 end

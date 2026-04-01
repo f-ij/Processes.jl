@@ -43,7 +43,7 @@ Base.@constprop :aggressive @inline function Base.getindex(cla::LoopAlgorithm, n
     getproperty(cla, Val(name))
 end
 
-@inline function Base.getindex(cla::LoopAlgorithm, idx)
+@inline function Base.getindex(cla::LoopAlgorithm, idx::Int)
     getalgos(cla)[idx]
 end
 
