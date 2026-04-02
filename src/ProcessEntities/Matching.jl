@@ -5,7 +5,7 @@ Process entities match by value if a value is given.
     if isbits(pe)
         return pe
     else
-        return objectid(pe)
+        return ObjectIDMatcher(pe)
     end
 end
 

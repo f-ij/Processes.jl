@@ -25,6 +25,7 @@ end
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
 zero_input_dsl_test() = 7
 keyword_only_capture_dsl_test(; plus_capture, minus_capture, β, buffers) = plus_capture + minus_capture + β + buffers
+literal_join_dsl_test(prefix, value, marker) = string(prefix, value, marker)
 
 @ProcessAlgorithm function DSLPositionalCallAlgo(value)
     return (; seen = value)
@@ -35,22 +36,22 @@ end
 end
 
 @testset "Composite DSL" begin
-    @testset "FuncWrapper supports init and step" begin
+    @testset "FuncWrapper steps directly and does not eagerly init" begin
         wrapped = FuncWrapper(x -> 2x, (:x,), (:y,))
         @test Processes.step!(wrapped, (; x = 4)) == (; y = 8)
-        @test Processes.init(wrapped, (; x = 4)) == (; y = 8)
+        @test Processes.init(wrapped, (; x = 4)) == (;)
 
         kw_wrapped = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (; scale = 3))
         @test Processes.step!(kw_wrapped, (; external = 4)) == (; y = 12)
-        @test Processes.init(kw_wrapped, (; external = 4)) == (; y = 12)
+        @test Processes.init(kw_wrapped, (; external = 4)) == (;)
 
         kw_from_context = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (; scale = :factor))
         @test Processes.step!(kw_from_context, (; external = 4, factor = 5)) == (; y = 20)
-        @test Processes.init(kw_from_context, (; external = 4, factor = 5)) == (; y = 20)
+        @test Processes.init(kw_from_context, (; external = 4, factor = 5)) == (;)
 
         kw_same_name = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (:scale,))
         @test Processes.step!(kw_same_name, (; external = 4, scale = 6)) == (; y = 24)
-        @test Processes.init(kw_same_name, (; external = 4, scale = 6)) == (; y = 24)
+        @test Processes.init(kw_same_name, (; external = 4, scale = 6)) == (;)
     end
 
     @testset "Inline state supports defaults and required inputs" begin
@@ -200,6 +201,44 @@ end
         Processes.run(p_generated)
         ctx_generated = fetch(p_generated)
         @test ctx_generated[:FuncWrapper_1].result == 7
+    end
+
+    @testset "Assignments write back into inline state" begin
+        mockcomp = @CompositeAlgorithm begin
+            @state num = 0.0
+            num = rand()
+            num = sqrt(num)
+        end
+
+        comp_process = InlineProcess(mockcomp, repeats = 1)
+        comp_ctx = run(comp_process)
+
+        @test 0.0 < comp_ctx[:_state].num <= 1.0
+    end
+
+    @testset "Repeated assignments write back into inline state" begin
+        mockroutine = @Routine begin
+            @state num = 16.0
+            num = @repeat 2 sqrt(num)
+        end
+
+        routine_process = InlineProcess(mockroutine, repeats = 1)
+        routine_ctx = run(routine_process)
+
+        @test routine_ctx[:_state].num == 2.0
+    end
+
+    @testset "FuncWrapper positional literals survive DSL lowering" begin
+        literal_algo = @CompositeAlgorithm begin
+            @state num = 4
+            joined = literal_join_dsl_test("Num: ", num, :done)
+        end
+
+        literal_process = InlineProcess(literal_algo, repeats = 1)
+        literal_ctx = run(literal_process)
+
+        @test literal_ctx[:_state].num == 4
+        @test literal_ctx[:FuncWrapper_1].joined == "Num: 4done"
     end
 
     @testset ":print debug mode prints the final constructor call" begin

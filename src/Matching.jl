@@ -27,6 +27,10 @@ struct SimpleId{id} <: AbstractMatcher{id} end
 SimpleId() = SimpleId{uuid4()}()
 SimpleId(id) = SimpleId{id}()
 
+struct ObjectIDMatcher{id} <: AbstractMatcher{id} end
+ObjectIDMatcher(id::UInt64) = ObjectIDMatcher{id}()
+ObjectIDMatcher(obj) = ObjectIDMatcher(objectid(obj))
+
 struct MatchAny{A} <: AbstractMatcher{A} end
 MatchAny(matchers...) = MatchAny(tuple(matchers...))
 function Base.:(==)(m1::MatchAny, a)

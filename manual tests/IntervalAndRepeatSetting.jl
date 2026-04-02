@@ -7,20 +7,23 @@ mockcomp = @CompositeAlgorithm begin
     println(num)
 end
 
+square(x) = x^2
+
 mockroutine = @Routine begin
     @state num = 0
-    num = @repeat 5 sqrt(num)
-    println(num)
+    num = rand()
+    num = @repeat 2 square(num)
+    println("Num: ", num)
     num = rand()
 end
 
 rc = resolve(mockcomp)
 rr = resolve(mockroutine)
 
-pc = Process(mockcomp, lifetime = 10)
-pr = InlineProcess(mockcomp, repeats = 2)
+pc = InlineProcess(mockcomp, repeats = 10)
+pr = InlineProcess(mockroutine, repeats = 2)
 
-run(pc);
-run(pr);
+c1 = run(pc);
+c2 = run(pr);
 
     
