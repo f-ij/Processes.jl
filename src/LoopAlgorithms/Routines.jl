@@ -63,7 +63,7 @@ resumable(r::Routine) = true
 # TODO: This is only used in treesctructure, try to deprecate
 subalgotypes(r::Routine{FT}) where FT = FT.parameters
 subalgotypes(rT::Type{<:Routine{FT}}) where FT = FT.parameters
-algotypes(r::Union{Routine{FT}, Type{<:Routine{FT}}}) where FT = tuple(FT.parameters...)
+algotypes(r::Union{Routine{FT}, Type{<:Routine{<:FT}}}) where FT = tuple(FT.parameters...)
 
 # getnames(r::Routine{T, R, NT, N}) where {T, R, NT, N} = N
 Base.length(r::Routine) = length(getfield(r, :funcs))
