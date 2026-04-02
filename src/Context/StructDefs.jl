@@ -5,7 +5,8 @@
 Previously args system
 This stores the context of a process
 """
-mutable struct ProcessContext{D,Reg} <: AbstractContext
+# mutable struct ProcessContext{D,Reg} <: AbstractContext
+struct ProcessContext{D,Reg} <: AbstractContext
     subcontexts::D
     registry::Reg
     function ProcessContext{D,Reg}(subcontexts::D, registry::Reg) where {D,Reg}

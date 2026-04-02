@@ -247,9 +247,9 @@ Base.@constprop :aggressive merge_into_subcontext(pc::ProcessContext{D}, name::S
     old_sc_type = fieldtype(D, name)
     merged_sc_type = Core.Compiler.return_type(merge, Tuple{old_sc_type, A})
 
-    if merged_sc_type === old_sc_type
-        return :(@inline merge_into_subcontext_mutate(pc, Val($(QuoteNode(name))), args))
-    end
+    # if merged_sc_type === old_sc_type
+    #     return :(@inline merge_into_subcontext_mutate(pc, Val($(QuoteNode(name))), args))
+    # end
     return :(@inline merge_into_subcontext_rebuild(pc, Val($(QuoteNode(name))), args))
 end
 
