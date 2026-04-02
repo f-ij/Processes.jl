@@ -57,6 +57,9 @@ In particular, the intended lowering shape is along the lines of:
 
 - `c1.plus_capture.buffer` -> a normal route source like `plus.plus_capture`
 - `c1[plus_capture].buffer` -> a normal route source like `plus[plus_capture]`
+- `n.changeable_seed` -> the nested inline-state owner inside `capture_noise`,
+  i.e. a normal route source like `capture_noise._state` with source
+  `:changeable_seed`
 
 and from there the existing `Route`/`Share` resolution machinery is responsible
 for figuring out what those references map to later. The DSL layer must not add
@@ -1171,7 +1174,7 @@ macro state(args...)
 end
 
 """Expand a top-level DSL block into either a `CompositeAlgorithm` or a `Routine`."""
-function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_schedule::Symbol)
+function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_schedule::Symbol; print_constructor::Bool = false)
     statements = block isa Expr && block.head == :block ? [stmt for stmt in block.args if !(stmt isa LineNumberNode)] : [block]
     collected = _dsl_collect_block(statements, expected_schedule, constructor_name)
 
@@ -1192,11 +1195,32 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             $(collected.step_exprs...)
 
             isempty(_dsl_algos) && error("`@$constructor_name` requires at least one algorithm entry.")
+            $(print_constructor ? :(Processes._dsl_print_constructor_call($(QuoteNode(constructor_name)), _dsl_algos, _dsl_specification, _dsl_states, _dsl_options)) : nothing)
             # Build the final `CompositeAlgorithm`/`Routine` using the same
             # constructor surface users would write by hand.
             getproperty(Processes, $(QuoteNode(constructor_name)))(_dsl_algos..., Tuple(_dsl_specification), _dsl_states..., _dsl_options...)
         end
     end
+end
+
+"""Print the final loop-algorithm constructor call assembled by the DSL."""
+function _dsl_print_constructor_call(constructor_name::Symbol, algos, specification, states, options)
+    args = Any[algos..., Tuple(specification), states..., options...]
+    println(string(constructor_name, "(", join(repr.(args), ", "), ")"))
+    return nothing
+end
+
+"""Parse optional macro flags for `@CompositeAlgorithm` and `@Routine`."""
+function _dsl_parse_loopalgorithm_macro_args(args, macro_name::Symbol)
+    if length(args) == 1
+        return (; block = args[1], print_constructor = false)
+    elseif length(args) == 2
+        flag = args[1]
+        is_print = flag == :print || (flag isa QuoteNode && flag.value == :print)
+        is_print || error("`@$macro_name` only supports the optional `:print` flag before the block.")
+        return (; block = args[2], print_constructor = true)
+    end
+    error("`@$macro_name` expects either `@$macro_name begin ... end` or `@$macro_name :print begin ... end`.")
 end
 
 """Expand the body used inside `@repeat n begin ... end` into a `SimpleAlgo`."""
@@ -1296,6 +1320,7 @@ Context aliases:
 - `@context c = algo()`
 - `@context c = @repeat n algo()`
 - `@context c = Algo(args...)`
+- `x = f(value = c.seed)`
 - `x = f(value = c.subalgo.buffer)`
 - `x = f(value = c[subalgo].buffer)`
 
@@ -1303,6 +1328,10 @@ Context aliases:
 statement is still built from the original right-hand side expression, so
 `@context c = @repeat 2 capture_noise()` runs `capture_noise()` on that schedule
 but does not assign the nested algorithm the key `:c`.
+
+Direct `c.field` access is interpreted as a reference to the nested inline
+state owned by that algorithm, so `n.changeable_seed` lowers like routing from
+`capture_noise._state` with source `:changeable_seed`.
 
 Scheduling:
 - `x = @interval n Algo(...)`
@@ -1328,9 +1357,18 @@ State rebinding
 If an output name already belongs to the inline DSL state, assigning to that name
 does not replace the state owner. Instead, the produced value is routed back into
 that state slot.
+
+Debug output
+============
+
+- `@CompositeAlgorithm :print begin ... end`
+
+prints the final `CompositeAlgorithm(...)` constructor call assembled by the DSL
+before it is executed.
 """
-macro CompositeAlgorithm(block)
-    _dsl_expand_loopalgorithm(block, :CompositeAlgorithm, :every)
+macro CompositeAlgorithm(args...)
+    parsed = _dsl_parse_loopalgorithm_macro_args(args, :CompositeAlgorithm)
+    _dsl_expand_loopalgorithm(parsed.block, :CompositeAlgorithm, :every; print_constructor = parsed.print_constructor)
 end
 
 """
@@ -1346,7 +1384,10 @@ Examples:
 - `y = @repeat 5 begin ... end`
 - `z = f(value; scale = 2)`
 - `@context c = @repeat 2 algo()`
+- `PickRandomSeed(targetseed = n.changeable_seed)`
+- `@Routine :print begin ... end`
 """
-macro Routine(block)
-    _dsl_expand_loopalgorithm(block, :Routine, :repeat)
+macro Routine(args...)
+    parsed = _dsl_parse_loopalgorithm_macro_args(args, :Routine)
+    _dsl_expand_loopalgorithm(parsed.block, :Routine, :repeat; print_constructor = parsed.print_constructor)
 end

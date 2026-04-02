@@ -202,6 +202,36 @@ end
         @test ctx_generated[:FuncWrapper_1].result == 7
     end
 
+    @testset ":print debug mode prints the final constructor call" begin
+        function capture_stdout(f)
+            rd, wr = redirect_stdout()
+            try
+                f()
+            finally
+                close(wr)
+            end
+            return read(rd, String)
+        end
+
+        printed_composite = capture_stdout() do
+            @CompositeAlgorithm :print begin
+                @state seed = 3
+                produced = DSLSourceAlgo(seed = seed)
+            end
+        end
+        @test occursin("CompositeAlgorithm(", printed_composite)
+        @test occursin("DSLSourceAlgo", printed_composite)
+
+        printed_routine = capture_stdout() do
+            @Routine :print begin
+                @state seed = 3
+                produced = @repeat 2 DSLSourceAlgo(seed = seed)
+            end
+        end
+        @test occursin("Routine(", printed_routine)
+        @test occursin("DSLSourceAlgo", printed_routine)
+    end
+
     @testset "Constructor expression left of final route call is preserved" begin
         expanded_ctor = macroexpand(@__MODULE__, quote
             @CompositeAlgorithm begin
