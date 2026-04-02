@@ -24,6 +24,8 @@ end
 """Return `true` when an argument belongs in the ProcessState section."""
 @inline isa_processstate_input(arg) = (arg isa ProcessState) || (arg isa Type{<:ProcessState}) || (arg isa Pair && arg.first isa Symbol && (arg.second isa ProcessState || arg.second isa Type{<:ProcessState}))
 
+
+#TODO: Don't allow Identifiable wrapping of LoopAlgorithms
 """
 Call a LoopAlgorithm as:
 

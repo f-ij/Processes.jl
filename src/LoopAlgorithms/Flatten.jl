@@ -12,7 +12,7 @@ end
 function flat_states(la::LoopAlgorithm)
     tree_trait_flat_collect(la) do func
         if func isa Processes.LoopAlgorithm
-            return getalgos(func), get_states(func)
+            return getalgos(func), getstates(func)
         else
             return nothing, nothing
         end
