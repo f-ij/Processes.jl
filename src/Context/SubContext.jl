@@ -56,9 +56,9 @@ end
     end
     getproperty(get_data(sc), name)
 end
+
 @inline function Base.merge(sc::SubContext{Name, T, S, R}, args::NamedTuple) where {Name, T, S, R}
     merged = merge(get_data(sc), args)
-    @inline SubContext{Name,typeof(merged), S, R}(merged, getsharedcontexts(sc), getsharedvars(sc))
 end
 
 """

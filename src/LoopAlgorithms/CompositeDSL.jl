@@ -1,4 +1,4 @@
-export @CompositeAlgorithm, @Routine, @state, InlineState
+export @CompositeAlgorithm, @Routine, @state
 
 """
 Strict DSL implementation requirement
@@ -83,56 +83,6 @@ the DSL block:
 The DSL must not impose extra constructor restrictions on aliases beyond normal
 Julia syntax.
 """
-
-"""
-Lightweight inline state used by the DSL.
-
-`@state` declarations inside a DSL block are collected into one `InlineState`.
-"""
-struct InlineState{Fields, Required, Defaults} <: ProcessState
-    defaults::Defaults
-end
-
-"""Construct an `InlineState` with compile-time field metadata."""
-@inline function _make_inline_state(defaults::Defaults, ::Val{Fields}, ::Val{Required}) where {Defaults, Fields, Required}
-    InlineState{Fields, Required, Defaults}(defaults)
-end
-
-"""Fetch a required `@state` input or raise a readable error."""
-@inline function _inline_state_required(context, name::Symbol)
-    haskey(context, name) || error("Missing required @state input `$(name)`.")
-    return getproperty(context, name)
-end
-
-"""Fetch an optional `@state` input, falling back to the default if the source is not initialized yet."""
-@inline function _inline_state_optional(context, name::Symbol, default)
-    haskey(context, name) || return default
-    try
-        return getproperty(context, name)
-    catch
-        return default
-    end
-end
-
-"""Initialize an `InlineState` from a context or plain named tuple."""
-@generated function Processes.init(state::InlineState{Fields, Required, Defaults}, context::C) where {Fields, Required, Defaults, C <: Union{Processes.AbstractContext, NamedTuple}}
-    default_names = fieldnames(Defaults)
-    values = Expr[]
-    for field in Fields
-        if field in Required
-            push!(values, :(_inline_state_required(context, $(QuoteNode(field)))))
-        else
-            field in default_names || error("Missing default for optional @state field `$field`.")
-            push!(values, :(_inline_state_optional(context, $(QuoteNode(field)), getproperty(state.defaults, $(QuoteNode(field))))))
-        end
-    end
-
-    nt_type = Expr(:curly, :NamedTuple, QuoteNode(Fields))
-    return quote
-        $(LineNumberNode(@__LINE__, @__FILE__))
-        return $nt_type(($(values...),))
-    end
-end
 
 """Internal resolved representation used while expanding the DSL."""
 struct _CompositeDSLResolved{Kind, Entity, Inputs}
@@ -504,7 +454,7 @@ function _composite_dsl_bind_outputs!(options::Vector{Any}, producers::Dict{Symb
     return producers
 end
 
-"""Build the inline state expression used by both `@state` and the block DSL."""
+"""Build the general state expression used by both `@state` and the block DSL."""
 function _dsl_expand_state_expr(fields)
     field_names = Expr(:tuple, [QuoteNode(field.name) for field in fields]...)
     required_names = Expr(:tuple, [QuoteNode(field.name) for field in fields if field.required]...)
@@ -512,8 +462,9 @@ function _dsl_expand_state_expr(fields)
     defaults_expr = Expr(:tuple, Expr(:parameters, default_kws...))
 
     return quote
-        # The field metadata is kept in the type so init can stay fully inferred.
-        Processes._make_inline_state($defaults_expr, Val{$field_names}(), Val{$required_names}())
+        # The field metadata is kept in the type, while defaults are rebuilt on
+        # each init call through the stored scheme closure.
+        Processes.GeneralState(() -> $defaults_expr, Val{$field_names}(), Val{$required_names}())
     end
 end
 
@@ -1234,7 +1185,7 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
     return (; step_exprs, state_fields, state_name)
 end
 
-"""Create an `InlineState` value directly."""
+"""Create a `GeneralState` value directly."""
 macro state(args...)
     fields = _dsl_collect_state_fields(args)
     return _dsl_expand_state_expr(fields)

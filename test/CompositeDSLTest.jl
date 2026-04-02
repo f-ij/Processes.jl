@@ -84,6 +84,20 @@ end
         @test Processes.init(state, (; a = 7, b = 4)) == (; a = 7, b = 4)
     end
 
+    @testset "Mutable @state defaults are rebuilt per init" begin
+        state = @state begin
+            nums = Float64[]
+        end
+
+        first_init = Processes.init(state, (;))
+        push!(first_init.nums, 1.0)
+        second_init = Processes.init(state, (;))
+
+        @test length(first_init.nums) == 1
+        @test isempty(second_init.nums)
+        @test first_init.nums !== second_init.nums
+    end
+
     @testset "CompositeAlgorithm DSL resolves and runs" begin
         n = 10
         algo = @CompositeAlgorithm begin

@@ -7,7 +7,7 @@ mockcomp = @CompositeAlgorithm begin
     println(num)
 end
 
-square(x) = x^2
+square(x::N) where N = x^2
 
 mockroutine = @Routine begin
     @state num = 0.0
@@ -30,7 +30,7 @@ c2 = run(pr);
 
 e_c = context(pr)
 e_c = Processes.makecontext(pr)
-e_c = Processes.merge_into_globals(e_c, (; process=pr))
+# e_c = Processes.merge_into_globals(e_c, (; process=pr))
 
 lifetime = Processes.lifetime(pr)
 mockroutine = resolve(mockroutine)
@@ -39,24 +39,43 @@ Processes.loop(pr, mockroutine, e_c, lifetime)
 @code_warntype Processes.loop(pr, mockroutine, e_c, lifetime)
 @code_warntype run(pr)
 
-stepc = Processes.step!(rc, e_c, Unstable())
-
-
-@benchmark Processes.loop($pr, $mockroutine, $e_c, $lifetime)
+c = @benchmark Processes.loop($pr, $mockroutine, e_c, $lifetime, Processes.Generated()) setup = (e_c = Processes.merge_into_globals(Processes.makecontext(pr), (; process=pr)))
 @benchmark run($pr)
     
+function testloop(rr::R, context::C) where {R, C}
+    for i in 1:2
+        context = @inline Processes.merge_into_subcontext_mutate(context, Val(:_state), (;num = rand()))
+        for i in 1:4
+            # context = @inline step!(rr[2], context, Processes.Stable())
+            context = @inline Processes.merge_into_subcontext_mutate(context, Val(:_state), (;num = square(context._state.num)))
+        end
+        # context = @inline step!(rr[3], context, Processes.Stable())
+        @inline push!(context._state.nums, context._state.num)
+    end
+    return context 
+end
 
-function mockroutine_mimic()
-    num = 0
-    nums = Float64[]
+e_c = Processes.makecontext(pr)
+cr = testloop(rr, e_c)
+
+
+# @benchmark testloop($rr, c) setup = (c = Processes.merge_into_globals(Processes.makecontext(pr), (; process=pr)))
+@benchmark testloop($rr, c) setup = (c = Processes.makecontext(pr))
+
+@code_warntype testloop(rr, e_c)
+testloop(rr, e_c)
+
+function mockroutine_mimic(num = 0.0, nums = Float64[])
     for i in 1:2
         num = rand()
         for i in 1:4
-            num = square(num)
+            num = @inline square(num)
         end
-        push!(nums, num)
+        @inline push!(nums, num)
     end
     return num, nums
 end
 
-@benchmark mockroutine_mimic()
+num = 0.0
+nums = Float64[]
+@benchmark mockroutine_mimic($num, $nums)

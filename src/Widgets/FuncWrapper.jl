@@ -72,16 +72,16 @@ end
 inputsymbols_to_exprs(inputs, varname) = (inputs[i] isa Symbol ? :($(inputs[i])) : to_expr(inputs[i], varname) for i in 1:length(inputs))
 context_input_symbols(inputs) = tuple((x for x in inputs if x isa Symbol)...)
 
-@generated function step!(fw::FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T}, context::C) where {F, InputSymbols, OutputSymbols, Kwargs, T, C}
+@inline @generated function step!(fw::FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T}, context::C) where {F, InputSymbols, OutputSymbols, Kwargs, T, C}
     positional_names = context_input_symbols(InputSymbols)
     kwargnames = keys(Kwargs)
     kwargvals = values(Kwargs)
     kwargvalnames = tuple((x for x in kwargvals if x isa Symbol)...)
     kwexprs = (Expr(:kw, kwargnames[i], kwargvals[i]) for i in 1:length(kwargnames))
-    call_expr = :(fw.func($(inputsymbols_to_exprs(InputSymbols, :fw)...); $(kwexprs...)))
+    call_expr = :(@inline fw.func($(inputsymbols_to_exprs(InputSymbols, :fw)...); $(kwexprs...)))
     output_assignment = isempty(OutputSymbols) ? call_expr : :($(OutputSymbols...) = $call_expr)
     return_expr = isempty(OutputSymbols) ? :(return (;)) : :(return (;$(OutputSymbols...)))
-    return quote
+    quote
         (;$(positional_names...), $(kwargvalnames...)) = context
         $output_assignment
         $return_expr
