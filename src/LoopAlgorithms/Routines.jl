@@ -20,19 +20,6 @@ function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple,
     return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), Nothing, id}(funcs, states, options, resume_idxs, nothing)
 end
 
-# function Routine(funcs::NTuple{N,Any},
-#     repeats::NTuple{N,Real}=ntuple(x -> 1, length(funcs)),
-#     shares_and_routes::Union{Share,Route}...) where {N}
-
-#     (; functuple, registry, options) = setup(Routine, funcs, repeats, shares_and_routes...)
-#     sidxs = MVector{length(functuple),Int}(ones(length(functuple)))
-    
-#     if repeats isa Tuple
-#         repeats = Int.(repeats)
-#     end
-#     Routine{typeof(functuple),repeats,typeof(sidxs),typeof(registry),typeof(options),uuid4()}(functuple, sidxs, registry, options)
-# end
-
 function newfuncs(r::Routine, funcs)
     setfield(r, :funcs, funcs)
 end
@@ -64,6 +51,7 @@ resumable(r::Routine) = true
 subalgotypes(r::Routine{FT}) where FT = FT.parameters
 subalgotypes(rT::Type{<:Routine{FT}}) where FT = FT.parameters
 algotypes(r::Union{Routine{FT}, Type{<:Routine{<:FT}}}) where FT = tuple(FT.parameters...)
+statetypes(r::Union{Routine{FT, R, S}, Type{<:Routine{FT, R, S}}}) where {FT, R, S} = S.parameters
 
 # getnames(r::Routine{T, R, NT, N}) where {T, R, NT, N} = N
 Base.length(r::Routine) = length(getfield(r, :funcs))
