@@ -100,6 +100,7 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
     end
 
     ######### PROCESS STATES #########
+    pstates = tuple()
     while true
         el, args = parse_by_func(isa_processstate_input, args...; error = false)
         if isnothing(el)
