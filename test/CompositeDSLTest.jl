@@ -228,6 +228,18 @@ end
         @test occursin("_resolve_composite_dsl_entity(DSLSourceAlgo()", expanded_double_str)
     end
 
+    @testset "Aliases rewrite call roots directly" begin
+        expanded = macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                @alias source = DSLSourceAlgo
+                produced = source(seed = seed)
+            end
+        end)
+        expanded_str = sprint(show, Base.remove_linenums!(expanded))
+        @test occursin("_resolve_composite_dsl_keyword_call", expanded_str)
+        @test occursin("DSLSourceAlgo", expanded_str)
+    end
+
     @testset "@context lowers to plain route owner expressions" begin
         expanded_property = macroexpand(@__MODULE__, quote
             @CompositeAlgorithm begin
@@ -250,6 +262,32 @@ end
         expanded_index_str = sprint(show, Base.remove_linenums!(expanded_index))
         @test occursin("owner = plus[plus_capture]", expanded_index_str)
         @test occursin("source = :buffer", expanded_index_str)
+    end
+
+    @testset "@context direct field lowers to nested state owner" begin
+        expanded = macroexpand(@__MODULE__, quote
+            @Routine begin
+                @alias inner = DSLSourceAlgo
+                @context c = inner()
+                DSLSinkAlgo(value = c.seed)
+            end
+        end)
+        expanded_str = sprint(show, Base.remove_linenums!(expanded))
+        @test occursin("owner = inner._state", expanded_str)
+        @test occursin("source = :seed", expanded_str)
+    end
+
+    @testset "@context strips scheduling wrappers" begin
+        expanded = macroexpand(@__MODULE__, quote
+            @Routine begin
+                @alias plus = DSLSourceAlgo
+                @context c1 = @repeat 2 plus()
+                DSLSinkAlgo(value = c1.plus_capture.buffer)
+            end
+        end)
+        expanded_str = sprint(show, Base.remove_linenums!(expanded))
+        @test occursin("owner = plus.plus_capture", expanded_str)
+        @test !occursin("@repeat", expanded_str)
     end
 
     @testset "Keyword-only plain functions can mix @context routes and lexical captures" begin

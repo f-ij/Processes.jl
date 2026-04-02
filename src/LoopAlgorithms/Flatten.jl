@@ -9,6 +9,16 @@ function flat_funcs(la::LoopAlgorithm)
     end
 end
 
+function flat_states(la::LoopAlgorithm)
+    tree_trait_flat_collect(la) do func
+        if func isa Processes.LoopAlgorithm
+            return getalgos(func), get_states(func)
+        else
+            return nothing, nothing
+        end
+    end
+end
+
 function flat_multipliers(la::LoopAlgorithm)
     @inline tree_trait_flatten(la, 1.) do func, multiplier
         if func isa Processes.LoopAlgorithm

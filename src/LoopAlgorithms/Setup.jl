@@ -100,22 +100,37 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
     end
 
     ######### PROCESS STATES #########
-    first_process_states = findfirst(isa_processstate_input, args)
-    last_process_state = nothing
-    pstates = tuple()
-    if !isnothing(first_process_states)
-        last_process_state = findlast(isa_processstate_input, args)
-        pstates = args[first_process_states:last_process_state]
-        @assert all(isa_processstate_input, pstates) "All arguments between the first and last ProcessState must be ProcessStates, but got: $(pstates)"
-        pstates = map(pstates) do state
-            if state isa Pair
-                IdentifiableAlgo(state.second, state.first)
+    while true
+        el, args = parse_by_func(isa_processstate_input, args...; error = false)
+        if isnothing(el)
+            break
+        else
+            if el isa Pair
+                state = IdentifiableAlgo(el.second, el.first)
+            elseif el isa Union{ProcessState, Type{<:ProcessState}}
+                state = IdentifiableAlgo(el)
             else
-                IdentifiableAlgo(state)
+                state = el
             end
+            pstates = tuple(pstates..., state)
         end
-        args = args[last_process_state + 1:end]
     end
+    # first_process_states = findfirst(isa_processstate_input, args)
+    # last_process_state = nothing
+    # pstates = tuple()
+    # if !isnothing(first_process_states)
+    #     last_process_state = findlast(isa_processstate_input, args)
+    #     pstates = args[first_process_states:last_process_state]
+    #     @assert all(isa_processstate_input, pstates) "All arguments between the first and last ProcessState must be ProcessStates, but got: $(pstates)"
+    #     pstates = map(pstates) do state
+    #         if state isa Pair
+    #             IdentifiableAlgo(state.second, state.first)
+    #         else
+    #             IdentifiableAlgo(state)
+    #         end
+    #     end
+    #     args = args[last_process_state + 1:end]
+    # end
 
     options = tuple()
     if !isempty(args)
@@ -133,7 +148,7 @@ Add all algos and states in a LoopAlgorithm to a registry with their correspondi
 function setup_registry(la::LA) where LA <: LoopAlgorithm
     registry = NameSpaceRegistry()
     # First add states with multiplier 1
-    states = get_states(la)
+    states = flat_states(la)
     multipliers = ntuple(i -> 1, length(states))
     registry = addall(registry, states, multipliers)
 

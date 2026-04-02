@@ -15,6 +15,13 @@ If some DSL syntax needs capabilities that the existing constructor/type surface
 cannot express, add those facilities elsewhere in the package first and then
 lower to them from this file.
 
+The DSL should only reject malformed DSL syntax. It should not add extra
+assert-style checking for runtime types, runtime values, or semantic validity
+beyond what the existing constructors and runtime structs already enforce
+themselves. If a DSL path needs a more readable failure, wrap it in existing
+runtime constructor surfaces and let those runtime objects throw the
+understandable error there.
+
 Constructor-call routing rule
 -----------------------------
 
@@ -57,6 +64,19 @@ any `Var`-like intermediate structure for this, and it must not attempt to
 resolve the runtime registry itself. It also must not validate whether the
 lowered endpoint expression is already supported elsewhere; if the rest of the
 package rejects it later, that is outside the macro's responsibility.
+
+`@alias` constraint
+-------------------
+
+`@alias` is also macro-expansion-only syntax. It is just a naming layer inside
+the DSL block:
+
+- `@alias x = Algo` means later `x` refers to `Algo`
+- `@alias x = Algo(123)` means later `x` refers to `Algo(123)`
+- `x(args...)` rewrites by replacing the root `x` with the aliased expression
+
+The DSL must not impose extra constructor restrictions on aliases beyond normal
+Julia syntax.
 """
 
 """
@@ -149,8 +169,9 @@ function _resolve_composite_dsl_entity(spec, inputs::Tuple, output_symbols::Tupl
     elseif spec isa AbstractIdentifiableAlgo
         # Already-named/unique algorithms can pass straight through.
         return _CompositeDSLResolved{:algo, typeof(spec), typeof(inputs)}(spec, inputs)
-    elseif spec isa Union{ProcessAlgorithm, Type{<:ProcessAlgorithm}}
-        # Plain process algorithms are given a stable DSL-visible identity here.
+    elseif spec isa Union{SteppableAlgorithm, Type{<:SteppableAlgorithm}}
+        # Plain algorithms/loop algorithms are passed through and keyed by the
+        # normal constructor surface later.
         resolved = _dsl_with_customname(spec, Val(Name))
         return _CompositeDSLResolved{:algo, typeof(resolved), typeof(inputs)}(resolved, inputs)
     elseif spec isa Function
@@ -161,7 +182,7 @@ function _resolve_composite_dsl_entity(spec, inputs::Tuple, output_symbols::Tupl
         resolved = _dsl_with_customname(wrapped, Val(Name))
         return _CompositeDSLResolved{:algo, typeof(resolved), typeof(inputs)}(resolved, inputs)
     else
-        error("Unsupported DSL entry `$spec`. Expected a ProcessAlgorithm, ProcessState, or Function.")
+        error("Unsupported DSL entry `$spec`. Expected a SteppableAlgorithm, ProcessState, or Function.")
     end
 end
 
@@ -279,15 +300,32 @@ function _dsl_rewrite_alias_expr(alias_map, ex, protected_symbols::Set{Symbol})
     return ex
 end
 
-"""Normalize the algorithm reference used on the right-hand side of `@context`."""
+"""
+Strip DSL-only wrappers from the right-hand side of `@context`.
+
+`@context` names the underlying algorithm expression, not its schedule wrapper,
+so forms like `@context c = plus()`, `@context c = @repeat 2 plus()`, and
+`@context c = @interval 3 plus()` all bind `c` to the same underlying `plus`
+expression.
+"""
 function _dsl_normalize_context_binding(ex)
-    if ex isa Expr && ex.head == :call && length(ex.args) == 1
-        return ex.args[1]
+    if ex isa Expr
+        if ex.head == :call && length(ex.args) == 1
+            return _dsl_normalize_context_binding(ex.args[1])
+        elseif ex.head == :macrocall && ex.args[1] in (Symbol("@repeat"), Symbol("@every"), Symbol("@interval"))
+            length(ex.args) == 4 || error("Scheduling wrappers inside `@context` must use `@repeat n expr`, `@every n expr`, or `@interval n expr`.")
+            return _dsl_normalize_context_binding(ex.args[4])
+        end
     end
     return ex
 end
 
-"""Parse one `@context name = algo()` declaration."""
+"""
+Parse one `@context name = algo()` declaration.
+
+The right-hand side is normalized by stripping empty call syntax and any outer
+DSL scheduling wrapper before the alias is recorded.
+"""
 function _dsl_parse_context(stmt)
     stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@context") || error("Invalid @context statement `$stmt`.")
     length(stmt.args) == 3 || error("@context expects a single assignment like `@context c = plus()`.")
@@ -317,6 +355,10 @@ function _dsl_parse_context_route_expr(context_map, ex)
     if ex isa Expr && ex.head == :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
         source = ex.args[2].value
         source isa Symbol || return nothing
+        if ex.args[1] isa Symbol && haskey(context_map, ex.args[1])
+            owner = Expr(:., context_map[ex.args[1]], QuoteNode(:_state))
+            return (; owner, source)
+        end
         owner, changed = _dsl_rewrite_context_root(context_map, ex.args[1])
         return changed ? (; owner, source) : nothing
     end
@@ -547,7 +589,9 @@ Supported form:
 - `@alias name = SomeAlgo`
 - `@alias name = SomeAlgo(args...)`
 
-The alias name must be a plain symbol.
+The alias name must be a plain symbol. Alias resolution is plain root
+substitution inside the DSL: later `name` refers to the aliased expression, and
+`name(args...)` rewrites to the aliased expression called with those arguments.
 """
 function _dsl_parse_alias(stmt)
     stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias") || error("Invalid alias statement `$stmt`.")
@@ -591,13 +635,18 @@ function _dsl_resolve_alias(alias_map, ex)
     return ex, Symbol()
 end
 
-"""Resolve constructor syntax while preserving alias-based custom names."""
+"""
+Resolve constructor syntax while preserving alias-based custom names.
+
+Alias calls are handled by plain root substitution. For example, if
+`@alias source = SomeAlgo(1)`, then `source(value = x)` is treated like
+`SomeAlgo(1)(value = x)`.
+"""
 function _dsl_resolve_constructor_expr(alias_map, ex)
     if ex isa Symbol
         return _dsl_resolve_alias(alias_map, ex)
     elseif ex isa Expr && ex.head == :call && ex.args[1] isa Symbol && haskey(alias_map, ex.args[1])
-        isempty(ex.args[2:end]) || error("Aliases can only be called without constructor arguments. Alias the instantiated form instead, e.g. `@alias x = Algo(args...)`.")
-        return alias_map[ex.args[1]], ex.args[1]
+        return Expr(:call, alias_map[ex.args[1]], ex.args[2:end]...), ex.args[1]
     end
     return ex, Symbol()
 end
@@ -1099,7 +1148,10 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
             continue
         elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@context")
             context = _dsl_parse_context(stmt)
+            alias_map[context.first] = context.second
             context_map[context.first] = context.second
+            step_expr = _dsl_build_statement(stmt.args[3].args[2], alias_map, context_map, known_outputs, expected_schedule, owner_name)
+            isnothing(step_expr) || push!(step_exprs, step_expr)
             continue
         end
 
@@ -1214,10 +1266,15 @@ Plain entries:
 - `Algo`
 - `Algo()`
 - `alias`
+- `alias()`
+- `alias(args...)`
 
 Assignments:
 - `x = Algo`
 - `x = Algo()`
+- `x = alias`
+- `x = alias()`
+- `x = alias(args...)`
 - `a, b = Algo(...)`
 
 ProcessAlgorithm routes:
@@ -1226,12 +1283,26 @@ ProcessAlgorithm routes:
 - `x = Algo(value = produced * 2)`
 - `x = Algo(value = produced + passthrough + bias)`
 - `x = SomeAlgo(args...)(input = produced)`
+- `x = alias(input = produced)`
+- `x = alias(args...)(input = produced)`
 
 Plain-function entries:
 - `x = f(produced)`
 - `x = f(produced, other)`
 - `x = f(produced; scale = 2)`
 - `x = f(produced; scale = factor)`
+
+Context aliases:
+- `@context c = algo()`
+- `@context c = @repeat n algo()`
+- `@context c = Algo(args...)`
+- `x = f(value = c.subalgo.buffer)`
+- `x = f(value = c[subalgo].buffer)`
+
+`@context` is only a macro-time alias for later references. The executable DSL
+statement is still built from the original right-hand side expression, so
+`@context c = @repeat 2 capture_noise()` runs `capture_noise()` on that schedule
+but does not assign the nested algorithm the key `:c`.
 
 Scheduling:
 - `x = @interval n Algo(...)`
@@ -1274,6 +1345,7 @@ Examples:
 - `x = @repeat 10 Algo(input = value)`
 - `y = @repeat 5 begin ... end`
 - `z = f(value; scale = 2)`
+- `@context c = @repeat 2 algo()`
 """
 macro Routine(block)
     _dsl_expand_loopalgorithm(block, :Routine, :repeat)

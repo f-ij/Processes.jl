@@ -374,7 +374,7 @@ end
 """
 Statically Get the name from the registry
 """
-@inline function getkey(reg::NameSpaceRegistry, val)
+@inline function Base.getkey(reg::NameSpaceRegistry, val)
     entry = get(reg, val, nothing)
     if isnothing(entry)
         return nothing

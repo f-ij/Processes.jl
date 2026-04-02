@@ -34,8 +34,8 @@ algotype(::Union{IdentifiableAlgo{F}, Type{<:IdentifiableAlgo{F}}}) where {F} = 
 @inline getalgo(sa::IdentifiableAlgo{F}) where {F} = sa.func
 @inline getalgos(sa::IdentifiableAlgo) = tuple(sa.func)
 
-@inline getkey(sa::IdentifiableAlgo) = getkey(typeof(sa))
-@inline function getkey(sat::Type{<:IdentifiableAlgo{F, Id, Aliases, AlgoName, ScopeName}}) where {F, Id, Aliases, AlgoName, ScopeName}
+@inline Base.getkey(sa::IdentifiableAlgo) = getkey(typeof(sa))
+@inline function Base.getkey(sat::Type{<:IdentifiableAlgo{F, Id, Aliases, AlgoName, ScopeName}}) where {F, Id, Aliases, AlgoName, ScopeName}
     ScopeName
 end
 # @inline setkey(sa::IdentifiableAlgo, newkey) = setparameter(sa, 6, newkey)

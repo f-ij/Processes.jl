@@ -1,12 +1,12 @@
 export SimpleAlgo, CompositeAlgorithm, Routine
-export getkey, step!, init, getmultiplier, getoptions, setoptions, get_shares, get_routes
+export step!, init, getmultiplier, getoptions, setoptions, get_shares, get_routes
 
 getmultiplier(cla::LoopAlgorithm, obj) = getmultiplier(getregistry(cla), obj)
-getkey(cla::LoopAlgorithm, obj) = getkey(getregistry(cla), obj)
+Base.getkey(cla::LoopAlgorithm, obj) = getkey(getregistry(cla), obj)
 getoptions(cla::LoopAlgorithm) = getfield(cla, :options)
 get_shares(cla::LoopAlgorithm) = @inline filter_by_type(Share, getoptions(cla))
 get_routes(cla::LoopAlgorithm) = @inline filter_by_type(Route, getoptions(cla))
-get_states(cla::LoopAlgorithm) = getfield(cla, :states)
+getstates(cla::LoopAlgorithm) = getfield(cla, :states)
 
 getoptions(la::LoopAlgorithm, T::Type{O}) where O = @inline filter_by_type(O, getoptions(la))
 setoptions(la::LoopAlgorithm, options) = error("setoptions not implemented for $(typeof(la))")
@@ -76,7 +76,19 @@ Get an algo by name
     end
     sidx = findfirst(==(name), getkey.(States))
     if !isnothing(sidx)
-        return :(getindex(get_states(ca), $sidx))
+        return :(getindex(getstates(ca), $sidx))
     end
     return :(error("No algorithm or state with name $(name) found in LoopAlgorithm $(ca)"))
+end
+
+@inline @generated function Base.propertynames(ca::LoopAlgorithm)
+    Fs = algotypes(ca)
+    States = statetypes(ca)
+    f_names = getkey.(Fs)
+    f_names = filter(s -> s != Symbol(""), f_names)
+
+    s_names = getkey.(States)
+    s_names = filter(s -> s != Symbol(""), s_names)
+    flat = tuple(f_names..., s_names...)
+    return :($flat)
 end

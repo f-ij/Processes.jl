@@ -16,7 +16,7 @@ function newdata(sc::SubContext, data::NamedTuple)
 end
 
 @inline Base.isempty(sc::SubContext) = isempty(get_data(sc))
-@inline getkey(sct::Type{<:SubContext}) = sct.parameters[1]
+@inline Base.getkey(sct::Type{<:SubContext}) = sct.parameters[1]
 @inline get_datatype(sct::Type{<:SubContext}) = sct.parameters[2]
 
 @inline function getsharedcontext_types(sct::Type{<:SubContext})
@@ -36,7 +36,7 @@ end
     return (shared,)
 end
 
-@inline getkey(sc::SubContext) = getkey(typeof(sc))
+@inline Base.getkey(sc::SubContext) = getkey(typeof(sc))
 @inline get_datatype(sc::SubContext) = get_datatype(typeof(sc))
 @inline getsharedcontext_types(sc::SubContext) = getsharedcontext_types(typeof(sc))
 @inline getsharedvars_types(sc::SubContext) = getsharedvars_types(typeof(sc))

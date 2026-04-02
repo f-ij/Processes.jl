@@ -26,7 +26,7 @@ function LoopAlgorithm(::Type{ThreadedCompositeAlgorithm}, funcs::F, states::Tup
 end
 
 function setoptions(tca::ThreadedCompositeAlgorithm{T, Intervals, S, O, R, id}, options) where {T, Intervals, S, O, R, id}
-    ThreadedCompositeAlgorithm{T, Intervals, S, typeof(options), R, id}(getalgos(tca), get_states(tca), options, getinc(tca), getregistry(tca))
+    ThreadedCompositeAlgorithm{T, Intervals, S, typeof(options), R, id}(getalgos(tca), getstates(tca), options, getinc(tca), getregistry(tca))
 end
 
 @inline getalgos(tca::ThreadedCompositeAlgorithm) = getfield(tca, :funcs)

@@ -27,3 +27,20 @@ include("Showing.jl")
 #     end
 #     return getid(claT1) == getid(checkobj)
 # end
+
+"""
+Raw loop algorithms match by object identity when passed as values.
+
+This keeps existing wrapper surfaces like `IdentifiableAlgo(loopalgo, :name)`
+and routed references from `@context` consistent without introducing any custom
+DSL runtime machinery.
+"""
+@inline function match_by(la::LoopAlgorithm)
+    if isbits(la)
+        return la
+    end
+    return objectid(la)
+end
+
+"""Loop algorithm types match by their type."""
+@inline match_by(t::Type{<:LoopAlgorithm}) = t

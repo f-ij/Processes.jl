@@ -25,7 +25,7 @@ function newfuncs(r::Routine, funcs)
 end
 
 function setoptions(r::Routine{T, Repeats, S, MV, O, R, id}, options) where {T, Repeats, S, MV, O, R, id}
-    Routine{T, Repeats, S, MV, typeof(options), R, id}(getalgos(r), get_states(r), options, get_resume_idxs(r), getregistry(r))
+    Routine{T, Repeats, S, MV, typeof(options), R, id}(getalgos(r), getstates(r), options, get_resume_idxs(r), getregistry(r))
 end
 
 @inline getregistry(r::Routine) = getfield(r, :reg)
@@ -36,10 +36,8 @@ end
 @inline getalgo(r::Routine, idx) = getfield(r, :funcs)[idx]
 @inline getoptions(r::Routine) = getfield(r, :options)
 @inline subalgorithms(r::Routine) = getfield(r, :funcs)
+@inline getstates(r::Routine) = getfield(r, :states)
 
-function Base.getindex(r::Routine, idx)
-   getalgos(r)[idx]
-end
 
 
 getmultipliers_from_specification_num(::Type{<:Routine}, specification_num) = Float64.(specification_num)
