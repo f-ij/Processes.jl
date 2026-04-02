@@ -272,6 +272,30 @@ end
         @test occursin("buffers = :buffers", expanded_str)
     end
 
+    @testset "Identity aliases stay plain aliases in nested DSL blocks" begin
+        expanded = macroexpand(@__MODULE__, quote
+            function nudged_process_dsl_regression(beta, fullsweeps, plus_capture, minus_capture, plus, minus)
+                @CompositeAlgorithm begin
+                    @state buffers
+                    @alias plus = plus
+                    @alias minus = minus
+                    @context c1 = plus()
+                    @context c2 = minus()
+                    keyword_only_capture_dsl_test(
+                        plus_capture = c1.plus_capture.buffer,
+                        minus_capture = c2.minus_capture.buffer,
+                        β = beta,
+                        buffers = buffers,
+                    )
+                end
+            end
+        end)
+        expanded_str = sprint(show, Base.remove_linenums!(expanded))
+        @test occursin("owner = plus.plus_capture", expanded_str)
+        @test occursin("owner = minus.minus_capture", expanded_str)
+        @test !occursin("Transform route for `plus_capture`", expanded_str)
+    end
+
     @testset "Routine DSL accepts direct ProcessAlgorithm call syntax" begin
         positional_routine = @Routine begin
             @state input = 5

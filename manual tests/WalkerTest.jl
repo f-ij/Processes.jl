@@ -41,3 +41,5 @@ end
 
 p = Process(RandomWalker, lifetime = 10, Input(Walker, :dt => 0.01))
 run(p)
+
+function makewalker
