@@ -3,6 +3,8 @@ push!(LOAD_PATH, joinpath(@__DIR__, "..", "src"))
 using Documenter
 using Processes
 
+Base.include(Processes, joinpath(@__DIR__, "..", "src", "ContextAnalyzer", "ContextAnalyzer.jl"))
+
 module ProcessesExtensionsDocs
 using UUIDs
 using JLD2
@@ -28,6 +30,7 @@ makedocs(
             "Algorithms and States" => "user/algorithms_states.md",
             "Referencing Algorithms" => "user/referencing_algorithms.md",
             "Contexts and Indexing" => "user/contexts.md",
+            "Init Analysis" => "user/init_analysis.md",
             "Routes and Shares" => "user/routes_shares.md",
             "Inputs and Overrides" => "user/inputs_overrides.md",
             "Vars (Var Selectors)" => "user/vars.md",

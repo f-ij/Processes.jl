@@ -634,33 +634,27 @@ function _dsl_parse_schedule(ex)
     return (:default, :(1), ex)
 end
 
-"""Return the macro-scope alias binding for one root symbol, if any."""
-function _dsl_alias_binding(alias_map, name)
-    name isa Symbol || return nothing
-    haskey(alias_map, name) || return nothing
-    return (; name, value = alias_map[name])
+"""Resolve a DSL alias when the callee is referenced by name."""
+function _dsl_resolve_alias(alias_map, ex)
+    if ex isa Symbol && haskey(alias_map, ex)
+        return alias_map[ex], ex
+    end
+    return ex, Symbol()
 end
 
 """
-Apply macro-scope root substitution for one DSL entry expression.
+Resolve constructor syntax while preserving alias-based custom names.
 
-This is the only place where `@alias` participates in entry parsing:
-
-- `source` becomes `SomeAlgo`
-- `source(args...)` becomes `SomeAlgo(args...)`
-
-The alias name is carried separately so the emitted constructor args can still
-become `:source => value` at the final builder step.
+Alias calls are handled by plain root substitution. For example, if
+`@alias source = SomeAlgo(1)`, then `source(value = x)` is treated like
+`SomeAlgo(1)(value = x)`.
 """
-function _dsl_rewrite_entry_root(alias_map, ex)
-    binding = _dsl_alias_binding(alias_map, ex)
-    !isnothing(binding) && return binding.value, binding.name
-
-    if ex isa Expr && ex.head == :call
-        binding = _dsl_alias_binding(alias_map, ex.args[1])
-        !isnothing(binding) && return Expr(:call, binding.value, ex.args[2:end]...), binding.name
+function _dsl_resolve_constructor_expr(alias_map, ex)
+    if ex isa Symbol
+        return _dsl_resolve_alias(alias_map, ex)
+    elseif ex isa Expr && ex.head == :call && ex.args[1] isa Symbol && haskey(alias_map, ex.args[1])
+        return Expr(:call, alias_map[ex.args[1]], ex.args[2:end]...), ex.args[1]
     end
-
     return ex, Symbol()
 end
 
@@ -677,7 +671,7 @@ All positional arguments must be plain symbols. Keyword values may be routed fro
 previous DSL outputs/@context references or captured as normal Julia expressions.
 """
 function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set{Symbol})
-    callee, alias_name = _dsl_rewrite_entry_root(alias_map, ex.args[1])
+    callee, alias_name = _dsl_resolve_alias(alias_map, ex.args[1])
 
     input_symbols = Symbol[]
     keyword_specs = Any[]
@@ -770,7 +764,7 @@ function _dsl_parse_all_share_arg(alias_map, arg)
         source_expr = source_expr.args[1]
     end
 
-    resolved_source, source_name = _dsl_rewrite_entry_root(alias_map, source_expr)
+    resolved_source, source_name = _dsl_resolve_constructor_expr(alias_map, source_expr)
     return source_name == Symbol() ? resolved_source : :(Processes.IdentifiableAlgo($(esc(resolved_source)), $(QuoteNode(source_name))))
 end
 
@@ -896,7 +890,7 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
 
     parsed = if inner isa Symbol
         # Bare names refer to either aliases or directly to algorithms/states.
-        spec_expr, alias_name = _dsl_rewrite_entry_root(alias_map, inner)
+        spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, inner)
         (
             kind = :entity,
             spec_expr,
@@ -913,7 +907,7 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
         if callee isa Expr && callee.head == :call
             # `Algo(args...)(routes...)`: first build/resolve the entity, then
             # parse the outer keyword routes against known DSL outputs.
-            spec_expr, alias_name = _dsl_rewrite_entry_root(alias_map, callee)
+            spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, callee)
             inputs, shares = _dsl_parse_entity_call_args(alias_map, context_map, args, known_outputs)
             (
                 kind = :entity,
@@ -925,7 +919,7 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
                 keyword_specs = (),
             )
         elseif isempty(args)
-            spec_expr, alias_name = _dsl_rewrite_entry_root(alias_map, callee)
+            spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, callee)
             (
                 kind = :keyword_call,
                 spec_expr,
@@ -948,7 +942,7 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
                 # wrapped, while ProcessAlgorithms/ProcessStates go through the
                 # normal entity route path. Keep the macro as syntax lowering only.
                 parsed_function = _dsl_parse_function_call(alias_map, context_map, inner, known_outputs)
-                spec_expr, alias_name = _dsl_rewrite_entry_root(alias_map, callee)
+                spec_expr, alias_name = _dsl_resolve_alias(alias_map, callee)
                 (
                     kind = :keyword_call,
                     spec_expr,
@@ -961,7 +955,7 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
             end
         end
     else
-        spec_expr, alias_name = _dsl_rewrite_entry_root(alias_map, inner)
+        spec_expr, alias_name = _dsl_resolve_constructor_expr(alias_map, inner)
         (
             kind = :entity,
             spec_expr,

@@ -10,6 +10,7 @@ The internals section is for understanding how registries, contexts, routing, an
 - [Algorithms and States](@ref algorithms_states_user)
 - [Referencing Algorithms](@ref referencing_algorithms_user)
 - [Contexts and Indexing](@ref contexts_user)
+- [Init Analysis](@ref init_analysis_user)
 - [Routes and Shares](@ref routes_shares_user)
 - [Inputs and Overrides](@ref inputs_overrides_user)
 - [Vars (`Var` Selectors)](@ref vars_user)

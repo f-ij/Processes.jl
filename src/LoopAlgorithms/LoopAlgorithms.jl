@@ -15,6 +15,7 @@ include("Fusing/Fusing.jl")
 include("Flatten.jl")
 include("Traits.jl")
 include("BaseExt.jl")
+include("ParameterReplacement.jl")
 include("Showing.jl")
 
 

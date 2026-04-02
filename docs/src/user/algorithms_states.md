@@ -136,6 +136,17 @@ Type annotations and `where` clauses are preserved on the generated public call 
 the hidden implementation function. The runtime context extraction methods currently bind simple
 locals before forwarding into that typed implementation.
 
+#### Analysis-Friendly Forms
+
+If you want `ContextAnalyser` to discover dependencies more reliably:
+
+- use `@inputs((; ...))` to make init-time requirements explicit
+- use `context.name` or `(; name) = context` for required reads
+- use `get(context, :name, default)` for optional reads
+- return plain `NamedTuple`s from `init` and `step!`
+
+See [Init Analysis](@ref init_analysis_user) for the analyzer workflow and limitations.
+
 ### `@ProcessState`
 
 `@ProcessState` creates a `ProcessState` and an `init` method.
