@@ -26,6 +26,8 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
 zero_input_dsl_test() = 7
 keyword_only_capture_dsl_test(; plus_capture, minus_capture, β, buffers) = plus_capture + minus_capture + β + buffers
 literal_join_dsl_test(prefix, value, marker) = string(prefix, value, marker)
+constant_value_dsl_test() = 0.25
+square_dsl_test(x) = x^2
 
 @ProcessAlgorithm function DSLPositionalCallAlgo(value)
     return (; seen = value)
@@ -36,14 +38,26 @@ end
 end
 
 @testset "Composite DSL" begin
+    function capture_stdout(f)
+        rd, wr = redirect_stdout()
+        try
+            f()
+        finally
+            close(wr)
+        end
+        return read(rd, String)
+    end
+
     @testset "FuncWrapper steps directly and does not eagerly init" begin
         wrapped = FuncWrapper(x -> 2x, (:x,), (:y,))
         @test Processes.step!(wrapped, (; x = 4)) == (; y = 8)
         @test Processes.init(wrapped, (; x = 4)) == (;)
+        @test occursin("(x) -> (; y)", sprint(summary, wrapped))
 
         kw_wrapped = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (; scale = 3))
         @test Processes.step!(kw_wrapped, (; external = 4)) == (; y = 12)
         @test Processes.init(kw_wrapped, (; external = 4)) == (;)
+        @test occursin("(external; scale = 3) -> (; y)", sprint(summary, kw_wrapped))
 
         kw_from_context = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (; scale = :factor))
         @test Processes.step!(kw_from_context, (; external = 4, factor = 5)) == (; y = 20)
@@ -52,6 +66,12 @@ end
         kw_same_name = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (:scale,))
         @test Processes.step!(kw_same_name, (; external = 4, scale = 6)) == (; y = 24)
         @test Processes.init(kw_same_name, (; external = 4, scale = 6)) == (;)
+
+        literal_wrapped = FuncWrapper(println, ("Num: ", :value), ())
+        literal_show = sprint(show, literal_wrapped)
+        literal_plain = sprint(io -> show(io, MIME("text/plain"), literal_wrapped))
+        @test occursin("(\"Num: \", value) -> nothing", literal_show)
+        @test occursin("function = println", literal_plain)
     end
 
     @testset "Inline state supports defaults and required inputs" begin
@@ -241,17 +261,47 @@ end
         @test literal_ctx[:FuncWrapper_1].joined == "Num: 4done"
     end
 
-    @testset ":print debug mode prints the final constructor call" begin
-        function capture_stdout(f)
-            rd, wr = redirect_stdout()
-            try
-                f()
-            finally
-                close(wr)
-            end
-            return read(rd, String)
+    @testset "Interval and repeat DSL shapes from manual test work" begin
+        mockcomp = @CompositeAlgorithm begin
+            @state num = 0.0
+            num = constant_value_dsl_test()
+            num = sqrt(num)
+            println(num)
         end
 
+        comp_process = InlineProcess(mockcomp, repeats = 1)
+        comp_output = capture_stdout() do
+            comp_ctx = run(comp_process)
+            @test comp_ctx[:_state].num == 0.5
+        end
+        @test occursin("0.5", comp_output)
+
+        mockroutine = @Routine begin
+            @state num = 0.0
+            num = constant_value_dsl_test()
+            num = @repeat 2 square_dsl_test(num)
+            println("Num: ", num)
+            num = constant_value_dsl_test()
+        end
+
+        resolved_routine = resolve(mockroutine)
+        @test resolved_routine isa Routine
+        @test repeats(resolved_routine) == (1, 2, 1, 1)
+
+        routine_process = InlineProcess(mockroutine, repeats = 2)
+        routine_output = capture_stdout() do
+            routine_ctx = run(routine_process)
+            @test routine_ctx[:_state].num == 0.25
+            @test occursin("globals", sprint(show, routine_ctx))
+        end
+        @test count("Num: 0.00390625", routine_output) == 2
+
+        inline_process_show = sprint(io -> show(io, MIME("text/plain"), routine_process))
+        @test !occursin("globals", inline_process_show)
+        @test occursin("FuncWrapper_3: println :: (\"Num: \", num) -> nothing", inline_process_show)
+    end
+
+    @testset ":print debug mode prints the final constructor call" begin
         printed_composite = capture_stdout() do
             @CompositeAlgorithm :print begin
                 @state seed = 3

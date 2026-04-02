@@ -54,6 +54,7 @@ module Processes
 
     include("Process.jl")
     include("InlineProcess.jl")
+    include("InlineProcessShowing.jl")
 
 
     include("ProcessList.jl")

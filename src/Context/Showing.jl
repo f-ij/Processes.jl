@@ -5,6 +5,7 @@
 ########################
 
 @inline _is_input_like(x) = x isa NamedInput || x isa NamedOverride
+@inline _printcontextglobals(io::IO) = get(io, :printcontextglobals, true)
 
 function _format_inputs_tuple(t::Tuple)
     isempty(t) && return "Inputs: ∅"
@@ -130,9 +131,17 @@ end
 
 function Base.show(io::IO, pc::ProcessContext)
     println(io, "ProcessContext")
-    show_ctx = IOContext(io, :limit => get(io, :limit, false), :color => get(io, :color, false))
+    show_ctx = IOContext(
+        io,
+        :limit => get(io, :limit, false),
+        :color => get(io, :color, false),
+        :printcontextglobals => _printcontextglobals(io),
+    )
     subs = get_subcontexts(pc)
     names = collect(propertynames(subs))
+    if !_printcontextglobals(io)
+        filter!(name -> name != :globals, names)
+    end
     last_idx = length(names)
 
     for (idx, name) in enumerate(names)

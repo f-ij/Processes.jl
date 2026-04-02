@@ -77,7 +77,6 @@ end
 ####################################
 IdentifiableAlgo_label(sa::IdentifiableAlgo) = string((isnothing(algoname(sa)) ? summary(getalgo(sa)) : algoname(sa)),"@",getkey(sa))
 
-
 function Base.show(io::IO, sa::IdentifiableAlgo)
     algo_repr = sprint(show, getalgo(sa))
     print(io, IdentifiableAlgo_label(sa), ": ", algo_repr)
