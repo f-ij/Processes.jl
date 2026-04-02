@@ -30,7 +30,7 @@ c2 = run(pr);
 
 e_c = context(pr)
 e_c = Processes.makecontext(pr)
-# e_c = Processes.merge_into_globals(e_c, (; process=pr))
+e_c = Processes.merge_into_globals(e_c, (; process=pr))
 
 lifetime = Processes.lifetime(pr)
 mockroutine = resolve(mockroutine)

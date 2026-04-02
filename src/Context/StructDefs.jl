@@ -24,10 +24,8 @@ A subcontext can share share in two ways:
     2) Variable shares through shared vars: Only specific variables are shared between subcontexts, 
                                                 defined by shared vars with optional aliases
 """
-struct SubContext{Name, T<:NamedTuple, S, SV} <: AbstractSubContext
+struct SubContext{Name, T<:NamedTuple, SharedContexts, SharedVars} <: AbstractSubContext
     data::T
-    sharedcontexts::S # Whole subcontext shares
-    sharedvars::SV # Variable shares with aliases
 end
 
 export inject
