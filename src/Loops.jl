@@ -57,11 +57,12 @@ end
 """
 Run a single function in a loop for a given number of times
 """
-Base.@constprop :aggressive function loop(process::AbstractProcess, algo::F, context::C, r::R, ::NonGenerated) where {F, C, R <: RepeatLifetime}
+Base.@constprop :aggressive function loop(process::AbstractProcess, algo::F, unstablecontext::C, r::R, ::NonGenerated) where {F, C, R <: RepeatLifetime}
     @DebugMode "Running process loop for $repeats times from thread $(Threads.threadid())"
+    @assert isresolved(algo) "Algo must be resolved before running the loop. Got algo $(algo) which is not resolved."
     @inline before_while(process)
     
-    context = @inline step!(algo, context, Unstable())
+    stablecontext = @inline step!(algo, unstablecontext, Unstable())
     @inline tick!(process)
     @inline inc!(process)
     
@@ -70,18 +71,18 @@ Base.@constprop :aggressive function loop(process::AbstractProcess, algo::F, con
     
     for _ in start_idx:end_idx
     
-        context = @inline step!(algo, context, Stable())
+        stablecontext = @inline step!(algo, stablecontext, Stable())
         @inline tick!(process)
         @inline inc!(process)
-        if @inline breakcondition(r, process, context)
+        if @inline breakcondition(r, process, stablecontext)
             break
         end
 
     end
     if @inline shouldrun(process)
-        return context
+        return stablecontext
     else
-        return @inline after_while(process, algo, context)
+        return @inline after_while(process, algo, stablecontext)
     end
 end
 

@@ -1,9 +1,9 @@
 export FuncWrapper
 
-struct ValueRef{index} end
+struct ValueRef{index, T} end
 
-to_expr(::ValueRef{index}, varname) where {index} = :(getindex(getproperty($varname, :values), $index))
-@inline _valueref_index(::ValueRef{index}) where {index} = index
+to_expr(::ValueRef{index, T}, varname) where {index, T} = :((getindex(getproperty($varname, :values), $index))::$T)
+@inline _valueref_index(::ValueRef{index, T}) where {index, T} = index
 
 """
 Wrap a plain function so it behaves like a `ProcessAlgorithm`.
@@ -60,9 +60,10 @@ function _funcwrapper_encode_inputs(inputs)
         if input isa Symbol
             input
         else
+            value = input isa QuoteNode ? input.value : input
             literal_idx += 1
-            push!(literal_values, input isa QuoteNode ? input.value : input)
-            ValueRef{literal_idx}()
+            push!(literal_values, value)
+            ValueRef{literal_idx, typeof(value)}()
         end
     end
     return encoded, tuple(literal_values...)

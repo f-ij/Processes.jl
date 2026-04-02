@@ -63,10 +63,10 @@ Base.@constprop :aggressive @inline function step!(r::Routine, context::C, types
         start_idx = get_resume_point(r, algo_idx)
 
         if start_idx <= this_repeat
-            if @inline breakcondition(lifetime, process, context)
-                set_resume_point!(r, algo_idx, start_idx)
-                return context
-            end
+            # if @inline breakcondition(lifetime, process, context)
+            #     set_resume_point!(r, algo_idx, start_idx)
+            #     return context
+            # end
 
             context = @inline step!(func, context, Unstable())
             tick!(process)

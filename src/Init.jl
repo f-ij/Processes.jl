@@ -17,7 +17,7 @@ end
 """
 Make a context from an algo and empty context
 """
-function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{NamedInput, NamedOverride}...; lifetime = Indefinite()) where {F}
+function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{NamedInput, NamedOverride}...; lifetime = Indefinite()) where {F <: LoopAlgorithm}
     inputs = filter(x -> x isa NamedInput, overrides_and_inputs)
     overrides = filter(x -> x isa NamedOverride, overrides_and_inputs)
     

@@ -34,7 +34,7 @@ end
     fibluc = CompositeAlgorithm( PackFib, PackLuc , (1, 1))
     pack = PackagedAlgo(fibluc, "FLPack")
 
-    p = Process(pack; lifetime = n)
+    p = Process(pack; repeats = n)
     run(p)
     wait(p)
     ctx = fetch(p)
@@ -64,7 +64,7 @@ end
     Logger1 = PackLogger(:fibidiboo)
     Logging = CompositeAlgorithm( pack, Logger1, (1, 100), 
         Route(pack => Logger1, :fiblist => :targetnum, transform = x -> x[end]))
-    p = Process(Logging; lifetime = 1000)
+    p = Process(Logging; repeats = 1000)
     run(p)
 
     c = fetch(p)
