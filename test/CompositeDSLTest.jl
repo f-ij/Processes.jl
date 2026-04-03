@@ -24,7 +24,7 @@ function Processes.step!(::DSLValueAlgo, context)
 end
 
 function Processes.step!(::DSLNestedSourceAlgo, context)
-    return (; c1 = (; plus_capture = (; captured = context.seed + 1,)))
+    return (; captured = 4)
 end
 
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
@@ -256,5 +256,30 @@ end
         resolved_routine = resolve(routine)
         @test resolved_routine isa Routine
         @test repeats(resolved_routine) == (3,)
+    end
+
+    @testset "FuncWrapper positional args accept @context property routes" begin
+        @info "Composite DSL: FuncWrapper positional args accept @context property routes"
+        nested_identity(x) = x
+        plus = @Routine begin
+            @alias plus_capture = DSLNestedSourceAlgo
+            plus_capture()
+        end
+
+        algo = @CompositeAlgorithm begin
+            @context c1 = plus()
+            result = nested_identity(c1.plus_capture.captured)
+        end
+
+        resolved = resolve(algo)
+        wrapper = Processes.getalgo(resolved, 2)
+        wrapper_key = Processes.getkey(wrapper)
+        routes = Processes.getoptions(resolved)[wrapper_key]
+        @test length(routes) == 1
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[wrapper_key].result == 4
     end
 end

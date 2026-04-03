@@ -670,29 +670,6 @@ function _dsl_rewrite_entry_root(alias_map, ex)
 end
 
 """
-Turn one plain-function positional argument into a routed `FuncWrapper` input.
-
-Bare symbols stay simple routed inputs. More complex expressions are lowered to a
-generated temporary input plus one transform route over the previously produced
-symbols referenced in the expression.
-"""
-function _dsl_parse_function_positional_arg(arg, known_outputs::Set{Symbol}, index::Int)
-    if arg isa Symbol
-        return arg, (; kind = :simple, source = arg, destination = arg)
-    end
-
-    routed_symbols = Symbol[]
-    _dsl_collect_transform_symbols!(routed_symbols, arg)
-    filter!(in(known_outputs), routed_symbols)
-    isempty(routed_symbols) && error("Plain function positional arguments in the DSL must be routed symbols or expressions over previously named outputs. Got `$arg`.")
-
-    input_name = gensym(Symbol(:dsl_arg_, index))
-    routed_tuple = tuple(routed_symbols...)
-    transform_expr = _dsl_transform_lambda_expr(arg, routed_tuple)
-    return input_name, (; kind = :transform, sources = routed_tuple, destination = input_name, transform_expr)
-end
-
-"""
 Parse a plain Julia function call DSL entry.
 
 Supported function-call forms:
@@ -708,6 +685,25 @@ Julia expressions captured inline into the wrapper. Keyword values may be routed
 from previous DSL outputs/@context references or captured as normal Julia
 expressions.
 """
+function _dsl_parse_function_positional_arg(alias_map, context_map, arg, known_outputs::Set{Symbol}, index::Int)
+    if arg isa Symbol && (arg in known_outputs)
+        return (; kind = :routed, value = arg), (; kind = :simple, source = arg, destination = arg)
+    elseif arg isa QuoteNode && arg.value isa Symbol
+        return (; kind = :literal_symbol, value = arg.value), nothing
+    end
+
+    context_route = _dsl_parse_context_route_expr(context_map, arg)
+    if !isnothing(context_route)
+        routed_name = gensym(Symbol(:dsl_pos_, index))
+        routed_input = (; kind = :context_simple, owner = context_route.owner, source = context_route.source, destination = routed_name)
+        return (; kind = :routed, value = routed_name), routed_input
+    end
+
+    protected_symbols = Set(known_outputs)
+    rewritten = _dsl_rewrite_alias_expr(alias_map, arg, protected_symbols)
+    return (; kind = :captured, value = rewritten), nothing
+end
+
 function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set{Symbol})
     callee, alias_name = _dsl_rewrite_entry_root(alias_map, ex.args[1])
 
@@ -759,22 +755,11 @@ function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set
                 _record_function_kwarg!(name, kw.args[2])
             end
         else
-            if arg isa Symbol && (arg in known_outputs)
-                push!(positional_specs, (; kind = :routed, value = arg))
-                push!(routed_positional_inputs, (; kind = :simple, source = arg, destination = arg))
-            elseif arg isa QuoteNode && arg.value isa Symbol
-                push!(positional_specs, (; kind = :literal_symbol, value = arg.value))
-            else
-                protected_symbols = Set(known_outputs)
-                rewritten = _dsl_rewrite_alias_expr(alias_map, arg, protected_symbols)
-                push!(positional_specs, (; kind = :captured, value = rewritten))
-            end
+            positional_index += 1
+            positional_spec, routed_input = _dsl_parse_function_positional_arg(alias_map, context_map, arg, known_outputs, positional_index)
+            push!(positional_specs, positional_spec)
+            isnothing(routed_input) || push!(routed_positional_inputs, routed_input)
         end
-
-        positional_index += 1
-        input_name, input_spec = _dsl_parse_function_positional_arg(arg, known_outputs, positional_index)
-        push!(input_symbols, input_name)
-        push!(input_specs, input_spec)
     end
 
     return (
