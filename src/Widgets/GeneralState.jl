@@ -21,6 +21,25 @@ Processes.registry_allowmerge(::Union{GeneralState, Type{<:GeneralState}}) = tru
 @inline general_state_fields(::GeneralState{Fields}) where {Fields} = Fields
 @inline general_state_required_fields(::GeneralState{Fields, Required}) where {Fields, Required} = Required
 
+function _general_state_signature(state::GeneralState)
+    defaults = state.defaults_builder()
+    parts = String[]
+    required = general_state_required_fields(state)
+
+    for field in general_state_fields(state)
+        if field in required
+            push!(parts, string(field))
+        else
+            push!(parts, string(field, " = ", repr(getproperty(defaults, field))))
+        end
+    end
+
+    return string("GeneralState(", join(parts, ", "), ")")
+end
+
+Base.summary(io::IO, state::GeneralState) = print(io, _general_state_signature(state))
+Base.show(io::IO, state::GeneralState) = print(io, _general_state_signature(state))
+
 function _merge_general_state_fields(fields_a::Tuple, fields_b::Tuple)
     overlaps = filter(name -> name in fields_a, fields_b)
     isempty(overlaps) || error(

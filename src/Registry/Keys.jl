@@ -22,6 +22,7 @@ end
     end
 end
 
+@inline Base.haskey(reg::NSR, key::Symbol) where NSR<:NameSpaceRegistry = haskey(reg, Val(key))
 @inline @generated function Base.haskey(reg::NSR, key::Val{K}) where {NSR<:NameSpaceRegistry, K}
     keyloc = findkey(NSR, K)
     if isnothing(keyloc[1])

@@ -70,4 +70,5 @@ end
     @test Processes.general_state_fields(getalgo(merged)) == (:seed, :scale)
     @test Processes.general_state_required_fields(getalgo(merged)) == (:scale,)
     @test Processes.init(getalgo(merged), (; scale = 3.0)) == (; seed = 4, scale = 3.0)
+    @test sprint(show, merged) == "GeneralState(seed = 4, scale)@_state: GeneralState(seed = 4, scale)"
 end
