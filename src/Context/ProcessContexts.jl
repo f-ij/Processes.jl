@@ -231,7 +231,9 @@ Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), sub
     # ntnames = tuple(sc_names...)
     return quote 
         LineNumberNode(@__LINE__, @__FILE__)
-        pc = unrollreplace(merge_into_globals, pc, separate_nested_namedtuples(args))
+        separated = separate_nested_namedtuples(args)
+        @show separated
+        pc = unrollreplace(merge_into_subcontexts, pc, separated...)
         # new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
         # @inline setfield(pc, :subcontexts, new_subcontexts)
         # setfield!(pc, :subcontexts, new_subcontexts)
@@ -252,9 +254,15 @@ Base.@constprop :aggressive merge_into_subcontext(pc::ProcessContext{D}, name::S
     merged_sc_type = Core.Compiler.return_type(merge, Tuple{old_sc_type, A})
 
     if merged_sc_type === old_sc_type
-        return :(@inline merge_into_subcontext_mutate(pc, Val($(QuoteNode(name))), args))
+        return quote
+            LineNumberNode(@__LINE__, @__FILE__)
+            @inline merge_into_subcontext_mutate(pc, Val($(QuoteNode(name))), args)
+        end
     end
-    return :(@inline merge_into_subcontext_rebuild(pc, Val($(QuoteNode(name))), args))
+    return quote 
+        LineNumberNode(@__LINE__, @__FILE__)
+        @inline merge_into_subcontext_rebuild(pc, Val($(QuoteNode(name))), args)
+    end
 end
 
 @inline @generated function merge_into_subcontext_rebuild(pc::ProcessContext{D}, ::Val{name}, args) where {D, name}
