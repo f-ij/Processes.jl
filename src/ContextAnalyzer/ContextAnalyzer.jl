@@ -415,6 +415,10 @@ function analyse_inits(la::LoopAlgorithm; globals = (;), inputs = (;))
     mocked = _analysis_mock_loopalgorithm(resolved)
     analyser = ContextAnalyser(; globals = merge(_default_analysis_globals(mocked), globals), inputs)
 
+    for state in flat_states(mocked)
+        analyse_init(state, analyser)
+    end
+
     for algo in flat_funcs(mocked)
         analyse_init(algo, analyser)
     end
@@ -428,6 +432,10 @@ function analyse_steps(la::LoopAlgorithm; globals = (;), inputs = (;), init = tr
     analyser = ContextAnalyser(; globals = merge(_default_analysis_globals(mocked), globals), inputs)
 
     if init
+        for state in flat_states(mocked)
+            analyse_init(state, analyser)
+        end
+
         for algo in flat_funcs(mocked)
             analyse_init(algo, analyser)
         end

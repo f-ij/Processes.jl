@@ -29,8 +29,8 @@ function resolve_process_inputs_overrides(func, inputs_overrides...)
     inputs = @inline filter_by_type(Input, inputs_overrides)
     overrides = @inline filter_by_type(Override, inputs_overrides)
 
-    named_inputs = to_named(reg, inputs...)
-    named_overrides = to_named(reg, overrides...)
+    named_inputs = resolve(reg, inputs...)
+    named_overrides = resolve(reg, overrides...)
 
     return named_inputs, named_overrides
 end

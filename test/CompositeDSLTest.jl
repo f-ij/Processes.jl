@@ -92,6 +92,26 @@ end
         @test first_init.nums !== second_init.nums
     end
 
+    @testset "GeneralState merge combines disjoint state schemes" begin
+        @info "Composite DSL: GeneralState merge combines disjoint state schemes"
+        left = @state begin
+            seed = 4
+            scale
+        end
+        right = @state begin
+            buffer = Float64[]
+            offset = 2
+        end
+
+        merged = merge(left, right)
+        init = Processes.init(merged, (; scale = 3.0))
+
+        @test init == (; seed = 4, scale = 3.0, buffer = Float64[], offset = 2)
+        @test_throws ErrorException merge(left, @state begin
+            seed = 7
+        end)
+    end
+
     @testset "CompositeAlgorithm DSL resolves and runs" begin
         @info "Composite DSL: CompositeAlgorithm DSL resolves and runs"
         n = 10

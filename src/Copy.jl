@@ -43,18 +43,18 @@ materialized runtime context.
 @inline _is_inputlike(x) = x isa Input || x isa NamedInput
 @inline _is_overridelike(x) = x isa Override || x isa NamedOverride
 
-@inline _to_named_copy(::Any, input::NamedInput) = (_copy_inputlike(input),)
-@inline _to_named_copy(::Any, override::NamedOverride) = (_copy_inputlike(override),)
-@inline _to_named_copy(reg, input::Input) = to_named(reg, input)
-@inline _to_named_copy(reg, override::Override) = to_named(reg, override)
+@inline _resolve_copy(::Any, input::NamedInput) = (_copy_inputlike(input),)
+@inline _resolve_copy(::Any, override::NamedOverride) = (_copy_inputlike(override),)
+@inline _resolve_copy(reg, input::Input) = resolve(reg, input)
+@inline _resolve_copy(reg, override::Override) = resolve(reg, override)
 
 """
 Convert any mix of `Input`/`Override` and already-named variants to named copies.
 """
-function _to_named_copy(reg, inputs_overrides...)
+function _resolve_copy(reg, inputs_overrides...)
     named = ()
     for input_or_override in inputs_overrides
-        named = (named..., _to_named_copy(reg, input_or_override)...)
+        named = (named..., _resolve_copy(reg, input_or_override)...)
     end
     return named
 end
@@ -71,8 +71,8 @@ function _resolve_copy_inputs_overrides(func, inputs_overrides...)
     empty_context = ProcessContext(normalize_process_algo(func))
     reg = getregistry(empty_context)
 
-    named_inputs = _to_named_copy(reg, inputs...)
-    named_overrides = _to_named_copy(reg, overrides...)
+    named_inputs = _resolve_copy(reg, inputs...)
+    named_overrides = _resolve_copy(reg, overrides...)
 
     return named_inputs, named_overrides
 end

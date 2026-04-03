@@ -16,6 +16,48 @@ const InlineState = GeneralState
     GeneralState{Fields, Required, Builder}(defaults_builder)
 end
 
+Processes.registry_allowmerge(::Union{GeneralState, Type{<:GeneralState}}) = true
+
+@inline general_state_fields(::GeneralState{Fields}) where {Fields} = Fields
+@inline general_state_required_fields(::GeneralState{Fields, Required}) where {Fields, Required} = Required
+
+function _merge_general_state_fields(fields_a::Tuple, fields_b::Tuple)
+    overlaps = filter(name -> name in fields_a, fields_b)
+    isempty(overlaps) || error(
+        "Cannot merge GeneralState values with overlapping field names: $(collect(overlaps)). " *
+        "Mergeable GeneralState values must define disjoint state fields."
+    )
+    return (fields_a..., fields_b...)
+end
+
+function _merge_general_state_required(required_a::Tuple, required_b::Tuple)
+    merged = Symbol[required_a...]
+    for name in required_b
+        name in merged || push!(merged, name)
+    end
+    return tuple(merged...)
+end
+
+"""
+Merge two `GeneralState` initialization schemes.
+
+This is intended for higher-level registry/setup code that decides two state
+entries with the same outer key should coalesce. The states themselves must
+define disjoint field names; overlapping state fields are rejected so state
+composition stays explicit.
+"""
+function Base.merge(
+    a::GeneralState{FieldsA, RequiredA},
+    b::GeneralState{FieldsB, RequiredB},
+) where {FieldsA, RequiredA, FieldsB, RequiredB}
+    merged_fields = _merge_general_state_fields(FieldsA, FieldsB)
+    merged_required = _merge_general_state_required(RequiredA, RequiredB)
+    merged_builder = let a = a, b = b
+        () -> merge(a.defaults_builder(), b.defaults_builder())
+    end
+    return GeneralState(merged_builder, Val{merged_fields}(), Val{merged_required}())
+end
+
 """Fetch a required state input or raise a readable error."""
 @inline function _general_state_required(context, name::Symbol)
     haskey(context, name) || error("Missing required @state input `$(name)`.")
