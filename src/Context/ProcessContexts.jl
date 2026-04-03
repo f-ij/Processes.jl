@@ -231,10 +231,7 @@ Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), sub
     # ntnames = tuple(sc_names...)
     return quote 
         LineNumberNode(@__LINE__, @__FILE__)
-        pc = unrollreplace(pc, separate_nested_namedtuples(args)) do context, nt
-            context = @inline merge_into_globals(context, nt)
-            return context
-        end
+        pc = unrollreplace(merge_into_globals, pc, separate_nested_namedtuples(args))
         # new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
         # @inline setfield(pc, :subcontexts, new_subcontexts)
         # setfield!(pc, :subcontexts, new_subcontexts)
