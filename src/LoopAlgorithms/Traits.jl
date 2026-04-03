@@ -3,3 +3,5 @@
     exprs = (Expr(:tuple, :(getindex(getalgos(cla), $i)), :(interval(cla, $i))) for i in 1:numalgos)
     return Expr(:tuple, exprs...)
 end
+
+const LoopAlgorithmTypes = Union{LoopAlgorithm, Type{<:LoopAlgorithm}}

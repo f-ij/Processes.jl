@@ -50,6 +50,7 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
             break
         else
             if el isa Pair
+                @assert !(el.second isa LoopAlgorithmTypes) "LoopAlgorithms cannot currently be passed as pairs (aliased), but got: $(el.second) in pair $(el)"
                 algo = IdentifiableAlgo(el.second, el.first)
             elseif el isa Union{ProcessEntity, Type{<:ProcessEntity}}
                 algo = IdentifiableAlgo(el)
