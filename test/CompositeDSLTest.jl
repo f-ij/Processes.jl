@@ -5,6 +5,7 @@ struct DSLSourceAlgo <: Processes.ProcessAlgorithm end
 struct DSLCombineAlgo <: Processes.ProcessAlgorithm end
 struct DSLSinkAlgo <: Processes.ProcessAlgorithm end
 struct DSLValueAlgo <: Processes.ProcessAlgorithm end
+struct DSLNestedSourceAlgo <: Processes.ProcessAlgorithm end
 
 function Processes.step!(::DSLSourceAlgo, context)
     return (; produced = 2, passthrough = context.seed)
@@ -20,6 +21,10 @@ end
 
 function Processes.step!(::DSLValueAlgo, context)
     return (; result = context.value)
+end
+
+function Processes.step!(::DSLNestedSourceAlgo, context)
+    return (; c1 = (; plus_capture = (; captured = context.seed + 1,)))
 end
 
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
@@ -179,5 +184,27 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
         resolved_routine = resolve(routine)
         @test resolved_routine isa Routine
         @test repeats(resolved_routine) == (3,)
+    end
+
+    @testset "FuncWrapper positional args support routed property access" begin
+        nested_identity(x) = x
+
+        algo = @CompositeAlgorithm begin
+            @state seed = 3
+            c1 = DSLNestedSourceAlgo(seed = seed)
+            result = nested_identity(c1.plus_capture.captured)
+        end
+
+        resolved = resolve(algo)
+        wrapper = Processes.getalgo(resolved, 2)
+        wrapper_key = Processes.getkey(wrapper)
+        routes = Processes.getoptions(resolved)[wrapper_key]
+        @test length(routes) == 1
+        @test Processes.gettransform(first(routes)) !== nothing
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[wrapper_key].result == 4
     end
 end

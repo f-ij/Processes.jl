@@ -80,7 +80,6 @@ end
 function _resolve_composite_dsl_function(
     spec,
     keyword_args::NamedTuple,
-    input_specs::Tuple,
     input_symbols::Tuple{Vararg{Symbol}},
     output_symbols::Tuple{Vararg{Symbol}},
     ::Val{Name},
@@ -92,7 +91,7 @@ function _resolve_composite_dsl_function(
     wrapped = FuncWrapper(spec, input_symbols, output_symbols, keyword_args)
     resolved = _dsl_with_customname(wrapped, Val(Name))
 
-    inputs = Any[input_specs...]
+    inputs = Any[(; kind = :simple, source, destination = source) for source in input_symbols]
     for name in keys(keyword_args)
         source = getproperty(keyword_args, name)
         source isa Symbol || continue
@@ -413,50 +412,23 @@ function _dsl_resolve_constructor_expr(alias_map, ex)
 end
 
 """
-Turn one plain-function positional argument into a routed `FuncWrapper` input.
-
-Bare symbols stay simple routed inputs. More complex expressions are lowered to a
-generated temporary input plus one transform route over the previously produced
-symbols referenced in the expression.
-"""
-function _dsl_parse_function_positional_arg(arg, known_outputs::Set{Symbol}, index::Int)
-    if arg isa Symbol
-        return arg, (; kind = :simple, source = arg, destination = arg)
-    end
-
-    routed_symbols = Symbol[]
-    _dsl_collect_transform_symbols!(routed_symbols, arg)
-    filter!(in(known_outputs), routed_symbols)
-    isempty(routed_symbols) && error("Plain function positional arguments in the DSL must be routed symbols or expressions over previously named outputs. Got `$arg`.")
-
-    input_name = gensym(Symbol(:dsl_arg_, index))
-    routed_tuple = tuple(routed_symbols...)
-    transform_expr = _dsl_transform_lambda_expr(arg, routed_tuple)
-    return input_name, (; kind = :transform, sources = routed_tuple, destination = input_name, transform_expr)
-end
-
-"""
 Parse a plain Julia function call DSL entry.
 
 Supported function-call forms:
 - `f(x)`
 - `f(x, y)`
-- `f(source.output)`
 - `f(x; scale = 2)`
 - `f(x, y; scale = 2, offset = bias)`
 
-Positional arguments may be plain routed symbols or expressions over previously
-produced DSL outputs. Keyword values may be symbols or arbitrary Julia
-expressions and are forwarded to `FuncWrapper`.
+All positional arguments must be plain symbols. Keyword values may be symbols or
+arbitrary Julia expressions and are forwarded to `FuncWrapper`.
 """
-function _dsl_parse_function_call(alias_map, ex, known_outputs::Set{Symbol})
+function _dsl_parse_function_call(alias_map, ex)
     callee, alias_name = _dsl_resolve_alias(alias_map, ex.args[1])
 
     input_symbols = Symbol[]
-    input_specs = Any[]
     keyword_pairs = Pair{Symbol, Any}[]
 
-    positional_index = 0
     for arg in ex.args[2:end]
         if arg isa Expr && arg.head == :parameters
             for kw in arg.args
@@ -466,20 +438,19 @@ function _dsl_parse_function_call(alias_map, ex, known_outputs::Set{Symbol})
                 value = kw.args[2]
                 push!(keyword_pairs, name => value)
             end
-            continue
+        else
+            # Plain function positional arguments are routed by position; keep
+            # this syntax intentionally narrow so it stays readable.
+            arg isa Symbol || error("Plain function positional arguments in the DSL must be routed symbols. Got `$arg`.")
+            push!(input_symbols, arg)
         end
-
-        positional_index += 1
-        input_name, input_spec = _dsl_parse_function_positional_arg(arg, known_outputs, positional_index)
-        push!(input_symbols, input_name)
-        push!(input_specs, input_spec)
     end
 
     return (
         kind = :function_call,
         spec_expr = callee,
         alias_name,
-        inputs = tuple(input_specs...),
+        inputs = (),
         input_symbols = tuple(input_symbols...),
         keyword_pairs = tuple(keyword_pairs...),
     )
@@ -667,7 +638,7 @@ function _dsl_parse_invocation(alias_map, ex, known_outputs::Set{Symbol})
             if has_parameters || (has_positional && !has_share)
                 # Mixed positional/semicolon syntax is reserved for bare Julia
                 # functions that should be wrapped in `FuncWrapper`.
-                _dsl_parse_function_call(alias_map, inner, known_outputs)
+                _dsl_parse_function_call(alias_map, inner)
             else
                 # Pure keyword calls are interpreted as ProcessAlgorithm routes.
                 spec_expr, alias_name = _dsl_resolve_alias(alias_map, callee)
@@ -814,7 +785,6 @@ function _dsl_build_statement(stmt, alias_map, known_outputs::Set{Symbol}, expec
     end
 
     input_symbols_expr = Expr(:tuple, [QuoteNode(sym) for sym in parsed.input_symbols]...)
-    input_specs_expr = _dsl_inputs_expr(parsed.inputs)
     keyword_args_expr = Expr(:tuple, Expr(:parameters, [
         Expr(:kw, name, esc(value)) for (name, value) in parsed.keyword_pairs
     ]...))
@@ -828,7 +798,6 @@ function _dsl_build_statement(stmt, alias_map, known_outputs::Set{Symbol}, expec
         local _dsl_resolved = Processes._resolve_composite_dsl_function(
             $(esc(parsed.spec_expr)),
             $keyword_args_expr,
-            $input_specs_expr,
             $input_symbols_expr,
             _dsl_outputs,
             Val{$(QuoteNode(customname))}(),
