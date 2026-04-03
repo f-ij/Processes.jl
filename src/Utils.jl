@@ -1,5 +1,5 @@
 
-export merge_nested_namedtuples
+export merge_nested_namedtuples, separate_nested_namedtuples
 
 """
     filter_by_type(T, args...)
@@ -111,6 +111,33 @@ Base.@constprop :aggressive @generated function merge_nested_namedtuples(base::N
     end
 
     return Expr(:tuple, Expr(:parameters, outer_fields...))
+end
+
+"""
+    separate_nested_namedtuples(nt)
+
+Split a nested `NamedTuple` into a tuple of one-entry `NamedTuple`s, preserving
+top-level field order.
+
+Example:
+
+```julia
+separate_nested_namedtuples((; a = (; x = 1), b = (; y = 2)))
+# => ((; a = (; x = 1)), (; b = (; y = 2)))
+```
+"""
+Base.@constprop :aggressive @generated function separate_nested_namedtuples(nt::NT) where {NT<:NamedTuple}
+    names = fieldnames(NT)
+    separated = Any[]
+
+    for name in names
+        push!(
+            separated,
+            Expr(:tuple, Expr(:parameters, Expr(:kw, name, :(getproperty(nt, $(QuoteNode(name))))))),
+        )
+    end
+
+    return Expr(:tuple, separated...)
 end
 
 @inline filter_nt(nt::NT, keys...) where NT = @inline Base.structdiff(nt, NamedTuple{tuple(keys...)})

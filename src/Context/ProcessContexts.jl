@@ -219,22 +219,26 @@ Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), sub
         mergename = first(mergenames)
         return :(@inline merge_into_subcontext(pc, Val($(QuoteNode(mergename))), getproperty(args, $(QuoteNode(mergename)))))
     end
-    getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(name)))) for name in sc_names]
-    for (mergeidx, mergname) in enumerate(mergenames)
-        found_idx = findfirst( n -> n == mergname, sc_names)
-        if isnothing(found_idx)
-            error("Trying to merge into unknown subcontext $(QuoteNode(mergname)) in ProcessContext. Available subcontexts are: $(sc_names) and args has names: $(mergenames)")
-        end
-        # getproperty_exprs[mergeidx] = :(getproperty(args, $(QuoteNode(mergname))))
-        getproperty_exprs[found_idx] = :(@inline merge(getproperty(get_subcontexts(pc), $(QuoteNode(mergname))), getproperty(args, $(QuoteNode(mergname)))))
-    end
-    ntnames = tuple(sc_names...)
+    # getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(name)))) for name in sc_names]
+    # for (mergeidx, mergname) in enumerate(mergenames)
+    #     found_idx = findfirst( n -> n == mergname, sc_names)
+    #     if isnothing(found_idx)
+    #         error("Trying to merge into unknown subcontext $(QuoteNode(mergname)) in ProcessContext. Available subcontexts are: $(sc_names) and args has names: $(mergenames)")
+    #     end
+    #     # getproperty_exprs[mergeidx] = :(getproperty(args, $(QuoteNode(mergname))))
+    #     getproperty_exprs[found_idx] = :(@inline merge(getproperty(get_subcontexts(pc), $(QuoteNode(mergname))), getproperty(args, $(QuoteNode(mergname)))))
+    # end
+    # ntnames = tuple(sc_names...)
     return quote 
         LineNumberNode(@__LINE__, @__FILE__)
-        new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
+        pc = unrollreplace(pc, separate_nested_namedtuples) do context, nt
+            context = @inline merge_into_globals(context, nt)
+            return context
+        end
+        # new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
         # @inline setfield(pc, :subcontexts, new_subcontexts)
-        setfield!(pc, :subcontexts, new_subcontexts)
-        return pc
+        # setfield!(pc, :subcontexts, new_subcontexts)
+        # return pc
         # return @inline ProcessContext(new_subcontexts, @inline getregistry(pc))
 
     end

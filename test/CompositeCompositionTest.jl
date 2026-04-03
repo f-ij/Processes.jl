@@ -72,3 +72,11 @@ end
     @test Processes.init(getalgo(merged), (; scale = 3.0)) == (; seed = 4, scale = 3.0)
     @test sprint(show, merged) == "GeneralState(seed = 4, scale)@_state: GeneralState(seed = 4, scale)"
 end
+
+@testset "separate_nested_namedtuples preserves outer order" begin
+    nested = (; a = (; x = 1, y = 2), b = (; z = 3))
+    @test Processes.separate_nested_namedtuples(nested) == (
+        (; a = (; x = 1, y = 2)),
+        (; b = (; z = 3)),
+    )
+end
