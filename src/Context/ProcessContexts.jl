@@ -231,7 +231,7 @@ Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), sub
     # ntnames = tuple(sc_names...)
     return quote 
         LineNumberNode(@__LINE__, @__FILE__)
-        pc = unrollreplace(pc, separate_nested_namedtuples) do context, nt
+        pc = unrollreplace(pc, separate_nested_namedtuples(args)) do context, nt
             context = @inline merge_into_globals(context, nt)
             return context
         end
