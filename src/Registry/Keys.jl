@@ -4,14 +4,14 @@
     return :($allkeys)
 end
 
-@inline @generated function Base.keys(reg::NSR) where NSR<:NameSpaceRegistry
+@inline @generated function Base.keys(reg::Union{NSR, Type{NSR}}) where NSR<:NameSpaceRegistry
     allkeys = separated_keys(NSR)
     allkeys_flat = tuple(Iterators.Flatten(allkeys)...)
     return :($allkeys_flat)
 end
 
-@inline findkey(reg::NSR, key::Symbol) where NSR<:NameSpaceRegistry = findkey(reg, Val(key))
-@inline @generated function findkey(reg::NSR, ::Val{K}) where {NSR<:NameSpaceRegistry, K}
+@inline findkey(reg::Union{NSR, Type{NSR}}, key::Symbol) where NSR<:NameSpaceRegistry = findkey(reg, Val(key))
+@inline @generated function findkey(reg::Union{NSR, Type{NSR}}, ::Val{K}) where {NSR<:NameSpaceRegistry, K}
     _separated_keys = separated_keys(NSR)
     firstkeyidx = findfirst(ks -> K in ks, _separated_keys)
     if isnothing(firstkeyidx)
@@ -22,8 +22,8 @@ end
     end
 end
 
-@inline Base.haskey(reg::NSR, key::Symbol) where NSR<:NameSpaceRegistry = haskey(reg, Val(key))
-@inline @generated function Base.haskey(reg::NSR, key::Val{K}) where {NSR<:NameSpaceRegistry, K}
+@inline Base.haskey(reg::Union{NSR, Type{NSR}}, key::Symbol) where NSR<:NameSpaceRegistry = haskey(NSR, Val(key))
+@inline @generated function Base.haskey(reg::Union{NSR, Type{NSR}}, key::Val{K}) where {NSR<:NameSpaceRegistry, K}
     keyloc = findkey(NSR, K)
     if isnothing(keyloc[1])
         return false
