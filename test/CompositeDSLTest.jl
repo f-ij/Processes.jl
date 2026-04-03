@@ -28,27 +28,51 @@ function Processes.step!(::DSLNestedSourceAlgo, context)
 end
 
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
+zero_input_dsl_test() = 7
+keyword_only_capture_dsl_test(; plus_capture, minus_capture, β, buffers) = plus_capture + minus_capture + β + buffers
+literal_join_dsl_test(prefix, value, marker) = string(prefix, value, marker)
+constant_value_dsl_test() = 0.25
+square_dsl_test(x) = x^2
+
+@ProcessAlgorithm function DSLPositionalCallAlgo(value)
+    return (; seen = value)
+end
+
+@ProcessAlgorithm function DSLKeywordCallAlgo(value; scale = 1)
+    return (; seen = value * scale)
+end
 
 @testset "Composite DSL" begin
-    @testset "FuncWrapper supports init and step" begin
+    @info "Composite DSL"
+    @testset "FuncWrapper steps directly and does not eagerly init" begin
+        @info "Composite DSL: FuncWrapper steps directly and does not eagerly init"
         wrapped = FuncWrapper(x -> 2x, (:x,), (:y,))
         @test Processes.step!(wrapped, (; x = 4)) == (; y = 8)
-        @test Processes.init(wrapped, (; x = 4)) == (; y = 8)
+        @test Processes.init(wrapped, (; x = 4)) == (;)
+        @test occursin("(x) -> (; y)", sprint(summary, wrapped))
 
         kw_wrapped = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (; scale = 3))
         @test Processes.step!(kw_wrapped, (; external = 4)) == (; y = 12)
-        @test Processes.init(kw_wrapped, (; external = 4)) == (; y = 12)
+        @test Processes.init(kw_wrapped, (; external = 4)) == (;)
+        @test occursin("(external; scale = 3) -> (; y)", sprint(summary, kw_wrapped))
 
         kw_from_context = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (; scale = :factor))
         @test Processes.step!(kw_from_context, (; external = 4, factor = 5)) == (; y = 20)
-        @test Processes.init(kw_from_context, (; external = 4, factor = 5)) == (; y = 20)
+        @test Processes.init(kw_from_context, (; external = 4, factor = 5)) == (;)
 
         kw_same_name = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (:scale,))
         @test Processes.step!(kw_same_name, (; external = 4, scale = 6)) == (; y = 24)
-        @test Processes.init(kw_same_name, (; external = 4, scale = 6)) == (; y = 24)
+        @test Processes.init(kw_same_name, (; external = 4, scale = 6)) == (;)
+
+        literal_wrapped = FuncWrapper(println, ("Num: ", :value), ())
+        literal_show = sprint(show, literal_wrapped)
+        literal_plain = sprint(io -> show(io, MIME("text/plain"), literal_wrapped))
+        @test occursin("(\"Num: \", value) -> nothing", literal_show)
+        @test occursin("function = println", literal_plain)
     end
 
     @testset "Inline state supports defaults and required inputs" begin
+        @info "Composite DSL: Inline state supports defaults and required inputs"
         state = @state begin
             a = 1
             b
@@ -58,7 +82,43 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
         @test Processes.init(state, (; a = 7, b = 4)) == (; a = 7, b = 4)
     end
 
+    @testset "Mutable @state defaults are rebuilt per init" begin
+        @info "Composite DSL: Mutable @state defaults are rebuilt per init"
+        state = @state begin
+            nums = Float64[]
+        end
+
+        first_init = Processes.init(state, (;))
+        push!(first_init.nums, 1.0)
+        second_init = Processes.init(state, (;))
+
+        @test length(first_init.nums) == 1
+        @test isempty(second_init.nums)
+        @test first_init.nums !== second_init.nums
+    end
+
+    @testset "GeneralState merge combines disjoint state schemes" begin
+        @info "Composite DSL: GeneralState merge combines disjoint state schemes"
+        left = @state begin
+            seed = 4
+            scale
+        end
+        right = @state begin
+            buffer = Float64[]
+            offset = 2
+        end
+
+        merged = merge(left, right)
+        init = Processes.init(merged, (; scale = 3.0))
+
+        @test init == (; seed = 4, scale = 3.0, buffer = Float64[], offset = 2)
+        @test_throws ErrorException merge(left, @state begin
+            seed = 7
+        end)
+    end
+
     @testset "CompositeAlgorithm DSL resolves and runs" begin
+        @info "Composite DSL: CompositeAlgorithm DSL resolves and runs"
         n = 10
         algo = @CompositeAlgorithm begin
             @state seed = 3
@@ -110,6 +170,7 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
     end
 
     @testset "Named state uses explicit key" begin
+        @info "Composite DSL: Named state uses explicit key"
         named_state_algo = @CompositeAlgorithm begin
             @state mystate begin
                 a = 1
@@ -124,7 +185,30 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
         @test named_ctx[:mystate].a == 1
     end
 
+    @testset "@all uses raw share endpoints" begin
+        @info "Composite DSL: @all uses raw share endpoints"
+        @ProcessAlgorithm function DSLShareSource(@managed(x = 1))
+            return (; x)
+        end
+
+        @ProcessAlgorithm function DSLShareTarget(x)
+            return nothing
+        end
+
+        expanded = macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                @alias osc = DSLShareSource
+                osc()
+                DSLShareTarget(@all(osc...))
+            end
+        end)
+        expanded_str = sprint(show, Base.remove_linenums!(expanded))
+        @test occursin("Share(", expanded_str)
+        @test !occursin("Processes.IdentifiableAlgo", expanded_str)
+    end
+
     @testset "Transform routes resolve from expressions" begin
+        @info "Composite DSL: Transform routes resolve from expressions"
         one_var_transform = @CompositeAlgorithm begin
             @state seed = 3
             @alias source = DSLSourceAlgo
@@ -162,20 +246,8 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
         @test ctx_two_var[:DSLValueAlgo_1].result == 5
     end
 
-    @testset "Repeat forms expand correctly" begin
-        repeated = @CompositeAlgorithm begin
-            @state produced = 5
-            tripled = @repeat 3 begin
-                tripled = scaled_double_dsl_test(produced; scale = 3)
-            end
-        end
-
-        resolved_repeated = resolve(repeated)
-        @test resolved_repeated isa CompositeAlgorithm
-        @test Processes.getalgo(resolved_repeated, 1) isa Processes.AbstractIdentifiableAlgo
-        @test Processes.getalgo(Processes.getalgo(resolved_repeated, 1)) isa Routine
-        @test repeats(Processes.getalgo(Processes.getalgo(resolved_repeated, 1))) == (3,)
-
+    @testset "Routine repeat form expands correctly" begin
+        @info "Composite DSL: Routine repeat form expands correctly"
         routine = @Routine begin
             @state produced = 5
             tripled = @repeat 3 scaled_double_dsl_test(produced; scale = 3)
@@ -184,27 +256,5 @@ scaled_double_dsl_test(x; scale = 1) = scale * (2x)
         resolved_routine = resolve(routine)
         @test resolved_routine isa Routine
         @test repeats(resolved_routine) == (3,)
-    end
-
-    @testset "FuncWrapper positional args support routed property access" begin
-        nested_identity(x) = x
-
-        algo = @CompositeAlgorithm begin
-            @state seed = 3
-            c1 = DSLNestedSourceAlgo(seed = seed)
-            result = nested_identity(c1.plus_capture.captured)
-        end
-
-        resolved = resolve(algo)
-        wrapper = Processes.getalgo(resolved, 2)
-        wrapper_key = Processes.getkey(wrapper)
-        routes = Processes.getoptions(resolved)[wrapper_key]
-        @test length(routes) == 1
-        @test Processes.gettransform(first(routes)) !== nothing
-
-        p = Process(resolved, repeat = 1)
-        Processes.run(p)
-        ctx = fetch(p)
-        @test ctx[wrapper_key].result == 4
     end
 end

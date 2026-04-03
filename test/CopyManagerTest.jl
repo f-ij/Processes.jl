@@ -8,7 +8,7 @@ using JLD2
 using Processes
 
 import ..Processes: Process, TaskData, Input, Override, NamedInput, NamedOverride,
-    ProcessContext, normalize_process_algo, getregistry, to_named, get_target_name,
+    ProcessContext, normalize_process_algo, getregistry, resolve, get_target_name,
     getinputs, getoverrides, getlifetime, getalgo, taskdata, initcontext,
     processlist, remove_process!, RuntimeListeners, context, task, deletekeys
 
@@ -34,7 +34,7 @@ end
         CopyManagedAccumulator,
         Input(CopyManagedAccumulator, :start => 1, :sink => template_sink),
         Override(CopyManagedAccumulator, :delta => 2);
-        lifetime = 3,
+        repeats = 3,
     )
 
     sink_a = Int[]
@@ -73,7 +73,7 @@ end
         CopyManagedAccumulator,
         Input(CopyManagedAccumulator, :start => 0, :sink => Int[]),
         Override(CopyManagedAccumulator, :delta => 3);
-        lifetime = 4,
+        repeats = 4,
     )
 
     jobs = [

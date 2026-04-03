@@ -81,23 +81,28 @@ The signature is split into:
 - `@managed(...)` positional arguments: local algorithm state created during `Processes.init`
 - normal keyword arguments: runtime keyword-style values read during `Processes.step!`
 - optional trailing `@input((; ...))` / `@inputs((; ...))` / `@init((; ...))`: init-time inputs used while constructing managed state
+- optional `@config ...` declarations before the function: struct fields on the generated algorithm type
 
 Example:
 
 ```julia
-@ProcessAlgorithm function MyAlgo(
-    signal,
-    @managed(buffer = zeros(n)),
-    @managed(scale),
-    @managed(metric = 0.0);
-    damp = 1.0,
-    @inputs((; n::Int, scale = 2.0))
-)
-    @inbounds for i in eachindex(signal)
-        buffer[i] = damp * scale * signal[i]
+@ProcessAlgorithm begin
+    @config n::Int = 8
+    @config damp = 1.0
+
+    function MyAlgo(
+        signal,
+        @managed(buffer = zeros(n)),
+        @managed(scale),
+        @managed(metric = 0.0);
+        @inputs((; scale = 2.0))
+    )
+        @inbounds for i in eachindex(signal)
+            buffer[i] = damp * scale * signal[i]
+        end
+        metric = sum(buffer)
+        return (; buffer, scale, metric)
     end
-    metric = sum(buffer)
-    return (; buffer, scale, metric)
 end
 ```
 
@@ -107,25 +112,40 @@ Rules worth knowing:
 - `@managed(name = expr)` evaluates `expr` during `Processes.init`.
 - `@managed(a, b = expr, c = expr2)` expands to multiple managed locals in order.
 - `@input/@inputs/@init` may only appear once and must be the last keyword-like item.
+- `@config` fields must have defaults and become fields on the generated struct.
+  You can write them in a surrounding block or as a prelude like `@ProcessAlgorithm @config seed = 1 function MyAlgo(...) ... end`.
+- inside the algorithm body, config fields are available directly by name.
+  Use `seed`, not `config.seed`.
 - plain positional arguments are runtime-only and are not available while constructing managed state.
 - `where` signatures are supported.
 
 For a macro-generated algorithm `MyAlgo`, the main entrypoints are:
 
-- direct/bootstrap call: `MyAlgo(args...; @inputs((; ...)))`
+- direct/bootstrap call: `step!(MyAlgo(), args...; @inputs((; ...)))`
 - init hook: `Processes.init(MyAlgo(), context)`
 - step hook: `Processes.step!(MyAlgo(), context)`
 
 Internally the macro defines:
 
-- `struct MyAlgo <: ProcessAlgorithm end`
+- `struct MyAlgo <: ProcessAlgorithm end` or `Base.@kwdef struct MyAlgo ... end`
 - a hidden implementation function containing the user body
-- a bootstrap method for direct calls
+- public `Processes.step!(algo::MyAlgo, ...)` methods for direct calls
 - generated `Processes.init` and `Processes.step!` methods that feed the implementation
 
 Type annotations and `where` clauses are preserved on the generated public call signatures and
 the hidden implementation function. The runtime context extraction methods currently bind simple
 locals before forwarding into that typed implementation.
+
+#### Analysis-Friendly Forms
+
+If you want `ContextAnalyser` to discover dependencies more reliably:
+
+- use `@inputs((; ...))` to make init-time requirements explicit
+- use `context.name` or `(; name) = context` for required reads
+- use `get(context, :name, default)` for optional reads
+- return plain `NamedTuple`s from `init` and `step!`
+
+See [Init Analysis](@ref init_analysis_user) for the analyzer workflow and limitations.
 
 ### `@ProcessState`
 

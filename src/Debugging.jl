@@ -14,7 +14,7 @@ function mainloop_warntype(@specialize(p), @specialize(func), @specialize(contex
 end
 
 function get_example_process(func, rt; loopfunction = nothing)
-    p = Process(func; lifetime = rt)
+    p = Process(func; repeats = rt)
     preparedata!(p)
     return p
 end

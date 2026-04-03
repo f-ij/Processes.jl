@@ -1,4 +1,12 @@
+"""
+A named override or input is an entity that has a name and associated variables.
 
+It specifies variables with names and values that target a namespace
+They are resolved versions of Inputs and Overrides
+
+The resolver will take an Override or Input that either targets a namespace directly, or an ProcessEntity
+and resolve it to a NamedOverride or NamedInput with the name of the target namespace and the variables
+"""
 function Named(T::Type, name, vars::NT) where {NT}
     if T <: Override
         return NamedOverride{name, NT}(vars)
@@ -19,45 +27,22 @@ get_vars(ov::Union{NamedOverride, NamedInput}) = ov.vars
 If Overrides and inputs target a LoopAlgorithm, duplicate them for all contained algorithms
     Maybe this is not used anymore after the fusing system
 """
-function to_named(cla::LoopAlgorithm, ov::Union{Override, Input})
+function resolve(cla::LoopAlgorithm, ov::Union{Override, Input})
     target_obj = get_target_algo(ov)
-    return to_named(getregistry(cla), ov)
-
-    # if target_type(ov) <: LoopAlgorithm
-    #     target_T = target_type(ov)
-    #     reg = nothing
-    #     if target_T <: typeof(cla)
-    #         reg = getregistry(cla)
-    #     else
-    #         # find_first_target = getfirst_node(x -> match_cla(target_T, typeof(x)), cla, unwrap = unwrap_cla)
-    #         # if isnothing(find_first_target)
-    #         #     error("Target algorithm $(target_T) not found in LoopAlgorithm $(cla)")
-    #         # end
-    #         # reg = getregistry(find_first_target)
-    #     end
-    #     reg = getregistry(cla)
-    #     # Duplicate for all in registry
-    #     all_algos = all_named_algos(reg)
-    #     # @show all_algos
-    #     duplicates = change_target.(Ref(ov), all_algos)
-    #     # @show duplicates
-    #     return flat_collect_broadcast(duplicates) do dup
-    #         to_named(reg, dup)
-    #     end
-    # else
-    #     # @show ov
-    #     return ov
-    #     reg = getregistry(cla)
-    #     return to_named(reg, ov)
-    # end 
+    return resolve(getregistry(cla), ov)
 end
 
-to_named(reg::NameSpaceRegistry, ov::Union{Override, Input}...) = flat_collect_broadcast(ov) do o
-    to_named(reg, o)
+resolve(reg::NameSpaceRegistry, ov::Union{Override, Input}...) = flat_collect_broadcast(ov) do o
+    resolve(reg, o)
 end
 
-@inline function to_named(reg::NameSpaceRegistry, ov::Union{Override, Input})
+@inline function resolve(reg::NameSpaceRegistry, ov::Union{Override, Input})
     target_algo = get_target_algo(ov)
+    if target_algo isa Symbol
+        @assert haskey(reg, target_algo) "Target algorithm $(target_algo) not found in registry: $reg \n Cannot convert to Named"
+        return (Named(typeof(ov), target_algo, get_vars(ov)),)
+    end
+
     key = static_findkey(reg, target_algo)
     if isnothing(key)
         error("Target algorithm $(target_algo) not found in registry: $reg \n Cannot convert to Named")
@@ -65,14 +50,14 @@ end
     return (Named(typeof(ov), key, get_vars(ov)),)
 end
 
-to_named(cla::LoopAlgorithm, ovs::Union{Override, Input}...) = flat_collect_broadcast(ovs) do ov
-    to_named(cla, ov)
+resolve(cla::LoopAlgorithm, ovs::Union{Override, Input}...) = flat_collect_broadcast(ovs) do ov
+    resolve(cla, ov)
 end
 
 """
-Teremination
+Termination
 """
-to_named(::Any) = ()
+resolve(::Any) = ()
 
 """
 From inputs and overrides construct NamedTuples for merging into ProcessContext

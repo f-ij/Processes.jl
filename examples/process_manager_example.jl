@@ -1,7 +1,7 @@
 using Processes
 
 import Processes: Process, TaskData, Input, Override, NamedInput, NamedOverride,
-    ProcessContext, normalize_process_algo, getregistry, to_named, get_target_name,
+    ProcessContext, normalize_process_algo, getregistry, resolve, get_target_name,
     getinputs, getoverrides, getlifetime, getalgo, taskdata, initcontext,
     processlist, remove_process!, RuntimeListeners, context, task, deletekeys
 

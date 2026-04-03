@@ -4,6 +4,7 @@ Log a variable
 struct Logger{T, Name} <: ProcessAlgorithm end
 
 Logger(T; name = uuid4()) = Logger{T, name}()
+Logger(; name = uuid4()) = Logger{Any, name}()
 
 function Processes.init(::Logger{T}, context::C) where {T, C}
     log = Vector{T}()

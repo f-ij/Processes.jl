@@ -51,7 +51,7 @@ using Processes
         Route(Walker => InsertNoise, :momentum => :targetnum, :dt => :scale),
     )
 
-    p = Process(algo, lifetime = 10, Input(Walker, :dt => 0.01))
+    p = Process(algo, repeats = 10, Input(Walker, :dt => 0.01))
     run(p)
     wait(p)
     c = fetch(p)
@@ -78,21 +78,21 @@ using Processes
 
 
     # Route functions test
-    struct Logger{T} <: ProcessAlgorithm end
-    Logger(name::Symbol) = Logger{name}()
+    struct RouteLogger{T} <: ProcessAlgorithm end
+    RouteLogger(name::Symbol) = RouteLogger{name}()
 
-    function Processes.init(::Logger{T}, _input) where {T}
+    function Processes.init(::RouteLogger{T}, _input) where {T}
         log = Vector{Any}()
         return (;log)
     end
-    function Processes.step!(::Logger{T}, context) where {T}
+    function Processes.step!(::RouteLogger{T}, context) where {T}
         (;log, targetnum) = context
         push!(log, targetnum)
         return (;)
     end
 
-    Logger1 = Logger(:normal)
-    Logger2 = Logger(:squared)
+    Logger1 = RouteLogger(:normal)
+    Logger2 = RouteLogger(:squared)
 
     algo2 = CompositeAlgorithm(
         Walker, InsertNoise, Logger1, Logger2,
@@ -102,7 +102,7 @@ using Processes
         Route(Walker => Logger2, :state => :targetnum, transform = x-> x[end]^2),
     )
 
-    p2 = Process(algo2, lifetime = 10, Input(Walker, :dt => 0.01))
+    p2 = Process(algo2, repeats = 10, Input(Walker, :dt => 0.01))
     run(p2)
     c2 = fetch(p2)
 

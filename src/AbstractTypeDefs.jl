@@ -41,7 +41,7 @@ static_findfirst_match(r::AbstractRegistry, val) = error("static_findfirst_match
 """
 Get a key, errors if not present
 """
-getkey(r::AbstractRegistry, obj) = error("getkey not implemented for $(typeof(r))")
+Base.getkey(r::AbstractRegistry, obj) = error("getkey not implemented for $(typeof(r))")
 """
 Find a key, returns nothing if not present
 """

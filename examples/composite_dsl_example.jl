@@ -53,6 +53,13 @@ println("@CompositeAlgorithm with @state, @alias, plain function wrapping, and @
 println(composite_context)
 println()
 
+@CompositeAlgorithm :print begin
+    @state seed = 3
+    @alias source = ExampleSourceAlgo
+    produced = source(seed = seed)
+end
+println()
+
 named_state_composite = @CompositeAlgorithm begin
     @state mystate begin
         seed = 4

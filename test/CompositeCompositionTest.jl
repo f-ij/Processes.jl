@@ -44,3 +44,39 @@ struct Luc <: Processes.ProcessAlgorithm end
     # name_fdup_inst = Processes.getkey(reg_ffluc, fdup_inst)
     # @test length(unique((name_fib_inst_ff, name_fib_type_ff, name_fdup_inst))) == 3
 end
+
+@testset "Identifiable merge forwarding preserves keyed GeneralState" begin
+    left_state = @state begin
+        seed = 4
+    end
+    right_state = @state begin
+        scale
+    end
+    other_state = @state begin
+        offset = 2
+    end
+
+    left = IdentifiableAlgo(left_state, :_state)
+    right = IdentifiableAlgo(right_state, :_state)
+    other_key = IdentifiableAlgo(other_state, :other_state)
+
+    @test registry_allowmerge(left)
+    @test registry_allowmerge(right)
+    @test registry_allowmerge(left, right)
+    @test !registry_allowmerge(left, other_key)
+
+    merged = merge(left, right)
+    @test getkey(merged) == :_state
+    @test Processes.general_state_fields(getalgo(merged)) == (:seed, :scale)
+    @test Processes.general_state_required_fields(getalgo(merged)) == (:scale,)
+    @test Processes.init(getalgo(merged), (; scale = 3.0)) == (; seed = 4, scale = 3.0)
+    @test sprint(show, merged) == "GeneralState(seed = <default>, scale)@_state: GeneralState(seed = <default>, scale)"
+end
+
+@testset "separate_nested_namedtuples preserves outer order" begin
+    nested = (; a = (; x = 1, y = 2), b = (; z = 3))
+    @test Processes.separate_nested_namedtuples(nested) == (
+        (; a = (; x = 1, y = 2)),
+        (; b = (; z = 3)),
+    )
+end

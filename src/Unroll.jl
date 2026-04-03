@@ -200,6 +200,29 @@ end
 end
 
 """
+Flatten a tree while collecting node-local traits.
+
+`nodefunc(node)` must return `(next_nodes, trait)` where:
+- `next_nodes === nothing` marks a leaf
+- `next_nodes` is otherwise a tuple of child nodes to recurse into
+- `trait` is the local trait payload for the current node
+
+Traits are concatenated in traversal order. `nothing` traits are ignored, scalar
+traits are wrapped as one-element tuples, and tuple traits are spliced in as-is.
+"""
+@inline _ttc_trait_tuple(::Nothing) = ()
+@inline _ttc_trait_tuple(trait::Tuple) = trait
+@inline _ttc_trait_tuple(trait) = (trait,)
+
+@inline function tree_trait_flat_collect(nodefunc, node)
+    next_nodes, trait = nodefunc(node)
+    local_traits = _ttc_trait_tuple(trait)
+    isnothing(next_nodes) && return local_traits
+    next_nodes isa Tuple && isempty(next_nodes) && return local_traits
+    return (local_traits..., flat_collect_broadcast(x -> tree_trait_flat_collect(nodefunc, x), next_nodes)...)
+end
+
+"""
 Inlineable filter by type
 """
 @inline function typefilter(type::Type{T}, elements) where T

@@ -39,7 +39,7 @@ function PackagedAlgo(comp::CompositeAlgorithm, name="")
 
     customname = name == "" ? isnothing(algoname(comp)) ? Symbol() : algoname(comp) : Symbol(name)
 
-    states = get_states(comp)
+    states = getstates(comp)
     stateintervals = ntuple(i -> 1, length(states))
 
     subs_and_intervals = zip((states..., subpackages...), (stateintervals..., flatintervals...))
@@ -93,7 +93,7 @@ end
 ####### Identifiable Interface  ########
 ########################################
 
-@inline getkey(sa::Union{<:PackagedAlgo{T, I, NSR, id, CustomName, ContextKey}, Type{<:PackagedAlgo{T, I, NSR, id, CustomName, ContextKey}}}) where {T,I,NSR,id,CustomName,ContextKey} = ContextKey
+@inline Base.getkey(sa::Union{<:PackagedAlgo{T, I, NSR, id, CustomName, ContextKey}, Type{<:PackagedAlgo{T, I, NSR, id, CustomName, ContextKey}}}) where {T,I,NSR,id,CustomName,ContextKey} = ContextKey
 @inline setkey(sa::PackagedAlgo, newkey) = setparameter(sa, 6, newkey)
 @inline getalgo(sa::PackagedAlgo{F}) where {F} = error("Cannot get singular algo from a PackagedAlgo. Use `getalgos` instead.")
 @inline getalgos(ca::PackagedAlgo) = getfield(ca, :funcs)

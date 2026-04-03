@@ -4,8 +4,12 @@ Standard behavior: types match by themselves, objects match by their type
 
 Reminder: This is not how ProcessEntities match
 """
-match_by(obj::O) where O = match_by(typeof(obj))
-match_by(t::Type{T}) where T = T
+# match_by(obj::O) where O = match_by(typeof(obj))
+match_by(o::O) where O = error("No match_by method defined for value of type $O, got object $o")
+"""
+Type matching needs to be exlicitly extended
+"""
+match_by(t::Type{T}) where T = error("No match_by method defined for type $T")
 
 function match(obj1::O1, obj2::O2) where {O1,O2}
     id1 = obj1 isa AbstractMatcher ? obj1 : match_by(obj1)
@@ -22,6 +26,10 @@ getmatchers(m::AbstractMatcher{A}) where {A} = A
 struct SimpleId{id} <: AbstractMatcher{id} end
 SimpleId() = SimpleId{uuid4()}()
 SimpleId(id) = SimpleId{id}()
+
+struct ObjectIDMatcher{id} <: AbstractMatcher{id} end
+ObjectIDMatcher(id::UInt64) = ObjectIDMatcher{id}()
+ObjectIDMatcher(obj) = ObjectIDMatcher(objectid(obj))
 
 struct MatchAny{A} <: AbstractMatcher{A} end
 MatchAny(matchers...) = MatchAny(tuple(matchers...))

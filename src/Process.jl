@@ -37,16 +37,48 @@ shouldrun(p::Process, val) = @atomic p.shouldrun = val
 @inline getticks(p::Process) = p.tickidx
 @inline reset_ticks!(p::Process) = (p.tickidx = UInt(1))
 
+@inline function _process_state_label(p::Process)
+    if ispaused(p)
+        return "Paused"
+    elseif isrunning(p)
+        return "Running"
+    elseif isdone(p)
+        return "Finished"
+    else
+        return "Idle"
+    end
+end
 
-function Process(func, inputs_overrides...; context = nothing, lifetime = Indefinite(), repeat = nothing, timeout = 1.0)
+@inline function _process_algo_summary(p::Process)
+    return sprint(summary, getalgo(taskdata(p)))
+end
+
+@inline function _process_constructor_lifetime(repeats, lifetime, repeat)
     if !isnothing(repeat)
-        lifetime == Indefinite() || error("Pass either `repeat = ...` or `lifetime = ...`, not both.")
-        if repeat isa AbstractFloat && isinf(repeat)
-            lifetime = Indefinite()
+        isnothing(repeats) || error("Pass either `repeats = ...` or `repeat = ...`, not both.")
+        repeats = repeat
+    end
+
+    if !isnothing(repeats)
+        isnothing(lifetime) || error("Pass either `repeats = ...` or `lifetime = ...`, not both.")
+        if repeats isa AbstractFloat && isinf(repeats)
+            return Indefinite()
         else
-            lifetime = repeat
+            return repeats
         end
     end
+
+    if isnothing(lifetime)
+        return nothing
+    elseif lifetime isa Lifetime
+        return lifetime
+    else
+        error("Pass `repeats = ...` for repeat counts. The `lifetime` keyword is reserved for Lifetime objects.")
+    end
+end
+
+function Process(func, inputs_overrides...; context = nothing, repeats = nothing, lifetime = nothing, repeat = nothing, timeout = 1.0)
+    lifetime = _process_constructor_lifetime(repeats, lifetime, repeat)
 
     prepared = prepare_process_constructor(func, inputs_overrides...; lifetime, context)
     td = prepared.taskdata
@@ -64,7 +96,7 @@ end
 
 function Process(func, repeats::Int; overrides = tuple(), timeout = 1.0, context = nothing)
     overrides_tuple = overrides isa Tuple ? overrides : (overrides,)
-    return Process(func, overrides_tuple...; lifetime = repeats, timeout, context)
+    return Process(func, overrides_tuple...; repeats = repeats, timeout, context)
 end
 
 Base.:(==)(p1::Process, p2::Process) = p1.id == p2.id
@@ -201,16 +233,41 @@ function Base.show(io::IO, p::Process)
         print(io, "Error in process")
         return display(p.task)
     end
-    statestring = ""
-    if ispaused(p)
-        statestring = "Paused"
-    elseif isrunning(p)
-        statestring = "Running"
-    elseif isdone(p)
-        statestring = "Finished"
+    print(io, _process_state_label(p), " Process(", _process_algo_summary(p), ", lifetime=", lifetime(p), ", loopidx=", loopint(p), ")")
+
+    return nothing
+end
+
+function Base.summary(io::IO, p::Process)
+    print(io, "Process(", _process_algo_summary(p), ")")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", p::Process)
+    if !isnothing(p.task) && p.task._isexception
+        print(io, "Error in process")
+        return display(p.task)
     end
 
-    print(io, "$statestring Process")
+    println(io, "Process")
+    println(io, "├── state = ", _process_state_label(p))
+    println(io, "├── lifetime = ", lifetime(p))
+    println(io, "├── loopidx = ", loopint(p))
+    println(io, "├── timeout = ", p.timeout)
+
+    algo_lines = split(sprint(show, getalgo(taskdata(p))), '\n')
+    print(io, "├── algo = ", algo_lines[1])
+    for line in Iterators.drop(algo_lines, 1)
+        print(io, "\n", "│   ", line)
+    end
+
+    context_lines = split(
+        sprint(show, p.context; context = IOContext(io, :printcontextglobals => false, :limit => get(io, :limit, false), :color => get(io, :color, false))),
+        '\n',
+    )
+    print(io, "\n", "└── context = ", context_lines[1])
+    for line in Iterators.drop(context_lines, 1)
+        print(io, "\n", "    ", line)
+    end
 
     return nothing
 end

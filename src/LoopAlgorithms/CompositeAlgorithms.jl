@@ -22,7 +22,7 @@ function newfuncs(ca::CompositeAlgorithm, funcs)
 end
 
 function setoptions(ca::CompositeAlgorithm{T, Intervals, S, O, R, id}, options) where {T, Intervals, S, O, R, id}
-    CompositeAlgorithm{T, Intervals, S, typeof(options), R, id}(getalgos(ca), get_states(ca), options, getinc(ca), getregistry(ca))
+    CompositeAlgorithm{T, Intervals, S, typeof(options), R, id}(getalgos(ca), getstates(ca), options, getinc(ca), getregistry(ca))
 end
 
 @inline getregistry(ca::CompositeAlgorithm) = getfield(ca, :reg)

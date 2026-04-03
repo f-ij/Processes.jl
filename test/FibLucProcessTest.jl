@@ -31,7 +31,10 @@ end
 @testset "Process run fills context" begin
     n = 50_000
     fibluc = Processes.CompositeAlgorithm( RunFib, RunLuc , (1, 2))
-    p = Processes.Process(fibluc; lifetime = n)
+    p = Processes.Process(fibluc; repeats = n)
+    @test repeats(Processes.lifetime(p)) == n
+    @test_throws ErrorException Processes.Process(fibluc; lifetime = n)
+
     Processes.run(p)
     ctx = fetch(p)
 

@@ -108,7 +108,7 @@ function _worker_run_graph_expr(::Type{DCA}, ::Type{C}; pretty = false) where {D
     for (idx, _) in specs
         result_sym = Symbol(:result_, idx)
         child_name = getkey(getalgotype(DCA, idx))
-        payload_type = get_datatype(subcontext_type(C, child_name))
+        payload_type = getdatatype(subcontext_type(C, child_name))
         update_type = NamedTuple{(child_name,), Tuple{payload_type}}
         push!(exprs, quote
             if $result_sym !== nothing

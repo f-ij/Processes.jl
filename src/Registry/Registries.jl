@@ -136,7 +136,7 @@ function add(reg::NameSpaceRegistry{T}, obj, multiplier = 1.; withkey = nothing)
         end
         return newreg, keyed_obj
     else # Type was found
-        entry = reg.entries[fidx]
+        entry = getentries(reg)[fidx]
         
         newentry, keyed_obj = add(entry, obj, multiplier; withkey)
         # return newentry
@@ -158,7 +158,7 @@ end
 ########################
 
 function scale_multipliers!(reg::NameSpaceRegistry{T}, factor::Number) where {T}
-    map(entry -> scale_multipliers!(entry, factor), reg.entries)
+    map(entry -> scale_multipliers!(entry, factor), getentries(reg))
     reg
 end
 
@@ -168,7 +168,7 @@ One registry inherits from another, scaling the multipliers by the given factor
     The multiplier is usually the multiplier of a LoopAlgorithm in it's parent LoopAlgorithm
 """
 function inherit(registry1::NameSpaceRegistry, registry2::NameSpaceRegistry, multiplier = 1.)
-    entries2 = deepcopy(registry2.entries) # Deepcopy in order to not change multipliers of original registry
+    entries2 = deepcopy(getentries(registry2)) # Deepcopy in order to not change multipliers of original registry
     scale_multipliers!.(entries2, multiplier)
     @DebugMode "Reg1: $registry1 inheriting entries: $entries2"
 
@@ -374,7 +374,7 @@ end
 """
 Statically Get the name from the registry
 """
-@inline function getkey(reg::NameSpaceRegistry, val)
+@inline function Base.getkey(reg::NameSpaceRegistry, val)
     entry = get(reg, val, nothing)
     if isnothing(entry)
         return nothing
@@ -421,15 +421,15 @@ end
 #######################
 
 function all_named_algos(reg::Union{NameSpaceRegistry, Type{<:NameSpaceRegistry}})
-    flat_collect_broadcast(all_named_algos, reg.entries)
+    flat_collect_broadcast(all_named_algos, getentries(reg))
 end
 
 function all_keys(reg::Union{NameSpaceRegistry, Type{<:NameSpaceRegistry}})
-    flat_collect_broadcast(all_keys, reg.entries)
+    flat_collect_broadcast(all_keys, getentries(reg))
 end
 
 # function find_location_by_name(reg::NameSpaceRegistry, name::Symbol)
-#     for (entry_idx, entry) in enumerate(reg.entries)
+#     for (entry_idx, entry) in enumerate(getentries(reg))
 #         loc = find_location_by_name(entry, name)
 #         if !isnothing(loc)
 #             return (entry_idx, loc...)
@@ -439,7 +439,7 @@ end
 # end
 
 function replacecontextkeyss(reg::NameSpaceRegistry, changed_names::Dict{Symbol,Symbol})
-    newentries = map(entry -> replacecontextkeyss(entry, changed_names), reg.entries)
+    newentries = map(entry -> replacecontextkeyss(entry, changed_names), getentries(reg))
     return NameSpaceRegistry{typeof(newentries)}(newentries)
 end
     
@@ -462,7 +462,7 @@ end
 Iterator for NameSpaceRegistry
 """
 function Base.iterate(reg::NameSpaceRegistry, state = 1)
-    if state > length(reg.entries)
+    if state > length(getentries(reg))
         return nothing
     else
         return (reg[state], state + 1)
@@ -481,12 +481,12 @@ end
 function Base.show(io::IO, reg::NameSpaceRegistry)
     types = entrytypes_iterator(reg)
     println(io, "NameSpaceRegistry with types: ", types)
-    if isempty(reg.entries)
+    if isempty(getentries(reg))
         print(io, "  (empty)")
         return
     end
     limit = get(io, :limit, false)
-    for (idx, entry) in enumerate(reg.entries)
+    for (idx, entry) in enumerate(getentries(reg))
         entry_str = repr(entry; context = IOContext(io, :limit => limit))
         lines = split(entry_str, '\n')
         for (line_idx, line) in enumerate(lines)

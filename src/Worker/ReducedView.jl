@@ -138,7 +138,7 @@ end
 @inline @generated function ReducedView(scv::SCV) where {SCV<:SubContextView{CType, SubKey, SA}} where {CType<:ProcessContext, SubKey, SA<:AbstractIdentifiableAlgo}
     locations = get_all_locations(SCV)
     visible_names = propertynames(locations)
-    local_names = fieldnames(get_datatype(subcontext_type(CType, SubKey)))
+    local_names = fieldnames(getdatatype(subcontext_type(CType, SubKey)))
     value_exprs = [:(getproperty(scv, $(getproperty(locations, name)))) for name in visible_names]
     overwritten_expr = Expr(:tuple, fill(false, length(visible_names))...)
 

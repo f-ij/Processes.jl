@@ -20,25 +20,12 @@ function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple,
     return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), Nothing, id}(funcs, states, options, resume_idxs, nothing)
 end
 
-# function Routine(funcs::NTuple{N,Any},
-#     repeats::NTuple{N,Real}=ntuple(x -> 1, length(funcs)),
-#     shares_and_routes::Union{Share,Route}...) where {N}
-
-#     (; functuple, registry, options) = setup(Routine, funcs, repeats, shares_and_routes...)
-#     sidxs = MVector{length(functuple),Int}(ones(length(functuple)))
-    
-#     if repeats isa Tuple
-#         repeats = Int.(repeats)
-#     end
-#     Routine{typeof(functuple),repeats,typeof(sidxs),typeof(registry),typeof(options),uuid4()}(functuple, sidxs, registry, options)
-# end
-
 function newfuncs(r::Routine, funcs)
     setfield(r, :funcs, funcs)
 end
 
 function setoptions(r::Routine{T, Repeats, S, MV, O, R, id}, options) where {T, Repeats, S, MV, O, R, id}
-    Routine{T, Repeats, S, MV, typeof(options), R, id}(getalgos(r), get_states(r), options, get_resume_idxs(r), getregistry(r))
+    Routine{T, Repeats, S, MV, typeof(options), R, id}(getalgos(r), getstates(r), options, get_resume_idxs(r), getregistry(r))
 end
 
 @inline getregistry(r::Routine) = getfield(r, :reg)
@@ -49,10 +36,8 @@ end
 @inline getalgo(r::Routine, idx) = getfield(r, :funcs)[idx]
 @inline getoptions(r::Routine) = getfield(r, :options)
 @inline subalgorithms(r::Routine) = getfield(r, :funcs)
+@inline getstates(r::Routine) = getfield(r, :states)
 
-function Base.getindex(r::Routine, idx)
-   getalgos(r)[idx]
-end
 
 
 getmultipliers_from_specification_num(::Type{<:Routine}, specification_num) = Float64.(specification_num)
@@ -63,6 +48,8 @@ resumable(r::Routine) = true
 # TODO: This is only used in treesctructure, try to deprecate
 subalgotypes(r::Routine{FT}) where FT = FT.parameters
 subalgotypes(rT::Type{<:Routine{FT}}) where FT = FT.parameters
+algotypes(r::Union{Routine{FT}, Type{<:Routine{<:FT}}}) where FT = tuple(FT.parameters...)
+statetypes(r::Union{Routine{FT, R, S}, Type{<:Routine{FT, R, S}}}) where {FT, R, S} = S.parameters
 
 # getnames(r::Routine{T, R, NT, N}) where {T, R, NT, N} = N
 Base.length(r::Routine) = length(getfield(r, :funcs))

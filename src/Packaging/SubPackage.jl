@@ -23,7 +23,7 @@ Key of subpackage not set by registry
 """
 
 Autokey(ps::SubPackage{F}, i::Int, prefix = "") where {F} = ps
-@inline getkey(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,Aliases,ContextKey}}}) where {F, ID, Aliases, ContextKey} = ContextKey
+@inline Base.getkey(ps::Union{SubPackage{F, ID, Aliases, ContextKey}, Type{<:SubPackage{F,ID,Aliases,ContextKey}}}) where {F, ID, Aliases, ContextKey} = ContextKey
 @inline getalgo(ps::SubPackage{F}) where {F} = ps.func
 @inline setcontextkey(ps::SubPackage, key::Symbol) = setparameter(ps, 4, key)
 @inline setid(ps::SubPackage, newid) = setparameter(ps, 2, newid isa UUID ? SimpleId(newid) : newid)

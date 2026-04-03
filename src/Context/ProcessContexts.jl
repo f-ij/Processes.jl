@@ -67,7 +67,7 @@ end
 
 function _scope_type_snapshot(scope_type::Type)
     if scope_type <: SubContext
-        return _ntype_snapshot(get_datatype(scope_type))
+        return _ntype_snapshot(getdatatype(scope_type))
     elseif scope_type <: NamedTuple
         return _ntype_snapshot(scope_type)
     else
@@ -215,19 +215,90 @@ Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), sub
 @inline @generated function merge_into_subcontexts(pc::ProcessContext{D}, args::As) where {D, As}
     sc_names = get_subcontexts_fieldnames(pc)
     mergenames = fieldnames(args)
-    getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(name)))) for name in sc_names]
-    for (mergeidx, mergname) in enumerate(mergenames)
-        found_idx = findfirst( n -> n == mergname, sc_names)
-        if isnothing(found_idx)
-            error("Trying to merge into unknown subcontext $(QuoteNode(mergname)) in ProcessContext. Available subcontexts are: $(sc_names) and args has names: $(mergenames)")
-        end
-        # getproperty_exprs[mergeidx] = :(getproperty(args, $(QuoteNode(mergname))))
-        getproperty_exprs[found_idx] = :(merge(getproperty(get_subcontexts(pc), $(QuoteNode(mergname))), getproperty(args, $(QuoteNode(mergname)))))
+    if length(mergenames) == 1
+        mergename = first(mergenames)
+        return :(@inline merge_into_subcontext(pc, Val($(QuoteNode(mergename))), getproperty(args, $(QuoteNode(mergename)))))
     end
-    ntnames = tuple(sc_names...)
+    # getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(name)))) for name in sc_names]
+    # for (mergeidx, mergname) in enumerate(mergenames)
+    #     found_idx = findfirst( n -> n == mergname, sc_names)
+    #     if isnothing(found_idx)
+    #         error("Trying to merge into unknown subcontext $(QuoteNode(mergname)) in ProcessContext. Available subcontexts are: $(sc_names) and args has names: $(mergenames)")
+    #     end
+    #     # getproperty_exprs[mergeidx] = :(getproperty(args, $(QuoteNode(mergname))))
+    #     getproperty_exprs[found_idx] = :(@inline merge(getproperty(get_subcontexts(pc), $(QuoteNode(mergname))), getproperty(args, $(QuoteNode(mergname)))))
+    # end
+    # ntnames = tuple(sc_names...)
     return quote 
-        new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
-        @inline setfield(pc, :subcontexts, new_subcontexts)
+        LineNumberNode(@__LINE__, @__FILE__)
+        separated = separate_nested_namedtuples(args)
+        @show separated
+        pc = unrollreplace(merge_into_subcontexts, pc, separated...)
+        # new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
+        # @inline setfield(pc, :subcontexts, new_subcontexts)
+        # setfield!(pc, :subcontexts, new_subcontexts)
+        # return pc
+        # return @inline ProcessContext(new_subcontexts, @inline getregistry(pc))
+
+    end
+end
+
+Base.@constprop :aggressive merge_into_subcontext(pc::ProcessContext{D}, name::Symbol, args) where {D} = @inline merge_into_subcontext(pc, Val(name), args)
+@inline @generated function merge_into_subcontext(pc::ProcessContext{D}, ::Val{name}, args::A) where {D, name, A}
+    sc_names = get_subcontexts_fieldnames(pc)
+    found_idx = findfirst(==(name), sc_names)
+    if isnothing(found_idx)
+        error("Trying to merge into unknown subcontext $(QuoteNode(name)) in ProcessContext. Available subcontexts are: $(sc_names)")
+    end
+    old_sc_type = fieldtype(D, name)
+    merged_sc_type = Core.Compiler.return_type(merge, Tuple{old_sc_type, A})
+
+    if merged_sc_type === old_sc_type
+        return quote
+            LineNumberNode(@__LINE__, @__FILE__)
+            @inline merge_into_subcontext_mutate(pc, Val($(QuoteNode(name))), args)
+        end
+    end
+    return quote 
+        LineNumberNode(@__LINE__, @__FILE__)
+        @inline merge_into_subcontext_rebuild(pc, Val($(QuoteNode(name))), args)
+    end
+end
+
+@inline @generated function merge_into_subcontext_rebuild(pc::ProcessContext{D}, ::Val{name}, args) where {D, name}
+    sc_names = get_subcontexts_fieldnames(pc)
+    found_idx = findfirst(==(name), sc_names)
+    if isnothing(found_idx)
+        error("Trying to merge into unknown subcontext $(QuoteNode(name)) in ProcessContext. Available subcontexts are: $(sc_names)")
+    end
+
+    getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(sc_name)))) for sc_name in sc_names]
+    getproperty_exprs[found_idx] = :(@inline merge(getproperty(get_subcontexts(pc), $(QuoteNode(name))), args))
+    ntnames = tuple(sc_names...)
+
+    return quote
+        LineNumberNode(@__LINE__, @__FILE__)
+        new_subcontexts = @inline NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
+        return @inline ProcessContext(new_subcontexts, @inline getregistry(pc))
+    end
+end
+
+@inline @generated function merge_into_subcontext_mutate(pc::ProcessContext{D}, ::Val{name}, args) where {D, name}
+    sc_names = get_subcontexts_fieldnames(pc)
+    found_idx = findfirst(==(name), sc_names)
+    if isnothing(found_idx)
+        error("Trying to merge into unknown subcontext $(QuoteNode(name)) in ProcessContext. Available subcontexts are: $(sc_names)")
+    end
+
+    getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(sc_name)))) for sc_name in sc_names]
+    getproperty_exprs[found_idx] = :(@inline merge(getproperty(get_subcontexts(pc), $(QuoteNode(name))), args))
+    ntnames = tuple(sc_names...)
+
+    return quote
+        LineNumberNode(@__LINE__, @__FILE__)
+        new_subcontexts = @inline NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
+        @inline setfield!(pc, :subcontexts, new_subcontexts)
+        return pc
     end
 end
 
@@ -252,7 +323,8 @@ Args should name subcontext they want to replace, check if all names are in the 
     ntnames = tuple(sc_names...)
     return quote
         new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
-        @inline setfield(pc, :subcontexts, new_subcontexts)
+        # @inline setfield(pc, :subcontexts, new_subcontexts)
+        return @inline ProcessContext(new_subcontexts, @inline getregistry(pc))
     end
 end
 
