@@ -11,6 +11,13 @@ existing runtime types already provided by the package. Do not add custom
 runtime behavior here: no new execution wrappers, no custom stepping/init
 logic, no hidden runtime carrier types, and no special-case runtime hooks.
 
+In particular, this file should almost never manufacture `IdentifiableAlgo`
+objects itself. Identity/key assignment belongs to the normal constructor,
+registry, and runtime matching layers. The DSL should lower to the raw entities
+the user wrote, plus ordinary `:key => value`, `Route(...)`, and `Share(...)`
+surface syntax, and then let the existing runtime machinery relate those raw
+entities to keyed registrations later.
+
 If some DSL syntax needs capabilities that the existing constructor/type surface
 cannot express, add those facilities elsewhere in the package first and then
 lower to them from this file.
@@ -82,6 +89,30 @@ the DSL block:
 
 The DSL must not impose extra constructor restrictions on aliases beyond normal
 Julia syntax.
+
+Identity/keying constraint
+--------------------------
+
+The DSL may emit keyed constructor entries like:
+
+- `:name => algo`
+
+because that is part of the ordinary `CompositeAlgorithm` / `Routine`
+constructor surface.
+
+But outside of those constructor entries, the DSL should keep using raw
+entities:
+
+- `Route(raw_source => raw_target, ...)`
+- `Share(raw_source, raw_target)`
+- `@all(alias...)` lowers to a raw source entity, not an `IdentifiableAlgo`
+
+Why: keyed/identifiable wrappers are runtime registration artifacts. The normal
+matching system is supposed to make keyed registrations comparable to the raw
+entities they came from. If the macro manufactures its own `IdentifiableAlgo`
+wrappers, it risks creating identities that disagree with what the runtime
+would have registered on its own, especially for loop algorithms and nested
+DSL-produced entities.
 """
 
 """Internal resolved representation used while expanding the DSL."""
@@ -758,7 +789,13 @@ Supported forms:
 - `@all(source)`
 - `@all(source...)`
 
-The source may be a plain algorithm/type name or a previously declared DSL alias.
+The source may be a plain algorithm/type name or a previously declared DSL
+alias.
+
+Important: this helper must return the raw source entity. It must not wrap the
+source in `IdentifiableAlgo`, because `@all(...)` is just syntax for a normal
+`Share(raw_source, raw_target)` option. Runtime registration/matching is
+responsible for comparing that raw source against any keyed identity later.
 """
 function _dsl_parse_all_share_arg(alias_map, arg)
     arg isa Expr && arg.head == :macrocall && arg.args[1] == Symbol("@all") || error("Invalid share syntax `$arg`.")
@@ -771,7 +808,7 @@ function _dsl_parse_all_share_arg(alias_map, arg)
     end
 
     resolved_source, source_name = _dsl_rewrite_entry_root(alias_map, source_expr)
-    return source_name == Symbol() ? resolved_source : :(Processes.IdentifiableAlgo($(esc(resolved_source)), $(QuoteNode(source_name))))
+    return source_name == Symbol() ? resolved_source : esc(resolved_source)
 end
 
 """
@@ -952,6 +989,7 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
                 # wrapped, while ProcessAlgorithms/ProcessStates go through the
                 # normal entity route path. Keep the macro as syntax lowering only.
                 parsed_function = _dsl_parse_function_call(alias_map, context_map, inner, known_outputs)
+                inputs, shares = _dsl_parse_entity_call_args(alias_map, context_map, args, known_outputs)
                 spec_expr, alias_name = _dsl_rewrite_entry_root(alias_map, callee)
                 (
                     kind = :keyword_call,
@@ -959,8 +997,8 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
                     alias_name,
                     positional_specs = (),
                     routed_positional_inputs = (),
-                    inputs = parsed_function.inputs,
-                    shares = (),
+                    inputs = isempty(shares) ? parsed_function.inputs : inputs,
+                    shares,
                     keyword_specs = parsed_function.keyword_specs,
                 )
             end
@@ -1016,9 +1054,19 @@ function _dsl_algorithm_entry_expr(alias_name::Symbol)
     alias_name == Symbol() ? :(_dsl_resolved.entity) : :($(QuoteNode(alias_name)) => _dsl_resolved.entity)
 end
 
-"""Emit the share endpoint expression matching the algorithm identity that will be registered."""
+"""
+Emit the raw share endpoint expression matching the eventual constructor entry.
+
+Shares are expressed in terms of raw entities. The runtime matching layer is
+responsible for relating those raw entities to keyed registrations later, so the
+DSL must not manufacture `IdentifiableAlgo` wrappers here.
+
+This helper intentionally ignores `alias_name`: aliases only influence the
+constructor entry (`:alias => entity`). They should not change the share
+endpoint expression, which must remain the raw entity.
+"""
 function _dsl_share_endpoint_expr(alias_name::Symbol)
-    alias_name == Symbol() ? :(_dsl_resolved.entity) : :(Processes.IdentifiableAlgo(_dsl_resolved.entity, $(QuoteNode(alias_name))))
+    :(_dsl_resolved.entity)
 end
 
 """
@@ -1104,6 +1152,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     inputs_expr = _dsl_inputs_expr(parsed.inputs)
     customname = _dsl_customname(parsed.spec_expr, parsed.alias_name)
     algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
+    share_target_expr = _dsl_share_endpoint_expr(parsed.alias_name)
 
     if parsed.kind == :keyword_call
         return quote
@@ -1117,6 +1166,9 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             )
             push!(_dsl_algos, $algo_entry_expr)
             push!(_dsl_specification, Int($schedule_expr))
+            $(map(parsed.shares) do share_source
+                :(push!(_dsl_options, Processes.Share($(share_source), $share_target_expr)))
+            end...)
             Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_resolved.entity, _dsl_resolved.inputs)
             Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_resolved.entity, _dsl_outputs)
         end
@@ -1358,6 +1410,14 @@ Direct `c.field` access is interpreted as a reference to the nested inline
 state owned by that algorithm, so `n.changeable_seed` lowers like routing from
 `capture_noise._state` with source `:changeable_seed`.
 
+Full-context shares:
+- `Algo(@all(source))`
+- `Algo(@all(alias...))`
+
+`@all(...)` lowers to a normal `Share(raw_source, raw_target)` option. The DSL
+does not manufacture `IdentifiableAlgo` wrappers for either endpoint; keyed
+matching is left to the normal runtime registration logic.
+
 Scheduling:
 - `x = @interval n Algo(...)`
 - `x = @every n Algo(...)`
@@ -1409,6 +1469,7 @@ Examples:
 - `y = @repeat 5 begin ... end`
 - `z = f(value; scale = 2)`
 - `@context c = @repeat 2 algo()`
+- `Damper(@all(osc...))`
 - `PickRandomSeed(targetseed = n.changeable_seed)`
 - `@Routine :print begin ... end`
 """

@@ -53,7 +53,7 @@ function _subcontext_var_lines(sc::SubContext; io::IO = stdout)
             push!(lines, "shared: " * join(shared_names, ", "))
         end
     end
-    data = get_data(sc)
+    data = getdata(sc)
     data_names = propertynames(data)
     if isempty(data_names)
         push!(lines, "vars: ∅")

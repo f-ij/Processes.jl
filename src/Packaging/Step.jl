@@ -5,7 +5,6 @@
 #     end
 # end
 
-@inline filter_nt(nt::NT, keys...) where NT = Base.structdiff(nt, NamedTuple{tuple(keys...)})
 
 function init(pack::PackagedAlgo, context::C) where C <: AbstractContext
     all_entities = get_processentities(pack)

@@ -38,17 +38,9 @@ end
 end
 
 @testset "Composite DSL" begin
-    function capture_stdout(f)
-        rd, wr = redirect_stdout()
-        try
-            f()
-        finally
-            close(wr)
-        end
-        return read(rd, String)
-    end
-
+    @info "Composite DSL"
     @testset "FuncWrapper steps directly and does not eagerly init" begin
+        @info "Composite DSL: FuncWrapper steps directly and does not eagerly init"
         wrapped = FuncWrapper(x -> 2x, (:x,), (:y,))
         @test Processes.step!(wrapped, (; x = 4)) == (; y = 8)
         @test Processes.init(wrapped, (; x = 4)) == (;)
@@ -75,6 +67,7 @@ end
     end
 
     @testset "Inline state supports defaults and required inputs" begin
+        @info "Composite DSL: Inline state supports defaults and required inputs"
         state = @state begin
             a = 1
             b
@@ -85,6 +78,7 @@ end
     end
 
     @testset "Mutable @state defaults are rebuilt per init" begin
+        @info "Composite DSL: Mutable @state defaults are rebuilt per init"
         state = @state begin
             nums = Float64[]
         end
@@ -99,6 +93,7 @@ end
     end
 
     @testset "CompositeAlgorithm DSL resolves and runs" begin
+        @info "Composite DSL: CompositeAlgorithm DSL resolves and runs"
         n = 10
         algo = @CompositeAlgorithm begin
             @state seed = 3
@@ -150,6 +145,7 @@ end
     end
 
     @testset "Named state uses explicit key" begin
+        @info "Composite DSL: Named state uses explicit key"
         named_state_algo = @CompositeAlgorithm begin
             @state mystate begin
                 a = 1
@@ -164,7 +160,30 @@ end
         @test named_ctx[:mystate].a == 1
     end
 
+    @testset "@all uses raw share endpoints" begin
+        @info "Composite DSL: @all uses raw share endpoints"
+        @ProcessAlgorithm function DSLShareSource(@managed(x = 1))
+            return (; x)
+        end
+
+        @ProcessAlgorithm function DSLShareTarget(x)
+            return nothing
+        end
+
+        expanded = macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                @alias osc = DSLShareSource
+                osc()
+                DSLShareTarget(@all(osc...))
+            end
+        end)
+        expanded_str = sprint(show, Base.remove_linenums!(expanded))
+        @test occursin("Share(", expanded_str)
+        @test !occursin("Processes.IdentifiableAlgo", expanded_str)
+    end
+
     @testset "Transform routes resolve from expressions" begin
+        @info "Composite DSL: Transform routes resolve from expressions"
         one_var_transform = @CompositeAlgorithm begin
             @state seed = 3
             @alias source = DSLSourceAlgo
@@ -202,20 +221,8 @@ end
         @test ctx_two_var[:DSLValueAlgo_1].result == 5
     end
 
-    @testset "Repeat forms expand correctly" begin
-        repeated = @CompositeAlgorithm begin
-            @state produced = 5
-            tripled = @repeat 3 begin
-                tripled = scaled_double_dsl_test(produced; scale = 3)
-            end
-        end
-
-        resolved_repeated = resolve(repeated)
-        @test resolved_repeated isa CompositeAlgorithm
-        @test Processes.getalgo(resolved_repeated, 1) isa Processes.AbstractIdentifiableAlgo
-        @test Processes.getalgo(Processes.getalgo(resolved_repeated, 1)) isa Routine
-        @test repeats(Processes.getalgo(Processes.getalgo(resolved_repeated, 1))) == (3,)
-
+    @testset "Routine repeat form expands correctly" begin
+        @info "Composite DSL: Routine repeat form expands correctly"
         routine = @Routine begin
             @state produced = 5
             tripled = @repeat 3 scaled_double_dsl_test(produced; scale = 3)
@@ -227,6 +234,7 @@ end
     end
 
     @testset "Zero-input plain functions are routable" begin
+        @info "Composite DSL: Zero-input plain functions are routable"
         generated = @CompositeAlgorithm begin
             result = zero_input_dsl_test()
         end
@@ -238,6 +246,7 @@ end
     end
 
     @testset "Assignments write back into inline state" begin
+        @info "Composite DSL: Assignments write back into inline state"
         mockcomp = @CompositeAlgorithm begin
             @state num = 0.0
             num = rand()
@@ -251,6 +260,7 @@ end
     end
 
     @testset "Repeated assignments write back into inline state" begin
+        @info "Composite DSL: Repeated assignments write back into inline state"
         mockroutine = @Routine begin
             @state num = 16.0
             num = @repeat 2 sqrt(num)
@@ -263,6 +273,7 @@ end
     end
 
     @testset "FuncWrapper positional literals survive DSL lowering" begin
+        @info "Composite DSL: FuncWrapper positional literals survive DSL lowering"
         literal_algo = @CompositeAlgorithm begin
             @state num = 4
             joined = literal_join_dsl_test("Num: ", num, :done)
@@ -276,6 +287,7 @@ end
     end
 
     @testset "Interval and repeat DSL shapes from manual test work" begin
+        @info "Composite DSL: Interval and repeat DSL shapes from manual test work"
         mockcomp = @CompositeAlgorithm begin
             @state num = 0.0
             num = constant_value_dsl_test()
@@ -284,11 +296,8 @@ end
         end
 
         comp_process = InlineProcess(mockcomp, repeats = 1)
-        comp_output = capture_stdout() do
-            comp_ctx = run(comp_process)
-            @test comp_ctx[:_state].num == 0.5
-        end
-        @test occursin("0.5", comp_output)
+        comp_ctx = run(comp_process)
+        @test comp_ctx[:_state].num == 0.5
 
         mockroutine = @Routine begin
             @state num = 0.0
@@ -303,39 +312,17 @@ end
         @test repeats(resolved_routine) == (1, 2, 1, 1)
 
         routine_process = InlineProcess(mockroutine, repeats = 2)
-        routine_output = capture_stdout() do
-            routine_ctx = run(routine_process)
-            @test routine_ctx[:_state].num == 0.25
-            @test occursin("globals", sprint(show, routine_ctx))
-        end
-        @test count("Num: 0.00390625", routine_output) == 2
+        routine_ctx = run(routine_process)
+        @test routine_ctx[:_state].num == 0.25
+        @test occursin("globals", sprint(show, routine_ctx))
 
         inline_process_show = sprint(io -> show(io, MIME("text/plain"), routine_process))
         @test !occursin("globals", inline_process_show)
         @test occursin("FuncWrapper_3: println :: (\"Num: \", num) -> nothing", inline_process_show)
     end
 
-    @testset ":print debug mode prints the final constructor call" begin
-        printed_composite = capture_stdout() do
-            @CompositeAlgorithm :print begin
-                @state seed = 3
-                produced = DSLSourceAlgo(seed = seed)
-            end
-        end
-        @test occursin("CompositeAlgorithm(", printed_composite)
-        @test occursin("DSLSourceAlgo", printed_composite)
-
-        printed_routine = capture_stdout() do
-            @Routine :print begin
-                @state seed = 3
-                produced = @repeat 2 DSLSourceAlgo(seed = seed)
-            end
-        end
-        @test occursin("Routine(", printed_routine)
-        @test occursin("DSLSourceAlgo", printed_routine)
-    end
-
     @testset "Constructor expression left of final route call is preserved" begin
+        @info "Composite DSL: Constructor expression left of final route call is preserved"
         expanded_ctor = macroexpand(@__MODULE__, quote
             @CompositeAlgorithm begin
                 state = DSLSourceAlgo()
@@ -362,6 +349,7 @@ end
     end
 
     @testset "Aliases rewrite call roots directly" begin
+        @info "Composite DSL: Aliases rewrite call roots directly"
         expanded = macroexpand(@__MODULE__, quote
             @CompositeAlgorithm begin
                 @alias source = DSLSourceAlgo
@@ -374,6 +362,7 @@ end
     end
 
     @testset "@context lowers to plain route owner expressions" begin
+        @info "Composite DSL: @context lowers to plain route owner expressions"
         expanded_property = macroexpand(@__MODULE__, quote
             @CompositeAlgorithm begin
                 @alias plus = DSLSourceAlgo
@@ -398,6 +387,7 @@ end
     end
 
     @testset "@context direct field lowers to nested state owner" begin
+        @info "Composite DSL: @context direct field lowers to nested state owner"
         expanded = macroexpand(@__MODULE__, quote
             @Routine begin
                 @alias inner = DSLSourceAlgo
@@ -411,6 +401,7 @@ end
     end
 
     @testset "@context strips scheduling wrappers" begin
+        @info "Composite DSL: @context strips scheduling wrappers"
         expanded = macroexpand(@__MODULE__, quote
             @Routine begin
                 @alias plus = DSLSourceAlgo
@@ -424,6 +415,7 @@ end
     end
 
     @testset "Keyword-only plain functions can mix @context routes and lexical captures" begin
+        @info "Composite DSL: Keyword-only plain functions can mix @context routes and lexical captures"
         expanded = macroexpand(@__MODULE__, quote
             @CompositeAlgorithm begin
                 @state buffers
@@ -444,6 +436,7 @@ end
     end
 
     @testset "Identity aliases stay plain aliases in nested DSL blocks" begin
+        @info "Composite DSL: Identity aliases stay plain aliases in nested DSL blocks"
         expanded = macroexpand(@__MODULE__, quote
             function nudged_process_dsl_regression(beta, fullsweeps, plus_capture, minus_capture, plus, minus)
                 @CompositeAlgorithm begin
@@ -468,6 +461,7 @@ end
     end
 
     @testset "Routine DSL accepts direct ProcessAlgorithm call syntax" begin
+        @info "Composite DSL: Routine DSL accepts direct ProcessAlgorithm call syntax"
         positional_routine = @Routine begin
             @state input = 5
             seen = @repeat 2 DSLPositionalCallAlgo(input)

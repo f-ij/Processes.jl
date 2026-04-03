@@ -67,7 +67,7 @@ end
 
 function _scope_type_snapshot(scope_type::Type)
     if scope_type <: SubContext
-        return _ntype_snapshot(get_datatype(scope_type))
+        return _ntype_snapshot(getdatatype(scope_type))
     elseif scope_type <: NamedTuple
         return _ntype_snapshot(scope_type)
     else

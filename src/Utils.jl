@@ -112,3 +112,5 @@ Base.@constprop :aggressive @generated function merge_nested_namedtuples(base::N
 
     return Expr(:tuple, Expr(:parameters, outer_fields...))
 end
+
+@inline filter_nt(nt::NT, keys...) where NT = @inline Base.structdiff(nt, NamedTuple{tuple(keys...)})

@@ -34,7 +34,7 @@ end
         CopyManagedAccumulator,
         Input(CopyManagedAccumulator, :start => 1, :sink => template_sink),
         Override(CopyManagedAccumulator, :delta => 2);
-        lifetime = 3,
+        repeats = 3,
     )
 
     sink_a = Int[]
@@ -73,7 +73,7 @@ end
         CopyManagedAccumulator,
         Input(CopyManagedAccumulator, :start => 0, :sink => Int[]),
         Override(CopyManagedAccumulator, :delta => 3);
-        lifetime = 4,
+        repeats = 4,
     )
 
     jobs = [
