@@ -112,9 +112,10 @@ end
         init = Processes.init(merged, (; scale = 3.0))
 
         @test init == (; seed = 4, scale = 3.0, buffer = Float64[], offset = 2)
-        @test_throws ErrorException merge(left, @state begin
+        overlap_merged = @test_logs (:warn, r"Overlapping GeneralState field names") merge(left, @state begin
             seed = 7
         end)
+        @test Processes.init(overlap_merged, (; scale = 3.0)) == (; seed = 7, scale = 3.0)
     end
 
     @testset "CompositeAlgorithm DSL resolves and runs" begin
