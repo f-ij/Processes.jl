@@ -105,7 +105,7 @@ function Base.:(==)(tm1::TypeMatcher{T1}, tm2::TypeMatcher{T2}) where {T1,T2}
 end
 
 # Match with any isbits value/any type parameter, basically a Val type
-struct ValMatcher{V} end
+struct ValMatcher{V} <: AbstractMatcher{V} end
 ValMatcher(v) = ValMatcher{v}()
 # match_by(sm::Union{ValMatcher{V}, Type{ValMatcher{V}}}) where V = V
 function Base.:(==)(sm::Union{ValMatcher{V}, Type{ValMatcher{V}}}, a) where V
