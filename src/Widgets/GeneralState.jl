@@ -5,10 +5,19 @@ General-purpose ProcessState that acts only as an initialization scheme.
 
 `Fields` and `Required` are stored in the type, while `defaults_builder`
 produces the optional defaults each time `init` runs.
+
+General states have custom matching behavior that allows them to merge with other general states
 """
 struct GeneralState{Fields, Required, Builder} <: ProcessState
     defaults_builder::Builder
 end
+
+
+# TODO Maybe make it match with any general state where one has a subset of the fields of the other? 
+"""
+General states match by key for now
+"""
+match_by(ia::Union{IdentifiableAlgo{<:GeneralState}, Type{<:IdentifiableAlgo{<:GeneralState}}}) = getkey(ia)
 
 const InlineState = GeneralState
 

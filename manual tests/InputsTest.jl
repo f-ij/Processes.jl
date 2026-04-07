@@ -13,9 +13,12 @@ comp = @CompositeAlgorithm begin
         x
         sum = 0.0
     end
-    y = addstate()
-    sum = plusnums(x,y)
+    num = addstate()
+    sum = plusnums(x,num)
 end
 
 
-p = Process(comp, Input(:mystate, x = 1.0), Input(addstate, num = 1.0))
+p = Process(comp, Input(:mystate, x = 1.0), Input(addstate, num = 1.0), repeat = 2)
+run(p)
+
+c = fetch(p)
