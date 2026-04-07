@@ -85,7 +85,7 @@ Matches BOTH with the object type or the match_by of the object type
 """
 struct TypeMatcher{T} <: AbstractMatcher{T} end
 TypeMatcher(t::Type) = TypeMatcher{t}()
-match_by(tm::TypeMatcher{T}) where T = tm
+# match_by(tm::TypeMatcher{T}) where T = tm
 function Base.:(==)(tm::TypeMatcher{T}, a) where T
     if a isa Type
         return a == T || match(a, T)
@@ -99,4 +99,21 @@ function Base.:(==)(a, tm::TypeMatcher{T}) where T
     else 
         return typeof(a) == T || match(typeof(a), T)
     end
+end
+function Base.:(==)(tm1::TypeMatcher{T1}, tm2::TypeMatcher{T2}) where {T1,T2}
+    return T1 == T2 || match(T1, T2)
+end
+
+# Match with any isbits value/any type parameter, basically a Val type
+struct ValMatcher{V} end
+ValMatcher(v) = ValMatcher{v}()
+# match_by(sm::Union{ValMatcher{V}, Type{ValMatcher{V}}}) where V = V
+function Base.:(==)(sm::Union{ValMatcher{V}, Type{ValMatcher{V}}}, a) where V
+    return V == a
+end
+function Base.:(==)(a, sm::Union{ValMatcher{V}, Type{ValMatcher{V}}}) where V
+    return V == a
+end
+function Base.:(==)(sm1::ValMatcher{V1}, sm2::ValMatcher{V2}) where {V1,V2}
+    return V1 == V2
 end

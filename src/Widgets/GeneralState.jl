@@ -17,7 +17,7 @@ end
 """
 General states match by key for now
 """
-match_by(ia::Union{IdentifiableAlgo{<:GeneralState}, Type{<:IdentifiableAlgo{<:GeneralState}}}) = getkey(ia)
+match_by(ia::Union{IdentifiableAlgo{<:GeneralState}, Type{<:IdentifiableAlgo{<:GeneralState}}}) = ValMatcher(getkey(ia))
 
 const InlineState = GeneralState
 
