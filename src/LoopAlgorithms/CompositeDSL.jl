@@ -375,6 +375,40 @@ function _dsl_parse_context_route_expr(context_map, ex)
     return nothing
 end
 
+"""Rewrite the root of a dotted/ref expression if it starts from a known alias."""
+function _dsl_rewrite_alias_owner_root(alias_map, ex)
+    if ex isa Symbol
+        binding = _dsl_alias_binding(alias_map, ex)
+        isnothing(binding) && return ex, false
+        return _dsl_known_owner_expr(binding.value, binding.name), true
+    elseif ex isa Expr && ex.head == :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
+        rewritten_base, changed = _dsl_rewrite_alias_owner_root(alias_map, ex.args[1])
+        return changed ? Expr(:., rewritten_base, ex.args[2]) : ex, changed
+    elseif ex isa Expr && ex.head == :ref && !isempty(ex.args)
+        rewritten_base, changed = _dsl_rewrite_alias_owner_root(alias_map, ex.args[1])
+        return changed ? Expr(:ref, rewritten_base, ex.args[2:end]...) : ex, changed
+    end
+    return ex, false
+end
+
+"""Extract a lowered route owner/source pair from a known alias field reference."""
+function _dsl_parse_alias_route_expr(alias_map, ex)
+    if ex isa Expr && ex.head == :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
+        source = ex.args[2].value
+        source isa Symbol || return nothing
+        owner, changed = _dsl_rewrite_alias_owner_root(alias_map, ex.args[1])
+        return changed ? (; owner, source) : nothing
+    end
+    return nothing
+end
+
+"""Extract a lowered route owner/source pair from a known alias or `@context` field reference."""
+function _dsl_parse_owned_route_expr(alias_map, context_map, ex)
+    parsed = _dsl_parse_context_route_expr(context_map, ex)
+    isnothing(parsed) || return parsed
+    return _dsl_parse_alias_route_expr(alias_map, ex)
+end
+
 """
 Build the transform function for a routed expression.
 
@@ -717,10 +751,10 @@ function _dsl_parse_function_positional_arg(alias_map, context_map, arg, known_o
         return (; kind = :literal_symbol, value = arg.value), nothing
     end
 
-    context_route = _dsl_parse_context_route_expr(context_map, arg)
-    if !isnothing(context_route)
+    owned_route = _dsl_parse_owned_route_expr(alias_map, context_map, arg)
+    if !isnothing(owned_route)
         routed_name = gensym(Symbol(:dsl_pos_, index))
-        routed_input = (; kind = :context_simple, owner = context_route.owner, source = context_route.source, destination = routed_name)
+        routed_input = (; kind = :context_simple, owner = owned_route.owner, source = owned_route.source, destination = routed_name)
         return (; kind = :routed, value = routed_name), routed_input
     end
 
@@ -744,9 +778,9 @@ function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set
             return
         end
 
-        context_route = value isa Symbol ? nothing : _dsl_parse_context_route_expr(context_map, value)
-        if !isnothing(context_route)
-            push!(routed_keyword_inputs, (; kind = :context_simple, owner = context_route.owner, source = context_route.source, destination = name))
+        owned_route = value isa Symbol ? nothing : _dsl_parse_owned_route_expr(alias_map, context_map, value)
+        if !isnothing(owned_route)
+            push!(routed_keyword_inputs, (; kind = :context_simple, owner = owned_route.owner, source = owned_route.source, destination = name))
             push!(keyword_specs, (; name, routed = true, value = name))
             return
         end
@@ -901,9 +935,9 @@ function _dsl_split_route_kwargs(alias_map, context_map, kwargs, known_outputs::
             continue
         end
 
-        context_route = _dsl_parse_context_route_expr(context_map, source)
-        if !isnothing(context_route)
-            push!(inputs, (; kind = :context_simple, owner = context_route.owner, source = context_route.source, destination))
+        owned_route = _dsl_parse_owned_route_expr(alias_map, context_map, source)
+        if !isnothing(owned_route)
+            push!(inputs, (; kind = :context_simple, owner = owned_route.owner, source = owned_route.source, destination))
             continue
         end
 
@@ -1133,6 +1167,23 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     if stmt isa Expr && stmt.head == :(=)
         outputs = _dsl_parse_output_symbols(stmt.args[1])
         rhs = stmt.args[2]
+    end
+
+    owned_route = _dsl_parse_owned_route_expr(alias_map, context_map, rhs)
+    if !isnothing(owned_route)
+        length(outputs) == 1 || error("Owned field references like `alias.field` can only bind to one output symbol, e.g. `state = dynamics.state`.")
+        output = only(outputs)
+        output == owned_route.source || error("Owned field aliasing currently requires the output name to match the field name. Use `$(owned_route.source) = ...` for `$(repr(rhs))`.")
+        return quote
+            local _dsl_output = $(QuoteNode(output))
+            local _dsl_owner = $(esc(owned_route.owner))
+            if haskey(_dsl_state_owners, _dsl_output)
+                push!(_dsl_options, Route(_dsl_owner => _dsl_state_owners[_dsl_output], _dsl_output => _dsl_output))
+                _dsl_producers[_dsl_output] = _dsl_state_owners[_dsl_output]
+            else
+                _dsl_producers[_dsl_output] = _dsl_owner
+            end
+        end
     end
 
     parsed = _dsl_parse_invocation(alias_map, context_map, rhs, known_outputs)
@@ -1441,6 +1492,10 @@ Context aliases:
 - `x = f(value = c.seed)`
 - `x = f(value = c.subalgo.buffer)`
 - `x = f(value = c[subalgo].buffer)`
+- `consumer(input = dynamics.state)`
+- `value = f(dynamics.state)`
+- `consumer(input = c1.plus_capture.captured)`
+- `state = dynamics.state`
 
 `@context` is only a macro-time alias for later references. The executable DSL
 statement is still built from the original right-hand side expression, so
@@ -1450,6 +1505,12 @@ but does not assign the nested algorithm the key `:c`.
 Direct `c.field` access is interpreted as a reference to the nested inline
 state owned by that algorithm, so `n.changeable_seed` lowers like routing from
 `capture_noise._state` with source `:changeable_seed`.
+
+Direct owned-field access like `dynamics.state` is also accepted in route
+positions. It routes directly from the known `:dynamics` owner with source
+`:state`, even if no earlier statement bound `state = dynamics()`. The special
+binding form `state = dynamics.state` exposes that same owned field under the
+plain DSL output name `state` for later statements.
 
 Full-context shares:
 - `Algo(@all(source))`

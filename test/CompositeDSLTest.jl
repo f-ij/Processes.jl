@@ -6,6 +6,7 @@ struct DSLCombineAlgo <: Processes.ProcessAlgorithm end
 struct DSLSinkAlgo <: Processes.ProcessAlgorithm end
 struct DSLValueAlgo <: Processes.ProcessAlgorithm end
 struct DSLNestedSourceAlgo <: Processes.ProcessAlgorithm end
+struct DSLHeldStateAlgo <: Processes.ProcessAlgorithm end
 
 function Processes.step!(::DSLSourceAlgo, context)
     return (; produced = 2, passthrough = context.seed)
@@ -25,6 +26,14 @@ end
 
 function Processes.step!(::DSLNestedSourceAlgo, context)
     return (; captured = 4)
+end
+
+function Processes.init(::DSLHeldStateAlgo, context)
+    return (; state = 11)
+end
+
+function Processes.step!(::DSLHeldStateAlgo, context)
+    return (; state = context.state)
 end
 
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
@@ -298,5 +307,45 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[wrapper_key].result == 4
+    end
+
+    @testset "Alias field routes work before later output bindings" begin
+        @info "Composite DSL: Alias field routes work before later output bindings"
+        algo = @Routine begin
+            @alias dynamics = DSLHeldStateAlgo()
+            seen = DSLValueAlgo(value = dynamics.state)
+            state = dynamics()
+        end
+
+        resolved = resolve(algo)
+        sink = Processes.getalgo(resolved, 1)
+        sink_key = Processes.getkey(sink)
+        routes = Processes.getoptions(resolved)[sink_key]
+        @test length(routes) == 1
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[sink_key].result == 11
+        @test ctx[:dynamics].state == 11
+    end
+
+    @testset "state = dynamics.state aliases a known owned field" begin
+        @info "Composite DSL: state = dynamics.state aliases a known owned field"
+        algo = @Routine begin
+            @alias dynamics = DSLHeldStateAlgo()
+            state = dynamics.state
+            seen = DSLValueAlgo(value = state)
+            state = dynamics()
+        end
+
+        resolved = resolve(algo)
+        sink = Processes.getalgo(resolved, 1)
+        sink_key = Processes.getkey(sink)
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[sink_key].result == 11
     end
 end
