@@ -100,12 +100,23 @@ The DSL may emit keyed constructor entries like:
 because that is part of the ordinary `CompositeAlgorithm` / `Routine`
 constructor surface.
 
-But outside of those constructor entries, the DSL should keep using raw
-entities:
+But outside of those constructor entries, the default should still be to keep
+using raw entities:
 
 - `Route(raw_source => raw_target, ...)`
 - `Share(raw_source, raw_target)`
-- `@all(alias...)` lowers to a raw source entity, not an `IdentifiableAlgo`
+
+There is one deliberate exception: if the DSL already knows the final stable key
+for an endpoint at expansion time, it should prefer the keyed owner expression
+over the raw value. In practice this means:
+
+- inline `@state` owners should use their known state key (for example `:_state`)
+- named aliases used as share/route endpoints should use their known alias key
+
+Why: once the key is already part of the DSL syntax, preserving that keyed
+identity in emitted routes/options makes later composition and renaming work
+through key replacement instead of depending on raw-value matching. When no
+stable key is known yet, the DSL should continue to fall back to raw entities.
 
 Why: keyed/identifiable wrappers are runtime registration artifacts. The normal
 matching system is supposed to make keyed registrations comparable to the raw
@@ -485,7 +496,13 @@ function _composite_dsl_bind_outputs!(options::Vector{Any}, producers::Dict{Symb
     return producers
 end
 
-"""Wrap an entity in a keyed owner when the DSL already knows its final name."""
+"""
+Wrap an entity in a keyed owner when the DSL already knows its final name.
+
+Internal rule: known alias/state keys should be preferred over raw values in
+emitted route/share ownership metadata, because those keyed endpoints can later
+be renamed during composition.
+"""
 function _dsl_known_owner_expr(entity_expr, name::Symbol)
     name == Symbol() && return entity_expr
     return :(Processes.IdentifiableAlgo($entity_expr, $(QuoteNode(name))))
