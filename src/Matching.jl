@@ -117,3 +117,32 @@ end
 function Base.:(==)(sm1::ValMatcher{V1}, sm2::ValMatcher{V2}) where {V1,V2}
     return V1 == V2
 end
+
+struct MultiMatcher{A} <: AbstractMatcher{A} end
+function getmatchers(mm::MultiMatcher{A}) where A
+    return A
+end
+"""
+Destructure any multi matchers and flatten them into a single tuple of matchers
+"""
+function MultiMatcher(matchers...)
+    flat_matchers = []
+    for m in matchers
+        if m isa MultiMatcher
+            append!(flat_matchers, getmatchers(m))
+        else
+            push!(flat_matchers, m)
+        end
+    end
+    MultiMatcher(tuple(flat_matchers...))
+end
+
+function Base.:(==)(mm::MultiMatcher, a)
+    return any(x -> x == a, getmatchers(mm))
+end
+function Base.:(==)(a, mm::MultiMatcher)
+    return any(x -> x == a, getmatchers(mm))
+end
+function Base.:(==)(mm1::MultiMatcher{A}, mm2::MultiMatcher{B}) where {A,B}
+    return any(x -> any(y -> x == y, getmatchers(mm2)), getmatchers(mm1))
+end

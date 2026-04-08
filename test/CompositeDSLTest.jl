@@ -186,8 +186,8 @@ end
         @test named_ctx[:mystate].a == 1
     end
 
-    @testset "@all uses raw share endpoints" begin
-        @info "Composite DSL: @all uses raw share endpoints"
+    @testset "@all uses known alias keys in share endpoints" begin
+        @info "Composite DSL: @all uses known alias keys in share endpoints"
         @ProcessAlgorithm function DSLShareSource(@managed(x = 1))
             return (; x)
         end
@@ -205,7 +205,7 @@ end
         end)
         expanded_str = sprint(show, Base.remove_linenums!(expanded))
         @test occursin("Share(", expanded_str)
-        @test !occursin("Processes.IdentifiableAlgo", expanded_str)
+        @test occursin("IdentifiableAlgo", expanded_str)
     end
 
     @testset "Transform routes resolve from expressions" begin
@@ -257,6 +257,22 @@ end
         resolved_routine = resolve(routine)
         @test resolved_routine isa Routine
         @test repeats(resolved_routine) == (3,)
+    end
+
+    @testset "Nested DSL state writeback resolves through keyed _state" begin
+        @info "Composite DSL: Nested DSL state writeback resolves through keyed _state"
+        inner = @Routine begin
+            @state stored = 0
+            stored = zero_input_dsl_test()
+        end
+
+        outer = @CompositeAlgorithm begin
+            @state outer_flag = 1
+            inner
+        end
+
+        resolved_outer = resolve(outer)
+        @test resolved_outer isa CompositeAlgorithm
     end
 
     @testset "FuncWrapper positional args accept @context property routes" begin

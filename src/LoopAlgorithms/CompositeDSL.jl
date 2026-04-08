@@ -485,6 +485,12 @@ function _composite_dsl_bind_outputs!(options::Vector{Any}, producers::Dict{Symb
     return producers
 end
 
+"""Wrap an entity in a keyed owner when the DSL already knows its final name."""
+function _dsl_known_owner_expr(entity_expr, name::Symbol)
+    name == Symbol() && return entity_expr
+    return :(Processes.IdentifiableAlgo($entity_expr, $(QuoteNode(name))))
+end
+
 """Build the general state expression used by both `@state` and the block DSL."""
 function _dsl_expand_state_expr(fields)
     field_names = Expr(:tuple, [QuoteNode(field.name) for field in fields]...)
@@ -565,11 +571,13 @@ function _dsl_state_setup_expr(state_fields, state_name::Symbol)
 
     state_expr = _dsl_expand_state_expr(state_fields)
     outputs_expr = Expr(:tuple, [QuoteNode(field.name) for field in state_fields]...)
+    state_owner_expr = _dsl_known_owner_expr(:(_dsl_state), state_name)
     return quote
         local _dsl_state = $state_expr
         push!(_dsl_states, $(QuoteNode(state_name)) => _dsl_state)
-        Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_state, $outputs_expr)
-        Processes._composite_dsl_register_state_outputs!(_dsl_state_owners, _dsl_state, $outputs_expr)
+        local _dsl_state_owner = $state_owner_expr
+        Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_state_owner, $outputs_expr)
+        Processes._composite_dsl_register_state_outputs!(_dsl_state_owners, _dsl_state_owner, $outputs_expr)
     end
 end
 
@@ -822,7 +830,7 @@ function _dsl_parse_all_share_arg(alias_map, arg)
     end
 
     resolved_source, source_name = _dsl_rewrite_entry_root(alias_map, source_expr)
-    return source_name == Symbol() ? resolved_source : esc(resolved_source)
+    return _dsl_known_owner_expr(esc(resolved_source), source_name)
 end
 
 """
@@ -1069,18 +1077,15 @@ function _dsl_algorithm_entry_expr(alias_name::Symbol)
 end
 
 """
-Emit the raw share endpoint expression matching the eventual constructor entry.
+Emit the share/route owner expression matching the eventual constructor entry.
 
-Shares are expressed in terms of raw entities. The runtime matching layer is
-responsible for relating those raw entities to keyed registrations later, so the
-DSL must not manufacture `IdentifiableAlgo` wrappers here.
-
-This helper intentionally ignores `alias_name`: aliases only influence the
-constructor entry (`:alias => entity`). They should not change the share
-endpoint expression, which must remain the raw entity.
+When the DSL already knows a stable alias/key, use that keyed wrapper directly so
+later composition/renaming can update the reference without relying on raw-value
+matching. Otherwise fall back to the raw entity and let constructor-time naming
+resolve it later.
 """
 function _dsl_share_endpoint_expr(alias_name::Symbol)
-    :(_dsl_resolved.entity)
+    _dsl_known_owner_expr(:(_dsl_resolved.entity), alias_name)
 end
 
 """
@@ -1127,36 +1132,39 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             # Resolve the user-facing DSL entity into a normal algorithm/state
             # object plus the routed input metadata the builder needs.
             local _dsl_resolved = Processes._resolve_composite_dsl_entity($(esc(parsed.spec_expr)), $inputs_expr, _dsl_outputs, Val{$(QuoteNode(customname))}())
+            local _dsl_owner = $share_target_expr
             if _dsl_resolved isa Processes._CompositeDSLResolved{:state}
                 # Inline states are stored separately and claim ownership of
                 # their outputs immediately.
                 push!(_dsl_states, _dsl_resolved.entity)
-                Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_resolved.entity, _dsl_outputs)
+                Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_owner, _dsl_outputs)
             else
                 # Algorithms are appended to the constructor argument list and
                 # then wired into the routing tables.
                 push!(_dsl_algos, $algo_entry_expr)
                 push!(_dsl_specification, Int($schedule_expr))
                 $(map(parsed.shares) do share_source
-                    :(push!(_dsl_options, Processes.Share($(share_source), $share_target_expr)))
+                    :(push!(_dsl_options, Processes.Share($(share_source), _dsl_owner)))
                 end...)
-                Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_resolved.entity, _dsl_resolved.inputs)
-                Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_resolved.entity, _dsl_outputs)
+                Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+                Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
             end
         end
     end
 
     if parsed.kind == :resolved_expr
         algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
+        owner_expr = _dsl_share_endpoint_expr(parsed.alias_name)
         return quote
             local _dsl_outputs = $outputs_expr
             # Repeated inner blocks already expand to one resolved entity, so the
             # outer builder only has to wire and register them.
             local _dsl_resolved = $(parsed.resolved_expr)
+            local _dsl_owner = $owner_expr
             push!(_dsl_algos, $algo_entry_expr)
             push!(_dsl_specification, Int($schedule_expr))
-            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_resolved.entity, _dsl_resolved.inputs)
-            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_resolved.entity, _dsl_outputs)
+            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
         end
     end
 
@@ -1178,13 +1186,14 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
                 _dsl_outputs,
                 Val{$(QuoteNode(customname))}(),
             )
+            local _dsl_owner = $share_target_expr
             push!(_dsl_algos, $algo_entry_expr)
             push!(_dsl_specification, Int($schedule_expr))
             $(map(parsed.shares) do share_source
-                :(push!(_dsl_options, Processes.Share($(share_source), $share_target_expr)))
+                :(push!(_dsl_options, Processes.Share($(share_source), _dsl_owner)))
             end...)
-            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_resolved.entity, _dsl_resolved.inputs)
-            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_resolved.entity, _dsl_outputs)
+            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
         end
     end
 
@@ -1201,10 +1210,11 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             $inputs_expr,
             Val{$(QuoteNode(customname))}(),
         )
+        local _dsl_owner = $share_target_expr
         push!(_dsl_algos, $algo_entry_expr)
         push!(_dsl_specification, Int($schedule_expr))
-        Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_resolved.entity, _dsl_resolved.inputs)
-        Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_resolved.entity, _dsl_outputs)
+        Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+        Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
     end
 end
 
