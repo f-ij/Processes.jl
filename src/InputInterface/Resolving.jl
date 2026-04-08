@@ -41,6 +41,9 @@ end
     if target_algo isa Symbol
         @assert haskey(reg, target_algo) "Target algorithm $(target_algo) not found in registry: $reg \n Cannot convert to Named"
         return (Named(typeof(ov), target_algo, get_vars(ov)),)
+    elseif target_algo isa Tuple #i.e. multiple targets for same variables
+        duplicated_ovs = map(t -> typeof(ov)(t, get_vars(ov)), target_algo)
+        return resolve(reg, duplicated_ovs...)
     end
 
     key = static_findkey(reg, target_algo)

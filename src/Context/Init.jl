@@ -6,6 +6,7 @@ reference. `inputs` are merged into that subcontext before `init`, and `override
 are merged afterwards.
 """
 Base.@constprop :aggressive function initcontext(context::ProcessContext, s::Symbol; inputs = (;), overrides = (;))
+    # TODO: TYPE INSTABLE
     reg = @inline getregistry(context)
     identified_algo = reg[s]
     return initcontext(context, identified_algo; inputs, overrides)
