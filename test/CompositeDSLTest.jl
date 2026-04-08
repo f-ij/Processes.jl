@@ -330,6 +330,27 @@ end
         @test ctx[:dynamics].state == 11
     end
 
+    @testset "ProcessAlgorithm direct-call positional args accept alias field routes" begin
+        @info "Composite DSL: ProcessAlgorithm direct-call positional args accept alias field routes"
+        algo = @Routine begin
+            @alias dynamics = DSLHeldStateAlgo()
+            DSLPositionalCallAlgo(dynamics.state)
+            state = dynamics()
+        end
+
+        resolved = resolve(algo)
+        sink = Processes.getalgo(resolved, 1)
+        sink_key = Processes.getkey(sink)
+        routes = Processes.getoptions(resolved)[sink_key]
+        @test length(routes) == 1
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[sink_key].seen == 11
+        @test ctx[:dynamics].state == 11
+    end
+
     @testset "state = dynamics.state aliases a known owned field" begin
         @info "Composite DSL: state = dynamics.state aliases a known owned field"
         algo = @Routine begin

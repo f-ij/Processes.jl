@@ -166,17 +166,6 @@ function _resolve_composite_dsl_algorithm_call(
     return _CompositeDSLResolved{:algo, typeof(resolved), typeof(routed_inputs)}(resolved, routed_inputs)
 end
 
-"""Retarget one direct-call ProcessAlgorithm route onto the declared argument name."""
-function _dsl_retarget_processalgorithm_direct_input(input, destination::Symbol)
-    if input.kind == :simple
-        return (; kind = :simple, source = input.source, destination)
-    elseif input.kind == :context_simple
-        return (; kind = :context_simple, owner = input.owner, source = input.source, destination)
-    end
-
-    error("Direct-call DSL syntax for ProcessAlgorithms does not accept transformed positional routing. Use `Algo(name = expr)` route syntax instead.")
-end
-
 """Resolve one non-function DSL entity into the internal representation used by the block builder."""
 function _resolve_composite_dsl_entity(spec, inputs::Tuple, output_symbols::Tuple{Vararg{Symbol}}, ::Val{Name}) where {Name}
     if spec isa Union{ProcessState, Type{<:ProcessState}}
@@ -215,36 +204,24 @@ function _resolve_composite_dsl_call(
     ::Val{Name},
 ) where {Name}
     if spec isa Union{ProcessAlgorithm, Type{<:ProcessAlgorithm}}
-        positional_names = _dsl_processalgorithm_positional_names(spec)
-        length(routed_positional_inputs) <= length(positional_names) || error("Too many positional DSL inputs for `$spec`. Expected at most $(length(positional_names)), got $(length(routed_positional_inputs)).")
-
-        resolved = _dsl_with_customname(spec, Val(Name))
-        inputs = Any[
-            _dsl_retarget_processalgorithm_direct_input(routed_positional_inputs[idx], positional_names[idx])
-            for idx in eachindex(routed_positional_inputs)
-        ]
-
+        all(input -> input.kind == :simple && input.source == input.destination, routed_positional_inputs) || error("Direct-call DSL syntax for ProcessAlgorithms only supports routed symbol positional arguments.")
+        input_symbols = tuple((input.source for input in routed_positional_inputs)...)
+        remapped_kwargs = Pair{Symbol, Symbol}[]
         for destination in keys(keyword_args)
             source = getproperty(keyword_args, destination)
             routed = findfirst(input -> input.destination == destination, routed_keyword_inputs)
             if isnothing(routed)
                 source isa Symbol || error("Direct-call DSL syntax for ProcessAlgorithms only supports routed symbol keyword arguments.")
-                push!(inputs, (; kind = :simple, source, destination))
+                push!(remapped_kwargs, destination => source)
                 continue
             end
 
             input = routed_keyword_inputs[routed]
-            if input.kind == :simple
-                push!(inputs, (; kind = :simple, source = input.source, destination))
-            elseif input.kind == :context_simple
-                push!(inputs, (; kind = :context_simple, owner = input.owner, source = input.source, destination))
-            else
-                error("Direct-call DSL syntax for ProcessAlgorithms does not accept transformed keyword routing. Use `Algo(name = expr)` route syntax instead.")
-            end
+            input.kind == :simple || error("Direct-call DSL syntax for ProcessAlgorithms does not accept transformed or context-based keyword routing. Use `Algo(name = source)` route syntax instead.")
+            push!(remapped_kwargs, destination => input.source)
         end
 
-        routed_inputs = tuple(inputs...)
-        return _CompositeDSLResolved{:algo, typeof(resolved), typeof(routed_inputs)}(resolved, routed_inputs)
+        return _resolve_composite_dsl_algorithm_call(spec, (; remapped_kwargs...), input_symbols, Val(Name))
     end
 
     spec isa Function || error("Direct-call DSL syntax requires either a plain function or a ProcessAlgorithm. Got `$spec`.")
