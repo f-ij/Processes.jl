@@ -90,8 +90,8 @@ function Base.merge(
 end
 
 """Fetch a required state input or raise a readable error."""
-@inline function _general_state_required(context, name::Symbol)
-    haskey(context, name) || error("Missing required @state input `$(name)`.")
+@inline function _general_state_required(context, name::Symbol, state)
+    haskey(context, name) || error("LoopAlgorithm @state requires input `$(name)` during init for $(summary(state)).")
     return getproperty(context, name)
 end
 
@@ -110,7 +110,7 @@ end
     values = Expr[]
     for field in Fields
         if field in Required
-            push!(values, :(_general_state_required(context, $(QuoteNode(field)))))
+            push!(values, :(_general_state_required(context, $(QuoteNode(field)), state)))
         else
             push!(values, :(_general_state_optional(context, $(QuoteNode(field)), getproperty(defaults, $(QuoteNode(field))))))
         end
