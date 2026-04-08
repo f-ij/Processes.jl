@@ -40,55 +40,35 @@ This is equivalent to property access like `algo.some_key`, but works for keys t
 are only available at runtime.
 """
 Base.@constprop :aggressive @inline function Base.getindex(cla::LoopAlgorithm, name::Symbol)
-    getproperty(cla, Val(name))
+    getproperty(cla, name)
 end
 
 @inline function Base.getindex(cla::LoopAlgorithm, idx::Int)
     getalgos(cla)[idx]
 end
 
-@inline @generated function Base.keys(ca::LA) where LA <: LoopAlgorithm
-    Fs = algotypes(ca)
-    States = statetypes(ca)
-    f_names = getkey.(Fs)
-    f_names = filter(s -> s != Symbol(""), f_names)
-    f_names = QuoteNode.(f_names)
-
-    s_names = getkey.(States)
-    s_names = filter(s -> s != Symbol(""), s_names)
-    s_names = QuoteNode.(s_names)
-    return quote
-        $(LineNumberNode(@__LINE__, @__FILE__))
-        ($(f_names...), $(s_names...))
-    end
+Base.@constprop :aggressive @inline function Base.getproperty(ca::LoopAlgorithm, name::Symbol)
+    keyloc = findkey(ca, name)
+    isnothing(keyloc) && error("No algorithm or state with name $(name) found in LoopAlgorithm $(ca)")
+    return ca[keyloc]
 end
 
-Base.@constprop :aggressive @inline Base.getproperty(ca::LoopAlgorithm, name::Symbol) = getproperty(ca, Val(name))
-"""
-Get an algo by name
-"""
-@inline @generated function Base.getproperty(ca::LoopAlgorithm, ::Val{name}) where {name}
-    Fs = algotypes(ca)
-    States = statetypes(ca)
-    fidx = findfirst(==(name), getkey.(Fs))
-    if !isnothing(fidx)
-        return :(getindex(getalgos(ca), $fidx))
-    end
-    sidx = findfirst(==(name), getkey.(States))
-    if !isnothing(sidx)
-        return :(getindex(getstates(ca), $sidx))
-    end
-    return :(error("No algorithm or state with name $(name) found in LoopAlgorithm $(ca)"))
-end
+# Base.@constprop :aggressive @inline Base.getproperty(ca::LoopAlgorithm, name::Symbol) = getproperty(ca, Val(name))
+# """
+# Get an algo by name
+# """
+# @inline @generated function Base.getproperty(ca::LoopAlgorithm, ::Val{name}) where {name}
+#     Fs = algotypes(ca)
+#     States = statetypes(ca)
+#     fidx = findfirst(==(name), getkey.(Fs))
+#     if !isnothing(fidx)
+#         return :(getindex(getalgos(ca), $fidx))
+#     end
+#     sidx = findfirst(==(name), getkey.(States))
+#     if !isnothing(sidx)
+#         return :(getindex(getstates(ca), $sidx))
+#     end
+#     return :(error("No algorithm or state with name $(name) found in LoopAlgorithm $(ca)"))
+# end
 
-@inline @generated function Base.propertynames(ca::LoopAlgorithm)
-    Fs = algotypes(ca)
-    States = statetypes(ca)
-    f_names = getkey.(Fs)
-    f_names = filter(s -> s != Symbol(""), f_names)
-
-    s_names = getkey.(States)
-    s_names = filter(s -> s != Symbol(""), s_names)
-    flat = tuple(f_names..., s_names...)
-    return :($flat)
-end
+@inline Base.propertynames(ca::LoopAlgorithm) = keys(ca)

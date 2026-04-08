@@ -38,6 +38,22 @@ struct Luc <: Processes.ProcessAlgorithm end
     @test flat_funcs == Processes.getalgos(ffluc)
     @test flat_intervals == Processes.intervals(ffluc)
 
+    inner = @Routine begin
+        @alias dynamics = Fib()
+        dynamics()
+    end
+    outer = @CompositeAlgorithm begin
+        inner
+    end
+    loc = Processes.findkey(outer, :dynamics)
+
+    @test :dynamics in keys(outer)
+    @test :dynamics in propertynames(outer)
+    @test !isnothing(loc)
+    @test !isnothing(Processes.findkey(typeof(outer), :dynamics))
+    @test Processes.getkey(outer.dynamics) == :dynamics
+    @test outer[loc] === outer.dynamics
+
     # reg_ffluc = Processes.getregistry(ffluc)
     # name_fib_inst_ff = Processes.getkey(reg_ffluc, Fib())
     # name_fib_type_ff = Processes.getkey(reg_ffluc, Fib)

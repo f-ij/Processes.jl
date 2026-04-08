@@ -178,9 +178,9 @@ function tree_flatten(nodefunc, node)
 
     return @inline flat_collect_broadcast(x -> tree_flatten(nodefunc, x), applied)
 end
-
+# TODO: EXPLAIN THE DIFFERENCE BETWEEN THE TWO TREE TRAIT FLATTENING FUNCS BELOW
 """
-For a tree with traits at each node
+For a tree which has a branch level trait for each node
 Nodefunction should return nothing, nothing
 or next leaves, nodetrait 
 
@@ -200,7 +200,7 @@ end
 end
 
 """
-Flatten a tree while collecting node-local traits.
+Flatten a tree while collecting -node-local- traits.
 
 `nodefunc(node)` must return `(next_nodes, trait)` where:
 - `next_nodes === nothing` marks a leaf
