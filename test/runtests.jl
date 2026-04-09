@@ -14,6 +14,7 @@ using Processes
     include("MaterializeLoopAlgorithmTest.jl")
     include("SymbolIndexingTest.jl")
     include("InnerTypeFilterTest.jl")
+    include("ContextShowingTest.jl")
     include("CompositeDSLTest.jl")
     include("ProcessAlgorithmMacroTest.jl")
     include("ContextAnalyzerTest.jl")
