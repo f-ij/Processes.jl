@@ -172,9 +172,13 @@ function _dsl_retarget_processalgorithm_direct_input(input, destination::Symbol)
         return (; kind = :simple, source = input.source, destination)
     elseif input.kind == :context_simple
         return (; kind = :context_simple, owner = input.owner, source = input.source, destination)
+    elseif input.kind == :simple_transform
+        return (; kind = :simple_transform, source = input.source, destination, transform_expr = input.transform_expr)
+    elseif input.kind == :context_transform
+        return (; kind = :context_transform, owner = input.owner, source = input.source, destination, transform_expr = input.transform_expr)
     end
 
-    error("Direct-call DSL syntax for ProcessAlgorithms does not accept transformed positional routing. Use `Algo(name = expr)` route syntax instead.")
+    error("Unsupported direct-call DSL input kind `$(input.kind)`.")
 end
 
 """Resolve one non-function DSL entity into the internal representation used by the block builder."""
@@ -240,8 +244,12 @@ function _resolve_composite_dsl_call(
                 push!(inputs, (; kind = :simple, source = input.source, destination))
             elseif input.kind == :context_simple
                 push!(inputs, (; kind = :context_simple, owner = input.owner, source = input.source, destination))
+            elseif input.kind == :simple_transform
+                push!(inputs, (; kind = :simple_transform, source = input.source, destination, transform_expr = input.transform_expr))
+            elseif input.kind == :context_transform
+                push!(inputs, (; kind = :context_transform, owner = input.owner, source = input.source, destination, transform_expr = input.transform_expr))
             else
-                error("Direct-call DSL syntax for ProcessAlgorithms does not accept transformed keyword routing. Use `Algo(name = expr)` route syntax instead.")
+                error("Unsupported direct-call DSL keyword input kind `$(input.kind)`.")
             end
         end
 
@@ -278,44 +286,6 @@ function _resolve_composite_dsl_keyword_call(
     end
 
     return _resolve_composite_dsl_entity(spec, routed_inputs, output_symbols, Val(Name))
-end
-
-"""
-Collect candidate routed symbols from a transform expression.
-
-Call heads and keyword names are ignored so `sin(a)` only contributes `:a`.
-"""
-function _dsl_collect_transform_symbols!(symbols::Vector{Symbol}, ex)
-    if ex isa Symbol
-        # Preserve first-seen order so the generated transform lambda arguments
-        # stay predictable and easy to reason about.
-        ex in symbols || push!(symbols, ex)
-    elseif ex isa Expr
-        if ex.head == :call
-            # Skip the callee itself; only the actual value arguments can become
-            # routed inputs.
-            for arg in ex.args[2:end]
-                _dsl_collect_transform_symbols!(symbols, arg)
-            end
-        elseif ex.head == :kw
-            _dsl_collect_transform_symbols!(symbols, ex.args[2])
-        else
-            for arg in ex.args
-                _dsl_collect_transform_symbols!(symbols, arg)
-            end
-        end
-    end
-    return symbols
-end
-
-"""Rewrite routed symbols in a transform body to the generated lambda arguments."""
-function _dsl_rewrite_transform_expr(ex, replacements::Dict{Symbol, Symbol})
-    if ex isa Symbol
-        return get(replacements, ex, ex)
-    elseif ex isa Expr
-        return Expr(ex.head, map(arg -> _dsl_rewrite_transform_expr(arg, replacements), ex.args)...)
-    end
-    return ex
 end
 
 """Rewrite DSL alias references inside expressions while preserving routed symbols."""
@@ -435,20 +405,32 @@ function _dsl_parse_owned_route_expr(alias_map, context_map, ex)
     return _dsl_parse_alias_route_expr(alias_map, ex)
 end
 
-"""
-Build the transform function for a routed expression.
+"""Strip line metadata from expressions before keeping them for user-facing display."""
+function _dsl_display_expr(ex)
+    ex isa Expr || return ex
+    return Base.remove_linenums!(deepcopy(ex))
+end
 
-Only previously produced DSL symbols become lambda arguments; any other values in
-the expression are left as normal lexical captures.
-"""
-function _dsl_transform_lambda_expr(ex, routed_symbols::Tuple{Vararg{Symbol}})
-    arg_symbols = ntuple(_ -> gensym(:route_arg), length(routed_symbols))
-    replacements = Dict(routed_symbols[i] => arg_symbols[i] for i in eachindex(routed_symbols))
-    # Replace only the routed symbols. Any other names in the expression remain
-    # normal lexical captures of the surrounding scope.
-    body = _dsl_rewrite_transform_expr(ex, replacements)
-    args_expr = length(arg_symbols) == 1 ? arg_symbols[1] : Expr(:tuple, arg_symbols...)
-    return Expr(:->, args_expr, body)
+"""Parse explicit `@transform(f, source)` syntax used in route positions."""
+function _dsl_parse_transform_expr(ex)
+    ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@transform") || return nothing
+    length(ex.args) == 4 || error("@transform expects exactly two arguments like `@transform(x -> x * 2, produced)`.")
+    return (; transform_expr = ex.args[3], source_expr = ex.args[4], display = _dsl_display_expr(ex))
+end
+
+"""Parse one explicit transformed route source."""
+function _dsl_parse_explicit_transform_input(alias_map, context_map, ex, destination::Symbol)
+    parsed = _dsl_parse_transform_expr(ex)
+    isnothing(parsed) && return nothing
+
+    source_expr = parsed.source_expr
+    if source_expr isa Symbol
+        return (; kind = :simple_transform, source = source_expr, destination, transform_expr = parsed.transform_expr, display = parsed.display)
+    end
+
+    owned_route = _dsl_parse_owned_route_expr(alias_map, context_map, source_expr)
+    !isnothing(owned_route) || error("@transform source must be a routable symbol or owned field reference like `produced`, `dynamics.state`, or `c1.plus_capture.captured`. Got `$source_expr`.")
+    return (; kind = :context_transform, owner = owned_route.owner, source = owned_route.source, destination, transform_expr = parsed.transform_expr, display = parsed.display)
 end
 
 """Track which output symbols are available to later route expressions in the same DSL block."""
@@ -471,8 +453,12 @@ function _dsl_inputs_expr(input_specs)
             :( (; kind = :simple, source = $(QuoteNode(spec.source)), destination = $(QuoteNode(spec.destination)) ) )
         elseif spec.kind == :context_simple
             :( (; kind = :context_simple, owner = $(esc(spec.owner)), source = $(QuoteNode(spec.source)), destination = $(QuoteNode(spec.destination)) ) )
+        elseif spec.kind == :simple_transform
+            :( (; kind = :simple_transform, source = $(QuoteNode(spec.source)), destination = $(QuoteNode(spec.destination)), transform = $(esc(spec.transform_expr)) ) )
+        elseif spec.kind == :context_transform
+            :( (; kind = :context_transform, owner = $(esc(spec.owner)), source = $(QuoteNode(spec.source)), destination = $(QuoteNode(spec.destination)), transform = $(esc(spec.transform_expr)) ) )
         else
-            :( (; kind = :transform, sources = $(QuoteNode(spec.sources)), destination = $(QuoteNode(spec.destination)), transform = $(esc(spec.transform_expr)) ) )
+            error("Unsupported DSL input spec kind `$(spec.kind)`.")
         end
     end
     return Expr(:tuple, specs...)
@@ -481,13 +467,7 @@ end
 """Emit keyword values for direct-call DSL syntax."""
 _dsl_keyword_value_expr(value) = value isa Symbol ? QuoteNode(value) : esc(value)
 
-"""
-Turn parsed DSL input specs into concrete `Route` objects.
-
-Simple routes are converted directly. Transform routes remain intentionally
-conservative for now and only support sources that all belong to the same
-producer subcontext.
-"""
+"""Turn parsed DSL input specs into concrete `Route` objects."""
 function _composite_dsl_add_routes!(options::Vector{Any}, producers::Dict{Symbol, Any}, external_inputs::Vector{Pair{Symbol, Symbol}}, target, inputs::Tuple)
     for input in inputs
         if input.kind == :simple
@@ -501,20 +481,14 @@ function _composite_dsl_add_routes!(options::Vector{Any}, producers::Dict{Symbol
             end
         elseif input.kind == :context_simple
             push!(options, Route(input.owner => target, input.source => input.destination))
+        elseif input.kind == :simple_transform
+            source = input.source
+            haskey(producers, source) || error("Transform routes currently require a previously produced symbol or an owned field reference. Missing producer for `$source`.")
+            push!(options, Route(producers[source] => target, source => input.destination; transform = input.transform))
+        elseif input.kind == :context_transform
+            push!(options, Route(input.owner => target, input.source => input.destination; transform = input.transform))
         else
-            sources = input.sources
-            isempty(sources) && error("Transform routes must reference at least one previously produced symbol.")
-
-            missing = filter(source -> !haskey(producers, source), sources)
-            isempty(missing) || error("Transform routes currently only support previously produced symbols. Missing: $(missing)")
-
-            # The current routing backend stores one origin subcontext per route.
-            # Keep the DSL syntax broad enough for future multi-context routes, but
-            # reject cross-producer transforms clearly for now.
-            owner = producers[first(sources)]
-            all(source -> producers[source] === owner, sources) || error("Transform routes currently require all source symbols to come from the same producer. Got $(sources)")
-
-            push!(options, Route(owner => target, (sources => input.destination); transform = input.transform))
+            error("Unsupported DSL input kind `$(input.kind)`.")
         end
     end
     return options
@@ -774,19 +748,24 @@ function _dsl_parse_function_positional_arg(alias_map, context_map, arg, known_o
     if arg isa Symbol && (arg in known_outputs)
         return (; kind = :routed, value = arg, display = arg), (; kind = :simple, source = arg, destination = arg)
     elseif arg isa QuoteNode && arg.value isa Symbol
-        return (; kind = :literal_symbol, value = arg.value, display = arg), nothing
+        return (; kind = :literal_symbol, value = arg.value, display = _dsl_display_expr(arg)), nothing
+    end
+
+    transform_input = _dsl_parse_explicit_transform_input(alias_map, context_map, arg, gensym(Symbol(:dsl_pos_, index)))
+    if !isnothing(transform_input)
+        return (; kind = :routed, value = transform_input.destination, display = transform_input.display), transform_input
     end
 
     owned_route = _dsl_parse_owned_route_expr(alias_map, context_map, arg)
     if !isnothing(owned_route)
         routed_name = gensym(Symbol(:dsl_pos_, index))
         routed_input = (; kind = :context_simple, owner = owned_route.owner, source = owned_route.source, destination = routed_name)
-        return (; kind = :routed, value = routed_name, display = arg), routed_input
+        return (; kind = :routed, value = routed_name, display = _dsl_display_expr(arg)), routed_input
     end
 
     protected_symbols = Set(known_outputs)
     rewritten = _dsl_rewrite_alias_expr(alias_map, arg, protected_symbols)
-    return (; kind = :captured, value = rewritten, display = arg), nothing
+    return (; kind = :captured, value = rewritten, display = _dsl_display_expr(arg)), nothing
 end
 
 function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set{Symbol})
@@ -804,26 +783,23 @@ function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set
             return
         end
 
+        transform_input = _dsl_parse_explicit_transform_input(alias_map, context_map, value, name)
+        if !isnothing(transform_input)
+            push!(routed_keyword_inputs, transform_input)
+            push!(keyword_specs, (; name, routed = true, value = name, display = transform_input.display))
+            return
+        end
+
         owned_route = value isa Symbol ? nothing : _dsl_parse_owned_route_expr(alias_map, context_map, value)
         if !isnothing(owned_route)
             push!(routed_keyword_inputs, (; kind = :context_simple, owner = owned_route.owner, source = owned_route.source, destination = name))
-            push!(keyword_specs, (; name, routed = true, value = name, display = value))
+            push!(keyword_specs, (; name, routed = true, value = name, display = _dsl_display_expr(value)))
             return
         end
 
         protected_symbols = Set(known_outputs)
         rewritten = _dsl_rewrite_alias_expr(alias_map, value, protected_symbols)
-        routed_symbols = Symbol[]
-        _dsl_collect_transform_symbols!(routed_symbols, rewritten)
-        filter!(in(known_outputs), routed_symbols)
-        if !isempty(routed_symbols)
-            routed_tuple = tuple(routed_symbols...)
-            transform_expr = _dsl_transform_lambda_expr(rewritten, routed_tuple)
-            push!(routed_keyword_inputs, (; kind = :transform, sources = routed_tuple, destination = name, transform_expr))
-            push!(keyword_specs, (; name, routed = true, value = name, display = value))
-        else
-            push!(keyword_specs, (; name, routed = false, value = rewritten, display = value))
-        end
+        push!(keyword_specs, (; name, routed = false, value = rewritten, display = _dsl_display_expr(value)))
     end
 
     positional_index = 0
@@ -932,7 +908,7 @@ Supported positional forms:
 
 Supported keyword forms:
 - `target = produced`
-- `target = produced + other`
+- `target = @transform(x -> x * 2, produced)`
 """
 function _dsl_parse_entity_call_args(alias_map, context_map, args, known_outputs::Set{Symbol})
     share_sources = Any[]
@@ -952,13 +928,7 @@ function _dsl_parse_entity_call_args(alias_map, context_map, args, known_outputs
     return inputs, tuple(share_sources...)
 end
 
-"""
-Parse ProcessAlgorithm keyword routes.
-
-Simple symbol values become normal routes. Expressions become transformed routes,
-using any already-known DSL outputs as routed inputs and leaving the rest of the
-expression captured normally.
-"""
+"""Parse ProcessAlgorithm keyword routes."""
 function _dsl_split_route_kwargs(alias_map, context_map, kwargs, known_outputs::Set{Symbol})
     inputs = Any[]
     for kw in kwargs
@@ -974,25 +944,19 @@ function _dsl_split_route_kwargs(alias_map, context_map, kwargs, known_outputs::
             continue
         end
 
+        transform_input = _dsl_parse_explicit_transform_input(alias_map, context_map, source, destination)
+        if !isnothing(transform_input)
+            push!(inputs, transform_input)
+            continue
+        end
+
         owned_route = _dsl_parse_owned_route_expr(alias_map, context_map, source)
         if !isnothing(owned_route)
             push!(inputs, (; kind = :context_simple, owner = owned_route.owner, source = owned_route.source, destination))
             continue
         end
 
-        protected_symbols = Set(known_outputs)
-        source = _dsl_rewrite_alias_expr(alias_map, source, protected_symbols)
-
-        routed_symbols = Symbol[]
-        _dsl_collect_transform_symbols!(routed_symbols, source)
-        # Only previously-seen DSL outputs become routed inputs. Everything else
-        # in the expression remains a normal captured value.
-        filter!(in(known_outputs), routed_symbols)
-        isempty(routed_symbols) && error("Transform route for `$destination` must reference at least one previously named output.")
-
-        routed_tuple = tuple(routed_symbols...)
-        transform_expr = _dsl_transform_lambda_expr(source, routed_tuple)
-        push!(inputs, (; kind = :transform, sources = routed_tuple, destination, transform_expr))
+        error("ProcessAlgorithm routes only support plain routed symbols/owned fields or explicit `@transform(f, source)` syntax. Got `$source` for `$destination`.")
     end
     return tuple(inputs...)
 end
@@ -1016,10 +980,7 @@ Accepted statement bodies:
 
 Within ProcessAlgorithm route syntax:
 - `target = produced` becomes a simple route
-- `target = produced + other` becomes a transform route
-
-Only symbols already produced earlier in the same DSL block are treated as routed
-transform inputs. Any other values in the expression remain normal Julia captures.
+- `target = @transform(x -> x * 2, produced)` becomes a transformed route
 """
 function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Symbol})
     if ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@repeat") && length(ex.args) == 4
@@ -1517,8 +1478,8 @@ Assignments:
 ProcessAlgorithm routes:
 - `x = Algo(input = produced)`
 - `x = Algo(left = a, right = b)`
-- `x = Algo(value = produced * 2)`
-- `x = Algo(value = produced + passthrough + bias)`
+- `x = Algo(value = @transform(x -> x * 2, produced))`
+- `x = Algo(value = @transform(x -> x + bias, produced))`
 - `x = SomeAlgo(args...)(input = produced)`
 - `x = alias(input = produced)`
 - `x = alias(args...)(input = produced)`
@@ -1573,14 +1534,14 @@ Scheduling:
 Current transform-route rules
 =============================
 
-When a ProcessAlgorithm keyword value is an expression instead of a plain symbol,
-the DSL treats it as a transformed route. For example:
+Transformed routes must be written explicitly with `@transform(f, source)`. For
+example:
 
-`consumer(value = a + b)`
+`consumer(value = @transform(x -> x^2, a))`
 
-is parsed as a route into `value` with a generated transform function. At the
-moment, all routed symbols inside that transform must come from the same producer
-subcontext. Cross-producer transforms are intentionally left for later work.
+The `source` part is resolved exactly like a normal route source, so it can be a
+previous DSL output symbol such as `a` or an owned-field reference such as
+`dynamics.state` or `c1.plus_capture.captured`.
 
 State rebinding
 ===============
