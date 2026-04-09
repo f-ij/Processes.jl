@@ -55,4 +55,40 @@ using Processes
     @test threaded isa Processes.ThreadedCompositeAlgorithm
     @test !Processes.isresolved(threaded)
     @test Processes.intervals(threaded) == (Processes.Interval(1), Processes.Interval(1))
+
+    algo1 = CompositeAlgorithm(
+        PrepSource,
+        (1,),
+        Share(PrepSource, PrepTarget),
+        Route(PrepSource => PrepOther, :value => :target),
+    )
+    algo2 = CompositeAlgorithm(
+        PrepTarget,
+        PrepOther,
+        (1, 1),
+    )
+
+    resolved1, resolved2 = Processes.resolve(algo1, algo2)
+
+    @test Processes.isresolved(resolved1)
+    @test Processes.isresolved(resolved2)
+    @test Processes.getregistry(resolved1) === Processes.getregistry(resolved2)
+
+    shared_registry = Processes.getregistry(resolved1)
+    source_name = Processes.static_findkey(shared_registry, PrepSource)
+    target_name = Processes.static_findkey(shared_registry, PrepTarget)
+    other_name = Processes.static_findkey(shared_registry, PrepOther)
+
+    sharedcontexts1, sharedvars1 = Processes._resolve_options(resolved1)
+    sharedcontexts2, sharedvars2 = Processes._resolve_options(resolved2)
+
+    @test haskey(sharedcontexts1, source_name)
+    @test Processes.contextname(sharedcontexts1[source_name]) == target_name
+    @test haskey(sharedcontexts1, target_name)
+    @test Processes.contextname(sharedcontexts1[target_name]) == source_name
+    @test haskey(sharedvars1, other_name)
+    @test length(sharedvars1[other_name]) == 1
+    @test Processes.get_fromname(only(sharedvars1[other_name])) == source_name
+    @test isempty(sharedcontexts2)
+    @test isempty(sharedvars2)
 end

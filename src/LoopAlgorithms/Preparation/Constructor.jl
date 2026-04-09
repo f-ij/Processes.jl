@@ -12,18 +12,7 @@ function resolve(la::LoopAlgorithm)
     end
 
     registry = setup_registry(la)
-    la = update_keys(la, registry)
-    options = getoptions(la)
-    shares = typefilter(Share, options)
-    routes = typefilter(Route, options)
-    sharedcontexts = resolve_options(registry, shares...)
-    sharedvars = resolve_options(registry, routes...)
-    options = merge_nested_namedtuples(sharedvars, sharedcontexts)
-
-    # la = setfield(la, :options, options)
-    la = setoptions(la, options)
-
-    return la
+    return _resolve_with_registry(la, registry)
 end
 
 function _resolve_options(la::LoopAlgorithm)

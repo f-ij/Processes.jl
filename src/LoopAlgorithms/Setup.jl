@@ -147,19 +147,22 @@ end
 
 
 """
-Add all algos and states in a LoopAlgorithm to a registry with their corresponding multipliers/intervals.
+Add all algos and states in one or more loop algorithms to a shared registry with
+their corresponding multipliers/intervals.
 """
-function setup_registry(la::LA) where LA <: LoopAlgorithm
+function setup_registry(las::LoopAlgorithm...)
     registry = NameSpaceRegistry()
-    # First add states with multiplier 1
-    states = flat_states(la)
-    multipliers = ntuple(i -> 1, length(states))
-    registry = addall(registry, states, multipliers)
+    for la in las
+        # First add states with multiplier 1
+        states = flat_states(la)
+        multipliers = ntuple(i -> 1, length(states))
+        registry = addall(registry, states, multipliers)
 
-    # Then add algos with their corresponding multipliers
-    all_funcs = @inline flat_funcs(la)
-    multipliers = @inline flat_multipliers(la)
-    registry = @inline addall(registry, all_funcs, multipliers)
+        # Then add algos with their corresponding multipliers
+        all_funcs = @inline flat_funcs(la)
+        multipliers = @inline flat_multipliers(la)
+        registry = @inline addall(registry, all_funcs, multipliers)
+    end
 
     return registry
 end
