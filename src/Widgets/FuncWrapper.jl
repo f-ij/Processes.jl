@@ -14,9 +14,26 @@ and `Kwargs` can point either to context symbols or inline literal values.
 mutable struct FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T} <: ProcessAlgorithm
     func::F
     values::T
+    display::Any
 end
 
 @inline _funcwrapper_render_value(value; io::IO = stdout) = sprint(show, value; context = io)
+
+@inline function _funcwrapper_render_display(value; io::IO = stdout)
+    if value isa Symbol
+        return string(value)
+    elseif value isa QuoteNode
+        return _funcwrapper_render_value(value.value; io)
+    elseif value isa Expr
+        rendered = sprint(show, value)
+        if startswith(rendered, ":(") && endswith(rendered, ")")
+            return rendered[3:end-1]
+        end
+        return rendered
+    else
+        return _funcwrapper_render_value(value; io)
+    end
+end
 
 @inline function _funcwrapper_render_input(input, values; io::IO = stdout)
     if input isa Symbol
@@ -28,17 +45,17 @@ end
 
 @inline function _funcwrapper_signature_parts(
     ::Type{<:FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs}},
-    values;
+    display;
     io::IO = stdout,
 ) where {F, InputSymbols, OutputSymbols, Kwargs}
-    positional = [_funcwrapper_render_input(input, values; io) for input in InputSymbols]
-    kwargs_rendered = [string(name, " = ", _funcwrapper_render_value(value; io)) for (name, value) in pairs(Kwargs)]
+    positional = [_funcwrapper_render_display(input; io) for input in display.positional]
+    kwargs_rendered = [string(name, " = ", _funcwrapper_render_display(value; io)) for (name, value) in pairs(display.kwargs)]
     outputs = isempty(OutputSymbols) ? "nothing" : "(; " * join(string.(OutputSymbols), ", ") * ")"
     return positional, kwargs_rendered, outputs
 end
 
 @inline function _funcwrapper_signature_string(fw::FuncWrapper; io::IO = stdout)
-    positional, kwargs_rendered, outputs = _funcwrapper_signature_parts(typeof(fw), getfield(fw, :values); io)
+    positional, kwargs_rendered, outputs = _funcwrapper_signature_parts(typeof(fw), getfield(fw, :display); io)
     args = if isempty(kwargs_rendered)
         join(positional, ", ")
     elseif isempty(positional)
@@ -51,6 +68,9 @@ end
 
 @inline _funcwrapper_callable_label(f) = sprint(show, f)
 @inline _identifiable_funcwrapper_label(sa::IdentifiableAlgo{F}) where {F<:FuncWrapper} = isnothing(algoname(sa)) ? string(getkey(sa)) : string(algoname(sa), "@", getkey(sa))
+
+@inline _funcwrapper_display_bundle(inputs::Tuple, kwargs::NamedTuple) = (; positional = inputs, kwargs)
+@inline _funcwrapper_default_display_inputs(inputs) = tuple(inputs...)
 
 function _funcwrapper_encode_inputs(inputs)
     literal_values = Any[]
@@ -90,20 +110,27 @@ end
 
 @inline init(::FuncWrapper, context) = (;)
 
-function FuncWrapper(f::F, inputs, outputsyms::NTuple{M, Symbol}) where {F, M}
+function _funcwrapper_construct(f::F, inputs, outputsyms::NTuple{M, Symbol}, kwargs::NamedTuple, display_inputs::Tuple, display_kwargs::NamedTuple) where {F, M}
     newinputs, values = _funcwrapper_encode_inputs(inputs)
-    FuncWrapper{F, newinputs, outputsyms, NamedTuple(), typeof(values)}(f, values)
+    display = _funcwrapper_display_bundle(display_inputs, display_kwargs)
+    FuncWrapper{F, newinputs, outputsyms, kwargs, typeof(values)}(f, values, display)
+end
+
+function FuncWrapper(f::F, inputs, outputsyms::NTuple{M, Symbol}) where {F, M}
+    _funcwrapper_construct(f, inputs, outputsyms, NamedTuple(), _funcwrapper_default_display_inputs(inputs), NamedTuple())
 end
 
 function FuncWrapper(f::F, inputs::Tuple, outputsyms::NTuple{M, Symbol}, kwargs::NamedTuple) where {F, M}
-    newinputs, values = _funcwrapper_encode_inputs(inputs)
-    FuncWrapper{F, newinputs, outputsyms, kwargs, typeof(values)}(f, values)
+    _funcwrapper_construct(f, inputs, outputsyms, kwargs, _funcwrapper_default_display_inputs(inputs), kwargs)
+end
+
+function FuncWrapper(f::F, inputs::Tuple, outputsyms::NTuple{M, Symbol}, kwargs::NamedTuple, display_inputs::Tuple, display_kwargs::NamedTuple) where {F, M}
+    _funcwrapper_construct(f, inputs, outputsyms, kwargs, display_inputs, display_kwargs)
 end
 
 function FuncWrapper(f::F, inputs, outputsyms::NTuple{M, Symbol}, kwargs::NTuple{K, Symbol}) where {F, M, K}
-    newinputs, values = _funcwrapper_encode_inputs(inputs)
     same_name_kwargs = NamedTuple{kwargs}(kwargs)
-    FuncWrapper{F, newinputs, outputsyms, same_name_kwargs, typeof(values)}(f, values)
+    _funcwrapper_construct(f, inputs, outputsyms, same_name_kwargs, _funcwrapper_default_display_inputs(inputs), same_name_kwargs)
 end
 
 function Base.summary(io::IO, fw::FuncWrapper)

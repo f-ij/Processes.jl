@@ -42,6 +42,7 @@ keyword_only_capture_dsl_test(; plus_capture, minus_capture, β, buffers) = plus
 literal_join_dsl_test(prefix, value, marker) = string(prefix, value, marker)
 constant_value_dsl_test() = 0.25
 square_dsl_test(x) = x^2
+keyword_value_identity_dsl_test(; value) = value
 
 @ProcessAlgorithm function DSLPositionalCallAlgo(value)
     return (; seen = value)
@@ -302,11 +303,34 @@ end
         wrapper_key = Processes.getkey(wrapper)
         routes = Processes.getoptions(resolved)[wrapper_key]
         @test length(routes) == 1
+        @test occursin("c1.plus_capture.captured", sprint(show, wrapper))
 
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[wrapper_key].result == 4
+    end
+
+    @testset "FuncWrapper keyword args preserve routed display expressions" begin
+        @info "Composite DSL: FuncWrapper keyword args preserve routed display expressions"
+        plus = @Routine begin
+            @alias plus_capture = DSLNestedSourceAlgo
+            plus_capture()
+        end
+
+        algo = @CompositeAlgorithm begin
+            @context c1 = plus()
+            result = keyword_value_identity_dsl_test(value = c1.plus_capture.captured)
+        end
+
+        resolved = resolve(algo)
+        wrapper = Processes.getalgo(resolved, 2)
+        @test occursin("value = c1.plus_capture.captured", sprint(show, wrapper))
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[Processes.getkey(wrapper)].result == 4
     end
 
     @testset "Alias field routes work before later output bindings" begin

@@ -209,8 +209,6 @@ function _resolve_composite_dsl_call(
     spec,
     keyword_args::NamedTuple,
     positional_values::Tuple,
-    display_positional_values::Tuple,
-    display_keyword_args::NamedTuple,
     output_symbols::Tuple{Vararg{Symbol}},
     routed_positional_inputs::Tuple,
     routed_keyword_inputs::Tuple,
@@ -253,7 +251,7 @@ function _resolve_composite_dsl_call(
 
     # FuncWrapper handles the runtime call; the DSL only has to recover how the
     # wrapper should receive its routed inputs.
-    wrapped = FuncWrapper(spec, positional_values, output_symbols, keyword_args, display_positional_values, display_keyword_args)
+    wrapped = FuncWrapper(spec, positional_values, output_symbols, keyword_args)
     resolved = _dsl_with_customname(wrapped, Val(Name))
 
     inputs = Any[routed_positional_inputs...]
@@ -266,13 +264,12 @@ end
 function _resolve_composite_dsl_keyword_call(
     spec,
     keyword_args::NamedTuple,
-    display_keyword_args::NamedTuple,
     routed_inputs::Tuple,
     output_symbols::Tuple{Vararg{Symbol}},
     ::Val{Name},
 ) where {Name}
     if spec isa Function
-        wrapped = FuncWrapper(spec, (), output_symbols, keyword_args, (), display_keyword_args)
+        wrapped = FuncWrapper(spec, (), output_symbols, keyword_args)
         resolved = _dsl_with_customname(wrapped, Val(Name))
         return _CompositeDSLResolved{:algo, typeof(resolved), typeof(routed_inputs)}(resolved, routed_inputs)
     end
@@ -772,21 +769,21 @@ expressions.
 """
 function _dsl_parse_function_positional_arg(alias_map, context_map, arg, known_outputs::Set{Symbol}, index::Int)
     if arg isa Symbol && (arg in known_outputs)
-        return (; kind = :routed, value = arg, display = arg), (; kind = :simple, source = arg, destination = arg)
+        return (; kind = :routed, value = arg), (; kind = :simple, source = arg, destination = arg)
     elseif arg isa QuoteNode && arg.value isa Symbol
-        return (; kind = :literal_symbol, value = arg.value, display = arg), nothing
+        return (; kind = :literal_symbol, value = arg.value), nothing
     end
 
     owned_route = _dsl_parse_owned_route_expr(alias_map, context_map, arg)
     if !isnothing(owned_route)
         routed_name = gensym(Symbol(:dsl_pos_, index))
         routed_input = (; kind = :context_simple, owner = owned_route.owner, source = owned_route.source, destination = routed_name)
-        return (; kind = :routed, value = routed_name, display = arg), routed_input
+        return (; kind = :routed, value = routed_name), routed_input
     end
 
     protected_symbols = Set(known_outputs)
     rewritten = _dsl_rewrite_alias_expr(alias_map, arg, protected_symbols)
-    return (; kind = :captured, value = rewritten, display = arg), nothing
+    return (; kind = :captured, value = rewritten), nothing
 end
 
 function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set{Symbol})
@@ -800,14 +797,14 @@ function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set
     function _record_function_kwarg!(name::Symbol, value)
         if value isa Symbol && (value in known_outputs)
             push!(routed_keyword_inputs, (; kind = :simple, source = value, destination = name))
-            push!(keyword_specs, (; name, routed = true, value = name, display = value))
+            push!(keyword_specs, (; name, routed = true, value = name))
             return
         end
 
         owned_route = value isa Symbol ? nothing : _dsl_parse_owned_route_expr(alias_map, context_map, value)
         if !isnothing(owned_route)
             push!(routed_keyword_inputs, (; kind = :context_simple, owner = owned_route.owner, source = owned_route.source, destination = name))
-            push!(keyword_specs, (; name, routed = true, value = name, display = value))
+            push!(keyword_specs, (; name, routed = true, value = name))
             return
         end
 
@@ -820,9 +817,9 @@ function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set
             routed_tuple = tuple(routed_symbols...)
             transform_expr = _dsl_transform_lambda_expr(rewritten, routed_tuple)
             push!(routed_keyword_inputs, (; kind = :transform, sources = routed_tuple, destination = name, transform_expr))
-            push!(keyword_specs, (; name, routed = true, value = name, display = value))
+            push!(keyword_specs, (; name, routed = true, value = name))
         else
-            push!(keyword_specs, (; name, routed = false, value = rewritten, display = value))
+            push!(keyword_specs, (; name, routed = false, value = rewritten))
         end
     end
 
@@ -872,24 +869,11 @@ function _dsl_function_positional_args_expr(positional_specs)
     return Expr(:tuple, positional_exprs...)
 end
 
-"""Emit the user-facing positional tuple kept for `FuncWrapper` display."""
-function _dsl_function_positional_display_expr(positional_specs)
-    return Expr(:tuple, QuoteNode.(getproperty.(positional_specs, :display))...)
-end
-
 """Emit a plain `NamedTuple` constructor for function-call keyword forwarding."""
 function _dsl_function_keyword_args_expr(keyword_specs)
     kw_exprs = map(keyword_specs) do spec
         value_expr = spec.routed ? QuoteNode(spec.value) : esc(spec.value)
         Expr(:kw, spec.name, value_expr)
-    end
-    return Expr(:tuple, Expr(:parameters, kw_exprs...))
-end
-
-"""Emit the user-facing keyword values kept for `FuncWrapper` display."""
-function _dsl_function_keyword_display_expr(keyword_specs)
-    kw_exprs = map(keyword_specs) do spec
-        Expr(:kw, spec.name, QuoteNode(spec.display))
     end
     return Expr(:tuple, Expr(:parameters, kw_exprs...))
 end
@@ -1276,10 +1260,8 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     end
 
     positional_values_expr = _dsl_function_positional_args_expr(parsed.positional_specs)
-    positional_display_expr = _dsl_function_positional_display_expr(parsed.positional_specs)
     routed_positional_inputs_expr = _dsl_inputs_expr(parsed.routed_positional_inputs)
     keyword_args_expr = _dsl_function_keyword_args_expr(parsed.keyword_specs)
-    keyword_display_expr = _dsl_function_keyword_display_expr(parsed.keyword_specs)
     inputs_expr = _dsl_inputs_expr(parsed.inputs)
     customname = _dsl_customname(parsed.spec_expr, parsed.alias_name)
     algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
@@ -1291,7 +1273,6 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             local _dsl_resolved = Processes._resolve_composite_dsl_keyword_call(
                 $(esc(parsed.spec_expr)),
                 $keyword_args_expr,
-                $keyword_display_expr,
                 $inputs_expr,
                 _dsl_outputs,
                 Val{$(QuoteNode(customname))}(),
@@ -1315,8 +1296,6 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             $(esc(parsed.spec_expr)),
             $keyword_args_expr,
             $positional_values_expr,
-            $positional_display_expr,
-            $keyword_display_expr,
             _dsl_outputs,
             $routed_positional_inputs_expr,
             $inputs_expr,
