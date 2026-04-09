@@ -27,7 +27,9 @@ end
     elseif value isa Expr
         rendered = sprint(show, value)
         if startswith(rendered, ":(") && endswith(rendered, ")")
-            return rendered[3:end-1]
+            first_idx = nextind(rendered, 2)
+            last_idx = prevind(rendered, lastindex(rendered))
+            return first_idx > last_idx ? "" : String(SubString(rendered, first_idx, last_idx))
         end
         return rendered
     else
