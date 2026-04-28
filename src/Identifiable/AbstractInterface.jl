@@ -57,9 +57,14 @@ end
 @inline getalgos(sa::AbstractIdentifiableAlgo) = error("Not implemented for type: $(typeof(sa))")
 
 @inline function hasautokey(sa::AbstractIdentifiableAlgo)
-    getkey(sa) != Symbol() && startswith(string(getkey(sa)), "$(nameof(typeof(getalgo(sa))))_")
+    key = getkey(sa)
+    (!isnothing(key) && key != Symbol()) || return false
+    startswith(string(key), "$(nameof(typeof(getalgo(sa))))_")
 end
-@inline Base.haskey(sa::AbstractIdentifiableAlgo) = getkey(sa) != Symbol()
+@inline function Base.haskey(sa::AbstractIdentifiableAlgo)
+    key = getkey(sa)
+    !isnothing(key) && key != Symbol()
+end
 @inline hasgivenkey(sa::AbstractIdentifiableAlgo) = haskey(sa) && !hasautokey(sa)
 
 ################################################

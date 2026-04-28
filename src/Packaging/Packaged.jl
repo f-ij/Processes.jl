@@ -98,6 +98,12 @@ end
 @inline getalgo(sa::PackagedAlgo{F}) where {F} = error("Cannot get singular algo from a PackagedAlgo. Use `getalgos` instead.")
 @inline getalgos(ca::PackagedAlgo) = getfield(ca, :funcs)
 @inline getalgo(sa::PackagedAlgo{F}, i) where {F} = getalgos(sa)[i]
+@inline function hasautokey(pa::PackagedAlgo)
+    key = getkey(pa)
+    (!isnothing(key) && key != Symbol()) || return false
+    name = getname(pa) == Symbol() ? :PackagedAlgo : getname(pa)
+    startswith(string(key), string(name, "_"))
+end
 
 @inline setid(sa::PackagedAlgo, newid) = setparameter(sa, 4, newid isa UUID ? SimpleId(newid) : newid)
 

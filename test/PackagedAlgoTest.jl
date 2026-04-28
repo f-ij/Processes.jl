@@ -34,6 +34,18 @@ end
     fibluc = CompositeAlgorithm( PackFib, PackLuc , (1, 1))
     pack = PackagedAlgo(fibluc, "FLPack")
 
+    @test !haskey(pack)
+    @test !Processes.hasautokey(pack)
+    keyed_pack = Processes.Autokey(pack, 1)
+    @test haskey(keyed_pack)
+    @test Processes.hasautokey(keyed_pack)
+
+    reg = Processes.NameSpaceRegistry()
+    reg, registered_pack = Processes.add(reg, pack, 1.0)
+    reg, reregistered_pack = Processes.add(reg, pack, 1.0)
+    @test Processes.getkey(registered_pack) == :FLPack_1
+    @test Processes.getkey(reregistered_pack) == :FLPack_1
+
     p = Process(pack; repeats = n)
     run(p)
     wait(p)
