@@ -14,22 +14,22 @@ using Processes
 
     algo = resolve(CompositeAlgorithm(
         :target => InjectorTargetForTest(),
-        :injector => ContextInjector(check_every = 2),
-        (1, 1),
+        ContextInjector(),
+        (1, 2),
     ))
     context = initcontext(algo; lifetime = Repeat(5))
 
     interact!(context, Input(:target, :value => 2))
-    @test length(context.injector.buffer) == 1
+    @test getkey(algo[:_injector]) == :_injector
+    @test length(context._injector.buffer) == 1
 
     context = Processes.step!(algo, context, Processes.Unstable())
     @test context.target.value == 1.0
-    @test length(context.injector.buffer) == 1
+    @test length(context._injector.buffer) == 1
 
     context = Processes.step!(algo, context, Processes.Stable())
     @test context.target.value == 2.0
-    @test context.injector.step_counter == 2
-    @test isempty(context.injector.buffer)
+    @test isempty(context._injector.buffer)
 
     @test_throws ErrorException interact!(context, Input(:target, :value => "not a float"))
 end
@@ -47,7 +47,7 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => InteractiveVarTargetForTest(),
-        :injector => ContextInjector(),
+        ContextInjector(),
         (1, 1),
     ))
     context = initcontext(algo; lifetime = Repeat(3))
@@ -57,15 +57,15 @@ end
 
     ref[] = 4
     @test ref[] == 1.0
-    @test length(context.injector.buffer) == 1
+    @test length(context._injector.buffer) == 1
 
-    context = Processes.step!(algo[:injector], context, Processes.Stable())
+    context = Processes.step!(algo[:_injector], context, Processes.Stable())
     @test ref[] == 4.0
-    @test isempty(context.injector.buffer)
+    @test isempty(context._injector.buffer)
 
-    typed_ref = view(context, Var(InteractiveVarTargetForTest, :value); injector = :injector)
+    typed_ref = view(context, Var(InteractiveVarTargetForTest, :value); injector = :_injector)
     typed_ref[] = 5
-    context = Processes.step!(algo[:injector], context, Processes.Stable())
+    context = Processes.step!(algo[:_injector], context, Processes.Stable())
     @test typed_ref[] == 5.0
 end
 
@@ -82,7 +82,7 @@ end
     @test_throws ErrorException view(context, Var(:target, :value))
 end
 
-@testset "ContextInjector skips missing runtime targets" begin
+@testset "ContextInjector lets context merge reject missing runtime targets" begin
     struct MissingRuntimeTargetForTest <: ProcessAlgorithm end
 
     function Processes.init(::MissingRuntimeTargetForTest, context)
@@ -95,15 +95,54 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => MissingRuntimeTargetForTest(),
-        :injector => ContextInjector(),
+        ContextInjector(),
         (1, 1),
     ))
     context = initcontext(algo; lifetime = Repeat(1))
 
-    push!(context.injector.buffer, Processes.BufferedContextUpdate(:missing_target, :value, 2.0))
-    push!(context.injector.buffer, Processes.BufferedContextUpdate(:target, :missing_value, 3.0))
+    push!(context._injector.buffer, Processes.BufferedContextUpdate(:missing_target, :value, 2.0))
+    push!(context._injector.buffer, Processes.BufferedContextUpdate(:target, :missing_value, 3.0))
 
-    context = @test_logs (:warn, r"missing_target\.value") (:warn, r"target\.missing_value") Processes.step!(algo[:injector], context, Processes.Stable())
+    @test_throws Exception Processes.step!(algo[:_injector], context, Processes.Stable())
     @test context.target.value == 1.0
-    @test isempty(context.injector.buffer)
+end
+
+@testset "ContextInjector updates running process state" begin
+    struct SlowInteractiveTargetForTest <: ProcessAlgorithm end
+
+    function Processes.init(::SlowInteractiveTargetForTest, context)
+        return (; value = 1, seen = 0)
+    end
+
+    function Processes.step!(::SlowInteractiveTargetForTest, context)
+        sleep(0.01)
+        return (; seen = context.seen + 1)
+    end
+
+    algo = resolve(CompositeAlgorithm(
+        :target => SlowInteractiveTargetForTest(),
+        ContextInjector(),
+        (1, 1),
+    ))
+    process = Process(algo; repeat = Inf)
+
+    run(process)
+
+    started_deadline = time() + 2.0
+    while loopint(process) < 3 && time() < started_deadline
+        sleep(0.005)
+    end
+    @test loopint(process) >= 3
+
+    ref = view(getfield(process, :context), Var(:target, :value))
+    ref[] = 42
+
+    injected_deadline = time() + 2.0
+    while loopint(process) < 6 && time() < injected_deadline
+        sleep(0.005)
+    end
+
+    close(process)
+    @test getfield(process, :context).target.value == 42
+    @test getfield(process, :context).target.seen > 0
 end

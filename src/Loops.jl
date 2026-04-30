@@ -85,4 +85,3 @@ Base.@constprop :aggressive function loop(process::AbstractProcess, algo::F, uns
         return @inline after_while(process, algo, stablecontext)
     end
 end
-

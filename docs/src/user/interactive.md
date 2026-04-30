@@ -6,7 +6,7 @@ This lets you:
 
 - queue a value change from outside normal `step!` code,
 - validate and convert that value before it reaches the runtime state,
-- apply queued updates only every `check_every` steps,
+- apply queued updates whenever the injector is scheduled by the loop algorithm,
 - work with one variable at a time through a ref-like `view(context, Var(...))` handle.
 
 The feature is designed to preserve the package's normal context-type stability rules:
@@ -19,18 +19,14 @@ Use a `ContextInjector` as one component of a resolved algorithm:
 ```julia
 algo = resolve(CompositeAlgorithm(
     :target => MyAlgo(),
-    :injector => ContextInjector(check_every = 2),
-    (1, 1),
+    ContextInjector(),
+    (1, 10),
 ))
 
 context = initcontext(algo; lifetime = Repeat(10))
 ```
 
-The injector owns a small state subcontext with:
-
-- a buffer of pending writes,
-- a lock protecting that buffer,
-- a step counter.
+The injector owns a small state subcontext named `:_injector` with a plain buffer of pending writes.
 
 Each buffered write stores a fully resolved target `(subcontext, variable)` pair and a value that has already been converted to the target variable's current type.
 
@@ -62,31 +58,31 @@ This does **not** update the target immediately. It only appends a buffered writ
 The update becomes visible when the injector is stepped:
 
 ```julia
-context = Processes.step!(algo[:injector], context, Processes.Stable())
+context = Processes.step!(algo[:_injector], context, Processes.Stable())
 ```
 
-If `check_every > 1`, the injector will wait until its step counter reaches the configured cadence before applying buffered values.
+For scheduled execution, control the cadence with the `CompositeAlgorithm` interval tuple.
 
 ### Example: Buffered Application Every Two Steps
 
 ```julia
 algo = resolve(CompositeAlgorithm(
     :target => MyAlgo(),
-    :injector => ContextInjector(check_every = 2),
-    (1, 1),
+    ContextInjector(),
+    (1, 2),
 ))
 
 context = initcontext(algo; lifetime = Repeat(5))
 
 interact!(context, Input(:target, :value => 2))
-length(context.injector.buffer) == 1
+length(context._injector.buffer) == 1
 
 context = Processes.step!(algo, context, Processes.Unstable())
 context.target.value == 1.0
 
 context = Processes.step!(algo, context, Processes.Stable())
 context.target.value == 2.0
-isempty(context.injector.buffer)
+isempty(context._injector.buffer)
 ```
 
 This is the same behavior exercised in [test/ContextInjectorTest.jl](../../../test/ContextInjectorTest.jl).
@@ -117,9 +113,9 @@ ref[] == 1.0
 
 ref[] = 4
 ref[] == 1.0
-length(context.injector.buffer) == 1
+length(context._injector.buffer) == 1
 
-context = Processes.step!(algo[:injector], context, Processes.Stable())
+context = Processes.step!(algo[:_injector], context, Processes.Stable())
 ref[] == 4.0
 ```
 
@@ -128,9 +124,9 @@ ref[] == 4.0
 If the registry contains a unique algorithm of a given type, you can also use the type selector form:
 
 ```julia
-typed_ref = view(context, Var(MyAlgoType, :value); injector = :injector)
+typed_ref = view(context, Var(MyAlgoType, :value); injector = :_injector)
 typed_ref[] = 5
-context = Processes.step!(algo[:injector], context, Processes.Stable())
+context = Processes.step!(algo[:_injector], context, Processes.Stable())
 typed_ref[] == 5.0
 ```
 
@@ -166,28 +162,18 @@ This means the injector step itself does not need to guess how to stabilize a ty
 
 ## Missing Targets at Apply Time
 
-Buffered writes are resolved when they are queued, but the injector still checks that the target exists when it applies them.
-
-If the target subcontext or variable is no longer present in the current context shape, the injector:
-
-- emits a warning,
-- skips that buffered update,
-- continues applying the rest of the queue.
-
-That fallback lives inside the injector so missing runtime targets do not have to be handled in the loop machinery.
+Buffered writes are resolved when they are queued. At apply time, the injector uses the same context merge machinery as normal `step!` returns. If the target no longer exists, the context merge errors in the usual way.
 
 ## Choosing an Injector
 
-If a context contains exactly one `ContextInjector`, `interact!(...)` and `view(context, Var(...))` use it automatically.
+`ContextInjector` always uses the fixed key `:_injector`. `interact!(...)` and `view(context, Var(...))` use that injector automatically.
 
-If the context contains multiple injectors, pass one explicitly:
+You can also pass the key explicitly:
 
 ```julia
-ref = view(context, Var(:target, :value); injector = :ui)
-interact!(context, Input(:target, :value => 2); injector = :ui)
+ref = view(context, Var(:target, :value); injector = :_injector)
+interact!(context, Input(:target, :value => 2); injector = :_injector)
 ```
-
-Without an explicit choice, multiple injectors are treated as ambiguous and an error is thrown.
 
 ## Process Overload
 
@@ -224,7 +210,7 @@ end
 
 algo = resolve(CompositeAlgorithm(
     :target => InteractiveTarget(),
-    :injector => ContextInjector(),
+    ContextInjector(),
     (1, 1),
 ))
 
@@ -236,13 +222,13 @@ ref = view(context, Var(:target, :value))
 ref[] == 1.0
 
 ref[] = 4
-length(context.injector.buffer) == 1
+length(context._injector.buffer) == 1
 
-context = Processes.step!(algo[:injector], context, Processes.Stable())
+context = Processes.step!(algo[:_injector], context, Processes.Stable())
 ref[] == 4.0
 
 interact!(context, Input(:target, :value => 5))
-context = Processes.step!(algo[:injector], context, Processes.Stable())
+context = Processes.step!(algo[:_injector], context, Processes.Stable())
 ref[] == 5.0
 ```
 
@@ -254,4 +240,4 @@ The interactive API is covered in [test/ContextInjectorTest.jl](../../../test/Co
 - `view(context, Var(...))` reads and writes,
 - typed selector lookup,
 - missing-injector errors,
-- missing runtime target warnings.
+- context merge errors for missing runtime targets.

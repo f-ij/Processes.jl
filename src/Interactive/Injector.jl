@@ -19,95 +19,77 @@ BufferedContextUpdate(subcontext::Symbol, varname::Symbol, value) =
 @inline _update_value(update::BufferedContextUpdate) = getfield(update, :value)
 
 """
-Apply queued, externally supplied context updates every `check_every` steps.
+Apply queued, externally supplied context updates when scheduled by the enclosing
+loop algorithm.
 
 Use `interact!(context, input)` to enqueue values programmatically, or
 `view(context, Var(...))` to obtain a ref-like `InteractiveVar`.
 """
-struct ContextInjector <: ProcessAlgorithm
-    check_every::Int
+const context_injector_key = :_injector
+const context_injector_id = ValMatcher(:ContextInjector)
+const context_injector_aliases = VarAliases()
 
-    function ContextInjector(check_every::Integer)
-        check_every > 0 || error("ContextInjector check_every must be positive, got $check_every")
-        new(Int(check_every))
-    end
-end
+struct ContextInjector <: AbstractIdentifiableAlgo{
+    ContextInjector,
+    context_injector_id,
+    context_injector_aliases,
+    Symbol(),
+    context_injector_key,
+} end
 
-ContextInjector(; check_every::Integer = 1) = ContextInjector(check_every)
+@inline Base.getkey(::Union{ContextInjector, Type{<:ContextInjector}}) = context_injector_key
+@inline getalgo(inj::ContextInjector) = inj
+@inline getalgos(inj::ContextInjector) = (inj,)
+@inline setcontextkey(inj::ContextInjector, ::Symbol) = inj
+@inline setid(inj::ContextInjector, newid) = inj
+@inline setvaraliases(inj::ContextInjector, newaliases) = inj
+@inline match_by(::Union{ContextInjector, Type{<:ContextInjector}}) = context_injector_id
+@inline registry_entrytype(::Type{<:ContextInjector}) = ContextInjector
+@inline isstaticallyfindable(::ContextInjector) = true
 
 # Compatibility name for the old scratch widget and for user-facing terminology.
 const Injector = ContextInjector
 
-function Processes.init(::ContextInjector, context)
-    return (; buffer = Any[], buffer_lock = ReentrantLock(), step_counter = 0)
+@inline _context_injector_state(::ContextInjector) = (; buffer = Any[])
+
+Processes.init(inj::ContextInjector, ::NamedTuple = (;)) = _context_injector_state(inj)
+
+function Processes.init(inj::ContextInjector, context::ProcessContext)
+    return replace(context, NamedTuple{(context_injector_key,)}((_context_injector_state(inj),)))
 end
 
-@inline Processes.step!(sa::IdentifiableAlgo{ContextInjector}, context::C) where {C<:ProcessContext} =
-    Processes.step!(sa, context, Stable())
+@inline Processes.step!(inj::ContextInjector, context::C) where {C<:ProcessContext} =
+    Processes.step!(inj, context, Stable())
 
-@inline Processes.step!(sa::IdentifiableAlgo{ContextInjector}, context::C, ::Stable) where {C<:ProcessContext} =
-    _step_context_injector(sa, context)
+@inline Processes.step!(inj::ContextInjector, context::C, ::Stable) where {C<:ProcessContext} =
+    _step_context_injector(inj, context)
 
 # Buffered updates are converted before they enter the queue, so the unstable
 # pass can use the same exact-type-preserving merge path as the stable pass.
-@inline Processes.step!(sa::IdentifiableAlgo{ContextInjector}, context::C, ::Unstable) where {C<:ProcessContext} =
-    _step_context_injector(sa, context)
+@inline Processes.step!(inj::ContextInjector, context::C, ::Unstable) where {C<:ProcessContext} =
+    _step_context_injector(inj, context)
 
-@inline function _step_context_injector(sa::IdentifiableAlgo{ContextInjector}, context::C) where {C<:ProcessContext}
-    injector = getalgo(sa)
-    key = getkey(sa)
-    state = getproperty(context, key)
-    counter = getproperty(state, :step_counter) + 1
-
-    context = @inline merge_into_subcontext(context, key, (; step_counter = counter))
-    if counter % injector.check_every != 0
-        return context
-    end
-
-    updates = _take_buffered_updates!(getproperty(state, :buffer), getproperty(state, :buffer_lock))
-    before = typeof(context)
+@inline function _step_context_injector(::ContextInjector, context::C) where {C<:ProcessContext}
+    data = getdata(getfield(get_subcontexts(context), context_injector_key))
+    updates = getproperty(data, :buffer)
     for update in updates
         context = @inline _apply_buffered_update(context, update)
     end
-    @assert typeof(context) == before "ContextInjector changed the context type while applying buffered updates.\n$(sprint(show, ContextTypeDiff(before, typeof(context))))"
+    if !isempty(updates)
+        empty!(updates)
+    end
     return context
 end
 
-function _take_buffered_updates!(buffer::Vector, buffer_lock)
-    lock(buffer_lock)
-    try
-        updates = copy(buffer)
-        empty!(buffer)
-        return updates
-    finally
-        unlock(buffer_lock)
-    end
-end
-
-@inline function _buffer_target_exists(context::ProcessContext, ::BufferedContextUpdate{Subcontext, Varname}) where {Subcontext, Varname}
-    if !(Subcontext in get_subcontexts_fieldnames(typeof(context)))
-        @warn "Skipping interactive update for $(Subcontext).$(Varname) because the target subcontext is not present in the current context."
-        return false
-    end
-
-    subctx = getproperty(context, Subcontext)
-    if !haskey(getdata(subctx), Varname)
-        @warn "Skipping interactive update for $(Subcontext).$(Varname) because the target variable is not present in the current context."
-        return false
-    end
-
-    return true
-end
-
 @inline function _apply_buffered_update(context::ProcessContext, update::BufferedContextUpdate{Subcontext, Varname}) where {Subcontext, Varname}
-    _buffer_target_exists(context, update) || return context
     value = _update_value(update)
     return @inline merge_into_subcontexts(context, NamedTuple{(Subcontext,)}((NamedTuple{(Varname,)}((value,)),)))
 end
 
 function _context_injectors(context::ProcessContext)
-    algos = all_algos(getregistry(context))
-    return tuple((algo for algo in algos if getalgo(algo) isa ContextInjector)...)
+    reg = getregistry(context)
+    injector = haskey(reg, context_injector_key) ? reg[context_injector_key] : nothing
+    isnothing(injector) ? () : (injector,)
 end
 
 @inline isinteractive(context::ProcessContext) = !isempty(_context_injectors(context))
@@ -132,14 +114,9 @@ end
 function _resolve_injector(context::ProcessContext, injector = nothing)
     reg = getregistry(context)
     if isnothing(injector)
-        injectors = _context_injectors(context)
-        if isempty(injectors)
-            error("Cannot create an interactive variable view because this context has no ContextInjector in its registry.")
-        elseif length(injectors) > 1
-            keys = getkey.(injectors)
-            error("Context has multiple ContextInjectors $(keys). Pass `injector = :name` to choose one.")
-        end
-        return only(injectors)
+        resolved = haskey(reg, context_injector_key) ? reg[context_injector_key] : nothing
+        isnothing(resolved) && error("Cannot create an interactive variable view because this context has no ContextInjector in its registry.")
+        return resolved
     elseif injector isa Symbol
         resolved = reg[injector]
     else
@@ -241,19 +218,11 @@ end
 
 function _buffer_storage(context::ProcessContext, injector_key::Symbol)
     state = getproperty(context, injector_key)
-    # Injector state is stored in a SubContext, so inspect its data payload.
-    haskey(getdata(state), :buffer) && haskey(getdata(state), :buffer_lock) || error("Subcontext $(injector_key) does not look like a ContextInjector state.")
-    return getproperty(state, :buffer), getproperty(state, :buffer_lock)
+    return getproperty(state, :buffer)
 end
 
 function _push_buffered_update!(context::ProcessContext, injector_key::Symbol, update::BufferedContextUpdate)
-    buffer, buffer_lock = _buffer_storage(context, injector_key)
-    lock(buffer_lock)
-    try
-        push!(buffer, update)
-    finally
-        unlock(buffer_lock)
-    end
+    push!(_buffer_storage(context, injector_key), update)
     return update
 end
 
