@@ -29,7 +29,21 @@ Base.@constprop :aggressive @inline @generated function step!(ca::CompositeAlgor
 
         push!(exprs, :(local $algo_name = @inline getalgo(ca, $i)))
 
-        if interval isa Interval{1}
+        if T.parameters[i] <: ContextInjector
+            if interval isa Interval{1}
+                push!(exprs, quote
+                    if !(@inline context_injector_buffer_isempty(context))
+                        context = @inline step!($algo_name, context, typestable)
+                    end
+                end)
+            else
+                push!(exprs, quote
+                    if !(@inline context_injector_buffer_isempty(context)) && @inline divides($this_inc, $interval)
+                        context = @inline step!($algo_name, context, typestable)
+                    end
+                end)
+            end
+        elseif interval isa Interval{1}
             push!(exprs, :(context = @inline step!($algo_name, context, typestable)))
         else
             push!(exprs, quote

@@ -70,20 +70,26 @@ end
     _step_context_injector(inj, context)
 
 @inline function _step_context_injector(::ContextInjector, context::C) where {C<:ProcessContext}
-    data = getdata(getfield(get_subcontexts(context), context_injector_key))
-    updates = getproperty(data, :buffer)
-    for update in updates
-        context = @inline _apply_buffered_update(context, update)
+    updates = _context_injector_buffer(context)
+    isempty(updates) && return context
+
+    @inbounds for i in eachindex(updates)
+        context = @inline _apply_buffered_update(context, updates[i])
     end
-    if !isempty(updates)
-        empty!(updates)
-    end
-    return context
+    empty!(updates)
+    return context::C
 end
 
-@inline function _apply_buffered_update(context::ProcessContext, update::BufferedContextUpdate{Subcontext, Varname}) where {Subcontext, Varname}
+@inline function _context_injector_buffer(context::ProcessContext)
+    getfield(getdata(getfield(get_subcontexts(context), context_injector_key)), :buffer)
+end
+
+@inline context_injector_buffer_isempty(context) = false
+@inline context_injector_buffer_isempty(context::ProcessContext) = isempty(_context_injector_buffer(context))
+
+@inline function _apply_buffered_update(context::C, update::BufferedContextUpdate{Subcontext, Varname}) where {C<:ProcessContext, Subcontext, Varname}
     value = _update_value(update)
-    return @inline merge_into_subcontexts(context, NamedTuple{(Subcontext,)}((NamedTuple{(Varname,)}((value,)),)))
+    return (@inline merge_into_subcontexts(context, NamedTuple{(Subcontext,)}((NamedTuple{(Varname,)}((value,)),))))::C
 end
 
 function _context_injectors(context::ProcessContext)
