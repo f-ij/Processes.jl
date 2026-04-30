@@ -90,3 +90,6 @@ Use `getglobals(context)` inside entity methods when you need them.
 
 You can also select globals with `Var(:name)` in APIs like `Processes.Until(...)`.
 See [Vars (`Var` Selectors)](@ref vars_user).
+
+For buffered external writes through `ContextInjector` and ref-like
+`view(context, Var(...))` handles, see [Interactive Contexts](@ref interactive_user).

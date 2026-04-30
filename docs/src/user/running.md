@@ -65,3 +65,6 @@ run(ip)
 ```
 
 For constructor parity with `Process(...)`, `lifetime = 10_000` is also accepted here.
+
+If you need buffered external updates to context variables, see
+[Interactive Contexts](@ref interactive_user).

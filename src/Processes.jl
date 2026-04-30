@@ -59,6 +59,8 @@ module Processes
 
     include("ProcessList.jl")
 
+    include("Interactive/Interactive.jl")
+
     include("Widgets/Widgets.jl")
 
 

@@ -34,6 +34,7 @@ makedocs(
             "Routes and Shares" => "user/routes_shares.md",
             "Inputs and Overrides" => "user/inputs_overrides.md",
             "Vars (Var Selectors)" => "user/vars.md",
+            "Interactive Contexts" => "user/interactive.md",
             "Lifetime" => "user/lifetime.md",
             "Running, Wait, Fetch" => "user/running.md",
             "Copying and Process Management" => "user/copying_and_management.md",

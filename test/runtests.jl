@@ -16,6 +16,7 @@ using Processes
     include("SymbolIndexingTest.jl")
     include("InnerTypeFilterTest.jl")
     include("ContextShowingTest.jl")
+    include("ContextInjectorTest.jl")
     include("CompositeDSLTest.jl")
     include("ProcessAlgorithmMacroTest.jl")
     include("ContextAnalyzerTest.jl")

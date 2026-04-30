@@ -54,3 +54,6 @@ lifetime = Processes.Until(p -> loopidx(p) >= 10_000, Var(:process))
 `Var(:process)` is useful when your stop rule depends on process-level state.
 
 In `Until`/`RepeatOrUntil`, this function is a stop condition (`true => stop`, `false => continue`).
+
+`Var(...)` is also the selector syntax used by interactive refs returned from
+`view(context, Var(...))`. See [Interactive Contexts](@ref interactive_user).
