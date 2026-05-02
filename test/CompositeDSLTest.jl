@@ -270,6 +270,25 @@ end
         end)
     end
 
+    @testset "Scheduled assignment syntax error suggests RHS wrapper" begin
+        @info "Composite DSL: Scheduled assignment syntax error suggests RHS wrapper"
+        err = try
+            macroexpand(@__MODULE__, quote
+                @CompositeAlgorithm begin
+                    @every 1 produced = DSLSourceAlgo()
+                end
+            end)
+            nothing
+        catch caught
+            caught
+        end
+
+        @test err isa ErrorException
+        msg = sprint(showerror, err)
+        @test occursin("Invalid scheduled assignment", msg)
+        @test occursin("produced = @every 1 DSLSourceAlgo()", msg)
+    end
+
     @testset "Routine repeat form expands correctly" begin
         @info "Composite DSL: Routine repeat form expands correctly"
         routine = @Routine begin

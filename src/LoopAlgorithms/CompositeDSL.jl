@@ -411,6 +411,19 @@ function _dsl_display_expr(ex)
     return Base.remove_linenums!(deepcopy(ex))
 end
 
+"""Remove line metadata from this generated DSL implementation file only."""
+function _dsl_strip_generated_linenums!(ex)
+    ex isa Expr || return ex
+    generated_file = Symbol(@__FILE__)
+    filter!(ex.args) do arg
+        !(arg isa LineNumberNode && arg.file == generated_file)
+    end
+    for arg in ex.args
+        _dsl_strip_generated_linenums!(arg)
+    end
+    return ex
+end
+
 """Parse explicit `@transform(f, source)` syntax used in route positions."""
 function _dsl_parse_transform_expr(ex)
     ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@transform") || return nothing
@@ -687,15 +700,29 @@ Anything without an explicit wrapper is treated as schedule `1`.
 function _dsl_parse_schedule(ex)
     if ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@interval")
         length(ex.args) == 4 || error("@interval expects `@interval n expr`.")
+        _dsl_reject_scheduled_assignment(ex)
         return (:every, ex.args[3], ex.args[4])
     elseif ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@every")
         length(ex.args) == 4 || error("@every expects `@every n expr`.")
+        _dsl_reject_scheduled_assignment(ex)
         return (:every, ex.args[3], ex.args[4])
     elseif ex isa Expr && ex.head == :macrocall && ex.args[1] == Symbol("@repeat")
         length(ex.args) == 4 || error("@repeat expects `@repeat n expr`.")
+        _dsl_reject_scheduled_assignment(ex)
         return (:repeat, ex.args[3], ex.args[4])
     end
     return (:default, :(1), ex)
+end
+
+"""Reject `@every n lhs = rhs`; schedule wrappers belong on the assignment RHS."""
+function _dsl_reject_scheduled_assignment(ex)
+    inner = ex.args[4]
+    inner isa Expr && inner.head == :(=) || return nothing
+
+    wrapper = ex.args[1]
+    lhs = inner.args[1]
+    rhs = inner.args[2]
+    error("Invalid scheduled assignment `$(wrapper) $(ex.args[3]) $(lhs) = $(rhs)`. Write `$(lhs) = $(wrapper) $(ex.args[3]) $(rhs)` instead.")
 end
 
 """Return the macro-scope alias binding for one root symbol, if any."""
@@ -1301,11 +1328,17 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
     alias_map = Dict{Symbol, Any}()
     context_map = Dict{Symbol, Any}()
     known_outputs = Set{Symbol}()
-    step_exprs = Expr[]
+    step_exprs = Any[]
     state_fields = Any[]
     state_name = :_state
+    current_line = nothing
 
     for stmt in statements
+        if stmt isa LineNumberNode
+            current_line = stmt
+            continue
+        end
+
         if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
             # States are collected first and emitted once for the whole block.
             state_name = _dsl_merge_state_statement!(state_fields, state_name, stmt)
@@ -1321,12 +1354,20 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
             alias_map[context.first] = context.second
             context_map[context.first] = context.second
             step_expr = _dsl_build_statement(stmt.args[3].args[2], alias_map, context_map, known_outputs, expected_schedule, owner_name)
-            isnothing(step_expr) || push!(step_exprs, step_expr)
+            if !isnothing(step_expr)
+                step_expr = Base.remove_linenums!(step_expr)
+                isnothing(current_line) || push!(step_exprs, current_line)
+                push!(step_exprs, step_expr)
+            end
             continue
         end
 
         step_expr = _dsl_build_statement(stmt, alias_map, context_map, known_outputs, expected_schedule, owner_name)
-        isnothing(step_expr) || push!(step_exprs, step_expr)
+        if !isnothing(step_expr)
+            step_expr = Base.remove_linenums!(step_expr)
+            isnothing(current_line) || push!(step_exprs, current_line)
+            push!(step_exprs, step_expr)
+        end
         # Outputs become available to the statements that follow them.
         _dsl_known_outputs!(known_outputs, stmt)
     end
@@ -1342,12 +1383,12 @@ end
 
 """Expand a top-level DSL block into either a `CompositeAlgorithm` or a `Routine`."""
 function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_schedule::Symbol; print_constructor::Bool = false)
-    statements = block isa Expr && block.head == :block ? [stmt for stmt in block.args if !(stmt isa LineNumberNode)] : [block]
+    statements = block isa Expr && block.head == :block ? block.args : Any[block]
     collected = _dsl_collect_block(statements, expected_schedule, constructor_name)
 
     state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
 
-    return quote
+    expanded = quote
         let
             # Keep the emitted block literal and local so the resulting macro
             # expansion is easy to inspect in lowered code.
@@ -1369,6 +1410,7 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             getproperty(Processes, $(QuoteNode(constructor_name)))(_dsl_algos..., Tuple(_dsl_specification), _dsl_states..., _dsl_options...)
         end
     end
+    return _dsl_strip_generated_linenums!(expanded)
 end
 
 """Print the final loop-algorithm constructor call assembled by the DSL."""
@@ -1393,12 +1435,12 @@ end
 
 """Expand the body used inside `@repeat n begin ... end` into a `SimpleAlgo`."""
 function _dsl_expand_simplealgorithm_resolved(block)
-    statements = block isa Expr && block.head == :block ? [stmt for stmt in block.args if !(stmt isa LineNumberNode)] : [block]
+    statements = block isa Expr && block.head == :block ? block.args : Any[block]
     collected = _dsl_collect_block(statements, :none, :repeat)
 
     state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
 
-    return quote
+    expanded = quote
         let
             # The inner repeated block is built exactly once as a plain
             # `SimpleAlgo`, then wrapped by the outer `Routine`.
@@ -1421,12 +1463,13 @@ function _dsl_expand_simplealgorithm_resolved(block)
             Processes._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
         end
     end
+    return _dsl_strip_generated_linenums!(expanded)
 end
 
 """Wrap a repeated DSL block in a `Routine`, then expose it as one routable entity."""
 function _dsl_expand_repeated_block(block, repeats_expr)
     inner_expr = _dsl_expand_simplealgorithm_resolved(block)
-    return quote
+    expanded = quote
         let
             local _dsl_inner = $inner_expr
             local _dsl_repeats = Int($(esc(repeats_expr)))
@@ -1437,6 +1480,7 @@ function _dsl_expand_repeated_block(block, repeats_expr)
             Processes._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
         end
     end
+    return _dsl_strip_generated_linenums!(expanded)
 end
 
 """
