@@ -71,12 +71,6 @@ this automatically; recipes opt into reset timing explicitly.
 """
 resetworker!(slot::WorkerSlot) = (reset!(slot.worker); slot)
 
-"""
-    reinitworker!(slot, inputs_overrides...; kwargs...)
-
-Rebuild the worker context through the normal process init pipeline and return
-the slot. For `Process` workers this delegates to `makecontext!`.
-"""
 function _resolve_reinit_input(worker::Process, input::Union{Input, Override})
     reg = getregistry(getcontext(taskdata(worker)))
     return resolve(reg, input)
@@ -92,6 +86,12 @@ function _resolve_reinit_inputs(worker::Process, inputs_overrides...)
     return resolved
 end
 
+"""
+    reinitworker!(slot, inputs_overrides...; kwargs...)
+
+Rebuild the worker context through the normal process init pipeline and return
+the slot. For `Process` workers this delegates to `makecontext!`.
+"""
 function reinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...; kwargs...)
     resolved = _resolve_reinit_inputs(slot.worker, inputs_overrides...)
     makecontext!(slot.worker, resolved...; kwargs...)

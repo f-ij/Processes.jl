@@ -1,5 +1,9 @@
 struct _ProcessPrecompileCounter <: ProcessAlgorithm end
 struct _ProcessPrecompileScaler <: ProcessAlgorithm end
+struct _ProcessPrecompileSink <: ProcessAlgorithm end
+struct _ProcessPrecompileNoop <: ProcessAlgorithm end
+struct _ProcessPrecompileVectorPush <: ProcessAlgorithm end
+struct _ProcessPrecompileSharedReader <: ProcessAlgorithm end
 
 mutable struct _ProcessPrecompileFakeWorker
     idx::Int
@@ -32,7 +36,69 @@ function step!(::_ProcessPrecompileScaler, context)
     return (; scaled = context.scaled + context.factor)
 end
 
+function init(::_ProcessPrecompileSink, context)
+    seen = get(context, :seen, 0.0)
+    return (; seen)
+end
+
+function step!(::_ProcessPrecompileSink, context)
+    return (; seen = context.seen + context.value)
+end
+
+init(::_ProcessPrecompileNoop, context) = (;)
+step!(::_ProcessPrecompileNoop, context) = nothing
+cleanup(::_ProcessPrecompileNoop, context) = (;)
+
+function init(::_ProcessPrecompileVectorPush, context)
+    values = Float64[]
+    processsizehint!(values, context)
+    return (; values, source = get(context, :source, 0.0))
+end
+
+function step!(::_ProcessPrecompileVectorPush, context)
+    push!(context.values, context.source)
+    return (;)
+end
+
+function init(::_ProcessPrecompileSharedReader, context)
+    return (; total = 0.0)
+end
+
+function step!(::_ProcessPrecompileSharedReader, context)
+    return (; total = context.total + context.source)
+end
+
+_process_precompile_add(x, y; bias = 0.0) = x + y + bias
+_process_precompile_scale(x; scale = 1.0) = x * scale
+
 @setup_workload begin
+    @ProcessAlgorithm function _ProcessPrecompileSource(seed)
+        produced = seed * 2.0
+        passthrough = seed + 1.0
+        return (; produced, passthrough)
+    end
+
+    @ProcessAlgorithm function _ProcessPrecompileManaged(
+        x,
+        @managed(total = start);
+        gain = 1.0,
+        @inputs((; start = 0.0))
+    )
+        total = total + x * gain
+        return (; total)
+    end
+
+    @ProcessAlgorithm @config offset::Float64 = 1.0 begin
+        function _ProcessPrecompileConfigured(
+            x;
+            gain = 1.0,
+            @inputs((;))
+        )
+            y = x * gain + offset
+            return (; y, offset)
+        end
+    end
+
     @ProcessAlgorithm function ProcessManagerPrecompileStep(
         @managed(
             x = Ref(0.0),
@@ -101,6 +167,24 @@ end
     end
 
     @compile_workload begin
+        source_state = init(_ProcessPrecompileSource(), (;))
+        step!(_ProcessPrecompileSource(), (; seed = 2.0))
+
+        managed_state = init(_ProcessPrecompileManaged(), (; start = 1.0))
+        step!(_ProcessPrecompileManaged(), (; x = 2.0, total = managed_state.total, gain = 3.0))
+        step!(_ProcessPrecompileManaged(), 2.0; _init = (; start = 1.0), gain = 3.0)
+
+        configured = _ProcessPrecompileConfigured(offset = 2.0)
+        init(configured, (;))
+        step!(configured, 2.0; gain = 3.0)
+        step!(configured, (; x = 2.0, gain = 3.0))
+
+        state_only = @state begin
+            seed = 2.0
+            bias = 1.0
+        end
+        init(state_only, (;))
+
         process = Process(_ProcessPrecompileCounter(); repeats = 2)
         run(process)
         wait(process)
@@ -122,6 +206,26 @@ end
         wait(input_process)
         close(input_process)
 
+        inline_process = InlineProcess(
+            _ProcessPrecompileManaged,
+            Input(_ProcessPrecompileManaged, :start => 1.0),
+            Override(_ProcessPrecompileManaged, :x => 1.0, :gain => 2.0);
+            repeats = 2,
+        )
+        run(inline_process)
+        run_nogen(inline_process)
+        reset!(inline_process)
+
+        inline_threaded = InlineProcess(_ProcessPrecompileCounter; repeats = 1, threaded = true)
+        inline_threaded_task = run(inline_threaded)
+        wait(inline_threaded_task)
+        fetch(inline_threaded_task)
+
+        inline_async = InlineProcess(_ProcessPrecompileCounter; repeats = 1, threaded = :async)
+        inline_async_task = run(inline_async)
+        wait(inline_async_task)
+        fetch(inline_async_task)
+
         async_process = Process(_ProcessPrecompileScaler; repeats = 1)
         makeloop!(async_process; threaded = false)
         wait(async_process)
@@ -134,6 +238,33 @@ end
         run(until_process)
         wait(until_process)
         close(until_process)
+
+        until_runtime_process = Process(
+            _ProcessPrecompileCounter,
+            Input(_ProcessPrecompileCounter, :value => 0);
+            lifetime = Until(x -> x >= 2, Var(_ProcessPrecompileCounter, :value)),
+        )
+        run(until_runtime_process)
+        wait(until_runtime_process)
+        close(until_runtime_process)
+
+        atleast_process = Process(
+            _ProcessPrecompileCounter,
+            Input(_ProcessPrecompileCounter, :value => 0);
+            lifetime = AtLeast(x -> x >= 2, 1, Var(_ProcessPrecompileCounter, :value)),
+        )
+        run(atleast_process)
+        wait(atleast_process)
+        close(atleast_process)
+
+        atleast_atmost_process = Process(
+            _ProcessPrecompileCounter,
+            Input(_ProcessPrecompileCounter, :value => 0);
+            lifetime = AtLeastAtMost(x -> x >= 2, 1, 3, Var(_ProcessPrecompileCounter, :value)),
+        )
+        run(atleast_atmost_process)
+        wait(atleast_atmost_process)
+        close(atleast_atmost_process)
 
         base_process = Process(
             _ProcessPrecompileScaler,
@@ -163,6 +294,7 @@ end
         resolve(routine)
         keys(routine)
         propertynames(routine)
+        initcontext(routine)
         routine_process = Process(routine; repeats = 1)
         run(routine_process)
         wait(routine_process)
@@ -177,10 +309,25 @@ end
         resolved_composite = resolve(composite)
         keys(resolved_composite)
         propertynames(resolved_composite)
+        initcontext(resolved_composite)
+        initcontext(initcontext(resolved_composite), :counter)
         composite_process = Process(composite; repeats = 2)
         run(composite_process)
         wait(composite_process)
         close(composite_process)
+
+        composite_inline = InlineProcess(composite; repeats = 2)
+        run(composite_inline)
+        run_nogen(composite_inline)
+        generated_context = merge_into_globals(context(composite_inline), (; process = composite_inline))
+        loop(
+            composite_inline,
+            getalgo(taskdata(composite_inline)),
+            generated_context,
+            lifetime(composite_inline),
+            Generated(),
+        )
+        reset!(composite_inline)
 
         edited_composite = composite |>
             la -> addalgo(la, :extra => _ProcessPrecompileCounter, 1) |>
@@ -199,12 +346,20 @@ end
         fetch(finalized_process)
         close(finalized_process)
 
-        threaded = ThreadedCompositeAlgorithm(_ProcessPrecompileCounter, _ProcessPrecompileScaler, (1, 1))
-        resolve(threaded)
-        threaded_process = Process(threaded; repeats = 1)
-        run(threaded_process)
-        wait(threaded_process)
-        close(threaded_process)
+        shared = CompositeAlgorithm(
+            :writer => _ProcessPrecompileVectorPush,
+            :reader => _ProcessPrecompileSharedReader,
+            (1, 1),
+            Share(_ProcessPrecompileVectorPush, _ProcessPrecompileSharedReader),
+        )
+        shared_process = Process(
+            shared,
+            Input(_ProcessPrecompileVectorPush, :source => 1.0);
+            repeats = 2,
+        )
+        run(shared_process)
+        wait(shared_process)
+        close(shared_process)
 
         dsl_routine = @Routine begin
             _ProcessPrecompileCounter()
@@ -223,6 +378,43 @@ end
         run(dsl_composite_process)
         wait(dsl_composite_process)
         close(dsl_composite_process)
+
+        dsl_composite_routed = @CompositeAlgorithm begin
+            @state seed = 2.0
+            @state bias = 1.0
+            @alias src = _ProcessPrecompileSource
+            produced, passthrough = src(seed)
+            scaled = _process_precompile_scale(produced; scale = 3.0)
+            combined = _process_precompile_add(scaled, passthrough; bias = bias)
+            _ProcessPrecompileSink(value = combined)
+        end
+        resolved_dsl_composite_routed = resolve(dsl_composite_routed)
+        initcontext(resolved_dsl_composite_routed)
+        dsl_routed_process = Process(resolved_dsl_composite_routed; repeats = 2)
+        run(dsl_routed_process)
+        wait(dsl_routed_process)
+        close(dsl_routed_process)
+
+        dsl_interval_composite = @CompositeAlgorithm begin
+            @interval 2 _ProcessPrecompileCounter()
+            _ProcessPrecompileScaler()
+        end
+        resolved_dsl_interval_composite = resolve(dsl_interval_composite)
+        initcontext(resolved_dsl_interval_composite)
+
+        dsl_routine_with_state = @Routine begin
+            @state precompile_routine_state begin
+                seed = 1.0
+            end
+            _ProcessPrecompileSource(seed)
+            _ProcessPrecompileSink(value = seed)
+        end
+        resolved_dsl_routine_with_state = resolve(dsl_routine_with_state)
+        initcontext(resolved_dsl_routine_with_state)
+        dsl_routine_state_process = Process(resolved_dsl_routine_with_state; repeats = 1)
+        run(dsl_routine_state_process)
+        wait(dsl_routine_state_process)
+        close(dsl_routine_state_process)
 
         fake_events = Int[]
         fake_recipe = (;
