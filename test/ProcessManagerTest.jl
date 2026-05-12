@@ -43,6 +43,25 @@ end
     @test eltype(slots(manager)) <: WorkerSlot{ManagerFakeWorker, Int, Any, Nothing, Any}
 end
 
+@testset "ProcessManager stores slots as a typed tuple" begin
+    recipe = (;
+        prepare! = (slot, job, manager) -> (slot.worker.done = true; push!(slot.worker.buffer, job)),
+        isdone = (slot, manager) -> slot.worker.done,
+    )
+    manager = ProcessManager(
+        recipe;
+        workers = (ManagerFakeWorker(1, Int[], false), (; done = false, buffer = Int[])),
+        job_type = Int,
+    )
+
+    @test slots(manager) isa Tuple
+    @test workers(manager) isa Tuple
+    @test typeof(slots(manager)) <: Tuple{
+        WorkerSlot{ManagerFakeWorker, Int, Any, Any, Any},
+        WorkerSlot{@NamedTuple{done::Bool, buffer::Vector{Int}}, Int, Any, Any, Any},
+    }
+end
+
 @testset "ProcessManager initializes owned state from config" begin
     recipe = (;
         initstate = config -> (; scale = config.scale, count = Ref(0)),

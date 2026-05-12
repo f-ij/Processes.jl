@@ -258,10 +258,12 @@ manager = ProcessManager(
 )
 ```
 
-Usually `job_type = eltype(jobs)` is the most important one. If the manager
-uses existing workers, `result_type = eltype(workers)` is usually appropriate.
-Keep the worker vector concretely typed so the slot worker type is concrete
-too.
+Usually `job_type = eltype(jobs)` is the most important one. If a callback
+stores a result in `slot.result`, set `result_type` to that result type.
+
+The manager stores its slots in a tuple. This keeps the slot container type
+fixed after construction and leaves room for workers with different concrete
+types. `workers(manager)` returns the same fixed-shape tuple of worker objects.
 
 ```@docs
 Processes.ProcessManager

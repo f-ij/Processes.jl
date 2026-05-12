@@ -119,9 +119,9 @@ The `job_type`, `scratch_type`, `result_type`, and `error_type` keywords let
 latency-sensitive code make worker slot fields concrete. Leaving them as `Any`
 keeps the manager fully flexible.
 """
-mutable struct ProcessManager{Recipe, Worker, Job, Scratch, Result, Err, Config, State, Policy <: FlushPolicy}
+mutable struct ProcessManager{Recipe, W, Config, State, Policy <: FlushPolicy}
     recipe::Recipe
-    slots::Vector{WorkerSlot{Worker, Job, Scratch, Result, Err}}
+    slots::W
     config::Config
     state::State
     flush_policy::Policy
@@ -135,6 +135,22 @@ mutable struct ProcessManager{Recipe, Worker, Job, Scratch, Result, Err, Config,
     owns_workers::Bool
 end
 
+function _slot_container(workers, job_type::Type, scratch_type::Type, result_type::Type, error_type::Type)
+    return Tuple(
+        WorkerSlot{typeof(worker), job_type, scratch_type, result_type, error_type}(
+            Int(idx),
+            worker,
+            nothing,
+            nothing,
+            nothing,
+            nothing,
+            false,
+            0,
+        )
+        for (idx, worker) in enumerate(workers)
+    )
+end
+
 function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), throw::Bool = true, poll_interval::Real = 0.0, job_type::Type = Any, scratch_type::Type = Any, result_type::Type = Any, error_type::Type = Any)
     nworkers > 0 || throw(ArgumentError("`nworkers` must be positive."))
     normalized_policy = _normalize_flush_policy(flush_policy)
@@ -143,24 +159,18 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
     else
         state
     end
-    build_manager = ProcessManager(recipe, WorkerSlot{Any, Any, Any, Any, Any}[], config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
+    build_manager = ProcessManager(recipe, (), config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
 
     worker_values = if isnothing(workers)
-        [makeworker(recipe, idx, build_manager) for idx in 1:Int(nworkers)]
+        ntuple(idx -> makeworker(recipe, idx, build_manager), Int(nworkers))
     else
         collected = collect(workers)
         isempty(collected) && throw(ArgumentError("`workers` must not be empty."))
-        collected
+        Tuple(collected)
     end
 
-    worker_type = eltype(worker_values)
-    slot_type = WorkerSlot{worker_type, job_type, scratch_type, result_type, error_type}
-    manager = ProcessManager(recipe, slot_type[], config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
-    for (idx, worker) in enumerate(worker_values)
-        push!(manager.slots, slot_type(Int(idx), worker, nothing, nothing, nothing, nothing, false, 0))
-    end
-
-    return manager
+    slot_values = _slot_container(worker_values, job_type, scratch_type, result_type, error_type)
+    return ProcessManager(recipe, slot_values, config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
 end
 
 """
@@ -175,21 +185,17 @@ slots(manager::ProcessManager) = manager.slots
 
 Return the workers stored in each manager slot.
 """
-function workers(manager::ProcessManager{Recipe, Worker}) where {Recipe, Worker}
-    result = Vector{Worker}(undef, length(manager.slots))
-    for idx in eachindex(manager.slots)
-        result[idx] = manager.slots[idx].worker
-    end
-    return result
-end
+_slot_worker(slot::WorkerSlot) = slot.worker
+workers(manager::ProcessManager) = map(_slot_worker, manager.slots)
 
 struct NoRecipeCallback end
-const _NO_RECIPE_CALLBACK = NoRecipeCallback()
+_is_no_recipe_callback(::NoRecipeCallback) = true
+_is_no_recipe_callback(_) = false
 
 @inline function _recipe_field(recipe, ::Val{name}) where {name}
-    hasfield(typeof(recipe), name) || return _NO_RECIPE_CALLBACK
+    hasfield(typeof(recipe), name) || return NoRecipeCallback()
     callback = getfield(recipe, name)
-    return isnothing(callback) ? _NO_RECIPE_CALLBACK : callback
+    return isnothing(callback) ? NoRecipeCallback() : callback
 end
 
 @inline _call_with_supported_arity(f) = f()
@@ -231,20 +237,20 @@ end
 
 function _call_recipe_field(recipe, name::Val, args...)
     callback = _recipe_field(recipe, name)
-    callback === _NO_RECIPE_CALLBACK && throw(ArgumentError("Recipe does not define callback `$(_valname(name))`."))
+    _is_no_recipe_callback(callback) && throw(ArgumentError("Recipe does not define callback `$(_valname(name))`."))
     return _call_with_supported_arity(callback, args...)
 end
 
 function _call_optional_recipe_field(recipe, name::Val, args...)
     callback = _recipe_field(recipe, name)
-    callback === _NO_RECIPE_CALLBACK && return _NO_RECIPE_CALLBACK
+    _is_no_recipe_callback(callback) && return NoRecipeCallback()
     return _call_with_supported_arity(callback, args...)
 end
 
 makeworker(recipe, idx, manager) = _call_recipe_field(recipe, Val(:makeworker), idx, manager)
 function initstate(recipe, config, manager)
     result = _call_optional_recipe_field(recipe, Val(:initstate), config, manager)
-    return result === _NO_RECIPE_CALLBACK ? nothing : result
+    return _is_no_recipe_callback(result) ? nothing : result
 end
 prepare!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:prepare!), slot, job, manager)
 start!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:start!), slot, job, manager)
@@ -277,23 +283,23 @@ end
 
 function _start_slot!(manager::ProcessManager, slot::WorkerSlot, job)
     result = start!(manager.recipe, slot, job, manager)
-    return result === _NO_RECIPE_CALLBACK ? _start_worker!(slot.worker) : result
+    return _is_no_recipe_callback(result) ? _start_worker!(slot.worker) : result
 end
 
 function _slot_isdone(manager::ProcessManager, slot::WorkerSlot)
     result = isdone(manager.recipe, slot, manager)
-    return result === _NO_RECIPE_CALLBACK ? _worker_isdone(slot.worker) : Bool(result)
+    return _is_no_recipe_callback(result) ? _worker_isdone(slot.worker) : Bool(result)
 end
 
 function _finalize_slot_worker!(manager::ProcessManager, slot::WorkerSlot, job)
     result = finalize!(manager.recipe, slot, job, manager)
-    return result === _NO_RECIPE_CALLBACK ? _finalize_worker!(slot.worker) : result
+    return _is_no_recipe_callback(result) ? _finalize_worker!(slot.worker) : result
 end
 
 function _safe_close_slot!(manager::ProcessManager, slot::WorkerSlot)
     try
         result = close!(manager.recipe, slot, manager)
-        result === _NO_RECIPE_CALLBACK && _close_worker!(slot.worker)
+        _is_no_recipe_callback(result) && _close_worker!(slot.worker)
     catch err
         push!(manager.errors, err)
     end
