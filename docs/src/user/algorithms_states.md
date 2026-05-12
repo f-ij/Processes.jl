@@ -5,7 +5,13 @@
 - Use `ProcessAlgorithm` for something that actively participates in the loop by implementing `Processes.step!`.
 - Use `ProcessState` for data that should be initialized into a subcontext and then shared or read by algorithms.
 
-Both are process entities, and both are registered into subcontexts inside the final `ProcessContext`.
+Both are process entities: values that the package knows how to place inside a
+process. When a process is prepared, each entity gets a named part of the
+process context. That named part is its **subcontext**.
+
+User methods receive a view of the current subcontext, plus any routed or shared
+values that were made visible to it. In normal code, treat that view like a
+read-only input object. Return a `NamedTuple` to write values back.
 
 ## Lifecycle Hooks
 
@@ -15,12 +21,14 @@ The framework lifecycle is:
 2. looped `step!` phase
 3. `cleanup` phase
 
-Registry order matters here: states are initialized first, then algorithms. Cleanup follows the same order.
+Order matters here: states are initialized first, then algorithms. Cleanup
+follows the same order. This means an algorithm can read values prepared by an
+earlier state if those values are routed or shared to it.
 
 Two details from the implementation are worth knowing:
 
 - `cleanup` runs on natural finite completion.
-- If a process is interrupted, paused, or runs under `Indefinite()`, `after_while` stores the current context and returns without automatic cleanup.
+- If a process is interrupted, paused, or runs under `Indefinite()`, the current context is stored without automatic cleanup.
 
 There is no built-in `prepare!` hook in the current pipeline.
 If you want a one-time preparation step, fold it into `init` or guard the first `step!` with a flag in state.
@@ -60,7 +68,8 @@ end
 
 ### `@ProcessAlgorithm`
 
-`@ProcessAlgorithm` creates the struct and a `step!` method from a function signature.
+`@ProcessAlgorithm` creates the struct and the needed `step!` methods from a
+function signature.
 
 ```julia
 @ProcessAlgorithm function Accumulate(x, gain)
@@ -73,15 +82,17 @@ You can still define `init` and `cleanup` manually for the generated type.
 
 #### Macro-Generated Algorithm Semantics
 
-`@ProcessAlgorithm` supports a richer function-first DSL than the simple example above.
+`@ProcessAlgorithm` also supports managed local state and configuration fields.
+Managed local state is data that belongs to one algorithm and is created during
+`init`, then read again during each `step!`.
 
 The signature is split into:
 
-- plain positional arguments: runtime values read during `Processes.step!`
-- `@managed(...)` positional arguments: local algorithm state created during `Processes.init`
-- normal keyword arguments: runtime keyword-style values read during `Processes.step!`
-- optional trailing `@input((; ...))` / `@inputs((; ...))` / `@init((; ...))`: init-time inputs used while constructing managed state
-- optional `@config ...` declarations before the function: struct fields on the generated algorithm type
+- plain positional arguments: values read from context during `Processes.step!`
+- `@managed(...)` positional arguments: algorithm-owned values created during `Processes.init`
+- normal keyword arguments: values read from context during `Processes.step!`, using the declared default when absent
+- optional trailing `@input((; ...))` / `@inputs((; ...))` / `@init((; ...))`: values read only while constructing managed state
+- optional `@config ...` declarations before the function: fields stored on the generated algorithm object
 
 Example:
 
@@ -117,7 +128,7 @@ Rules worth knowing:
 - inside the algorithm body, config fields are available directly by name.
   Use `seed`, not `config.seed`.
 - plain positional arguments are runtime-only and are not available while constructing managed state.
-- `where` signatures are supported.
+- Julia `where` signatures are supported.
 
 For a macro-generated algorithm `MyAlgo`, the main entrypoints are:
 
@@ -165,3 +176,42 @@ Compose entities with loop algorithms:
 - `Routine(...)` for sequential blocks with repeats.
 
 Both can include `ProcessState`s and user options such as `Route` and `Share`.
+
+### Changing a Loop Algorithm Schedule
+
+Process `lifetime` controls how long the outer process loop runs. Inside a
+loop algorithm, the per-child schedule is controlled by the loop algorithm
+itself:
+
+- `CompositeAlgorithm` and `ThreadedCompositeAlgorithm` use intervals.
+- `Routine` uses repeats.
+
+For composite algorithms, use the edit helpers before resolving the algorithm:
+
+```julia
+algo = CompositeAlgorithm(FastStep, SlowStep, (1, 10))
+
+algo = changeinterval(algo, 2, 20)
+interval(algo, 2) == Processes.Interval(20)
+
+algo = changeintervals(algo, (1, 5))
+intervals(algo) == (Processes.Interval(1), Processes.Interval(5))
+```
+
+These helpers return a new loop algorithm with the updated schedule. They are
+intended for unresolved loop algorithms; if you already called `resolve`, edit
+the original algorithm and resolve it again.
+
+When adding a child, pass the new child's schedule as the last argument:
+
+```julia
+algo = addalgo(algo, :logger => Logger, 100)
+```
+
+For `Routine`, the constructor and `addalgo` schedule argument are repeat
+counts:
+
+```julia
+routine = Routine(Prepare, Train, (1, 50))
+routine = addalgo(routine, :validate => Validate, 1)
+```

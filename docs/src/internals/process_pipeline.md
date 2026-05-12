@@ -4,10 +4,10 @@ This page documents the runtime path from `Process(...)` to loop execution.
 
 ## 1. Construction
 
-`Process(func, inputs_overrides...; lifetime, timeout)` (`src/Process.jl`):
+`Process(func, inputs_overrides...; repeats, lifetime, timeout)` (`src/Process.jl`):
 
 1. Wrap bare `ProcessAlgorithm` as `SimpleAlgo`.
-2. Normalize lifetime (`Repeat(n)`/`Indefinite()`, with `Routine` default `Repeat(1)` when `lifetime = nothing`).
+2. Normalize stop behavior: `repeats = n` becomes `Repeat(n)`, `lifetime` accepts `Lifetime` objects, and `Routine` defaults to `Repeat(1)` when no lifetime is provided.
 3. Build empty context: `ProcessContext(func)`.
 4. Convert `Input`/`Override` into named backend forms via registry (`resolve`).
 5. Build `TaskData` and initialize context via `initcontext(td)`.

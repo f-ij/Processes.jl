@@ -1,0 +1,113 @@
+export FinalizedAlgorithm, finalstep
+
+"""
+Root-only loop-algorithm wrapper that post-processes the cleaned final context.
+
+`FinalizedAlgorithm` is intended to wrap the outer loop algorithm passed to a
+process. When nested inside another loop algorithm constructor, the parser warns
+and strips the wrapper so inner context semantics stay ordinary.
+"""
+struct FinalizedAlgorithm{LA<:LoopAlgorithm, F} <: LoopAlgorithm
+    inner::LA
+    final::F
+end
+
+function finalstep(la::LoopAlgorithm, final)
+    return FinalizedAlgorithm{typeof(la), typeof(final)}(la, final)
+end
+
+function finalstep(::Type{<:LoopAlgorithm}, final)
+    error("`finalstep` requires an instantiated LoopAlgorithm, not a LoopAlgorithm type.")
+end
+
+@inline inneralgorithm(fa::FinalizedAlgorithm) = getfield(fa, :inner)
+@inline finalfunction(fa::FinalizedAlgorithm) = getfield(fa, :final)
+
+@inline getalgos(fa::FinalizedAlgorithm) = getalgos(inneralgorithm(fa))
+@inline getalgo(fa::FinalizedAlgorithm, idx) = getalgo(inneralgorithm(fa), idx)
+@inline getstates(fa::FinalizedAlgorithm) = getstates(inneralgorithm(fa))
+@inline getoptions(fa::FinalizedAlgorithm) = getoptions(inneralgorithm(fa))
+@inline getregistry(fa::FinalizedAlgorithm) = getregistry(inneralgorithm(fa))
+@inline isresolved(fa::FinalizedAlgorithm) = isresolved(inneralgorithm(fa))
+@inline getid(fa::FinalizedAlgorithm) = getid(inneralgorithm(fa))
+
+@inline setoptions(fa::FinalizedAlgorithm, options) = finalstep(setoptions(inneralgorithm(fa), options), finalfunction(fa))
+@inline _attach_registry(fa::FinalizedAlgorithm, registry::NameSpaceRegistry) = finalstep(_attach_registry(inneralgorithm(fa), registry), finalfunction(fa))
+
+function update_keys(fa::FinalizedAlgorithm, registry::NameSpaceRegistry)
+    return finalstep(update_keys(inneralgorithm(fa), registry), finalfunction(fa))
+end
+
+@inline Base.length(fa::FinalizedAlgorithm) = length(inneralgorithm(fa))
+@inline Base.eachindex(fa::FinalizedAlgorithm) = eachindex(inneralgorithm(fa))
+@inline reset!(fa::FinalizedAlgorithm) = reset!(inneralgorithm(fa))
+@inline step!(fa::FinalizedAlgorithm, context::C, typestable::S = Stable()) where {C<:AbstractContext, S} = step!(inneralgorithm(fa), context, typestable)
+@inline cleanup(fa::FinalizedAlgorithm, context) = cleanup(inneralgorithm(fa), context)
+
+@inline multipliers(fa::FinalizedAlgorithm) = multipliers(inneralgorithm(fa))
+@inline intervals(fa::FinalizedAlgorithm) = intervals(inneralgorithm(fa))
+@inline intervals(fa::FinalizedAlgorithm, idx) = intervals(inneralgorithm(fa), idx)
+@inline interval(fa::FinalizedAlgorithm, idx) = interval(inneralgorithm(fa), idx)
+@inline repeats(fa::FinalizedAlgorithm) = repeats(inneralgorithm(fa))
+@inline repeats(fa::FinalizedAlgorithm, idx::Int) = repeats(inneralgorithm(fa), idx)
+@inline repeats(fa::FinalizedAlgorithm, idx::Val) = repeats(inneralgorithm(fa), idx)
+
+@inline functypes(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = functypes(LA)
+@inline functypes(fa::FinalizedAlgorithm) = functypes(inneralgorithm(fa))
+@inline algotypes(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = algotypes(LA)
+@inline algotypes(fa::FinalizedAlgorithm) = algotypes(inneralgorithm(fa))
+@inline statetypes(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = statetypes(LA)
+@inline statetypes(fa::FinalizedAlgorithm) = statetypes(inneralgorithm(fa))
+@inline subalgotypes(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = subalgotypes(LA)
+@inline subalgotypes(fa::FinalizedAlgorithm) = subalgotypes(inneralgorithm(fa))
+@inline numalgos(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = numalgos(LA)
+@inline numalgos(fa::FinalizedAlgorithm) = numalgos(inneralgorithm(fa))
+@inline getalgotype(::Type{<:FinalizedAlgorithm{LA}}, idx) where {LA} = getalgotype(LA, idx)
+@inline getalgotype(fa::FinalizedAlgorithm, idx) = getalgotype(inneralgorithm(fa), idx)
+
+@inline iscomposite(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = iscomposite(LA)
+@inline iscomposite(fa::FinalizedAlgorithm) = iscomposite(inneralgorithm(fa))
+
+@inline function _loop_cleanup_context(algo, context)
+    return cleanup(algo, context)
+end
+
+@inline function _loop_final_result(algo, cleaned_context)
+    return cleaned_context
+end
+
+@inline function _loop_cleanup_context(fa::FinalizedAlgorithm, context)
+    return cleanup(inneralgorithm(fa), context)
+end
+
+@inline function _loop_final_result(fa::FinalizedAlgorithm, cleaned_context)
+    return finalfunction(fa)(cleaned_context)
+end
+
+function _strip_nested_finalized_algorithm(algo)
+    return algo
+end
+
+function _strip_nested_finalized_algorithm(fa::FinalizedAlgorithm)
+    @warn "`FinalizedAlgorithm` is root-only. Dropping its final wrapper because it was used inside another LoopAlgorithm."
+    return inneralgorithm(fa)
+end
+
+function _strip_nested_finalized_algorithm(pair::Pair)
+    stripped = _strip_nested_finalized_algorithm(pair.second)
+    return stripped === pair.second ? pair : (pair.first => stripped)
+end
+
+function Base.show(io::IO, fa::FinalizedAlgorithm)
+    println(io, "FinalizedAlgorithm")
+    inner_lines = split(sprint(show, inneralgorithm(fa); context = IOContext(io, :limit => get(io, :limit, false), :color => get(io, :color, false))), '\n')
+    print(io, "├── inner = ", inner_lines[1])
+    for line in Iterators.drop(inner_lines, 1)
+        print(io, "\n│   ", line)
+    end
+    print(io, "\n└── final = ", summary(finalfunction(fa)))
+end
+
+function Base.summary(io::IO, fa::FinalizedAlgorithm)
+    print(io, "FinalizedAlgorithm(", sprint(summary, inneralgorithm(fa)), ")")
+end

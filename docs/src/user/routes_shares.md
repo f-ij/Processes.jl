@@ -1,6 +1,10 @@
 # [Routes and Shares](@id routes_shares_user)
 
-`Route` and `Share` connect subcontexts between process entities.
+`Route` and `Share` make values from one algorithm or state visible to another.
+
+Each algorithm or state owns a subcontext: its named part of the full process
+context. A route exposes selected names from one subcontext. A share exposes all
+names from one subcontext.
 
 ## Referencing Algorithms
 
@@ -24,6 +28,8 @@ CompositeAlgorithm(
 ```
 
 Target sees `context.input_value`.
+
+If no alias is given, the target sees the same name as the source.
 
 ### Transform Route Values
 
@@ -59,11 +65,14 @@ Expose all source variables to target:
 Share(Source, Target)
 ```
 
-Default is bidirectional (`directional = false`). Use `directional = true` for one-way share.
+Default is bidirectional (`directional = false`), so both sides can read the
+other side's values. Use `directional = true` for a one-way share from the first
+argument to the second.
 
 ## Read and Write Semantics
 
-Routed/shared names are real view locations. If target returns those names from `step!`, the merge can update the source subcontext.
+Routed and shared names point back to stored values. If the target returns one
+of those names from `step!`, the source subcontext can be updated.
 
 This enables coupling patterns like:
 

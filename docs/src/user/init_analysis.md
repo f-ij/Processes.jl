@@ -7,6 +7,10 @@ It is meant for exploratory analysis, not for exact validation.
 When an `init` path eventually errors because a missing value turned into `nothing`,
 analysis stops for that path and only the accesses up to that point are recorded.
 
+Use it when you are not sure which `Input(...)`, `Route(...)`, or `Share(...)`
+values an algorithm needs. The analyzer runs your hooks with a recording context
+instead of a normal runtime context.
+
 ## Loading It
 
 The analyzer lives in `src/ContextAnalyzer/ContextAnalyzer.jl` and is currently opt-in.
@@ -33,8 +37,8 @@ inside a `try` block.
 
 The analyzer records:
 
-- which registered views were opened,
-- which symbols each view requested through `getproperty`, `get`, `haskey`, or `getindex`,
+- which registered context entries were opened,
+- which names each entry requested through `context.x`, `get(context, :x, default)`, `haskey(context, :x)`, or indexing,
 - a compact count of captured errors,
 - stored per-view inputs that were seeded or produced during successful `init` calls.
 

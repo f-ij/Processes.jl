@@ -3,6 +3,19 @@ using Processes
 
 struct Fib <: Processes.ProcessAlgorithm end
 struct Luc <: Processes.ProcessAlgorithm end
+struct FinalCounter <: Processes.ProcessAlgorithm end
+
+function Processes.init(::FinalCounter, context)
+    return (; count = 0, cleaned = false)
+end
+
+function Processes.step!(::FinalCounter, context)
+    return (; count = context.count + 1)
+end
+
+function Processes.cleanup(::FinalCounter, context)
+    return (; count = context.count + 10, cleaned = true)
+end
 
 @testset "Composite composition, flattening, routine" begin
     fdup_inst = Processes.Unique(Fib())
@@ -59,6 +72,62 @@ struct Luc <: Processes.ProcessAlgorithm end
     # name_fib_type_ff = Processes.getkey(reg_ffluc, Fib)
     # name_fdup_inst = Processes.getkey(reg_ffluc, fdup_inst)
     # @test length(unique((name_fib_inst_ff, name_fib_type_ff, name_fdup_inst))) == 3
+end
+
+@testset "Loop algorithm recipes and root final wrapper" begin
+    comp_recipe = CompositeAlgorithm(Fib, Luc, (1, 1))
+    @test comp_recipe isa CompositeAlgorithmRecipe
+    @test !(resolve(comp_recipe) isa CompositeAlgorithmRecipe)
+
+    routine_recipe = Routine(Fib, Luc, (1, 1))
+    @test routine_recipe isa RoutineRecipe
+    @test !(resolve(routine_recipe) isa RoutineRecipe)
+
+    finalized = finalstep(
+        CompositeAlgorithm(FinalCounter, (1,)),
+        context -> (; count = context[FinalCounter].count, cleaned = context[FinalCounter].cleaned),
+    )
+    resolved = resolve(finalized)
+    @test resolved isa Processes.FinalizedAlgorithm
+    @test Processes.isresolved(resolved)
+    @test length(resolved) == 1
+
+    p = Process(resolved, repeat = 2)
+    run(p)
+    result = fetch(p)
+    @test result == (; count = 12, cleaned = true)
+    @test context(p)[FinalCounter].count == 12
+    @test context(p)[FinalCounter].cleaned
+
+    close(p)
+    @test fetch(p) == result
+    @test context(p)[FinalCounter].count == 12
+
+    inner = finalstep(CompositeAlgorithm(FinalCounter, (1,)), context -> :inner_final)
+    nested = @test_logs (:warn, r"root-only") CompositeAlgorithm(inner, Luc, (1, 1))
+    @test !(Processes.getalgo(nested, 1) isa Processes.FinalizedAlgorithm)
+end
+
+@testset "IfWrapped parser options filter constructor inputs" begin
+    kept_comp = CompositeAlgorithm(IfWrapped(Fib, true), Luc, (2, 3))
+    @test length(Processes.getalgos(kept_comp)) == 2
+    @test Processes.intervals(kept_comp) == (Processes.Interval(2), Processes.Interval(3))
+
+    skipped_comp = CompositeAlgorithm(IfWrapped(Fib, false), Luc, (2, 3))
+    @test length(Processes.getalgos(skipped_comp)) == 1
+    @test Processes.intervals(skipped_comp) == (Processes.Interval(3),)
+
+    skipped_routine = Routine(IfWrapped(Fib, false), Luc, (2, 3))
+    @test length(Processes.getalgos(skipped_routine)) == 1
+    @test Processes.repeats(skipped_routine) == (3,)
+
+    named_outer = resolve(CompositeAlgorithm(:fib => IfWrapped(Fib, true), Luc, (1, 1)))
+    @test Processes.getkey(Processes.getalgo(named_outer, 1)) == :fib
+
+    named_inner = resolve(CompositeAlgorithm(IfWrapped(:fib => Fib, true), Luc, (1, 1)))
+    @test Processes.getkey(Processes.getalgo(named_inner, 1)) == :fib
+
+    @test_throws AssertionError CompositeAlgorithm(IfWrapped(Fib, false), (1,))
 end
 
 @testset "Identifiable merge forwarding preserves keyed GeneralState" begin

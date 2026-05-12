@@ -451,8 +451,21 @@ function _dsl_known_outputs!(known_outputs::Set{Symbol}, stmt)
     if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
         _, fields = _dsl_parse_state_statement(stmt)
         union!(known_outputs, getproperty.(fields, :name))
+    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@include_if")
+        _, include_body = _dsl_parse_include_if(stmt)
+        _dsl_known_outputs_include_body!(known_outputs, include_body)
     elseif stmt isa Expr && stmt.head == :(=)
         union!(known_outputs, _dsl_parse_output_symbols(stmt.args[1]))
+    end
+    return known_outputs
+end
+
+"""Track outputs from an `@include_if` body for later route parsing."""
+function _dsl_known_outputs_include_body!(known_outputs::Set{Symbol}, include_body)
+    statements = include_body isa Expr && include_body.head == :block ? include_body.args : Any[include_body]
+    for stmt in statements
+        stmt isa LineNumberNode && continue
+        _dsl_known_outputs!(known_outputs, stmt)
     end
     return known_outputs
 end
@@ -685,6 +698,32 @@ function _dsl_parse_alias(stmt)
     lhs = assign.args[1]
     lhs isa Symbol || error("@alias names must be symbols. Got `$lhs`.")
     return lhs => assign.args[2]
+end
+
+"""Parse a constructor-time conditional include statement."""
+function _dsl_parse_include_if(stmt)
+    stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@include_if") || error("Invalid @include_if statement `$stmt`.")
+    length(stmt.args) == 4 || error("@include_if expects `@include_if condition entry` or `@include_if condition begin ... end`.")
+    return stmt.args[3], stmt.args[4]
+end
+
+"""Parse a root-level final post-processing statement."""
+function _dsl_parse_finally(stmt)
+    stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@finally") || error("Invalid @finally statement `$stmt`.")
+    length(stmt.args) == 3 || error("@finally expects exactly one callable, e.g. `@finally summarize`.")
+    return stmt.args[3]
+end
+
+"""Reject declarations whose scope would be ambiguous inside conditional blocks."""
+function _dsl_reject_include_if_declarations(stmt)
+    if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
+        error("@state is not supported inside `@include_if`; declare state at the surrounding DSL block level.")
+    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
+        error("@alias is not supported inside `@include_if`; declare aliases before the conditional block.")
+    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@finally")
+        error("@finally is root-only and is not supported inside `@include_if`.")
+    end
+    return nothing
 end
 
 """
@@ -1154,6 +1193,22 @@ function _dsl_algorithm_entry_expr(alias_name::Symbol)
     alias_name == Symbol() ? :(_dsl_resolved.entity) : :($(QuoteNode(alias_name)) => _dsl_resolved.entity)
 end
 
+"""Wrap an algorithm constructor entry in a parser option when conditionally included."""
+function _dsl_maybe_conditional_entry_expr(entry_expr, include_condition)
+    isnothing(include_condition) && return entry_expr
+    return :(Processes.IfWrapped($entry_expr, $include_condition))
+end
+
+"""Guard constructor-side metadata for conditionally included entries."""
+function _dsl_maybe_guard_metadata_expr(expr, include_condition)
+    isnothing(include_condition) && return expr
+    return quote
+        if $include_condition
+            $expr
+        end
+    end
+end
+
 """
 Emit the share/route owner expression matching the eventual constructor entry.
 
@@ -1176,9 +1231,9 @@ Accepted top-level statements inside the block:
 - assignments like `x = ...` or `a, b = ...`
 - scheduled entries via `@interval`, `@every`, or `@repeat`
 
-`@finally` is recognized only to emit the current "not implemented" error.
+`@finally` is root-only and handled by the surrounding block collector.
 """
-function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol)
+function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol; include_condition = nothing)
     if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
@@ -1186,7 +1241,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@context")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@finally")
-        error("@finally is not implemented yet.")
+        error("@finally is root-only and must appear as a top-level DSL statement.")
     end
 
     outputs = ()
@@ -1201,7 +1256,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
         length(outputs) == 1 || error("Owned field references like `alias.field` can only bind to one output symbol, e.g. `state = dynamics.state`.")
         output = only(outputs)
         output == owned_route.source || error("Owned field aliasing currently requires the output name to match the field name. Use `$(owned_route.source) = ...` for `$(repr(rhs))`.")
-        return quote
+        metadata_expr = quote
             local _dsl_output = $(QuoteNode(output))
             local _dsl_owner = $(esc(owned_route.owner))
             if haskey(_dsl_state_owners, _dsl_output)
@@ -1211,6 +1266,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
                 _dsl_producers[_dsl_output] = _dsl_owner
             end
         end
+        return _dsl_maybe_guard_metadata_expr(metadata_expr, include_condition)
     end
 
     parsed = _dsl_parse_invocation(alias_map, context_map, rhs, known_outputs)
@@ -1219,9 +1275,16 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
 
     if parsed.kind == :entity
         customname = _dsl_customname(parsed.spec_expr, parsed.alias_name)
-        algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
+        algo_entry_expr = _dsl_maybe_conditional_entry_expr(_dsl_algorithm_entry_expr(parsed.alias_name), include_condition)
         share_target_expr = _dsl_share_endpoint_expr(parsed.alias_name)
         inputs_expr = _dsl_inputs_expr(parsed.inputs)
+        metadata_expr = quote
+            $(map(parsed.shares) do share_source
+                :(push!(_dsl_options, Processes.Share($(share_source), _dsl_owner)))
+            end...)
+            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+        end
         return quote
             local _dsl_outputs = $outputs_expr
             # Resolve the user-facing DSL entity into a normal algorithm/state
@@ -1231,25 +1294,27 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             if _dsl_resolved isa Processes._CompositeDSLResolved{:state}
                 # Inline states are stored separately and claim ownership of
                 # their outputs immediately.
-                push!(_dsl_states, _dsl_resolved.entity)
-                Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_owner, _dsl_outputs)
+                $(_dsl_maybe_guard_metadata_expr(quote
+                    push!(_dsl_states, _dsl_resolved.entity)
+                    Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_owner, _dsl_outputs)
+                end, include_condition))
             else
                 # Algorithms are appended to the constructor argument list and
                 # then wired into the routing tables.
                 push!(_dsl_algos, $algo_entry_expr)
                 push!(_dsl_specification, Int($schedule_expr))
-                $(map(parsed.shares) do share_source
-                    :(push!(_dsl_options, Processes.Share($(share_source), _dsl_owner)))
-                end...)
-                Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
-                Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+                $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
             end
         end
     end
 
     if parsed.kind == :resolved_expr
-        algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
+        algo_entry_expr = _dsl_maybe_conditional_entry_expr(_dsl_algorithm_entry_expr(parsed.alias_name), include_condition)
         owner_expr = _dsl_share_endpoint_expr(parsed.alias_name)
+        metadata_expr = quote
+            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+        end
         return quote
             local _dsl_outputs = $outputs_expr
             # Repeated inner blocks already expand to one resolved entity, so the
@@ -1258,8 +1323,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             local _dsl_owner = $owner_expr
             push!(_dsl_algos, $algo_entry_expr)
             push!(_dsl_specification, Int($schedule_expr))
-            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
-            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+            $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
         end
     end
 
@@ -1270,10 +1334,17 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     keyword_display_expr = _dsl_function_keyword_display_expr(parsed.keyword_specs)
     inputs_expr = _dsl_inputs_expr(parsed.inputs)
     customname = _dsl_customname(parsed.spec_expr, parsed.alias_name)
-    algo_entry_expr = _dsl_algorithm_entry_expr(parsed.alias_name)
+    algo_entry_expr = _dsl_maybe_conditional_entry_expr(_dsl_algorithm_entry_expr(parsed.alias_name), include_condition)
     share_target_expr = _dsl_share_endpoint_expr(parsed.alias_name)
 
     if parsed.kind == :keyword_call
+        metadata_expr = quote
+            $(map(parsed.shares) do share_source
+                :(push!(_dsl_options, Processes.Share($(share_source), _dsl_owner)))
+            end...)
+            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+        end
         return quote
             local _dsl_outputs = $outputs_expr
             local _dsl_resolved = Processes._resolve_composite_dsl_keyword_call(
@@ -1287,14 +1358,14 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             local _dsl_owner = $share_target_expr
             push!(_dsl_algos, $algo_entry_expr)
             push!(_dsl_specification, Int($schedule_expr))
-            $(map(parsed.shares) do share_source
-                :(push!(_dsl_options, Processes.Share($(share_source), _dsl_owner)))
-            end...)
-            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
-            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+            $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
         end
     end
 
+    metadata_expr = quote
+        Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+        Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+    end
     return quote
         local _dsl_outputs = $outputs_expr
         # Function-call syntax stays on a dedicated path so we can recover
@@ -1313,8 +1384,74 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
         local _dsl_owner = $share_target_expr
         push!(_dsl_algos, $algo_entry_expr)
         push!(_dsl_specification, Int($schedule_expr))
-        Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
-        Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+        $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
+    end
+end
+
+"""Build a constructor-time conditional include block."""
+function _dsl_build_include_if_statement(stmt, alias_map, context_map, known_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol)
+    condition_expr, include_body = _dsl_parse_include_if(stmt)
+    statements = include_body isa Expr && include_body.head == :block ? include_body.args : Any[include_body]
+
+    branch_alias_map = copy(alias_map)
+    branch_context_map = copy(context_map)
+    branch_known_outputs = copy(known_outputs)
+    branch_exprs = Any[]
+    current_line = nothing
+    condition_sym = gensym(:include_if)
+
+    for branch_stmt in statements
+        if branch_stmt isa LineNumberNode
+            current_line = branch_stmt
+            continue
+        end
+
+        _dsl_reject_include_if_declarations(branch_stmt)
+
+        if branch_stmt isa Expr && branch_stmt.head == :macrocall && branch_stmt.args[1] == Symbol("@context")
+            context = _dsl_parse_context(branch_stmt)
+            branch_alias_map[context.first] = context.second
+            branch_context_map[context.first] = context.second
+            step_expr = _dsl_build_statement(
+                branch_stmt.args[3].args[2],
+                branch_alias_map,
+                branch_context_map,
+                branch_known_outputs,
+                expected_schedule,
+                owner_name;
+                include_condition = condition_sym,
+            )
+            if !isnothing(step_expr)
+                step_expr = Base.remove_linenums!(step_expr)
+                isnothing(current_line) || push!(branch_exprs, current_line)
+                push!(branch_exprs, step_expr)
+            end
+            continue
+        elseif branch_stmt isa Expr && branch_stmt.head == :macrocall && branch_stmt.args[1] == Symbol("@include_if")
+            error("Nested `@include_if` blocks are not supported.")
+        else
+            step_expr = _dsl_build_statement(
+                branch_stmt,
+                branch_alias_map,
+                branch_context_map,
+                branch_known_outputs,
+                expected_schedule,
+                owner_name;
+                include_condition = condition_sym,
+            )
+        end
+
+        if !isnothing(step_expr)
+            step_expr = Base.remove_linenums!(step_expr)
+            isnothing(current_line) || push!(branch_exprs, current_line)
+            push!(branch_exprs, step_expr)
+        end
+        _dsl_known_outputs!(branch_known_outputs, branch_stmt)
+    end
+
+    return quote
+        local $condition_sym = Bool($(esc(condition_expr)))
+        $(branch_exprs...)
     end
 end
 
@@ -1324,13 +1461,14 @@ Walk a DSL block once and collect the state declarations plus executable stateme
 This is shared by the top-level `@CompositeAlgorithm`/`@Routine` expansion and the
 inner `@repeat n begin ... end` block expansion so they stay in sync.
 """
-function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::Symbol)
+function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::Symbol; allow_final::Bool = false)
     alias_map = Dict{Symbol, Any}()
     context_map = Dict{Symbol, Any}()
     known_outputs = Set{Symbol}()
     step_exprs = Any[]
     state_fields = Any[]
     state_name = :_state
+    final_expr = nothing
     current_line = nothing
 
     for stmt in statements
@@ -1349,6 +1487,11 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
             alias = _dsl_parse_alias(stmt)
             alias_map[alias.first] = alias.second
             continue
+        elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@finally")
+            allow_final || error("@finally is only supported at the outer @CompositeAlgorithm or @Routine level.")
+            isnothing(final_expr) || error("Only one @finally statement is supported per DSL block.")
+            final_expr = _dsl_parse_finally(stmt)
+            continue
         elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@context")
             context = _dsl_parse_context(stmt)
             alias_map[context.first] = context.second
@@ -1359,6 +1502,15 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
                 isnothing(current_line) || push!(step_exprs, current_line)
                 push!(step_exprs, step_expr)
             end
+            continue
+        elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@include_if")
+            step_expr = _dsl_build_include_if_statement(stmt, alias_map, context_map, known_outputs, expected_schedule, owner_name)
+            if !isnothing(step_expr)
+                step_expr = Base.remove_linenums!(step_expr)
+                isnothing(current_line) || push!(step_exprs, current_line)
+                push!(step_exprs, step_expr)
+            end
+            _dsl_known_outputs!(known_outputs, stmt)
             continue
         end
 
@@ -1372,7 +1524,7 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
         _dsl_known_outputs!(known_outputs, stmt)
     end
 
-    return (; step_exprs, state_fields, state_name)
+    return (; step_exprs, state_fields, state_name, final_expr)
 end
 
 """Create a `GeneralState` value directly."""
@@ -1384,9 +1536,10 @@ end
 """Expand a top-level DSL block into either a `CompositeAlgorithm` or a `Routine`."""
 function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_schedule::Symbol; print_constructor::Bool = false)
     statements = block isa Expr && block.head == :block ? block.args : Any[block]
-    collected = _dsl_collect_block(statements, expected_schedule, constructor_name)
+    collected = _dsl_collect_block(statements, expected_schedule, constructor_name; allow_final = true)
 
     state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
+    final_expr = collected.final_expr
 
     expanded = quote
         let
@@ -1407,7 +1560,8 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             $(print_constructor ? :(Processes._dsl_print_constructor_call($(QuoteNode(constructor_name)), _dsl_algos, _dsl_specification, _dsl_states, _dsl_options)) : nothing)
             # Build the final `CompositeAlgorithm`/`Routine` using the same
             # constructor surface users would write by hand.
-            getproperty(Processes, $(QuoteNode(constructor_name)))(_dsl_algos..., Tuple(_dsl_specification), _dsl_states..., _dsl_options...)
+            local _dsl_loopalgorithm = getproperty(Processes, $(QuoteNode(constructor_name)))(_dsl_algos..., Tuple(_dsl_specification), _dsl_states..., _dsl_options...)
+            $(isnothing(final_expr) ? :(_dsl_loopalgorithm) : :(Processes.finalstep(_dsl_loopalgorithm, $(esc(final_expr)))))
         end
     end
     return _dsl_strip_generated_linenums!(expanded)
@@ -1436,7 +1590,7 @@ end
 """Expand the body used inside `@repeat n begin ... end` into a `SimpleAlgo`."""
 function _dsl_expand_simplealgorithm_resolved(block)
     statements = block isa Expr && block.head == :block ? block.args : Any[block]
-    collected = _dsl_collect_block(statements, :none, :repeat)
+    collected = _dsl_collect_block(statements, :none, :repeat; allow_final = false)
 
     state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
 
@@ -1575,6 +1729,13 @@ Scheduling:
 - `x = @interval n f(produced)`
 - `x = @repeat n begin ... end`
 
+Constructor-time conditional inclusion:
+- `@include_if condition Algo(...)`
+- `@include_if condition begin ... end`
+
+The condition is evaluated when constructing the loop algorithm. Skipped entries
+are not registered and do not contribute routes, shares, or schedules.
+
 Current transform-route rules
 =============================
 
@@ -1618,6 +1779,7 @@ Examples:
 - `x = Algo(input = value)`
 - `x = @repeat 10 Algo(input = value)`
 - `y = @repeat 5 begin ... end`
+- `@include_if enabled x = Algo(input = value)`
 - `z = f(value; scale = 2)`
 - `@context c = @repeat 2 algo()`
 - `Damper(@all(osc...))`

@@ -5,7 +5,7 @@ This page covers the normal runtime flow: create a `Process`, run it, wait for i
 ## Create a Process
 
 ```julia
-p = Process(algo, Input(...), Override(...); lifetime = 1_000)
+p = Process(algo, Input(...), Override(...); repeats = 1_000)
 ```
 
 `Process(...)` constructs the runtime context immediately, applying inputs, running `init`, and then applying overrides.
@@ -20,11 +20,12 @@ run(p)
 
 ## Lifetime
 
-The `lifetime` keyword defines stop behavior:
+Stop behavior can be given either as a simple repeat count or as a lifetime
+object:
 
-- `lifetime = 1000` -> run a fixed number of iterations.
+- `repeats = 1000` -> run a fixed number of iterations.
 - omitted -> default lifetime behavior for that algorithm type.
-- advanced: `Processes.Repeat(...)`, `Processes.Indefinite()`, `Processes.Until(...)`, `Processes.RepeatOrUntil(...)`.
+- advanced: `lifetime = Repeat(...)`, `lifetime = Indefinite()`, `lifetime = Until(...)`, `lifetime = RepeatOrUntil(...)`.
 
 See [Lifetime](@ref lifetime_user) for full details.
 For selector syntax used in `Until`, see [Vars (`Var` Selectors)](@ref vars_user).
@@ -32,7 +33,7 @@ For selector syntax used in `Until`, see [Vars (`Var` Selectors)](@ref vars_user
 ## Control Operations
 
 - `pause(p)`: stop loop while keeping resumable state.
-- `run(p)`: start or resume.
+- `run(p)`: start a new task or resume after pause.
 - `close(p)`: stop the process and collect the final task result into the stored process context.
 - `reinit(p)`: pause, rebuild context through the init pipeline, and run again.
 
@@ -64,7 +65,8 @@ ip = InlineProcess(algo, Input(...), Override(...); repeats = 10_000)
 run(ip)
 ```
 
-For constructor parity with `Process(...)`, `lifetime = 10_000` is also accepted here.
+`InlineProcess` also accepts `lifetime = 10_000` and converts it to a repeat
+count. For `Process`, use `repeats = 10_000` or `lifetime = Repeat(10_000)`.
 
 If you need buffered external updates to context variables, see
 [Interactive Contexts](@ref interactive_user).

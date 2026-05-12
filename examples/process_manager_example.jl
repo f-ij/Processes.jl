@@ -1,48 +1,46 @@
 using Processes
 
-import Processes: Process, TaskData, Input, Override, NamedInput, NamedOverride,
-    ProcessContext, normalize_process_algo, getregistry, resolve, get_target_name,
-    getinputs, getoverrides, getlifetime, getalgo, taskdata, initcontext,
-    processlist, remove_process!, RuntimeListeners, context, task, deletekeys
-
-# `ProcessManager.jl` and `Copy.jl` are currently standalone utilities.
-include(joinpath(@__DIR__, "..", "src", "Copy.jl"))
-include(joinpath(@__DIR__, "..", "src", "ProcessManager.jl"))
-
 struct ManagedAccumulator <: Processes.ProcessAlgorithm end
 
 function Processes.init(::ManagedAccumulator, context)
-    (; start) = context
-    return (; value = start)
+    return (; value = Ref(0), delta = Ref(1), local_buffer = Int[])
 end
 
 function Processes.step!(::ManagedAccumulator, context)
-    return (; value = context.value + context.delta)
+    push!(context.local_buffer, context.value[])
+    context.value[] += context.delta[]
+    return (;)
 end
+
+template = Process(ManagedAccumulator; repeats = 3)
+external_buffer = Int[]
+
+recipe = (;
+    makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(template.context)),
+
+    prepare! = (slot, job, manager) -> begin
+        ctx = slot.worker.context[ManagedAccumulator]
+        ctx.value[] = job.start
+        ctx.delta[] = job.delta
+        resetworker!(slot)
+    end,
+
+    flush! = manager -> begin
+        for slot in slots(manager)
+            ctx = slot.worker.context[ManagedAccumulator]
+            append!(external_buffer, ctx.local_buffer)
+            empty!(ctx.local_buffer)
+        end
+    end,
+)
 
 jobs = [
-    (; start = 1, delta = 2, steps = 4),
-    (; start = 10, delta = 3, steps = 5),
-    (; start = 100, delta = 10, steps = 3),
+    (; start = 1, delta = 2),
+    (; start = 10, delta = 3),
+    (; start = 100, delta = 10),
 ]
 
-results = manageprocesses(jobs; max_running = 2, throw = true) do job, _
-    Process(
-        ManagedAccumulator,
-        Input(ManagedAccumulator, :start => job.start),
-        Override(ManagedAccumulator, :delta => job.delta);
-        lifetime = job.steps,
-    )
-end
+manager = ProcessManager(recipe; nworkers = 2, flush_policy = FlushAtEnd())
+run!(manager, jobs)
 
-println("Process manager results:")
-for result in results
-    final_value = result.context[ManagedAccumulator].value
-    println(
-        "job ", result.idx,
-        ": start=", result.property.start,
-        ", delta=", result.property.delta,
-        ", steps=", result.property.steps,
-        ", final value=", final_value,
-    )
-end
+println("Flushed values: ", external_buffer)

@@ -47,14 +47,15 @@ Property access is generated through `VarLocation`s (`src/Context/View/Locations
 - routed vars,
 - injected vars.
 
-Name precedence for reads:
+Name precedence for reads is determined by `NamedTuple` merge order. Later
+groups override earlier groups:
 
-1. shared vars
-2. routed vars
-3. local vars
-4. injected vars
+1. injected vars
+2. local vars
+3. routed vars
+4. shared vars
 
-Because local and injected are merged later, they override earlier names on collisions.
+This means local and injected names override route/share names on collisions.
 
 ## 4. Merging and Replacing
 

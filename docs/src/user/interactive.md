@@ -1,16 +1,19 @@
 # [Interactive Contexts](@id interactive_user)
 
-`Processes` supports buffered interactive updates through `ContextInjector`.
+`Processes` supports queued context updates through `ContextInjector`.
+
+Use this when code outside the normal `step!` method needs to change one stored
+context value while a process is being stepped.
 
 This lets you:
 
 - queue a value change from outside normal `step!` code,
-- validate and convert that value before it reaches the runtime state,
+- validate and convert that value before it reaches stored state,
 - apply queued updates whenever the injector is scheduled by the loop algorithm,
-- work with one variable at a time through a ref-like `view(context, Var(...))` handle.
+- work with one variable at a time through a `view(context, Var(...))` handle that reads and writes like a `Ref`.
 
-The feature is designed to preserve the package's normal context-type stability rules:
-updates are converted up front, and the injector only applies already-resolved, already-typed writes.
+Updates are converted before they enter the queue. The injector step then only
+applies writes whose target and value type are already known.
 
 ## Overview
 
@@ -28,7 +31,8 @@ context = initcontext(algo; lifetime = Repeat(10))
 
 The injector owns a small state subcontext named `:_injector` with a plain buffer of pending writes.
 
-Each buffered write stores a fully resolved target `(subcontext, variable)` pair and a value that has already been converted to the target variable's current type.
+Each buffered write stores the exact target `(subcontext, variable)` pair and a
+value that has already been converted to the target variable's current type.
 
 ## Checking Whether a Context Is Interactive
 
@@ -85,7 +89,7 @@ context.target.value == 2.0
 isempty(context._injector.buffer)
 ```
 
-This is the same behavior exercised in [test/ContextInjectorTest.jl](../../../test/ContextInjectorTest.jl).
+This is the same behavior exercised in `test/ContextInjectorTest.jl`.
 
 ## Ref-Like Interactive Access With `view(context, Var(...))`
 
@@ -234,7 +238,7 @@ ref[] == 5.0
 
 ## Tested Behavior
 
-The interactive API is covered in [test/ContextInjectorTest.jl](../../../test/ContextInjectorTest.jl), including:
+The interactive API is covered in `test/ContextInjectorTest.jl`, including:
 
 - buffered updates via `interact!(...)`,
 - `view(context, Var(...))` reads and writes,

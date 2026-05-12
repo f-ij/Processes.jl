@@ -31,27 +31,29 @@ algo = CompositeAlgorithm(
 )
 ```
 
-Without `Unique`, the framework may treat repeated equal values or repeated type-based entries as the same logical identity.
+Without `Unique`, repeated equal immutable values or repeated type-based entries
+can be treated as the same logical identity.
 
 ## Matching Rules
 
-For process entities (`ProcessAlgorithm`/`ProcessState`):
+For process entities (`ProcessAlgorithm`/`ProcessState`), the current matching
+rules are:
 
-- instance value matches by value (`match_by(pe) = pe`)
-- type matches by type (`match_by(::Type{<:ProcessEntity}) = T`)
+- an immutable instance that Julia can store directly in a type parameter matches by value,
+- a mutable or otherwise non-direct instance matches by object identity,
+- a type matches by that type.
 
 So `Fib()` and `Fib` are different identities.
 
 ## Why Instance Lookup Can Be Surprising
 
-Registry lookup uses a static path for `Type` and `isbits` values.
+The practical rule is: reuse the same reference you inserted.
 
-For non-`isbits` values, lookup falls back to type-level matching in `NameSpaceRegistry.getindex`.
+Fresh values can be surprising:
 
-Practical effect:
-
-- `isbits` instances can preserve more value-specific lookup behavior.
-- non-`isbits` instances tend to behave more like type-targeted lookups unless wrapped with stronger identity.
+- a fresh immutable value can match an equal inserted immutable value,
+- a fresh mutable value is a different object and normally does not match the inserted one,
+- a type such as `Fib` targets the type-based entry, not an instance entry like `Fib()`.
 
 ## `Unique`
 
@@ -60,8 +62,8 @@ Practical effect:
 That gives a guaranteed separate registry identity and thus separate subcontext key, even when:
 
 - two wrapped values are otherwise equal,
-- they are non-`isbits`,
-- or they are hard to distinguish by default value semantics.
+- they were added by the same type,
+- or they are hard to distinguish by normal Julia equality.
 
 ## Recommended Patterns
 

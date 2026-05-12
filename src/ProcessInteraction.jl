@@ -26,11 +26,12 @@ function Base.close(p::Process)
     @atomic p.paused = false
     @atomic p.shouldrun = false
 
-    fetched_context = nothing
+    fetched_result = nothing
     try
         wait(p)
         if !isnothing(p.task)
-            fetched_context = fetch(p)
+            fetched_result = fetch(p)
+            p.lastresult = fetched_result
         end
     catch(err)
         println("Process with error closed:")
@@ -40,8 +41,8 @@ function Base.close(p::Process)
 
     end
 
-    if fetched_context isa AbstractContext
-        context(p, fetched_context)
+    if fetched_result isa AbstractContext
+        context(p, fetched_result)
     end
     p.task = nothing 
 
@@ -107,10 +108,24 @@ This may be used also to levarge the dispatch system, if the types of the data c
 so that the new loop function is newly compiled
 """
 function reinit(p::Process)
-    # TODO: Allow for only preparing of subset of context
     @assert !isnothing(p.taskdata) "No task to run"
     pause(p)
     makecontext!(p)
+    run(p)
+    return true
+end
+
+"""
+Pause a process, re-run `init` for one registered subcontext, and unpause it.
+
+The target can be a registry symbol or registered algorithm reference. `inputs`
+are merged into the target subcontext before `init`, and `overrides` are merged
+afterwards.
+"""
+function reinit(p::Process, target; inputs = (;), overrides = (;))
+    @assert !isnothing(p.taskdata) "No task to run"
+    pause(p)
+    context(p, initcontext(p.context, target; inputs, overrides))
     run(p)
     return true
 end
@@ -142,7 +157,7 @@ end
 """
 Fetch the return value of a process
 """
-@inline Base.fetch(p::Process) = if !isnothing(p.task) fetch(p.task) else nothing end
+@inline Base.fetch(p::Process) = if !isnothing(p.task) fetch(p.task) else p.lastresult end
 
 """
 Quit all processes in the process list

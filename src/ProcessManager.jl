@@ -1,322 +1,417 @@
-export ManagedProcessResult, ProcessManager, manageprocesses
+export ProcessManager, WorkerSlot
+export FlushPolicy, FlushAtEnd, NoFlush, FlushEvery
+export dispatch!, poll!, drain!, run!, resetworker!, reinitworker!, slots, workers
 
 """
-    ManagedProcessResult
-
-Result record returned for each property handled by [`manageprocesses`](@ref).
-
-Fields:
-
-- `idx`: original index in the property list.
-- `property`: the property value used to create the process.
-- `process`: the process that was launched, or `nothing` if creation failed early.
-- `context`: final context if retained in memory, otherwise `nothing`.
-- `savefile`: saved `.jld2` path when persistence was requested.
-- `error`: captured exception, or `nothing` on success.
+Policy trait controlling when a `ProcessManager` invokes a recipe `flush!` callback.
 """
-struct ManagedProcessResult{Prop, Proc, Ctx, Save, Err}
+abstract type FlushPolicy end
+
+"""
+    FlushAtEnd()
+
+Flush worker-local buffers once, after all dispatched work has drained.
+"""
+struct FlushAtEnd <: FlushPolicy end
+
+"""
+    NoFlush()
+
+Never invoke the recipe `flush!` callback automatically.
+"""
+struct NoFlush <: FlushPolicy end
+
+"""
+    FlushEvery(n; drain = true)
+
+Invoke the recipe `flush!` callback after every `n` completed worker runs.
+When `drain` is true, all active workers are finalized before flushing.
+"""
+struct FlushEvery <: FlushPolicy
+    n::Int
+    drain::Bool
+    function FlushEvery(n::Integer; drain::Bool = true)
+        n > 0 || throw(ArgumentError("`n` must be positive."))
+        return new(Int(n), drain)
+    end
+end
+
+_normalize_flush_policy(policy::FlushPolicy) = policy
+_normalize_flush_policy(policy) = throw(ArgumentError("`flush_policy` must be a FlushPolicy, got $(typeof(policy))."))
+
+"""
+    WorkerSlot
+
+Transparent manager-owned slot around a reusable worker.
+
+The `worker` field is intentionally public so recipes can inspect and mutate the
+underlying worker context directly.
+"""
+mutable struct WorkerSlot{W}
     idx::Int
-    property::Prop
-    process::Proc
-    context::Ctx
-    savefile::Save
-    error::Err
+    worker::W
+    job::Any
+    scratch::Any
+    result::Any
+    error::Any
+    active::Bool
+    runs::Int
+end
+
+WorkerSlot(idx::Integer, worker; scratch = nothing) =
+    WorkerSlot(Int(idx), worker, nothing, scratch, nothing, nothing, false, 0)
+
+context(slot::WorkerSlot) = context(slot.worker)
+
+"""
+    resetworker!(slot)
+
+Reset the worker stored in `slot` and return the slot. The manager never calls
+this automatically; recipes opt into reset timing explicitly.
+"""
+resetworker!(slot::WorkerSlot) = (reset!(slot.worker); slot)
+
+"""
+    reinitworker!(slot, inputs_overrides...; kwargs...)
+
+Rebuild the worker context through the normal process init pipeline and return
+the slot. For `Process` workers this delegates to `makecontext!`.
+"""
+function _resolve_reinit_input(worker::Process, input::Union{Input, Override})
+    reg = getregistry(getcontext(taskdata(worker)))
+    return resolve(reg, input)
+end
+
+_resolve_reinit_input(::Process, input::Union{NamedInput, NamedOverride}) = (input,)
+
+function _resolve_reinit_inputs(worker::Process, inputs_overrides...)
+    resolved = ()
+    for input in inputs_overrides
+        resolved = (resolved..., _resolve_reinit_input(worker, input)...)
+    end
+    return resolved
+end
+
+function reinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...; kwargs...)
+    resolved = _resolve_reinit_inputs(slot.worker, inputs_overrides...)
+    makecontext!(slot.worker, resolved...; kwargs...)
+    return slot
 end
 
 """
-    ProcessManager(makeprocess, properties; max_running = Threads.nthreads(),
-                   poll_interval = 0.01, savefolder = nothing,
-                   filename = default_manager_filename, onfinish = nothing,
-                   throw = true)
+    ProcessManager(recipe; nworkers = Threads.nthreads(), workers = nothing,
+                   config = nothing, state = nothing, flush_policy = FlushAtEnd(),
+                   throw = true, poll_interval = 0.0)
 
-Bounded launcher for a collection of processes.
+Flexible worker orchestrator.
 
-`makeprocess` is called with `(property)` or `(property, idx)` and must return either:
-
-- a `Process`, or
-- a named tuple containing at least `process = ...` and optionally `savefile = ...`.
-
-The manager launches at most `max_running` processes at a time, waits for finished ones,
-optionally saves their final contexts, and then continues launching the remaining jobs.
+Recipes may be named tuples containing callbacks, or concrete objects that
+overload the callback functions below. The default worker protocol supports
+`Process` workers.
 """
-struct ProcessManager{F, P, NameF, FinishF}
-    makeprocess::F
-    properties::P
-    max_running::Int
-    poll_interval::Float64
-    savefolder::Union{Nothing, String}
-    filename::NameF
-    onfinish::FinishF
+mutable struct ProcessManager{Recipe, State, Policy <: FlushPolicy}
+    recipe::Recipe
+    slots::Vector{WorkerSlot}
+    config::Any
+    state::State
+    flush_policy::Policy
     throw::Bool
+    poll_interval::Float64
+    completions::Int
+    completions_since_flush::Int
+    dispatched::Int
+    errors::Vector{Any}
+    closed::Bool
+    owns_workers::Bool
 end
 
-"""
-Default filename scheme used by `ProcessManager` when `savefolder` is set.
-"""
-@inline default_manager_filename(property, idx, process) = "context_$(lpad(idx, 4, '0'))_$(process.id).jld2"
-
-function ProcessManager(makeprocess, properties; max_running = Threads.nthreads(), poll_interval = 0.01, savefolder = nothing, filename = default_manager_filename, onfinish = nothing, throw = true)
-    max_running > 0 || error("`max_running` must be larger than zero.")
-    return ProcessManager(makeprocess, collect(properties), max_running, Float64(poll_interval), isnothing(savefolder) ? nothing : String(savefolder), filename, onfinish, throw)
-end
-
-"""
-Call a process builder with `(property, idx)` when available, otherwise `(property)`.
-"""
-@inline _call_process_builder(makeprocess, property, idx) = applicable(makeprocess, property, idx) ? makeprocess(property, idx) : makeprocess(property)
-
-"""
-Resolve a save filename from either a fixed string or a filename callback.
-"""
-@inline _call_filename_builder(filename::AbstractString, property, idx, process) = filename
-@inline _call_filename_builder(filename, property, idx, process) = applicable(filename, property, idx, process) ? filename(property, idx, process) : applicable(filename, property, idx) ? filename(property, idx) : filename(idx)
-
-"""
-Run an optional finish hook with supported signatures `(result)` or `(result, manager)`.
-"""
-function _call_onfinish(onfinish, result, manager)
-    isnothing(onfinish) && return nothing
-
-    if applicable(onfinish, result, manager)
-        return onfinish(result, manager)
-    elseif applicable(onfinish, result)
-        return onfinish(result)
+function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), throw::Bool = true, poll_interval::Real = 0.0)
+    nworkers > 0 || throw(ArgumentError("`nworkers` must be positive."))
+    normalized_policy = _normalize_flush_policy(flush_policy)
+    prepared_state = if isnothing(state)
+        initstate(recipe, config, nothing)
     else
-        error("`onfinish` must accept `(result)` or `(result, manager)`.")
+        state
     end
-end
+    manager = ProcessManager(recipe, WorkerSlot[], config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
 
-"""
-    savecontext(context, filename)
-
-Save a final context directly to a JLD2 file.
-
-This method complements the package-level `savecontext(::Process, ...)` helper by working on
-already-materialized contexts, which is what `ProcessManager` has after finalization.
-"""
-function savecontext(context, filename::AbstractString)
-    folder = dirname(filename)
-    if !isempty(folder) && folder != "."
-        mkpath(folder)
-    end
-    jldsave(filename; context)
-    return filename
-end
-
-"""
-Strip runtime-only globals from a finished context before returning or saving it.
-"""
-function _materialize_context(context::ProcessContext)
-    subcontexts = getfield(context, :subcontexts)
-    globals = getproperty(subcontexts, :globals)
-
-    # The runtime `:process` reference is useful while running, but it should not be kept in
-    # persisted results because it introduces unnecessary object graphs.
-    if haskey(globals, :process)
-        globals = deletekeys(globals, :process)
-        subcontexts = (; subcontexts..., globals)
-        return ProcessContext(subcontexts, getfield(context, :registry))
+    worker_values = if isnothing(workers)
+        [makeworker(recipe, idx, manager) for idx in 1:Int(nworkers)]
+    else
+        collected = collect(workers)
+        isempty(collected) && throw(ArgumentError("`workers` must not be empty."))
+        collected
     end
 
-    return context
-end
+    for (idx, worker) in enumerate(worker_values)
+        push!(manager.slots, WorkerSlot(idx, worker))
+    end
 
-@inline _materialize_context(context) = context
-
-"""
-Normalize builder output to the manager's internal `(process, savefile)` form.
-"""
-@inline _normalize_managed_entry(process::Process) = (; process, savefile = nothing)
-@inline function _normalize_managed_entry(entry::NamedTuple)
-    haskey(entry, :process) || error("Managed process builders must return a `Process` or a named tuple with a `:process` key.")
-    return (; process = entry.process, savefile = get(entry, :savefile, nothing))
+    return manager
 end
 
 """
-Build and start one managed process, capturing constructor/startup errors into a result.
+    slots(manager)
+
+Return the manager's mutable worker slots.
 """
-function _launch_managed_process(manager::ProcessManager, property, idx)
+slots(manager::ProcessManager) = manager.slots
+
+"""
+    workers(manager)
+
+Return the workers stored in each manager slot.
+"""
+workers(manager::ProcessManager) = map(slot -> slot.worker, manager.slots)
+
+struct NoRecipeCallback end
+const _NO_RECIPE_CALLBACK = NoRecipeCallback()
+
+_has_recipe_field(recipe, name::Symbol) = hasproperty(recipe, name) && !isnothing(getproperty(recipe, name))
+
+function _call_with_supported_arity(f, args...)
+    for n in length(args):-1:0
+        callargs = n == 0 ? () : args[1:n]
+        applicable(f, callargs...) && return f(callargs...)
+    end
+    throw(MethodError(f, args))
+end
+
+function _call_recipe_field(recipe, name::Symbol, args...)
+    _has_recipe_field(recipe, name) || throw(ArgumentError("Recipe does not define callback `$name`."))
+    return _call_with_supported_arity(getproperty(recipe, name), args...)
+end
+
+function _call_optional_recipe_field(recipe, name::Symbol, args...)
+    _has_recipe_field(recipe, name) || return _NO_RECIPE_CALLBACK
+    return _call_with_supported_arity(getproperty(recipe, name), args...)
+end
+
+makeworker(recipe, idx, manager) = _call_recipe_field(recipe, :makeworker, idx, manager)
+function initstate(recipe, config, manager)
+    result = _call_optional_recipe_field(recipe, :initstate, config, manager)
+    return result === _NO_RECIPE_CALLBACK ? nothing : result
+end
+prepare!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :prepare!, slot, job, manager)
+start!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :start!, slot, job, manager)
+isdone(recipe, slot, manager) = _call_optional_recipe_field(recipe, :isdone, slot, manager)
+finalize!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :finalize!, slot, job, manager)
+afterrun!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :afterrun!, slot, job, manager)
+consume!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :consume!, slot, job, manager)
+release!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :release!, slot, job, manager)
+flush!(recipe, manager) = _call_optional_recipe_field(recipe, :flush!, manager)
+close!(recipe, slot, manager) = _call_optional_recipe_field(recipe, :close!, slot, manager)
+onerror!(recipe, slot, err, manager) = _call_optional_recipe_field(recipe, :onerror!, slot, err, manager)
+
+function _start_worker!(worker::Process)
+    run(worker)
+    return worker
+end
+
+_worker_isdone(worker::Process) = isdone(worker)
+
+function _finalize_worker!(worker::Process)
+    wait(worker)
+    close(worker)
+    return worker
+end
+
+function _close_worker!(worker::Process)
+    close(worker)
+    return worker
+end
+
+function _start_slot!(manager::ProcessManager, slot::WorkerSlot, job)
+    result = start!(manager.recipe, slot, job, manager)
+    return result === _NO_RECIPE_CALLBACK ? _start_worker!(slot.worker) : result
+end
+
+function _slot_isdone(manager::ProcessManager, slot::WorkerSlot)
+    result = isdone(manager.recipe, slot, manager)
+    return result === _NO_RECIPE_CALLBACK ? _worker_isdone(slot.worker) : Bool(result)
+end
+
+function _finalize_slot_worker!(manager::ProcessManager, slot::WorkerSlot, job)
+    result = finalize!(manager.recipe, slot, job, manager)
+    return result === _NO_RECIPE_CALLBACK ? _finalize_worker!(slot.worker) : result
+end
+
+function _safe_close_slot!(manager::ProcessManager, slot::WorkerSlot)
     try
-        entry = _normalize_managed_entry(_call_process_builder(manager.makeprocess, property, idx))
-        run(entry.process)
-        return (; idx, property, process = entry.process, savefile = entry.savefile)
+        result = close!(manager.recipe, slot, manager)
+        result === _NO_RECIPE_CALLBACK && _close_worker!(slot.worker)
     catch err
-        return ManagedProcessResult(idx, property, nothing, nothing, nothing, err)
+        push!(manager.errors, err)
     end
+    return slot
 end
 
-"""
-Check whether a managed process task has completed.
-"""
-@inline _is_finished(entry) = !isnothing(task(entry.process)) && istaskdone(task(entry.process))
-
-"""
-Compute the output file for a finished managed process, if any.
-"""
-function _resolve_savefile(manager::ProcessManager, entry)
-    filename = isnothing(entry.savefile) ? (isnothing(manager.savefolder) ? nothing : _call_filename_builder(manager.filename, entry.property, entry.idx, entry.process)) : entry.savefile
-    isnothing(filename) && return nothing
-
-    filename = String(filename)
-    if !isnothing(manager.savefolder) && !isabspath(filename)
-        filename = joinpath(manager.savefolder, filename)
-    end
-    endswith(filename, ".jld2") || (filename *= ".jld2")
-
-    return filename
-end
-
-"""
-Wait for one launched process, close it, materialize the final context, and save if needed.
-"""
-function _finalize_managed_process(manager::ProcessManager, entry)
-    err = nothing
-    final_context = nothing
-    savefile = nothing
-
+function _handle_slot_error!(manager::ProcessManager, slot::WorkerSlot, err)
+    slot.error = err
+    push!(manager.errors, err)
     try
-        wait(entry.process)
-        close(entry.process)
-        final_context = _materialize_context(context(entry.process))
-
-        # Large contexts can be moved to disk immediately to keep the result vector light.
-        savefile = _resolve_savefile(manager, entry)
-        if !isnothing(savefile)
-            savecontext(final_context, savefile)
-            final_context = nothing
-        end
-    catch caught
-        err = caught
-        try
-            close(entry.process)
-        catch
-        end
+        onerror!(manager.recipe, slot, err, manager)
+    catch hook_err
+        push!(manager.errors, hook_err)
+        manager.throw && throw(hook_err)
     end
-
-    result = ManagedProcessResult(entry.idx, entry.property, entry.process, final_context, savefile, err)
-    _call_onfinish(manager.onfinish, result, manager)
-    return result
+    manager.throw && throw(err)
+    return slot
 end
 
-"""
-    run(manager::ProcessManager)
-
-Execute the manager and return one [`ManagedProcessResult`](@ref) per input property.
-
-The result vector preserves the original property ordering even though processes may finish
-out of order.
-"""
-function Base.run(manager::ProcessManager)
-    total = length(manager.properties)
-    results = Vector{Any}(undef, total)
-    active = Any[]
-
-    for (idx, property) in enumerate(manager.properties)
-        # Backpressure: only launch a new process once at least one active process has finished.
-        while length(active) >= manager.max_running
-            finished = findall(_is_finished, active)
-            if isempty(finished)
-                sleep(manager.poll_interval)
-                continue
-            end
-
-            for active_idx in reverse(finished)
-                entry = active[active_idx]
-                results[entry.idx] = _finalize_managed_process(manager, entry)
-                deleteat!(active, active_idx)
-            end
-        end
-
-        launched = _launch_managed_process(manager, property, idx)
-        if launched isa ManagedProcessResult
-            results[idx] = launched
-        else
-            push!(active, launched)
-        end
+function _finish_slot!(manager::ProcessManager, slot::WorkerSlot)
+    slot.active || return slot
+    job = slot.job
+    try
+        slot.result = _finalize_slot_worker!(manager, slot, job)
+        afterrun!(manager.recipe, slot, job, manager)
+        consume!(manager.recipe, slot, job, manager)
+        release!(manager.recipe, slot, job, manager)
+        slot.runs += 1
+        manager.completions += 1
+        manager.completions_since_flush += 1
+    catch err
+        _safe_close_slot!(manager, slot)
+        _handle_slot_error!(manager, slot, err)
+    finally
+        slot.active = false
+        slot.job = nothing
     end
-
-    # Drain the remaining active processes after no new launches are left.
-    while !isempty(active)
-        finished = findall(_is_finished, active)
-        if isempty(finished)
-            sleep(manager.poll_interval)
-            continue
-        end
-
-        for active_idx in reverse(finished)
-            entry = active[active_idx]
-            results[entry.idx] = _finalize_managed_process(manager, entry)
-            deleteat!(active, active_idx)
-        end
-    end
-
-    if manager.throw
-        errors = Any[]
-        for result in results
-            isnothing(result.error) || push!(errors, result.error)
-        end
-        isempty(errors) || throw(CompositeException(errors))
-    end
-
-    return results
+    return slot
 end
 
-"""
-    manageprocesses(makeprocess, properties; kwargs...)
-
-Run a bounded set of processes produced from `properties`.
-
-This is a convenience wrapper around `run(ProcessManager(...))`.
-"""
-@inline manageprocesses(makeprocess, properties; kwargs...) = run(ProcessManager(makeprocess, properties; kwargs...))
-
-"""
-Extract mapped inputs and overrides from a mapper result named tuple.
-"""
-@inline _mapped_inputs_overrides(mapped::NamedTuple) = begin
-    inputs = haskey(mapped, :inputs) ? _tupleize(mapped.inputs) : ()
-    overrides = haskey(mapped, :overrides) ? _tupleize(mapped.overrides) : ()
-    inputs_overrides = haskey(mapped, :inputs_overrides) ? _tupleize(mapped.inputs_overrides) : ()
-    return (inputs..., overrides..., inputs_overrides...)
+function _finish_done_slots!(manager::ProcessManager)
+    finished = 0
+    for slot in manager.slots
+        if slot.active && _slot_isdone(manager, slot)
+            _finish_slot!(manager, slot)
+            finished += 1
+        end
+    end
+    return finished
 end
 
+function _drain_active!(manager::ProcessManager)
+    for slot in manager.slots
+        slot.active && _finish_slot!(manager, slot)
+    end
+    return manager
+end
+
+function _flush!(manager::ProcessManager)
+    manager.completions_since_flush == 0 && return manager
+    flush!(manager.recipe, manager)
+    manager.completions_since_flush = 0
+    return manager
+end
+
+_apply_flush_policy!(manager::ProcessManager, ::NoFlush; final::Bool = false) = manager
+
+function _apply_flush_policy!(manager::ProcessManager, ::FlushAtEnd; final::Bool = false)
+    final && _flush!(manager)
+    return manager
+end
+
+function _apply_flush_policy!(manager::ProcessManager, policy::FlushEvery; final::Bool = false)
+    if manager.completions_since_flush >= policy.n || (final && manager.completions_since_flush > 0)
+        policy.drain && _drain_active!(manager)
+        _flush!(manager)
+    end
+    return manager
+end
+
+_next_free_slot(manager::ProcessManager) = findfirst(slot -> !slot.active, manager.slots)
+_has_active_slots(manager::ProcessManager) = any(slot -> slot.active, manager.slots)
+
 """
-Turn a mapper return value into a copied process or managed process entry.
+    poll!(manager)
+
+Finalize completed workers, make their slots reusable, and apply the configured
+flush policy if it is due.
 """
-function _mapped_copyprocess(template::Process, mapped)
-    if isnothing(mapped)
-        return copyprocess(template)
-    elseif mapped isa Process
-        return mapped
-    elseif mapped isa NamedTuple
-        inputs_overrides = _mapped_inputs_overrides(mapped)
-        kwargs = deletekeys(mapped, :inputs, :overrides, :inputs_overrides, :savefile)
-        process = copyprocess(template, inputs_overrides...; kwargs...)
-        return (; process, savefile = get(mapped, :savefile, nothing))
-    else
-        return copyprocess(template, _tupleize(mapped)...)
+function poll!(manager::ProcessManager)
+    manager.closed && throw(ArgumentError("Cannot poll a closed ProcessManager."))
+    _finish_done_slots!(manager)
+    _apply_flush_policy!(manager, manager.flush_policy; final = false)
+    return manager
+end
+
+function _wait_for_free_slot!(manager::ProcessManager)
+    while true
+        free_idx = _next_free_slot(manager)
+        isnothing(free_idx) || return manager.slots[free_idx]
+        poll!(manager)
+        if isnothing(_next_free_slot(manager))
+            manager.poll_interval > 0 ? sleep(manager.poll_interval) : yield()
+        end
     end
 end
 
 """
-    manageprocesses(template::Process, properties, mapper = nothing; kwargs...)
+    dispatch!(manager, job)
 
-Run a bounded set of copied processes starting from a template process.
-
-`mapper` may return:
-
-- `nothing`: copy the template as-is,
-- a `Process`: use that process directly,
-- a named tuple with `inputs`, `overrides`, `inputs_overrides`, copy keywords, and optional `savefile`,
-- any other value, which is treated as positional input/override data for `copyprocess`.
+Schedule `job` on the next available worker slot, waiting for a slot to become
+free when all workers are active.
 """
-function manageprocesses(template::Process, properties, mapper = nothing; kwargs...)
-    makeprocess = let template = template, mapper = mapper
-        function (property, idx)
-            mapped = isnothing(mapper) ? nothing : _call_process_builder(mapper, property, idx)
-            return _mapped_copyprocess(template, mapped)
+function dispatch!(manager::ProcessManager, job)
+    manager.closed && throw(ArgumentError("Cannot dispatch to a closed ProcessManager."))
+    slot = _wait_for_free_slot!(manager)
+    slot.job = job
+    slot.result = nothing
+    slot.error = nothing
+    try
+        prepare!(manager.recipe, slot, job, manager)
+        _start_slot!(manager, slot, job)
+        slot.active = true
+        manager.dispatched += 1
+    catch err
+        slot.active = false
+        slot.job = nothing
+        _handle_slot_error!(manager, slot, err)
+    end
+    return slot
+end
+
+"""
+    drain!(manager)
+
+Wait for all active workers to finish, then apply the configured final flush
+policy.
+"""
+function drain!(manager::ProcessManager)
+    manager.closed && throw(ArgumentError("Cannot drain a closed ProcessManager."))
+    while _has_active_slots(manager)
+        _finish_done_slots!(manager)
+        if _has_active_slots(manager)
+            manager.poll_interval > 0 ? sleep(manager.poll_interval) : yield()
         end
     end
+    _apply_flush_policy!(manager, manager.flush_policy; final = true)
+    return manager
+end
 
-    return manageprocesses(makeprocess, properties; kwargs...)
+"""
+    run!(manager, jobs)
+
+Dispatch all `jobs`, keep workers busy according to the manager's slot limit,
+and drain at the end.
+"""
+function run!(manager::ProcessManager, jobs)
+    for job in jobs
+        dispatch!(manager, job)
+        poll!(manager)
+    end
+    drain!(manager)
+    return manager
+end
+
+function Base.close(manager::ProcessManager)
+    manager.closed && return true
+    for slot in manager.slots
+        slot.active && _safe_close_slot!(manager, slot)
+        slot.active = false
+        slot.job = nothing
+    end
+    manager.closed = true
+    return true
 end

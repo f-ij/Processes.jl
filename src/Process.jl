@@ -15,6 +15,7 @@ mutable struct Process{F} <: AbstractProcess
     @atomic paused::Bool
     starttime ::Union{Nothing, Float64, UInt64}
     endtime::Union{Nothing, Float64, UInt64}
+    lastresult::Any
     # linked_processes::Vector{Process} # Maybe do only with UUIDs for flexibility
     # allocator::Allocator
     rls::RuntimeListeners
@@ -85,7 +86,7 @@ function Process(func, inputs_overrides...; context = nothing, repeats = nothing
     context = prepared.context
 
     # p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
-    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, RuntimeListeners(), 0)
+    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, nothing, RuntimeListeners(), 0)
 
     register_process!(p)
     @DebugMode "Created process with id $(p.id), now preparing data"
@@ -102,15 +103,7 @@ end
 Base.:(==)(p1::Process, p2::Process) = p1.id == p2.id
 
 function getcontext(p::Process)
-    if !isdone(p)   
-        return merge_into_globals(p.context, (;process = p))
-    else
-        try
-            return fetch(p)
-        catch # if error state, just return context
-            return merge_into_globals(p.context, (;process = p))
-        end
-    end
+    return merge_into_globals(p.context, (;process = p))
 end
 
 getcontext(p::Process, context) = getcontext(p)[context]
@@ -197,6 +190,7 @@ Runs the prepared task of a process on a thread
 function makeloop!(p::Process, lt = lifetime(p); threaded = true, loopfunc::LF = loop) where LF 
     @atomic p.paused = false
     @atomic p.shouldrun = true
+    p.lastresult = nothing
 
     func = p.taskdata.func
     context = merge_into_globals(p.context, (;process = p))

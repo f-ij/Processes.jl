@@ -167,7 +167,7 @@ end
 Create a new `Process` directly from already-prepared task data and context.
 """
 function _makecopiedprocess(td::TaskData, prepared_context, timeout)
-    p = Process(uuid1(), prepared_context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, RuntimeListeners(), 0)
+    p = Process(uuid1(), prepared_context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, nothing, RuntimeListeners(), 0)
     return _register_copied_process!(p)
 end
 

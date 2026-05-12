@@ -1,5 +1,17 @@
 const start_finished = Ref(false)
 
+@inline _stored_loop_context(context) = context
+
+function _stored_loop_context(context::ProcessContext)
+    subcontexts = getfield(context, :subcontexts)
+    globals = getproperty(subcontexts, :globals)
+    haskey(globals, :process) || return context
+
+    globals = deletekeys(globals, :process)
+    subcontexts = (; subcontexts..., globals)
+    return ProcessContext(subcontexts, getfield(context, :registry))
+end
+
 @inline function before_while(p::P) where P <: AbstractProcess
     start_finished[] = true
     p.threadid = Threads.threadid()
@@ -16,14 +28,22 @@ end
         Processes.context(p, context)
         return context
     else
-        Processes.context(p, @inline cleanup(func, context))
-        return context
+        cleaned_context = @inline _loop_cleanup_context(func, context)
+        Processes.context(p, cleaned_context)
+        return @inline _loop_final_result(func, cleaned_context)
     end
 end
 
 @inline function after_while(ip::InlineProcess, func::F, context::C) where {F, C}
     @inline set_endtime!(ip)
-    @inline cleanup(func, context)
+    if lifetime(ip) isa Indefinite
+        Processes.context(ip, _stored_loop_context(context))
+        return context
+    else
+        cleaned_context = @inline _loop_cleanup_context(func, context)
+        Processes.context(ip, _stored_loop_context(cleaned_context))
+        return @inline _loop_final_result(func, cleaned_context)
+    end
 end
 
 
@@ -79,9 +99,5 @@ Base.@constprop :aggressive function loop(process::AbstractProcess, algo::F, uns
         end
 
     end
-    if @inline shouldrun(process)
-        return stablecontext
-    else
-        return @inline after_while(process, algo, stablecontext)
-    end
+    return @inline after_while(process, algo, stablecontext)
 end

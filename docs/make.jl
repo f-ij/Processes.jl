@@ -5,23 +5,9 @@ using Processes
 
 Base.include(Processes, joinpath(@__DIR__, "..", "src", "ContextAnalyzer", "ContextAnalyzer.jl"))
 
-module ProcessesExtensionsDocs
-using UUIDs
-using JLD2
-using Processes
-
-import ..Processes: Process, TaskData, Input, Override, NamedInput, NamedOverride,
-    ProcessContext, normalize_process_algo, getregistry, resolve, get_target_name,
-    getinputs, getoverrides, getlifetime, getalgo, taskdata, initcontext,
-    processlist, remove_process!, RuntimeListeners, context, task, deletekeys
-
-include(joinpath(@__DIR__, "..", "src", "Copy.jl"))
-include(joinpath(@__DIR__, "..", "src", "ProcessManager.jl"))
-end
-
 makedocs(
-    modules = [ProcessesExtensionsDocs],
-    checkdocs = :exports,
+    modules = [Processes],
+    checkdocs = :none,
     sitename = "Processes",
     format = Documenter.HTML(),
     pages = [

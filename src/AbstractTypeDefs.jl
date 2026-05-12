@@ -3,6 +3,12 @@ abstract type SteppableAlgorithm end
 abstract type ProcessAlgorithm <: SteppableAlgorithm end
 abstract type AbstractOption end
 abstract type ProcessState <: AbstractOption end
+abstract type ParserOption end
+
+struct IfWrapped{A,C} <: ParserOption
+    algo::A
+    cond::C
+end
 
 # abstract type ProcessLoopAlgorithm <: ProcessAlgorithm end # Algorithms that can be inlined in processloop
 # abstract type LoopAlgorithm <: ProcessLoopAlgorithm end # Algorithms that have multiple functions and intervals

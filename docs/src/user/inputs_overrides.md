@@ -2,6 +2,10 @@
 
 Inputs and overrides are passed when creating a process.
 
+Both forms target one algorithm or state. Use the same reference style you used
+when adding that target to the composition: the type, the saved instance, a
+saved `Unique(...)` value, or an explicit symbol key.
+
 ## API
 
 ```julia
@@ -9,7 +13,8 @@ Input(target_algo, :name => value, ...)
 Override(target_algo, :name => value, ...)
 ```
 
-Targets are resolved through the composed algorithm registry.
+Targets are resolved through the composed algorithm registry: the table of
+registered algorithms and states for the final process.
 
 ## When They Apply
 
@@ -33,9 +38,12 @@ p = Process(
     algo,
     Input(Walker, :dt => 0.01),
     Override(InsertNoise, :seed => 1234),
-    lifetime = 100,
+    repeats = 100,
 )
 ```
+
+Use `repeats = 100` for a fixed number of process loop iterations, or
+`lifetime = Repeat(100)` if you want to pass the lifetime object explicitly.
 
 ## Targeting and Identity
 

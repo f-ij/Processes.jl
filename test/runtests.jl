@@ -8,6 +8,7 @@ using Processes
     include("LifetimeTest.jl")
     include("FibLucProcessTest.jl")
     include("CopyManagerTest.jl")
+    include("ProcessManagerTest.jl")
     include("PackagedAlgoTest.jl")
     include("RouteWalkerTest.jl")
     include("ShareContextTest.jl")

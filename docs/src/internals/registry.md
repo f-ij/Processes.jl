@@ -15,9 +15,9 @@ Entries are grouped by `assign_entrytype(obj)` (`src/Registry/Traits.jl`).
 - Default entry type: the object's type wrapper.
 - `IdentifiableAlgo` overrides this via `registry_entrytype(::Type{<:IdentifiableAlgo{T}}) = T` (`src/Identifiable/IdentifiableAlgos.jl`).
 
-Within each `RegistryTypeEntry`, matches use `match_by` (`src/Matching.jl`, `src/ProcessEntities/ProcessEntities.jl`):
+Within each `RegistryTypeEntry`, matches use `match_by` (`src/Matching.jl`, `src/ProcessEntities/Matching.jl`):
 
-- Process entity instance (`Fib()`): matches by value (`match_by(pe) = pe`).
+- Process entity instance (`Fib()`): direct immutable instances match by value; other instances match by object identity.
 - Process entity type (`Fib`): matches by type (`match_by(::Type{<:ProcessEntity}) = T`).
 
 This is why instance-based and type-based registrations are distinct identities.
@@ -60,10 +60,12 @@ That is the same key space used by:
 
 Important runtime detail in `NameSpaceRegistry.getindex`:
 
-- `obj isa Type || isbits(obj)`: lookup by full static match.
-- otherwise: lookup falls back to `typeof(obj)`.
+- `Type`, direct immutable values, and `AbstractIdentifiableAlgo` values use the static lookup path.
+- other values use the dynamic lookup table keyed by `match_by(obj)`.
 
-So isbits values preserve value-level semantics better at lookup time; non-isbits values are effectively type-targeted unless wrapped with identity-bearing types (for example via `Unique`).
+So direct immutable instances can match equal values, while ordinary mutable
+instances match by object identity. `Unique(...)` gives an explicit fresh
+identity when the default rules are not what you want.
 
 ## 5. Multipliers
 

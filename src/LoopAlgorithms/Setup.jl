@@ -5,20 +5,53 @@ Named state pairs like `:_state => state` are intentionally excluded here so the
 fall through to the later ProcessState parsing branch.
 """
 function isa_processentity_input(arg)
-    if arg isa Union{SteppableAlgorithm, Type{<:SteppableAlgorithm}}
+    if arg isa ParserOption
+        return true
+    elseif arg isa Union{SteppableAlgorithm, Type{<:SteppableAlgorithm}}
         return true
     elseif arg isa Pair
         @assert arg.first isa Symbol "If passing algorithms as pairs, the first element must be a Symbol representing the name of the algorithm, but got: $(arg.first)"
-        if arg.second isa Union{SteppableAlgorithm, Type{<:SteppableAlgorithm}}
+        if arg.second isa ParserOption
+            return true
+        elseif arg.second isa Union{SteppableAlgorithm, Type{<:SteppableAlgorithm}}
             return true
         elseif arg.second isa ProcessState || arg.second isa Type{<:ProcessState}
             return false
         else
-            error("If passing algorithms as pairs, the second element must be a SteppableAlgorithm or a Type{<:SteppableAlgorithm}, but got: $(arg.second)")
+            error("If passing algorithms as pairs, the second element must be a SteppableAlgorithm, Type{<:SteppableAlgorithm}, or ParserOption, but got: $(arg.second)")
         end
     else
         return false
     end
+end
+
+@inline parse_parser_option(option::ParserOption) = error("parse_parser_option not implemented for $(typeof(option)).")
+@inline parse_parser_option(option::IfWrapped) = option.cond ? option.algo : nothing
+
+function _parse_loopalgorithm_entity_input(el)
+    if el isa ParserOption
+        return parse_parser_option(el)
+    elseif el isa Pair && el.second isa ParserOption
+        parsed = parse_parser_option(el.second)
+        return isnothing(parsed) ? nothing : (el.first => parsed)
+    end
+    return el
+end
+
+function _normalize_loopalgorithm_entity_input(el)
+    if el isa Pair
+        @assert !(el.second isa LoopAlgorithmTypes) "LoopAlgorithms cannot currently be passed as pairs (aliased), but got: $(el.second) in pair $(el)"
+        return IdentifiableAlgo(el.second, el.first)
+    elseif el isa Union{ProcessEntity, Type{<:ProcessEntity}}
+        return IdentifiableAlgo(el)
+    else
+        return el
+    end
+end
+
+function _filter_loopalgorithm_specification(specification, kept_algos::Tuple)
+    length(specification) == length(kept_algos) || error("If passing intervals/repeats as a tuple, there must be one entry per algorithm input before parser options are filtered, but got $(specification) for $(length(kept_algos)) algorithm inputs.")
+    return tuple((specification[i] for i in eachindex(kept_algos) if kept_algos[i])...)
 end
 
 """Return `true` when an argument belongs in the ProcessState section."""
@@ -43,20 +76,19 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
     end
 
     processalgos = tuple()
+    kept_algos = tuple()
     while true
         el, args = parse_by_func(isa_processentity_input, args...; error = false)
         if isnothing(el)
             break
         else
-            if el isa Pair
-                @assert !(el.second isa LoopAlgorithmTypes) "LoopAlgorithms cannot currently be passed as pairs (aliased), but got: $(el.second) in pair $(el)"
-                algo = IdentifiableAlgo(el.second, el.first)
-            elseif el isa Union{ProcessEntity, Type{<:ProcessEntity}}
-                algo = IdentifiableAlgo(el)
-            else
-                algo = el
+            parsed_el = _parse_loopalgorithm_entity_input(el)
+            keep = !isnothing(parsed_el)
+            kept_algos = tuple(kept_algos..., keep)
+            if keep
+                parsed_el = _strip_nested_finalized_algorithm(parsed_el)
+                processalgos = tuple(processalgos..., _normalize_loopalgorithm_entity_input(parsed_el))
             end
-            processalgos = tuple(processalgos..., algo)
         end
     end
     @assert !isempty(processalgos) "At least one ProcessAlgorithm must be provided, but got: $(args)"
@@ -74,8 +106,7 @@ function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
         firstargs = args[1]
 
         if firstargs isa Tuple
-            @assert length(firstargs) == length(processalgos) "If passing intervals as a tuple, there must be one interval per function, but got $(firstargs) for functions $(processalgos)"
-            intervals_or_repeats = firstargs
+            intervals_or_repeats = _filter_loopalgorithm_specification(firstargs, kept_algos)
             if iscomposite(laType)
                 intervals_or_repeats = map(x -> !(x isa Interval) ? Interval(x) : x, intervals_or_repeats)
             end

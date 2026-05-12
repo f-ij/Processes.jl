@@ -43,6 +43,7 @@ literal_join_dsl_test(prefix, value, marker) = string(prefix, value, marker)
 constant_value_dsl_test() = 0.25
 square_dsl_test(x) = x^2
 keyword_value_identity_dsl_test(; value) = value
+dsl_final_summary(context) = (; result = context[DSLValueAlgo].result)
 
 @ProcessAlgorithm function DSLPositionalCallAlgo(value)
     return (; seen = value)
@@ -449,5 +450,164 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[sink_key].result == 11
+    end
+
+    @testset "@include_if filters DSL entries at construction time" begin
+        @info "Composite DSL: @include_if filters entries at construction time"
+        include_source = false
+        skipped = @CompositeAlgorithm begin
+            @state seed = 3
+            @include_if include_source produced, passthrough = DSLSourceAlgo(seed = seed)
+            DSLValueAlgo(value = seed)
+        end
+
+        resolved_skipped = resolve(skipped)
+        @test length(Processes.getalgos(resolved_skipped)) == 1
+        @test Processes.intervals(resolved_skipped) == (Processes.Interval(1),)
+        @test isnothing(Processes.findkey(resolved_skipped, :DSLSourceAlgo_1))
+
+        p_skipped = Process(resolved_skipped, repeat = 1)
+        Processes.run(p_skipped)
+        ctx_skipped = fetch(p_skipped)
+        @test ctx_skipped[:DSLValueAlgo_1].result == 3
+
+        include_source = true
+        included = @CompositeAlgorithm begin
+            @state seed = 3
+            @include_if include_source produced, passthrough = DSLSourceAlgo(seed = seed)
+            DSLValueAlgo(value = produced)
+        end
+
+        resolved_included = resolve(included)
+        @test length(Processes.getalgos(resolved_included)) == 2
+        @test !isnothing(Processes.findkey(resolved_included, :DSLSourceAlgo_1))
+
+        p_included = Process(resolved_included, repeat = 1)
+        Processes.run(p_included)
+        ctx_included = fetch(p_included)
+        @test ctx_included[:DSLValueAlgo_1].result == 2
+    end
+
+    @testset "@include_if supports blocks, schedules, and routines" begin
+        @info "Composite DSL: @include_if supports blocks, schedules, and routines"
+        include_block = true
+        block_algo = @CompositeAlgorithm begin
+            @state seed = 3
+            @include_if include_block begin
+                produced, passthrough = @interval 2 DSLSourceAlgo(seed = seed)
+                DSLSinkAlgo(value = produced)
+            end
+            DSLValueAlgo(value = seed)
+        end
+
+        resolved_block = resolve(block_algo)
+        @test length(Processes.getalgos(resolved_block)) == 3
+        @test Processes.intervals(resolved_block) == (
+            Processes.Interval(2),
+            Processes.Interval(1),
+            Processes.Interval(1),
+        )
+
+        include_block = false
+        routine = @Routine begin
+            @state produced = 5
+            @include_if include_block tripled = @repeat 3 scaled_double_dsl_test(produced; scale = 3)
+            DSLValueAlgo(value = produced)
+        end
+
+        resolved_routine = resolve(routine)
+        @test length(Processes.getalgos(resolved_routine)) == 1
+        @test repeats(resolved_routine) == (1,)
+    end
+
+    @testset "@include_if supports branch-local @context" begin
+        @info "Composite DSL: @include_if supports branch-local @context"
+        plus = @Routine begin
+            @alias plus_capture = DSLNestedSourceAlgo
+            plus_capture()
+        end
+
+        include_context = true
+        algo = @CompositeAlgorithm begin
+            @include_if include_context begin
+                @context c1 = plus()
+                result = keyword_value_identity_dsl_test(value = c1.plus_capture.captured)
+            end
+        end
+
+        resolved = resolve(algo)
+        @test length(Processes.getalgos(resolved)) == 2
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        wrapper = Processes.getalgo(resolved, 2)
+        @test ctx[Processes.getkey(wrapper)].result == 4
+    end
+
+    @testset "@include_if rejects state and alias declarations" begin
+        @info "Composite DSL: @include_if rejects state and alias declarations"
+        @test_throws ErrorException macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                @include_if true begin
+                    @state seed = 3
+                    DSLValueAlgo(value = seed)
+                end
+            end
+        end)
+
+        @test_throws ErrorException macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                @include_if true begin
+                    @alias source = DSLSourceAlgo
+                    source()
+                end
+            end
+        end)
+    end
+
+    @testset "@finally wraps only the outer DSL algorithm" begin
+        @info "Composite DSL: @finally wraps only the outer DSL algorithm"
+        algo = @CompositeAlgorithm begin
+            @state seed = 8
+            DSLValueAlgo(value = seed)
+            @finally dsl_final_summary
+        end
+
+        @test algo isa Processes.FinalizedAlgorithm
+        resolved = resolve(algo)
+        p = Process(resolved, repeat = 1)
+        run(p)
+        @test fetch(p) == (; result = 8)
+        @test context(p)[DSLValueAlgo].result == 8
+
+        close(p)
+        @test fetch(p) == (; result = 8)
+
+        @test_throws ErrorException macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                DSLValueAlgo(value = 1)
+                @finally dsl_final_summary
+                @finally dsl_final_summary
+            end
+        end)
+
+        @test_throws ErrorException macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                @include_if true begin
+                    DSLValueAlgo(value = 1)
+                    @finally dsl_final_summary
+                end
+            end
+        end)
+
+        @test_throws ErrorException macroexpand(@__MODULE__, quote
+            @CompositeAlgorithm begin
+                result = @repeat 2 begin
+                    DSLValueAlgo(value = 1)
+                    @finally dsl_final_summary
+                end
+            end
+        end)
     end
 end
