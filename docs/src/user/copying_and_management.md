@@ -60,40 +60,208 @@ or provide a fully prepared `context = ...` directly.
 ## Worker Orchestration
 
 `ProcessManager` keeps a fixed set of workers busy. A worker is usually a
-`Process`. A job is one item of work, such as one sample or one simulation
-case.
+`Process`. A job is one item of work, such as one sample, one trajectory, or
+one simulation case.
 
-The manager is controlled by a recipe. A recipe is an object or named tuple
-with callbacks. The most common callbacks are:
+The manager is meant to be long-lived when worker contexts are expensive. Build
+it once, then call `run!(manager, jobs)` many times. The same slots and workers
+are reused on every call.
 
-- `initstate(config, manager)`: build state owned by the manager from user
-  configuration.
-- `makeworker(idx, manager)`: create worker `idx`.
-- `prepare!(slot, job, manager)`: write the job into the worker context.
-- `consume!(slot, job, manager)`: read one finished worker.
-- `release!(slot, job, manager)`: clear or adjust local worker state after it
-  has been consumed.
+### Worker Ownership
+
+The usual form is to let the manager create and own its workers:
+
+```julia
+recipe = (;
+    makeworker = (idx, manager) -> Process(MyAlgo; repeats = 1),
+
+    prepare! = (slot, job, manager) -> begin
+        ctx = slot.worker.context[MyAlgo]
+        ctx.value[] = job.value
+        resetworker!(slot)
+    end,
+)
+
+manager = ProcessManager(recipe; nworkers = 4)
+```
+
+In this form, `makeworker` is called once per slot when the manager is created.
+The manager stores those workers and their contexts in `slots(manager)`. Later
+calls to `run!(manager, jobs)` do not create new workers or new contexts unless
+your own recipe does so.
+
+You can inspect manager-owned workers with:
+
+```julia
+slots(manager)
+workers(manager)
+```
+
+Closing an owning manager also closes its workers:
+
+```julia
+close(manager)
+```
+
+You can also pass workers that were built elsewhere:
+
+```julia
+manager = ProcessManager(recipe; workers = existing_workers)
+```
+
+This wraps the existing workers in new slots. It does not create worker
+contexts. Use this form when some other object owns the workers or when the
+workers must be constructed before the manager exists.
+
+### Run Lifecycle
+
+For each job, the manager uses this order:
+
+1. Wait for a free slot.
+2. Store the job in `slot.job`.
+3. Call `prepare!(slot, job, manager)`.
+4. Start the worker.
+5. Poll active workers until one finishes.
+6. Finalize the finished worker.
+7. Call `consume!(slot, job, manager)`.
+8. Call `release!(slot, job, manager)`.
+9. Mark the slot free.
+
+For `Process` workers, the default start/finalize behavior is:
+
+```julia
+run(slot.worker)
+wait(slot.worker)
+close(slot.worker)
+```
+
+`close(worker)` stores the finished process context back on the worker when the
+process returns a context. That makes `consume!` the right place to read final
+worker context values.
+
+### Recipe Callbacks
+
+A recipe can be a named tuple or an object with methods for these callbacks.
+Callbacks can accept fewer trailing arguments if they do not need all of them.
+
+- `initstate(config, manager)`: build `manager.state` from user configuration.
+- `makeworker(idx, manager)`: create worker `idx` when `workers` is not passed.
+- `prepare!(slot, job, manager)`: write one job into a worker before it starts.
+- `start!(slot, job, manager)`: custom worker start. Defaults to `run(worker)`
+  for `Process` workers.
+- `isdone(slot, manager)`: custom completion check. Defaults to
+  `isdone(worker)` for `Process` workers.
+- `finalize!(slot, job, manager)`: custom finish step. Defaults to
+  `wait(worker); close(worker)` for `Process` workers.
+- `afterrun!(slot, job, manager)`: optional hook after finalization.
+- `consume!(slot, job, manager)`: read a finished worker and accumulate output.
+- `release!(slot, job, manager)`: clear local state after `consume!`.
 - `flush!(manager)`: move worker-local buffers into manager state or another
   destination.
+- `close!(slot, manager)`: custom worker close.
+- `onerror!(slot, err, manager)`: custom error handling.
 
-`config` is user input. `state` is runtime data owned by the manager. Prefer
-putting runtime buffers, parameters, counters, and logs in `initstate` rather
-than passing them as external mutable objects.
+`config` is construction input. `state` is runtime data owned by the manager.
+Prefer putting runtime buffers, counters, parameters, and logs in `initstate`
+instead of keeping them as unrelated external mutable objects.
 
-`prepare!` is also where a worker can partially initialize its context for the
-next run. Use `reinitworker!(slot, inputs_or_overrides...)` when you want the
-normal `initcontext` path. Use direct context mutation when only a few local
-fields or buffers need to change.
+### Context Reuse
 
-The default policy, `FlushAtEnd()`, runs all jobs first. Each worker writes only
-to its own context. After all workers finish, the manager calls `flush!` once.
-Because `flush!` runs on the manager side, plain buffers can be used there
-without locks.
+The manager reuses the same worker objects. Context reuse depends on what your
+recipe does in `prepare!`.
 
-Other flush policies are:
+Use direct mutation when only a few fields change:
 
-- `NoFlush()` never flushes automatically.
-- `FlushEvery(n; drain = true)` flushes after completed worker runs.
+```julia
+prepare! = (slot, job, manager) -> begin
+    ctx = slot.worker.context[MyAlgo]
+    ctx.x[] = job.x
+    empty!(ctx.buffer)
+    resetworker!(slot)
+end
+```
+
+Use `reinitworker!` when you want to rebuild through the normal process init
+path:
+
+```julia
+prepare! = (slot, job, manager) -> reinitworker!(
+    slot,
+    Input(MyAlgo, :x => job.x),
+)
+```
+
+Direct mutation is usually faster. `reinitworker!` is useful when the context
+shape, inputs, or initialized state must be rebuilt. Do not create a new
+`Process` inside `prepare!` unless you intentionally want to give up worker
+context reuse.
+
+### Result Collection
+
+Use `consume!` to read one finished worker. This hook runs on the manager side,
+after the worker has finished and been finalized.
+
+If workers are reused, avoid storing mutable worker context objects for later
+unless you know they will not be overwritten. Store copied values instead:
+
+```julia
+consume! = (slot, job, manager) -> begin
+    ctx = slot.worker.context[MyAlgo]
+    push!(manager.state.outputs, (; value = ctx.value[], loss = ctx.loss[]))
+end
+```
+
+### Flush Policies
+
+`flush_policy` controls when `flush!(manager)` is called.
+
+- `FlushAtEnd()` is the default. It runs all jobs first, drains all active
+  workers, then calls `flush!` once.
+- `NoFlush()` never calls `flush!` automatically. Use this when `consume!`
+  handles all result collection.
+- `FlushEvery(n; drain = true)` calls `flush!` after every `n` completed worker
+  runs. When `drain = true`, all active workers are finalized before flushing.
+  When `drain = false`, only already-finished workers are flushed.
+
+`flush!` runs on the manager side, so it can safely merge worker-local buffers
+without making those buffers thread-safe.
+
+### Scheduling
+
+`run!(manager, jobs)` dispatches all jobs, keeps at most one job active per
+slot, then drains remaining active workers at the end.
+
+For manual control:
+
+```julia
+dispatch!(manager, job)
+poll!(manager)
+drain!(manager)
+```
+
+`poll_interval = 0.0` means the manager yields while waiting. A positive
+`poll_interval` sleeps for that many seconds between checks when all workers
+are busy.
+
+### Type Hints
+
+For lower overhead, pass concrete slot field types when they are known:
+
+```julia
+template_worker = Process(MyAlgo; repeats = 1)
+
+manager = ProcessManager(
+    recipe;
+    nworkers = 4,
+    job_type = eltype(jobs),
+    result_type = typeof(template_worker),
+)
+```
+
+Usually `job_type = eltype(jobs)` is the most important one. If the manager
+uses existing workers, `result_type = eltype(workers)` is usually appropriate.
+Keep the worker vector concretely typed so the slot worker type is concrete
+too.
 
 ```@docs
 Processes.ProcessManager
@@ -110,7 +278,7 @@ Processes.resetworker!
 Processes.reinitworker!
 ```
 
-## Manager Example
+## Manager-Owned Worker Example
 
 ```julia
 template = Process(
@@ -149,14 +317,48 @@ manager = ProcessManager(
     config = (; scale = 2),
     flush_policy = FlushAtEnd(),
     job_type = eltype(jobs),
+    result_type = typeof(template),
 )
 
 run!(manager, jobs)
 manager.state.output
 ```
 
-The manager calls `flush!` automatically according to `flush_policy`; normal code does not call
-it directly.
+The manager calls `flush!` automatically according to `flush_policy`; normal
+code does not call it directly.
 
-If every job has the same type, pass `job_type = eltype(jobs)`. This keeps the stored job in each
-worker slot concrete while still leaving the manager recipe unchanged.
+## Existing Worker Example
+
+```julia
+workers = [Process(MyAlgo; repeats = 1) for _ in 1:4]
+
+recipe = (;
+    prepare! = (slot, job, manager) -> begin
+        ctx = slot.worker.context[MyAlgo]
+        ctx.value[] = job.value
+        resetworker!(slot)
+    end,
+
+    consume! = (slot, job, manager) -> begin
+        ctx = slot.worker.context[MyAlgo]
+        push!(manager.state.outputs, ctx.value[])
+    end,
+
+    initstate = config -> (; outputs = Int[]),
+)
+
+manager = ProcessManager(
+    recipe;
+    workers,
+    config = (;),
+    flush_policy = NoFlush(),
+    job_type = eltype(jobs),
+    result_type = eltype(workers),
+)
+
+run!(manager, jobs)
+manager.state.outputs
+```
+
+Use existing workers only when they must be owned or prepared outside the
+manager. Otherwise prefer the manager-owned form with `makeworker`.

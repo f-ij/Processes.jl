@@ -111,6 +111,10 @@ Recipes may be named tuples containing callbacks, or concrete objects that
 overload the callback functions below. The default worker protocol supports
 `Process` workers.
 
+When `workers` is omitted, the recipe must define `makeworker`, and the manager
+creates and owns `nworkers` workers. When `workers` is passed, the manager wraps
+those existing workers in slots and does not create new worker contexts.
+
 The `job_type`, `scratch_type`, `result_type`, and `error_type` keywords let
 latency-sensitive code make worker slot fields concrete. Leaving them as `Any`
 keeps the manager fully flexible.
@@ -469,7 +473,7 @@ end
 function Base.close(manager::ProcessManager)
     manager.closed && return true
     for slot in manager.slots
-        slot.active && _safe_close_slot!(manager, slot)
+        (slot.active || manager.owns_workers) && _safe_close_slot!(manager, slot)
         slot.active = false
         slot.job = nothing
     end
