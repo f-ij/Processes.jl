@@ -148,6 +148,7 @@ manager = ProcessManager(
     nworkers = 4,
     config = (; scale = 2),
     flush_policy = FlushAtEnd(),
+    job_type = eltype(jobs),
 )
 
 run!(manager, jobs)
@@ -156,3 +157,6 @@ manager.state.output
 
 The manager calls `flush!` automatically according to `flush_policy`; normal code does not call
 it directly.
+
+If every job has the same type, pass `job_type = eltype(jobs)`. This keeps the stored job in each
+worker slot concrete while still leaving the manager recipe unchanged.

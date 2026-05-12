@@ -31,6 +31,18 @@ end
     @test_throws ArgumentError ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, flush_policy = :end)
 end
 
+@testset "ProcessManager can keep slot fields concrete" begin
+    manager = ProcessManager(
+        immediate_fake_recipe(Int[], Ref(0));
+        nworkers = 1,
+        job_type = Int,
+        result_type = Nothing,
+    )
+
+    @test manager.config === nothing
+    @test eltype(slots(manager)) <: WorkerSlot{ManagerFakeWorker, Int, Any, Nothing, Any}
+end
+
 @testset "ProcessManager initializes owned state from config" begin
     recipe = (;
         initstate = config -> (; scale = config.scale, count = Ref(0)),

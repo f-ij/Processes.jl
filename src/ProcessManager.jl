@@ -47,19 +47,19 @@ Transparent manager-owned slot around a reusable worker.
 The `worker` field is intentionally public so recipes can inspect and mutate the
 underlying worker context directly.
 """
-mutable struct WorkerSlot{W}
+mutable struct WorkerSlot{W, Job, Scratch, Result, Err}
     idx::Int
     worker::W
-    job::Any
-    scratch::Any
-    result::Any
-    error::Any
+    job::Union{Nothing, Job}
+    scratch::Union{Nothing, Scratch}
+    result::Union{Nothing, Result}
+    error::Union{Nothing, Err}
     active::Bool
     runs::Int
 end
 
 WorkerSlot(idx::Integer, worker; scratch = nothing) =
-    WorkerSlot(Int(idx), worker, nothing, scratch, nothing, nothing, false, 0)
+    WorkerSlot{typeof(worker), Any, Any, Any, Any}(Int(idx), worker, nothing, scratch, nothing, nothing, false, 0)
 
 context(slot::WorkerSlot) = context(slot.worker)
 
@@ -101,18 +101,24 @@ end
 """
     ProcessManager(recipe; nworkers = Threads.nthreads(), workers = nothing,
                    config = nothing, state = nothing, flush_policy = FlushAtEnd(),
-                   throw = true, poll_interval = 0.0)
+                   throw = true, poll_interval = 0.0,
+                   job_type = Any, scratch_type = Any,
+                   result_type = Any, error_type = Any)
 
 Flexible worker orchestrator.
 
 Recipes may be named tuples containing callbacks, or concrete objects that
 overload the callback functions below. The default worker protocol supports
 `Process` workers.
+
+The `job_type`, `scratch_type`, `result_type`, and `error_type` keywords let
+latency-sensitive code make worker slot fields concrete. Leaving them as `Any`
+keeps the manager fully flexible.
 """
-mutable struct ProcessManager{Recipe, State, Policy <: FlushPolicy}
+mutable struct ProcessManager{Recipe, Worker, Job, Scratch, Result, Err, Config, State, Policy <: FlushPolicy}
     recipe::Recipe
-    slots::Vector{WorkerSlot}
-    config::Any
+    slots::Vector{WorkerSlot{Worker, Job, Scratch, Result, Err}}
+    config::Config
     state::State
     flush_policy::Policy
     throw::Bool
@@ -125,7 +131,7 @@ mutable struct ProcessManager{Recipe, State, Policy <: FlushPolicy}
     owns_workers::Bool
 end
 
-function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), throw::Bool = true, poll_interval::Real = 0.0)
+function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), throw::Bool = true, poll_interval::Real = 0.0, job_type::Type = Any, scratch_type::Type = Any, result_type::Type = Any, error_type::Type = Any)
     nworkers > 0 || throw(ArgumentError("`nworkers` must be positive."))
     normalized_policy = _normalize_flush_policy(flush_policy)
     prepared_state = if isnothing(state)
@@ -133,18 +139,21 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
     else
         state
     end
-    manager = ProcessManager(recipe, WorkerSlot[], config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
+    build_manager = ProcessManager(recipe, WorkerSlot{Any, Any, Any, Any, Any}[], config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
 
     worker_values = if isnothing(workers)
-        [makeworker(recipe, idx, manager) for idx in 1:Int(nworkers)]
+        [makeworker(recipe, idx, build_manager) for idx in 1:Int(nworkers)]
     else
         collected = collect(workers)
         isempty(collected) && throw(ArgumentError("`workers` must not be empty."))
         collected
     end
 
+    worker_type = eltype(worker_values)
+    slot_type = WorkerSlot{worker_type, job_type, scratch_type, result_type, error_type}
+    manager = ProcessManager(recipe, slot_type[], config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
     for (idx, worker) in enumerate(worker_values)
-        push!(manager.slots, WorkerSlot(idx, worker))
+        push!(manager.slots, slot_type(Int(idx), worker, nothing, nothing, nothing, nothing, false, 0))
     end
 
     return manager
@@ -162,46 +171,87 @@ slots(manager::ProcessManager) = manager.slots
 
 Return the workers stored in each manager slot.
 """
-workers(manager::ProcessManager) = map(slot -> slot.worker, manager.slots)
+function workers(manager::ProcessManager{Recipe, Worker}) where {Recipe, Worker}
+    result = Vector{Worker}(undef, length(manager.slots))
+    for idx in eachindex(manager.slots)
+        result[idx] = manager.slots[idx].worker
+    end
+    return result
+end
 
 struct NoRecipeCallback end
 const _NO_RECIPE_CALLBACK = NoRecipeCallback()
 
-_has_recipe_field(recipe, name::Symbol) = hasproperty(recipe, name) && !isnothing(getproperty(recipe, name))
+@inline function _recipe_field(recipe, ::Val{name}) where {name}
+    hasfield(typeof(recipe), name) || return _NO_RECIPE_CALLBACK
+    callback = getfield(recipe, name)
+    return isnothing(callback) ? _NO_RECIPE_CALLBACK : callback
+end
+
+@inline _call_with_supported_arity(f) = f()
+_valname(::Val{name}) where {name} = name
+
+@inline function _call_with_supported_arity(f, a)
+    applicable(f, a) && return f(a)
+    applicable(f) && return f()
+    throw(MethodError(f, (a,)))
+end
+
+@inline function _call_with_supported_arity(f, a, b)
+    applicable(f, a, b) && return f(a, b)
+    applicable(f, a) && return f(a)
+    applicable(f) && return f()
+    throw(MethodError(f, (a, b)))
+end
+
+@inline function _call_with_supported_arity(f, a, b, c)
+    applicable(f, a, b, c) && return f(a, b, c)
+    applicable(f, a, b) && return f(a, b)
+    applicable(f, a) && return f(a)
+    applicable(f) && return f()
+    throw(MethodError(f, (a, b, c)))
+end
+
+@inline function _call_with_supported_arity(f, a, b, c, d)
+    applicable(f, a, b, c, d) && return f(a, b, c, d)
+    applicable(f, a, b, c) && return f(a, b, c)
+    applicable(f, a, b) && return f(a, b)
+    applicable(f, a) && return f(a)
+    applicable(f) && return f()
+    throw(MethodError(f, (a, b, c, d)))
+end
 
 function _call_with_supported_arity(f, args...)
-    for n in length(args):-1:0
-        callargs = n == 0 ? () : args[1:n]
-        applicable(f, callargs...) && return f(callargs...)
-    end
     throw(MethodError(f, args))
 end
 
-function _call_recipe_field(recipe, name::Symbol, args...)
-    _has_recipe_field(recipe, name) || throw(ArgumentError("Recipe does not define callback `$name`."))
-    return _call_with_supported_arity(getproperty(recipe, name), args...)
+function _call_recipe_field(recipe, name::Val, args...)
+    callback = _recipe_field(recipe, name)
+    callback === _NO_RECIPE_CALLBACK && throw(ArgumentError("Recipe does not define callback `$(_valname(name))`."))
+    return _call_with_supported_arity(callback, args...)
 end
 
-function _call_optional_recipe_field(recipe, name::Symbol, args...)
-    _has_recipe_field(recipe, name) || return _NO_RECIPE_CALLBACK
-    return _call_with_supported_arity(getproperty(recipe, name), args...)
+function _call_optional_recipe_field(recipe, name::Val, args...)
+    callback = _recipe_field(recipe, name)
+    callback === _NO_RECIPE_CALLBACK && return _NO_RECIPE_CALLBACK
+    return _call_with_supported_arity(callback, args...)
 end
 
-makeworker(recipe, idx, manager) = _call_recipe_field(recipe, :makeworker, idx, manager)
+makeworker(recipe, idx, manager) = _call_recipe_field(recipe, Val(:makeworker), idx, manager)
 function initstate(recipe, config, manager)
-    result = _call_optional_recipe_field(recipe, :initstate, config, manager)
+    result = _call_optional_recipe_field(recipe, Val(:initstate), config, manager)
     return result === _NO_RECIPE_CALLBACK ? nothing : result
 end
-prepare!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :prepare!, slot, job, manager)
-start!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :start!, slot, job, manager)
-isdone(recipe, slot, manager) = _call_optional_recipe_field(recipe, :isdone, slot, manager)
-finalize!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :finalize!, slot, job, manager)
-afterrun!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :afterrun!, slot, job, manager)
-consume!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :consume!, slot, job, manager)
-release!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, :release!, slot, job, manager)
-flush!(recipe, manager) = _call_optional_recipe_field(recipe, :flush!, manager)
-close!(recipe, slot, manager) = _call_optional_recipe_field(recipe, :close!, slot, manager)
-onerror!(recipe, slot, err, manager) = _call_optional_recipe_field(recipe, :onerror!, slot, err, manager)
+prepare!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:prepare!), slot, job, manager)
+start!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:start!), slot, job, manager)
+isdone(recipe, slot, manager) = _call_optional_recipe_field(recipe, Val(:isdone), slot, manager)
+finalize!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:finalize!), slot, job, manager)
+afterrun!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:afterrun!), slot, job, manager)
+consume!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:consume!), slot, job, manager)
+release!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:release!), slot, job, manager)
+flush!(recipe, manager) = _call_optional_recipe_field(recipe, Val(:flush!), manager)
+close!(recipe, slot, manager) = _call_optional_recipe_field(recipe, Val(:close!), slot, manager)
+onerror!(recipe, slot, err, manager) = _call_optional_recipe_field(recipe, Val(:onerror!), slot, err, manager)
 
 function _start_worker!(worker::Process)
     run(worker)
@@ -261,7 +311,7 @@ end
 
 function _finish_slot!(manager::ProcessManager, slot::WorkerSlot)
     slot.active || return slot
-    job = slot.job
+    job = something(slot.job)
     try
         slot.result = _finalize_slot_worker!(manager, slot, job)
         afterrun!(manager.recipe, slot, job, manager)
@@ -320,8 +370,19 @@ function _apply_flush_policy!(manager::ProcessManager, policy::FlushEvery; final
     return manager
 end
 
-_next_free_slot(manager::ProcessManager) = findfirst(slot -> !slot.active, manager.slots)
-_has_active_slots(manager::ProcessManager) = any(slot -> slot.active, manager.slots)
+function _next_free_slot(manager::ProcessManager)
+    for idx in eachindex(manager.slots)
+        manager.slots[idx].active || return idx
+    end
+    return nothing
+end
+
+function _has_active_slots(manager::ProcessManager)
+    for slot in manager.slots
+        slot.active && return true
+    end
+    return false
+end
 
 """
     poll!(manager)
