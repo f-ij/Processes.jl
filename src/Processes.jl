@@ -84,6 +84,7 @@ module Processes
     include("Saving.jl")
 
     include("GeneratedCode/GeneratedCode.jl")
+    include("Precompile.jl")
 
     # @setup_workload begin
     #     @compile_workload begin

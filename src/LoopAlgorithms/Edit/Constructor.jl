@@ -72,7 +72,7 @@ end
     )
 end
 
-@inline function _rename_item(r::Route, replacements)
+@inline function _rename_route(r::Route, replacements)
     varnames = getvarnames(r)
     aliases = getaliases(r)
     mappings = ntuple(i -> varnames[i] == aliases[i] ? varnames[i] : (varnames[i] => aliases[i]), length(varnames))
@@ -82,6 +82,9 @@ end
         transform = gettransform(r),
     )
 end
+
+@inline _rename_item(r::Route, replacements) = _rename_route(r, replacements)
+@inline _rename_item(r::Route, replacements::Tuple{Vararg{Pair}}) = _rename_route(r, replacements)
 
 function rename(la::LoopAlgorithm, replacements::Pair...)
     _ensure_unresolved_for_edit(la)
