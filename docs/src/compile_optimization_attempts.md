@@ -87,3 +87,27 @@ The pass also showed inference under background precompile tasks launched from
 `Process.jl`. Future SnoopCompile runs should either disable those tasks or run a
 separate pass specifically for the precompile pipeline, otherwise normal workload
 inference and background precompile inference are mixed together.
+
+## Delayed LoopAlgorithm Metadata Precompile
+
+The first SnoopCompile pass showed background metadata precompile tasks mixed into
+normal first-call inference. The compile benchmark confirmed this was not just a
+measurement artifact: launching metadata precompile immediately from
+`LoopAlgorithm` construction made the next constructor stages contend with those
+tasks.
+
+Measured cold-stage comparison on the simple compile benchmark:
+
+- Immediate background precompile:
+  `algo construction ~= 106 ms`, `input resolution ~= 118 ms`,
+  `Process constructor ~= 63 ms`, `first run ~= 137 ms`.
+- Disabled metadata precompile:
+  `algo construction ~= 105 ms`, `input resolution ~= 30 ms`,
+  `Process constructor ~= 61 ms`, `first run ~= 151 ms`.
+- Delayed metadata precompile by `0.2s`:
+  `algo construction ~= 106 ms`, `input resolution ~= 27 ms`,
+  `Process constructor ~= 54 ms`, `first run ~= 141 ms`.
+
+The delayed version keeps the asynchronous precompile path for later work, but
+gets it out of the immediate construction/resolve path. This is a latency win in
+the benchmark without removing the precompile hook.

@@ -26,6 +26,7 @@ const _LOOP_PRECOMPILE_LOCK = ReentrantLock()
 const _LOOP_PRECOMPILE_TASKS = Dict{Any, Task}()
 const _LOOPALGORITHM_METADATA_PRECOMPILE_LOCK = ReentrantLock()
 const _LOOPALGORITHM_METADATA_PRECOMPILE_TYPES = Set{Any}()
+const _LOOPALGORITHM_METADATA_PRECOMPILE_DELAY = 0.2
 
 @setterGetter Process lock shouldrun
 """
@@ -231,6 +232,7 @@ function schedule_loopalgorithm_metadata_precompile!(loopalgorithm_type::Type{LA
         return false
     end
     should_schedule && Threads.@spawn try
+        sleep(_LOOPALGORITHM_METADATA_PRECOMPILE_DELAY)
         precompile_loopalgorithm_metadata!(loopalgorithm_type)
     catch
         nothing
