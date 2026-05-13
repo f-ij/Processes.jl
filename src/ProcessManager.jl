@@ -139,9 +139,51 @@ mutable struct ProcessManager{Recipe, W, Config, State, Policy <: FlushPolicy}
     owns_workers::Bool
 end
 
-function _slot_container(workers, job_type::Type, scratch_type::Type, result_type::Type, error_type::Type)
+const _PROCESSMANAGER_PRECOMPILE_LOCK = ReentrantLock()
+const _PROCESSMANAGER_PRECOMPILE_TYPES = Set{Any}()
+
+_slot_job_type(::WorkerSlot{W, Job}) where {W, Job} = Job
+
+function _first_slot_type(slots::Tuple)
+    return typeof(first(slots))
+end
+
+function _precompile_processmanager!(::Type{M}, ::Type{Slot}, ::Type{Job}) where {M<:ProcessManager, Slot<:WorkerSlot, Job}
+    _try_precompile(dispatch!, (M, Job))
+    _try_precompile(poll!, (M,))
+    _try_precompile(drain!, (M,))
+    _try_precompile(run!, (M, Vector{Job}))
+    _try_precompile(_wait_for_free_slot!, (M,))
+    _try_precompile(_finish_done_slots!, (M,))
+    _try_precompile(_finish_slot!, (M, Slot))
+    _try_precompile(_start_slot!, (M, Slot, Job))
+    _try_precompile(_slot_isdone, (M, Slot))
+    return nothing
+end
+
+function schedule_processmanager_precompile!(manager::ProcessManager)
+    _is_generating_package_output() && return nothing
+    isempty(slots(manager)) && return nothing
+
+    manager_type = typeof(manager)
+    slot_type = _first_slot_type(slots(manager))
+    job_type = _slot_job_type(first(slots(manager)))
+    signature = (manager_type, slot_type, job_type)
+
+    should_schedule = lock(_PROCESSMANAGER_PRECOMPILE_LOCK) do
+        if !(signature in _PROCESSMANAGER_PRECOMPILE_TYPES)
+            push!(_PROCESSMANAGER_PRECOMPILE_TYPES, signature)
+            return true
+        end
+        return false
+    end
+    should_schedule && Threads.@spawn _precompile_processmanager!(manager_type, slot_type, job_type)
+    return nothing
+end
+
+function _slot_container(workers, ::Type{Job}, ::Type{Scratch}, ::Type{Result}, ::Type{Err}) where {Job, Scratch, Result, Err}
     return Tuple(
-        WorkerSlot{typeof(worker), job_type, scratch_type, result_type, error_type}(
+        WorkerSlot{typeof(worker), Job, Scratch, Result, Err}(
             Int(idx),
             worker,
             nothing,
@@ -162,7 +204,7 @@ function _owned_worker_values(recipe, nworkers::Integer, build_manager)
     end
 end
 
-function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), throw::Bool = true, poll_interval::Real = 0.0, job_type::Type = Any, scratch_type::Type = Any, result_type::Type = Any, error_type::Type = Any)
+function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), throw::Bool = true, poll_interval::Real = 0.0, job_type::Type{Job} = Any, scratch_type::Type{Scratch} = Any, result_type::Type{Result} = Any, error_type::Type{Err} = Any) where {Job, Scratch, Result, Err}
     nworkers > 0 || throw(ArgumentError("`nworkers` must be positive."))
     normalized_policy = _normalize_flush_policy(flush_policy)
     prepared_state = if isnothing(state)
@@ -181,7 +223,9 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
     end
 
     slot_values = _slot_container(worker_values, job_type, scratch_type, result_type, error_type)
-    return ProcessManager(recipe, slot_values, config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
+    manager = ProcessManager(recipe, slot_values, config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
+    schedule_processmanager_precompile!(manager)
+    return manager
 end
 
 """
