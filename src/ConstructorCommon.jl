@@ -23,6 +23,8 @@ end
 end
 
 function resolve_process_inputs_overrides(func, inputs_overrides...)
+    isempty(inputs_overrides) && return (), ()
+
     empty_context = ProcessContext(func)
     reg = getregistry(empty_context)
 

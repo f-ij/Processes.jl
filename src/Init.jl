@@ -17,6 +17,18 @@ end
 """
 Make a context from an algo and empty context
 """
+function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where {F <: LoopAlgorithm}
+    input_context = merge_into_globals(c, (;algo, lifetime))
+
+    @DebugMode "Preparing context for algo $(algo) with input context $input_context"
+    @DebugMode "Overrides are ()"
+
+    prepared_context = init(algo, input_context)
+    @DebugMode "Prepared in initcontext context is $prepared_context"
+
+    return prepared_context
+end
+
 function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{NamedInput, NamedOverride}...; lifetime = Indefinite()) where {F <: LoopAlgorithm}
     inputs = filter(x -> x isa NamedInput, overrides_and_inputs)
     overrides = filter(x -> x isa NamedOverride, overrides_and_inputs)
@@ -38,6 +50,19 @@ end
 """
 Init context from TaskData
 """
+function initcontext(td::TD; lifetime=nothing) where {TD<:TaskData}
+    lifetime = getlifetime(td)
+    overrides = getoverrides(td)
+    inputs = getinputs(td)
+    empty_c = getcontext(td)
+
+    if isempty(inputs) && isempty(overrides)
+        return initcontext(getalgo(td), empty_c; lifetime = lifetime)
+    else
+        return initcontext(getalgo(td), empty_c, overrides..., inputs...; lifetime = lifetime)
+    end
+end
+
 function initcontext(td::TD, new_inputs_overrides::Union{NamedInput, NamedOverride}...; lifetime=nothing) where {TD<:TaskData}
     lifetime = getlifetime(td)
     overrides = getoverrides(td)

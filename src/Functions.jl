@@ -784,6 +784,36 @@ end
 """
 General replacing setfield
 """
+function _setfield_debug_message(
+    ::Type{S},
+    ::Val{FieldName},
+    ::Type{V},
+    fieldnames,
+    field_match,
+    parameters,
+    parameter_match,
+    type_expr,
+    getfields,
+    exp,
+    err,
+) where {S,V,FieldName}
+    return string(
+        "\n--- setfield debug ---\n",
+        "S = ", S, "\n",
+        "FieldName = ", FieldName, "\n",
+        "V = ", V, "\n\n",
+        "fieldnames = ", fieldnames, "\n",
+        "field_match = ", field_match, " (", fieldnames[field_match], ")\n\n",
+        "S.parameters = ", S.parameters, "\n",
+        "parameter_match = ", parameter_match, "\n",
+        "new parameters = ", parameters, "\n\n",
+        "type_expr = ", sprint(show, type_expr), "\n",
+        "getfields = ", repr(getfields), "\n",
+        "exp = ", sprint(show, exp), "\n",
+        "\nOriginal error: ", sprint(showerror, err),
+    )
+end
+
 @inline setfield(s::S, name::Symbol, val::V) where {S,V} = @inline setfield(s, Val(name), val)
 @inline @generated function setfield(s::S, name::Val{FieldName}, val::V) where {S,V, FieldName}
     fieldnames = Base.fieldnames(S)
@@ -817,32 +847,25 @@ General replacing setfield
     # error("Exp: $exp")
 
 
-    ### ERROR:
-        exp_str = sprint(show, exp)
-        type_expr_str = sprint(show, type_expr)
-        getfields_str = repr(getfields)
-        msg = string(
-            "\n--- setfield debug ---\n",
-            "S = ", S, "\n",
-            "FieldName = ", FieldName, "\n",
-            "V = ", V, "\n\n",
-            "fieldnames = ", fieldnames, "\n",
-            "field_match = ", field_match, " (", fieldnames[field_match], ")\n\n",
-            "S.parameters = ", S.parameters, "\n",
-            "parameter_match = ", parameter_match, "\n",
-            "new parameters = ", parameters, "\n\n",
-            "type_expr = ", type_expr_str, "\n",
-            "getfields = ", getfields_str, "\n",
-            "exp = ", exp_str, "\n",
-        )
-
     final_struct_expr = Expr(:(::), exp, Expr(:curly, nameof(S), parameters...))
     return quote
         try
             # $exp
             $(final_struct_expr)
         catch e
-            error($msg * "\nOriginal error: " * sprint(showerror, e))
+            error($(_setfield_debug_message)(
+                $S,
+                Val($(QuoteNode(FieldName))),
+                $V,
+                $(QuoteNode(fieldnames)),
+                $field_match,
+                $(QuoteNode(parameters)),
+                $parameter_match,
+                $(QuoteNode(type_expr)),
+                $(QuoteNode(getfields)),
+                $(QuoteNode(exp)),
+                e,
+            ))
         end
     end
     # return exp
