@@ -62,6 +62,27 @@ end
     }
 end
 
+@testset "ProcessManager copies one owned worker template" begin
+    make_count = Ref(0)
+    copy_count = Ref(0)
+    recipe = (;
+        makeworker = (idx, manager) -> begin
+            make_count[] += 1
+            ManagerFakeWorker(idx, Int[], false)
+        end,
+        copyworker = (template, idx, manager) -> begin
+            copy_count[] += 1
+            ManagerFakeWorker(idx, Int[], false)
+        end,
+    )
+
+    manager = ProcessManager(recipe; nworkers = 4)
+
+    @test make_count[] == 1
+    @test copy_count[] == 3
+    @test [slot.worker.idx for slot in slots(manager)] == 1:4
+end
+
 @testset "ProcessManager initializes owned state from config" begin
     recipe = (;
         initstate = config -> (; scale = config.scale, count = Ref(0)),
@@ -191,6 +212,26 @@ function manager_process_context(worker)
     subcontexts = getfield(worker.context, :subcontexts)
     names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
     return getproperty(subcontexts, only(names))
+end
+
+@testset "ProcessManager default Process copies share type but not context" begin
+    make_count = Ref(0)
+    recipe = (;
+        makeworker = (idx, manager) -> begin
+            make_count[] += 1
+            Process(ManagerProcessAccumulator(); repeats = 1)
+        end,
+    )
+
+    manager = ProcessManager(recipe; nworkers = 3, flush_policy = NoFlush())
+    manager_slots = slots(manager)
+
+    @test make_count[] == 1
+    @test allequal(typeof(slot.worker) for slot in manager_slots)
+    @test allequal(typeof(taskdata(slot.worker)) for slot in manager_slots)
+    @test allequal(typeof(getalgo(taskdata(slot.worker))) for slot in manager_slots)
+    @test allequal(typeof(slot.worker.context) for slot in manager_slots)
+    @test length(unique(objectid(slot.worker.context) for slot in manager_slots)) == 3
 end
 
 @testset "Process workers are transparent and reset is explicit" begin
