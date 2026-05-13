@@ -227,6 +227,7 @@ end
     manager_slots = slots(manager)
 
     @test make_count[] == 1
+    @test all(taskdata(slot.worker) === taskdata(manager_slots[1].worker) for slot in manager_slots)
     @test allequal(typeof(slot.worker) for slot in manager_slots)
     @test allequal(typeof(taskdata(slot.worker)) for slot in manager_slots)
     @test allequal(typeof(getalgo(taskdata(slot.worker))) for slot in manager_slots)

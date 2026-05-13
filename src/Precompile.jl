@@ -471,7 +471,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
                 lr = config.lr,
                 total_loss = Ref(0.0),
             ),
-            makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(template.context)),
+            makeworker = (idx, manager) -> template,
             prepare! = (slot, job, manager) -> begin
                 ctx = _process_manager_precompile_context(slot.worker)
                 ctx.x[] = job.x

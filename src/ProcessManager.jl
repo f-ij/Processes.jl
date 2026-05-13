@@ -1,6 +1,6 @@
 export ProcessManager, WorkerSlot
 export FlushPolicy, FlushAtEnd, NoFlush, FlushEvery
-export dispatch!, poll!, drain!, run!, resetworker!, reinitworker!, slots, workers
+export dispatch!, poll!, drain!, run!, resetworker!, reinitworker!, slots, workers, copyworker
 
 """
 Policy trait controlling when a `ProcessManager` invokes a recipe `flush!` callback.
@@ -113,9 +113,11 @@ overload the callback functions below. The default worker protocol supports
 
 When `workers` is omitted, the recipe must define `makeworker`. The manager calls
 `makeworker` once to create a template worker, then copies that template for the
-remaining slots. Recipes can define `copyworker(template, idx, manager)` when the
-default copy is not enough. When `workers` is passed, the manager wraps those
-existing workers in slots and does not create new worker contexts.
+remaining slots. The default `Process` copy reuses the template task description
+and deep-copies the runtime context. Recipes can define
+`copyworker(template, idx, manager)` when the default copy is not enough. When
+`workers` is passed, the manager wraps those existing workers in slots and does
+not create new worker contexts.
 
 The `job_type`, `scratch_type`, `result_type`, and `error_type` keywords let
 latency-sensitive code make worker slot fields concrete. Leaving them as `Any`
@@ -258,7 +260,7 @@ end
 
 makeworker(recipe, idx, manager) = _call_recipe_field(recipe, Val(:makeworker), idx, manager)
 function _default_copyworker(template::Process, idx, manager)
-    return copyprocess(template; context = deepcopy(template.context))
+    return _makecopiedprocess(taskdata(template), deepcopy(template.context), template.timeout)
 end
 _default_copyworker(template, idx, manager) = deepcopy(template)
 

@@ -62,32 +62,44 @@ end
 """
 Generate a namedtuple of localtuple => VarLocation
 """
-get_varlocations(scv::SubContextView) = @inline get_varlocations(typeof(scv))
-@inline @generated function get_varlocations(scv::Type{C}) where {C<:SubContextView{CType, SubKey}} where {CType, SubKey}
+function _compute_varlocations(::Type{C}) where {C<:SubContextView{CType, SubKey}} where {CType, SubKey}
     locals = get_local_locations(C)
     sharedvars = get_shared_locations(C)
     routedvars = get_routed_locations(C)
     injectedvars = get_injected_locations(C)
     # Locals take precedene over routes which take precedence over shared if there are name clashes
     # Injected take precedence over all
-    all_vars = (;sharedvars..., routedvars..., locals..., injectedvars...)
-    return :( $all_vars )
+    return (;sharedvars..., routedvars..., locals..., injectedvars...)
 end
 
-@inline get_all_locations(scv::SubContextView) = @inline get_all_locations(typeof(scv))
 """
 Get a flat named tuple with (;name_of_runtime_var => VarLocation)
 A varlocation is an actual location of the variable in the full context
 """
-@inline @generated function get_all_locations(sctv::Type{SCT}) where {SCT<:SubContextView}
+function _compute_all_locations(::Type{SCT}) where {SCT<:SubContextView}
     locals = get_local_locations(SCT)
     sharedvars = get_shared_locations(SCT)
     routedvars = get_routed_locations(SCT)
     injectedvars = get_injected_locations(SCT)
     # Locals take precedene over routes which take precedence over shared
-    all_locations = (;sharedvars..., routedvars..., locals..., injectedvars...)
-    return :( $all_locations )
+    return (;sharedvars..., routedvars..., locals..., injectedvars...)
 end
+
+@inline @generated function _generated_varlocations(::Type{C}) where {C<:SubContextView}
+    locations = _compute_varlocations(C)
+    return :( $locations )
+end
+
+@inline @generated function _generated_all_locations(::Type{SCT}) where {SCT<:SubContextView}
+    locations = _compute_all_locations(SCT)
+    return :( $locations )
+end
+
+get_varlocations(scv::SubContextView) = @inline get_varlocations(typeof(scv))
+@inline get_varlocations(scv::Type{C}) where {C<:SubContextView} = _generated_varlocations(C)
+
+@inline get_all_locations(scv::SubContextView) = @inline get_all_locations(typeof(scv))
+@inline get_all_locations(sctv::Type{SCT}) where {SCT<:SubContextView} = _generated_all_locations(SCT)
 
 ###########################################
 ########### Getting Properties  ###########
