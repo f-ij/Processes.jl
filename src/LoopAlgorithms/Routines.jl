@@ -17,9 +17,7 @@ end
 
 function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple, repeats; id = nothing) where F
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
-    la = Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), Nothing, id}(funcs, states, options, resume_idxs, nothing)
-    schedule_loopalgorithm_metadata_precompile!(la)
-    return la
+    return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), Nothing, id}(funcs, states, options, resume_idxs, nothing)
 end
 
 function newfuncs(r::Routine, funcs)

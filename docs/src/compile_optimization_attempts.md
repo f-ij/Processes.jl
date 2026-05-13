@@ -10,6 +10,10 @@ This file records compile-latency experiments so failed paths are not repeated.
 - Added constructor-time `ProcessManager` precompile scheduling.
   The hook runs after manager construction and targets concrete manager, slot, and job types.
 
+- Kept constructor-time `Process` loop precompile scheduling.
+  This is close enough to the first `run` call to reduce first-run latency without
+  precompiling broad `LoopAlgorithm` metadata paths too early.
+
 - Avoided empty process setup work.
   Empty input/override construction now skips a throwaway context build, and empty `initcontext` paths avoid vararg filtering.
 
@@ -48,6 +52,13 @@ This file records compile-latency experiments so failed paths are not repeated.
 
 - Adding type parameters directly to the public `TaskData` keyword constructor.
   This also worsened compile-facing benchmark numbers and was reverted.
+
+- Constructor-time `LoopAlgorithm` metadata precompile.
+  Immediate scheduling made nearby construction and input-resolution stages
+  contend with background compilation. Adding an arbitrary sleep moved the
+  contention but did not reliably improve immediate time-to-first-process-run.
+  The hook, lock, type set, delay constant, and metadata precompile helper were
+  removed.
 
 ## Current Benchmark Notes
 
@@ -88,7 +99,7 @@ The pass also showed inference under background precompile tasks launched from
 separate pass specifically for the precompile pipeline, otherwise normal workload
 inference and background precompile inference are mixed together.
 
-## Delayed LoopAlgorithm Metadata Precompile
+## LoopAlgorithm Metadata Precompile
 
 The first SnoopCompile pass showed background metadata precompile tasks mixed into
 normal first-call inference. The compile benchmark confirmed this was not just a
@@ -108,6 +119,16 @@ Measured cold-stage comparison on the simple compile benchmark:
   `algo construction ~= 106 ms`, `input resolution ~= 27 ms`,
   `Process constructor ~= 54 ms`, `first run ~= 141 ms`.
 
-The delayed version keeps the asynchronous precompile path for later work, but
-gets it out of the immediate construction/resolve path. This is a latency win in
-the benchmark without removing the precompile hook.
+Later measurements showed the best immediate construct-to-first-run path came
+from removing the `LoopAlgorithm` constructor metadata precompile entirely while
+keeping the `Process` constructor loop precompile:
+
+- No `LoopAlgorithm` metadata precompile:
+  `algo construction ~= 87-90 ms`, `input resolution ~= 26-33 ms`,
+  `Process constructor ~= 53-55 ms`, `first run ~= 123-134 ms`.
+
+The conclusion is that metadata precompile from `LoopAlgorithm` construction is
+too early for this workload. It either contends with input resolution or, when
+delayed, is less useful for the immediate first run. The retained precompile path
+is the `Process` constructor loop precompile, which is closer to the actual code
+that will run.

@@ -13,9 +13,7 @@ struct FinalizedAlgorithm{LA<:LoopAlgorithm, F} <: LoopAlgorithm
 end
 
 function finalstep(la::LoopAlgorithm, final)
-    finalized = FinalizedAlgorithm{typeof(la), typeof(final)}(la, final)
-    schedule_loopalgorithm_metadata_precompile!(finalized)
-    return finalized
+    return FinalizedAlgorithm{typeof(la), typeof(final)}(la, final)
 end
 
 function finalstep(::Type{LA}, final) where {LA<:LoopAlgorithm}

@@ -24,9 +24,6 @@ end
 
 const _LOOP_PRECOMPILE_LOCK = ReentrantLock()
 const _LOOP_PRECOMPILE_TASKS = Dict{Any, Task}()
-const _LOOPALGORITHM_METADATA_PRECOMPILE_LOCK = ReentrantLock()
-const _LOOPALGORITHM_METADATA_PRECOMPILE_TYPES = Set{Any}()
-const _LOOPALGORITHM_METADATA_PRECOMPILE_DELAY = 0.2
 
 @setterGetter Process lock shouldrun
 """
@@ -189,53 +186,6 @@ function _try_precompile(f, signature::Tuple)
     try
         Base.precompile(f, signature)
     catch
-    end
-    return nothing
-end
-
-function _spawn_precompile(f, signature::Tuple)
-    Threads.@spawn _try_precompile(f, signature)
-    return nothing
-end
-
-function precompile_loopalgorithm_metadata!(loopalgorithm_type::Type{LA}) where {LA<:LoopAlgorithm}
-    type_signature = (Type{loopalgorithm_type},)
-    value_signature = (loopalgorithm_type,)
-
-    _spawn_precompile(resolve, value_signature)
-    _spawn_precompile(ProcessContext, value_signature)
-    _spawn_precompile(initcontext, value_signature)
-
-    _spawn_precompile(setup_registry, value_signature)
-    _spawn_precompile(_resolve_options, value_signature)
-    _spawn_precompile(flat_funcs, value_signature)
-    _spawn_precompile(flat_states, value_signature)
-    _spawn_precompile(flat_multipliers, value_signature)
-    _spawn_precompile(subalgotypes, type_signature)
-    _spawn_precompile(intervals, type_signature)
-    _spawn_precompile(multipliers, type_signature)
-    return nothing
-end
-
-function schedule_loopalgorithm_metadata_precompile!(loopalgorithm::LoopAlgorithm)
-    return schedule_loopalgorithm_metadata_precompile!(typeof(loopalgorithm))
-end
-
-function schedule_loopalgorithm_metadata_precompile!(loopalgorithm_type::Type{LA}) where {LA<:LoopAlgorithm}
-    _is_generating_package_output() && return nothing
-
-    should_schedule = lock(_LOOPALGORITHM_METADATA_PRECOMPILE_LOCK) do
-        if !(loopalgorithm_type in _LOOPALGORITHM_METADATA_PRECOMPILE_TYPES)
-            push!(_LOOPALGORITHM_METADATA_PRECOMPILE_TYPES, loopalgorithm_type)
-            return true
-        end
-        return false
-    end
-    should_schedule && Threads.@spawn try
-        sleep(_LOOPALGORITHM_METADATA_PRECOMPILE_DELAY)
-        precompile_loopalgorithm_metadata!(loopalgorithm_type)
-    catch
-        nothing
     end
     return nothing
 end
