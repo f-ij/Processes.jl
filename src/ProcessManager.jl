@@ -115,7 +115,9 @@ When `workers` is omitted, the recipe must define `makeworker`. The manager call
 `makeworker` once to create a template worker, then copies that template for the
 remaining slots. The default `Process` copy reuses the template task description
 and deep-copies the runtime context. Recipes can define
-`copyworker(template, idx, manager)` when the default copy is not enough. When
+`makecontext(idx, manager, template)` to build a separate `Process` context for
+each slot while keeping the template task description, or
+`copyworker(template, idx, manager)` when the whole worker copy must be custom. When
 `workers` is passed, the manager wraps those existing workers in slots and does
 not create new worker contexts.
 
@@ -197,8 +199,35 @@ function _slot_container(workers, ::Type{Job}, ::Type{Scratch}, ::Type{Result}, 
     )
 end
 
+_has_recipe_callback(recipe, name::Val) = !_is_no_recipe_callback(_recipe_field(recipe, name))
+
+function _worker_context(recipe, idx, manager, template)
+    return _call_optional_recipe_field(recipe, Val(:makecontext), idx, manager, template)
+end
+
+function _process_with_context(template::Process, idx::Integer, prepared_context)
+    if idx == 1
+        template.context = prepared_context
+        return template
+    else
+        return _makecopiedprocess(taskdata(template), prepared_context, template.timeout)
+    end
+end
+
+function _process_with_context(template, idx::Integer, prepared_context)
+    throw(ArgumentError("Recipe callback `makecontext` is only supported by default for `Process` workers. Define `copyworker` to customize non-Process worker construction."))
+end
+
 function _owned_worker_values(recipe, nworkers::Integer, build_manager)
     template = makeworker(recipe, 1, build_manager)
+
+    if _has_recipe_callback(recipe, Val(:makecontext))
+        return ntuple(Int(nworkers)) do idx
+            prepared_context = _worker_context(recipe, idx, build_manager, template)
+            _process_with_context(template, idx, prepared_context)
+        end
+    end
+
     return ntuple(Int(nworkers)) do idx
         idx == 1 ? template : copyworker(recipe, template, idx, build_manager)
     end

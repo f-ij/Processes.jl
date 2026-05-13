@@ -235,6 +235,40 @@ end
     @test length(unique(objectid(slot.worker.context) for slot in manager_slots)) == 3
 end
 
+@testset "ProcessManager can build per-slot Process contexts" begin
+    make_count = Ref(0)
+    context_count = Ref(0)
+    recipe = (;
+        makeworker = (idx, manager) -> begin
+            make_count[] += 1
+            Process(
+                ManagerProcessAccumulator,
+                Input(ManagerProcessAccumulator, :start => 0);
+                repeats = 1,
+            )
+        end,
+        makecontext = (idx, manager, template) -> begin
+            context_count[] += 1
+            td = copytaskdata(
+                template,
+                Input(ManagerProcessAccumulator, :start => idx),
+            )
+            initcontext(td)
+        end,
+    )
+
+    manager = ProcessManager(recipe; nworkers = 3, flush_policy = NoFlush())
+    manager_slots = slots(manager)
+    contexts = map(slot -> manager_process_context(slot.worker), manager_slots)
+
+    @test make_count[] == 1
+    @test context_count[] == 3
+    @test all(taskdata(slot.worker) === taskdata(manager_slots[1].worker) for slot in manager_slots)
+    @test allequal(typeof(slot.worker.context) for slot in manager_slots)
+    @test length(unique(objectid(slot.worker.context) for slot in manager_slots)) == 3
+    @test [ctx.value[] for ctx in contexts] == [1, 2, 3]
+end
+
 @testset "Process workers are transparent and reset is explicit" begin
     worker = Process(ManagerProcessAccumulator(); repeats = 1)
     external = Int[]

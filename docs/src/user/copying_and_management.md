@@ -90,6 +90,31 @@ The manager stores those workers and their contexts in `slots(manager)`. Later
 calls to `run!(manager, jobs)` do not create new workers or new contexts unless
 your own recipe does so.
 
+For `Process` workers, the manager can also build the algorithm once and let the
+recipe build each worker context separately:
+
+```julia
+recipe = (;
+    makeworker = (idx, manager) -> Process(MyAlgo; repeats = 1),
+
+    makecontext = (idx, manager, template) -> begin
+        td = copytaskdata(
+            template,
+            Input(MyAlgo, :seed => idx),
+        )
+        initcontext(td)
+    end,
+)
+
+manager = ProcessManager(recipe; nworkers = 4)
+```
+
+Here `makeworker` is still called once. `makecontext` is called once per slot,
+including slot 1. The manager installs each returned context on a worker that
+uses the template task description. Use this when all workers should run the
+same algorithm, but each worker needs separate buffers, random state, or initial
+values.
+
 You can inspect manager-owned workers with:
 
 ```julia
@@ -146,6 +171,8 @@ Callbacks can accept fewer trailing arguments if they do not need all of them.
 
 - `initstate(config, manager)`: build `manager.state` from user configuration.
 - `makeworker(idx, manager)`: create worker `idx` when `workers` is not passed.
+- `makecontext(idx, manager, template)`: for manager-owned `Process` workers,
+  build the context for slot `idx` from the template worker.
 - `prepare!(slot, job, manager)`: write one job into a worker before it starts.
 - `start!(slot, job, manager)`: custom worker start. Defaults to `run(worker)`
   for `Process` workers.
