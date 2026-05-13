@@ -11,8 +11,73 @@ function resolve(la::LoopAlgorithm)
         return la
     end
 
-    registry = setup_registry(la)
-    return _resolve_with_registry(la, registry)
+    registry, keyed_la = setup_registry_and_keyed_algos(la)
+    keyed_la = attach_registry_to_tree(keyed_la, registry)
+    return _resolve_keyed_with_registry(keyed_la, registry, getoptions(la))
+end
+
+function setup_registry_and_keyed_algos(la::LoopAlgorithm)
+    registry = NameSpaceRegistry()
+
+    # States are context-owned entries. They are registered first so the final
+    # registry keeps the same ordering as `setup_registry`.
+    states = flat_states(la)
+    multipliers = ntuple(i -> 1, length(states))
+    registry = addall(registry, states, multipliers)
+
+    return add_algos_to_registry(registry, la, 1.0)
+end
+
+function add_algos_to_registry(registry::NameSpaceRegistry, la::LoopAlgorithm, multiplier)
+    funcs = getalgos(la)
+    algo_multipliers = multiplier .* multipliers(la)
+    registry, keyed_funcs = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
+    return registry, rebuild_loopalgorithm_funcs(la, keyed_funcs)
+end
+
+add_algo_tuple_to_registry(registry::NameSpaceRegistry, ::Tuple{}, ::Tuple{}) = registry, ()
+
+function add_algo_tuple_to_registry(registry::NameSpaceRegistry, funcs::Tuple, multipliers::Tuple)
+    registry, keyed_head = add_algo_to_registry(registry, first(funcs), first(multipliers))
+    registry, keyed_tail = add_algo_tuple_to_registry(registry, Base.tail(funcs), Base.tail(multipliers))
+    return registry, (keyed_head, keyed_tail...)
+end
+
+function add_algo_to_registry(registry::NameSpaceRegistry, algo::LoopAlgorithm, multiplier)
+    return add_algos_to_registry(registry, algo, multiplier)
+end
+
+function add_algo_to_registry(registry::NameSpaceRegistry, algo, multiplier)
+    return add(registry, algo, multiplier)
+end
+
+function rebuild_loopalgorithm_funcs(la::LoopAlgorithm, funcs::Tuple)
+    return setfield(la, :funcs, funcs)
+end
+
+function rebuild_loopalgorithm_funcs(fa::FinalizedAlgorithm, funcs::Tuple)
+    return finalstep(rebuild_loopalgorithm_funcs(inneralgorithm(fa), funcs), finalfunction(fa))
+end
+
+function attach_registry_to_tree(la::LoopAlgorithm, registry::NameSpaceRegistry)
+    funcs = map(getalgos(la)) do func
+        func isa LoopAlgorithm ? attach_registry_to_tree(func, registry) : func
+    end
+    la = rebuild_loopalgorithm_funcs(la, funcs)
+    return _attach_registry(la, registry)
+end
+
+function attach_registry_to_tree(fa::FinalizedAlgorithm, registry::NameSpaceRegistry)
+    return finalstep(attach_registry_to_tree(inneralgorithm(fa), registry), finalfunction(fa))
+end
+
+function _resolve_keyed_with_registry(la::LoopAlgorithm, registry::NameSpaceRegistry, options::Tuple)
+    shares = typefilter(Share, options)
+    routes = typefilter(Route, options)
+    sharedcontexts = resolve_options(registry, shares...)
+    sharedvars = resolve_options(registry, routes...)
+    options = merge_nested_namedtuples(sharedvars, sharedcontexts)
+    return setoptions(la, options)
 end
 
 function _resolve_options(la::LoopAlgorithm)

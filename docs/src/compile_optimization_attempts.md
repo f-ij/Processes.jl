@@ -27,6 +27,12 @@ This file records compile-latency experiments so failed paths are not repeated.
   algorithm. This is mostly a contract cleanup; measured compile latency was
   neutral against the same benchmark using an already-resolved algorithm.
 
+- Fused single-algorithm `resolve` registry build with algorithm keying.
+  The single-argument path now uses the keyed algorithm returned while adding
+  algorithms to the registry instead of building a registry and then doing a
+  second registry lookup pass through `update_keys`. Multi-algorithm resolve
+  still uses the shared-registry path.
+
 ## Reverted Or Rejected
 
 - `@nospecialize` on process precompile helpers.
@@ -60,6 +66,27 @@ This file records compile-latency experiments so failed paths are not repeated.
   The hook, lock, type set, delay constant, and metadata precompile helper were
   removed.
 
+- Splitting `setup_registry` into an `add_loopalgorithm_to_registry` helper.
+  Both a fully specialized helper and a variant with `@nospecialize` on the loop
+  algorithm were tested. The split made cold construction/first-run latency worse
+  and also hurt warmed process-loop timing, so the original single-body registry
+  setup remains preferable.
+
+- Adding a `@noinline` unresolved-resolve boundary.
+  The goal was to stop `Process` construction from compiling through the full
+  resolve path. In practice it made first-run and warmed process-loop timing
+  worse, which suggests the resolved algorithm type information is still useful
+  to the later loop path.
+
+- Adding `Base.@constprop :none` to `setup_registry`.
+  This was meant to reduce caller-side compile work without changing semantics,
+  but it worsened warmed loop timing and was removed.
+
+- Rewriting `resolve(la::LoopAlgorithm)` as `resolve(la::LA) where
+  {LA<:LoopAlgorithm}`.
+  This did not improve the compile benchmark. Julia was already specializing the
+  method sufficiently for this use case.
+
 ## Current Benchmark Notes
 
 - `manual tests/ProcessHotLoopBenchmark.jl` checks normal hot-loop runtime.
@@ -67,6 +94,11 @@ This file records compile-latency experiments so failed paths are not repeated.
 
 - `manual tests/ProcessCompileLatencyBenchmark.jl` breaks compile-facing work into:
   algorithm construction, input resolution, `TaskData`, `initcontext`, `Process` constructor, first run, and warmed hot runs.
+
+- `manual tests/ProcessResolveBenchmark.jl` measures fresh construction,
+  `resolve`, already-resolved `resolve`, `initcontext`, `Process` construction,
+  first run, and warmed fresh-resolve throughput for simple, routed, shared, and
+  nested algorithms.
 
 - The current benchmark suggests the next useful target is not simple `TaskData` specialization. Metadata reuse should stay on narrow internal paths and avoid changing the public `TaskData` keyword constructor shape.
 
