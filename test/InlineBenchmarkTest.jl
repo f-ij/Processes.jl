@@ -52,7 +52,7 @@ function inline_bmark(ip::IP, trials = 5) where IP
         elapsed = (time_ns() - start_ns) / 1e9
         push!(runtimes, elapsed)
     end
-    return mean(runtimes)
+    return minimum(runtimes)
 end
 function inline_bmark_nogen(ip::IP, trials = 5) where IP
     runtimes = Float64[]
@@ -63,7 +63,7 @@ function inline_bmark_nogen(ip::IP, trials = 5) where IP
         elapsed = (time_ns() - start_ns) / 1e9
         push!(runtimes, elapsed)
     end
-    return mean(runtimes)
+    return minimum(runtimes)
 end
 
 
@@ -73,7 +73,7 @@ function naive_benchmark(trials = 5, n = 100_000)
         elapsed = naive_fibluc(n)
         push!(runtimes, elapsed)
     end
-    return mean(runtimes)
+    return minimum(runtimes)
 end
 
 @testset "InlineProcess benchmark" begin
@@ -82,8 +82,9 @@ end
     ip = Processes.InlineProcess(fibluc; repeats = n)
     
     println("Benchmarking InlineProcess with $n repeats...")
-    inline_time = inline_bmark(ip, 1)
-    naive_time = naive_benchmark(1, n)
+    inline_bmark(ip, 5)
+    inline_bmark_nogen(ip, 5)
+    naive_benchmark(5, n)
 
     inline_time = inline_bmark(ip, 1000)
     naive_time = naive_benchmark(1000, n)

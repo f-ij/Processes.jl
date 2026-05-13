@@ -244,6 +244,19 @@ Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), sub
 end
 
 Base.@constprop :aggressive merge_into_subcontext(pc::ProcessContext{D}, name::Symbol, args) where {D} = @inline merge_into_subcontext(pc, Val(name), args)
+
+function _namedtuple_merge_preserves_type(old_type::Type{<:NamedTuple}, new_type::Type)
+    new_type <: NamedTuple || return false
+
+    old_names = fieldnames(old_type)
+    new_names = fieldnames(new_type)
+    for name in new_names
+        name in old_names || return false
+        fieldtype(old_type, name) === fieldtype(new_type, name) || return false
+    end
+    return true
+end
+
 @inline @generated function merge_into_subcontext(pc::ProcessContext{D}, ::Val{name}, args::A) where {D, name, A}
     sc_names = get_subcontexts_fieldnames(pc)
     found_idx = findfirst(==(name), sc_names)
@@ -251,9 +264,8 @@ Base.@constprop :aggressive merge_into_subcontext(pc::ProcessContext{D}, name::S
         error("Trying to merge into unknown subcontext $(QuoteNode(name)) in ProcessContext. Available subcontexts are: $(sc_names)")
     end
     old_sc_type = fieldtype(D, name)
-    merged_sc_type = Core.Compiler.return_type(merge, Tuple{old_sc_type, A})
 
-    if merged_sc_type === old_sc_type
+    if _namedtuple_merge_preserves_type(getdatatype(old_sc_type), A)
         return quote
             LineNumberNode(@__LINE__, @__FILE__)
             @inline merge_into_subcontext_mutate(pc, Val($(QuoteNode(name))), args)

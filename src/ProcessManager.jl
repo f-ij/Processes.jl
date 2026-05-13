@@ -162,7 +162,7 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
     build_manager = ProcessManager(recipe, (), config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
 
     worker_values = if isnothing(workers)
-        ntuple(idx -> makeworker(recipe, idx, build_manager), Int(nworkers))
+        Tuple(makeworker(recipe, idx, build_manager) for idx in 1:Int(nworkers))
     else
         collected = collect(workers)
         isempty(collected) && throw(ArgumentError("`workers` must not be empty."))

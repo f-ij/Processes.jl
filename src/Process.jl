@@ -22,6 +22,11 @@ mutable struct Process{F} <: AbstractProcess
     threadid::Int
 end
 
+const _LOOP_PRECOMPILE_LOCK = ReentrantLock()
+const _LOOP_PRECOMPILE_TASKS = Dict{Any, Task}()
+const _LOOPALGORITHM_METADATA_PRECOMPILE_LOCK = ReentrantLock()
+const _LOOPALGORITHM_METADATA_PRECOMPILE_TYPES = Set{Any}()
+
 @setterGetter Process lock shouldrun
 """
 Get value of run of a process, denoting wether it should run or not
@@ -89,6 +94,7 @@ function Process(func, inputs_overrides...; context = nothing, repeats = nothing
     p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, nothing, RuntimeListeners(), 0)
 
     register_process!(p)
+    schedule_loop_precompile!(p)
     @DebugMode "Created process with id $(p.id), now preparing data"
     
     finalizer(remove_process!, p)
@@ -176,10 +182,114 @@ end
 @inline lock(f, p::Process) = lock(f, p.lock)
 @inline unlock(p::Process) =  unlock(p.lock)
 
-@inline function precompile_loop!(p::Process, func, context, lt)
-    Base.precompile(loop, (typeof(p), typeof(func), typeof(context), typeof(lt), NonGenerated))
-    Base.precompile(loop, (typeof(p), typeof(func), typeof(context), typeof(lt), Generated))
+_is_generating_package_output() = ccall(:jl_generating_output, Cint, ()) != 0
 
+function _try_precompile(f, signature::Tuple)
+    try
+        Base.precompile(f, signature)
+    catch
+    end
+    return nothing
+end
+
+function _spawn_precompile(f, signature::Tuple)
+    Threads.@spawn _try_precompile(f, signature)
+    return nothing
+end
+
+function precompile_loopalgorithm_metadata!(loopalgorithm_type::Type{<:LoopAlgorithm})
+    type_signature = (Type{loopalgorithm_type},)
+    value_signature = (loopalgorithm_type,)
+
+    _spawn_precompile(resolve, value_signature)
+    _spawn_precompile(ProcessContext, value_signature)
+    _spawn_precompile(initcontext, value_signature)
+
+    _spawn_precompile(setup_registry, value_signature)
+    _spawn_precompile(_resolve_options, value_signature)
+    _spawn_precompile(flat_funcs, value_signature)
+    _spawn_precompile(flat_states, value_signature)
+    _spawn_precompile(flat_multipliers, value_signature)
+    _spawn_precompile(subalgotypes, type_signature)
+    _spawn_precompile(intervals, type_signature)
+    _spawn_precompile(multipliers, type_signature)
+    return nothing
+end
+
+function schedule_loopalgorithm_metadata_precompile!(loopalgorithm::LoopAlgorithm)
+    return schedule_loopalgorithm_metadata_precompile!(typeof(loopalgorithm))
+end
+
+function schedule_loopalgorithm_metadata_precompile!(loopalgorithm_type::Type{<:LoopAlgorithm})
+    _is_generating_package_output() && return nothing
+
+    should_schedule = lock(_LOOPALGORITHM_METADATA_PRECOMPILE_LOCK) do
+        if !(loopalgorithm_type in _LOOPALGORITHM_METADATA_PRECOMPILE_TYPES)
+            push!(_LOOPALGORITHM_METADATA_PRECOMPILE_TYPES, loopalgorithm_type)
+            return true
+        end
+        return false
+    end
+    should_schedule && Threads.@spawn try
+        precompile_loopalgorithm_metadata!(loopalgorithm_type)
+    catch
+        nothing
+    end
+    return nothing
+end
+
+@inline function precompile_loop!(loopfunc, p::Process, func, context, lt)
+    precompile_loop!(typeof(loopfunc), typeof(p), typeof(func), typeof(context), typeof(lt))
+
+    return nothing
+end
+
+@inline precompile_loop!(p::Process, func, context, lt) = precompile_loop!(loop, p, func, context, lt)
+
+function _callable_instance(::Type{F}) where {F}
+    return isdefined(F, :instance) ? getfield(F, :instance) : nothing
+end
+
+function precompile_loop!(loopfunc_type::Type, process_type::Type, func_type::Type, context_type::Type, lifetime_type::Type)
+    loopfunc = _callable_instance(loopfunc_type)
+    isnothing(loopfunc) && return nothing
+    Base.precompile(loopfunc, (process_type, func_type, context_type, lifetime_type, NonGenerated))
+    return nothing
+end
+
+function _global_context_type(p::Process)
+    return typeof(merge_into_globals(p.context, (; process = p)))
+end
+
+function _loop_precompile_signature(loopfunc_type::Type, process_type::Type, func_type::Type, context_type::Type, lifetime_type::Type)
+    return (loopfunc_type, process_type, func_type, context_type, lifetime_type)
+end
+
+function _loop_precompile_task!(loopfunc_type::Type, process_type::Type, func_type::Type, context_type::Type, lifetime_type::Type)
+    if _is_generating_package_output()
+        precompile_loop!(loopfunc_type, process_type, func_type, context_type, lifetime_type)
+        return nothing
+    end
+
+    signature = _loop_precompile_signature(loopfunc_type, process_type, func_type, context_type, lifetime_type)
+    lock(_LOOP_PRECOMPILE_LOCK) do
+        task = get(_LOOP_PRECOMPILE_TASKS, signature, nothing)
+        if isnothing(task)
+            task = Threads.@spawn precompile_loop!(loopfunc_type, process_type, func_type, context_type, lifetime_type)
+            _LOOP_PRECOMPILE_TASKS[signature] = task
+        end
+        return task
+    end
+end
+
+function schedule_loop_precompile!(p::Process, lt = lifetime(p); loopfunc = loop)
+    _loop_precompile_task!(typeof(loopfunc), typeof(p), typeof(p.taskdata.func), _global_context_type(p), typeof(lt))
+    return p
+end
+
+function wait_loop_precompile!(p::Process, func, context, lt; loopfunc = loop)
+    task = _loop_precompile_task!(typeof(loopfunc), typeof(p), typeof(func), typeof(context), typeof(lt))
+    isnothing(task) || wait(task)
     return nothing
 end
 
@@ -194,7 +304,7 @@ function makeloop!(p::Process, lt = lifetime(p); threaded = true, loopfunc::LF =
 
     func = p.taskdata.func
     context = merge_into_globals(p.context, (;process = p))
-    @inline precompile_loop!(p, func, context, lt)
+    wait_loop_precompile!(p, func, context, lt; loopfunc)
     if threaded
         p.task = Threads.@spawn loopfunc(p, func, context, lt)
     else

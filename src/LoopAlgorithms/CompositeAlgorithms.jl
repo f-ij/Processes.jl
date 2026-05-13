@@ -13,7 +13,9 @@ getmultipliers_from_specification_num(::Type{<:CompositeAlgorithm}, specificatio
 
 CompositeAlgorithm(args...) = parse_la_input(CompositeAlgorithm, args...)
 function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
-    return CompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), Nothing, id}(funcs, states, options, Ref(1), nothing)
+    la = CompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), Nothing, id}(funcs, states, options, Ref(1), nothing)
+    schedule_loopalgorithm_metadata_precompile!(la)
+    return la
 end
 
 function newfuncs(ca::CompositeAlgorithm, funcs)
