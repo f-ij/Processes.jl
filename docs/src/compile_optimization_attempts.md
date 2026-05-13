@@ -33,6 +33,13 @@ This file records compile-latency experiments so failed paths are not repeated.
   second registry lookup pass through `update_keys`. Multi-algorithm resolve
   still uses the shared-registry path.
 
+- Bound concrete value argument types in the resolve/materialization helpers.
+  Changing signatures such as `la::LoopAlgorithm` and
+  `registry::NameSpaceRegistry` to `la::LA where LA<:LoopAlgorithm` and
+  `registry::R where R<:NameSpaceRegistry` improved the full process benchmark
+  after the fused resolve change. This is not only useful for `Type` arguments;
+  it can help value arguments too.
+
 ## Reverted Or Rejected
 
 - `@nospecialize` on process precompile helpers.
@@ -82,10 +89,12 @@ This file records compile-latency experiments so failed paths are not repeated.
   This was meant to reduce caller-side compile work without changing semantics,
   but it worsened warmed loop timing and was removed.
 
-- Rewriting `resolve(la::LoopAlgorithm)` as `resolve(la::LA) where
-  {LA<:LoopAlgorithm}`.
-  This did not improve the compile benchmark. Julia was already specializing the
-  method sufficiently for this use case.
+- Rewriting only `resolve(la::LoopAlgorithm)` as `resolve(la::LA) where
+  {LA<:LoopAlgorithm}` before the fused resolve change.
+  Isolated to the old resolve implementation, this did not improve the compile
+  benchmark. After the fused single-resolve implementation, applying the pattern
+  consistently to the resolve helper chain did improve the full process
+  benchmark.
 
 ## Current Benchmark Notes
 

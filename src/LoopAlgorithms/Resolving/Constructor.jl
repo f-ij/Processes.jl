@@ -2,7 +2,7 @@
 Attach a shared registry to one loop algorithm and resolve its routing/sharing
 options against that registry.
 """
-function _resolve_with_registry(la::LoopAlgorithm, registry::NameSpaceRegistry)
+function _resolve_with_registry(la::LA, registry::R) where {LA<:LoopAlgorithm, R<:NameSpaceRegistry}
     options = getoptions(la)
     options isa Tuple || error("Resolving multiple loop algorithms together requires unresolved loop algorithms, but got $(typeof(la)) with options of type $(typeof(options)).")
 
@@ -22,7 +22,7 @@ Resolve multiple loop algorithms onto one shared registry.
 Each loop algorithm is updated separately against that registry and returned in the
 same order.
 """
-function resolve(la1::LoopAlgorithm, la2::LoopAlgorithm, las::LoopAlgorithm...)
+function resolve(la1::LA1, la2::LA2, las::Vararg{LoopAlgorithm}) where {LA1<:LoopAlgorithm, LA2<:LoopAlgorithm}
     loopalgorithms = (la1, la2, las...)
     registry = setup_registry(loopalgorithms...)
     return map(la -> _resolve_with_registry(la, registry), loopalgorithms)
