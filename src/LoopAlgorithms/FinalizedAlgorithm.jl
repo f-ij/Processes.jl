@@ -18,7 +18,7 @@ function finalstep(la::LoopAlgorithm, final)
     return finalized
 end
 
-function finalstep(::Type{<:LoopAlgorithm}, final)
+function finalstep(::Type{LA}, final) where {LA<:LoopAlgorithm}
     error("`finalstep` requires an instantiated LoopAlgorithm, not a LoopAlgorithm type.")
 end
 
@@ -54,20 +54,20 @@ end
 @inline repeats(fa::FinalizedAlgorithm, idx::Int) = repeats(inneralgorithm(fa), idx)
 @inline repeats(fa::FinalizedAlgorithm, idx::Val) = repeats(inneralgorithm(fa), idx)
 
-@inline functypes(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = functypes(LA)
+@inline functypes(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}} = functypes(LA)
 @inline functypes(fa::FinalizedAlgorithm) = functypes(inneralgorithm(fa))
-@inline algotypes(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = algotypes(LA)
+@inline algotypes(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}} = algotypes(LA)
 @inline algotypes(fa::FinalizedAlgorithm) = algotypes(inneralgorithm(fa))
-@inline statetypes(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = statetypes(LA)
+@inline statetypes(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}} = statetypes(LA)
 @inline statetypes(fa::FinalizedAlgorithm) = statetypes(inneralgorithm(fa))
-@inline subalgotypes(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = subalgotypes(LA)
+@inline subalgotypes(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}} = subalgotypes(LA)
 @inline subalgotypes(fa::FinalizedAlgorithm) = subalgotypes(inneralgorithm(fa))
-@inline numalgos(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = numalgos(LA)
+@inline numalgos(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}} = numalgos(LA)
 @inline numalgos(fa::FinalizedAlgorithm) = numalgos(inneralgorithm(fa))
-@inline getalgotype(::Type{<:FinalizedAlgorithm{LA}}, idx) where {LA} = getalgotype(LA, idx)
+@inline getalgotype(::Type{FA}, idx) where {LA, FA<:FinalizedAlgorithm{LA}} = getalgotype(LA, idx)
 @inline getalgotype(fa::FinalizedAlgorithm, idx) = getalgotype(inneralgorithm(fa), idx)
 
-@inline iscomposite(::Type{<:FinalizedAlgorithm{LA}}) where {LA} = iscomposite(LA)
+@inline iscomposite(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}} = iscomposite(LA)
 @inline iscomposite(fa::FinalizedAlgorithm) = iscomposite(inneralgorithm(fa))
 
 @inline function _loop_cleanup_context(algo, context)

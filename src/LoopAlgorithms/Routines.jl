@@ -42,15 +42,15 @@ end
 
 
 
-getmultipliers_from_specification_num(::Type{<:Routine}, specification_num) = Float64.(specification_num)
+getmultipliers_from_specification_num(::Type{R}, specification_num) where {R<:Routine} = Float64.(specification_num)
 get_resume_idxs(r::Routine) = getfield(r, :resume_idxs)
 resume_idx(r::Routine, idx) = getfield(r, :resume_idxs)[idx]
 resumable(r::Routine) = true
 
 # TODO: This is only used in treesctructure, try to deprecate
 subalgotypes(r::Routine{FT}) where FT = FT.parameters
-subalgotypes(rT::Type{<:Routine{FT}}) where FT = FT.parameters
-algotypes(r::Union{Routine{FT}, Type{<:Routine{<:FT}}}) where FT = tuple(FT.parameters...)
+subalgotypes(::Type{R}) where {FT, R<:Routine{FT}} = FT.parameters
+algotypes(r::Union{Routine{FT}, Type{R}}) where {FT, R<:Routine{FT}} = tuple(FT.parameters...)
 statetypes(r::Union{Routine{FT, R, S}, Type{<:Routine{FT, R, S}}}) where {FT, R, S} = S.parameters
 
 # getnames(r::Routine{T, R, NT, N}) where {T, R, NT, N} = N
@@ -69,7 +69,7 @@ end
 @inline numalgos(r::Union{Routine{T,R}, Type{<:Routine{T,R}}}) where {T,R} = length(T.parameters)
 
 multipliers(r::Routine) = repeats(r)
-multipliers(rT::Type{<:Routine}) = repeats(rT)
+multipliers(rT::Type{R}) where {R<:Routine} = repeats(rT)
 getid(r::Union{Routine{T,R,S,MV,O,Reg,id},Type{<:Routine{T,R,S,MV,O,Reg,id}}}) where {T,R,S,MV,O,Reg,id} = id
 
 @inline repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}) where {F,R} = R

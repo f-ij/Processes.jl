@@ -9,7 +9,7 @@ struct CompositeAlgorithm{T, Intervals, S , O, R,id} <: LoopAlgorithm
     reg::R
 end
 
-getmultipliers_from_specification_num(::Type{<:CompositeAlgorithm}, specification_num) = 1 ./(Float64.(specification_num))
+getmultipliers_from_specification_num(::Type{CA}, specification_num) where {CA<:CompositeAlgorithm} = 1 ./(Float64.(specification_num))
 
 CompositeAlgorithm(args...) = parse_la_input(CompositeAlgorithm, args...)
 function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
@@ -35,7 +35,7 @@ subalgorithms(ca::CompositeAlgorithm) = getfield(ca, :funcs)
 algotypes(ca::Union{CompositeAlgorithm{FT}, Type{<:CompositeAlgorithm{FT}}}) where FT = FT.parameters
 statetypes(ca::Union{CompositeAlgorithm{FT, I, S}, Type{<:CompositeAlgorithm{FT, I, S}}}) where {FT, I, S} = S.parameters
 subalgotypes(ca::CompositeAlgorithm{FT}) where FT = FT.parameters
-subalgotypes(caT::Type{<:CompositeAlgorithm{FT}}) where FT = FT.parameters
+subalgotypes(::Type{CA}) where {FT, CA<:CompositeAlgorithm{FT}} = FT.parameters
 @inline getstates(ca::CompositeAlgorithm) = getfield(ca, :states)
 
 
@@ -128,14 +128,14 @@ get_funcs(ca::CompositeAlgorithm{FT}) where FT = FT.parameters
 
 # repeats(ca::CompositeAlgorithm) = 1 ./ intervals(ca)
 # repeats(ca::CompositeAlgorithm, idx) = 1 / interval(ca, idx)
-function multipliers(ca::Union{CompositeAlgorithm, Type{<:CompositeAlgorithm}})
+function multipliers(ca::Union{CA, Type{CA}}) where {CA<:CompositeAlgorithm}
     map(x -> 1/getinterval(x), intervals(ca))
 end
 
 multiplier(ca::CompositeAlgorithm, idx) = 1 / getinterval(getalgo(ca, idx))
 
 tupletype_to_tuple(t) = (t.parameters...,)
-get_intervals(ct::Type{<:CompositeAlgorithm}) = ct.parameters[2]
+get_intervals(ct::Type{CA}) where {CA<:CompositeAlgorithm} = ct.parameters[2]
 
 @inline function getvals(ca::CompositeAlgorithm{FT, Is}) where {FT, Is}
     return Val.(Is)

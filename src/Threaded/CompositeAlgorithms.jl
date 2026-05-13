@@ -17,7 +17,7 @@ end
 
 const BarrieredCompositeAlgorithm = ThreadedCompositeAlgorithm
 
-iscomposite(::Type{<:ThreadedCompositeAlgorithm}) = true
+iscomposite(::Type{TCA}) where {TCA<:ThreadedCompositeAlgorithm} = true
 
 ThreadedCompositeAlgorithm(args...) = parse_la_input(ThreadedCompositeAlgorithm, args...)
 
@@ -34,7 +34,7 @@ end
 
 subalgorithms(tca::ThreadedCompositeAlgorithm) = getalgos(tca)
 subalgotypes(tca::ThreadedCompositeAlgorithm{FT}) where {FT} = FT.parameters
-subalgotypes(::Type{<:ThreadedCompositeAlgorithm{FT}}) where {FT} = FT.parameters
+subalgotypes(::Type{TCA}) where {FT, TCA<:ThreadedCompositeAlgorithm{FT}} = FT.parameters
 
 getinc(tca::ThreadedCompositeAlgorithm) = getfield(tca, :inc)
 getoptions(tca::ThreadedCompositeAlgorithm) = getfield(tca, :options)
@@ -88,7 +88,7 @@ function reset!(tca::ThreadedCompositeAlgorithm)
 end
 
 multipliers(tca::ThreadedCompositeAlgorithm) = map(x -> 1 / getinterval(x), intervals(tca))
-multipliers(tcaT::Type{<:ThreadedCompositeAlgorithm}) = map(x -> 1 / getinterval(x), intervals(tcaT))
+multipliers(tcaT::Type{TCA}) where {TCA<:ThreadedCompositeAlgorithm} = map(x -> 1 / getinterval(x), intervals(tcaT))
 multiplier(tca::ThreadedCompositeAlgorithm, idx) = 1 / interval(tca, idx)
 
 @inline function getvals(tca::ThreadedCompositeAlgorithm{FT, Is}) where {FT, Is}

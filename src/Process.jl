@@ -197,7 +197,7 @@ function _spawn_precompile(f, signature::Tuple)
     return nothing
 end
 
-function precompile_loopalgorithm_metadata!(loopalgorithm_type::Type{<:LoopAlgorithm})
+function precompile_loopalgorithm_metadata!(loopalgorithm_type::Type{LA}) where {LA<:LoopAlgorithm}
     type_signature = (Type{loopalgorithm_type},)
     value_signature = (loopalgorithm_type,)
 
@@ -220,7 +220,7 @@ function schedule_loopalgorithm_metadata_precompile!(loopalgorithm::LoopAlgorith
     return schedule_loopalgorithm_metadata_precompile!(typeof(loopalgorithm))
 end
 
-function schedule_loopalgorithm_metadata_precompile!(loopalgorithm_type::Type{<:LoopAlgorithm})
+function schedule_loopalgorithm_metadata_precompile!(loopalgorithm_type::Type{LA}) where {LA<:LoopAlgorithm}
     _is_generating_package_output() && return nothing
 
     should_schedule = lock(_LOOPALGORITHM_METADATA_PRECOMPILE_LOCK) do

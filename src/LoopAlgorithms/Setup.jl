@@ -66,7 +66,7 @@ LoopAlgorithm(  func1, func2, func3, ...,
                 processstate1, processstate2, ..., 
                 options1, option2, ...)
 """
-function parse_la_input(laType::Type{<:LoopAlgorithm}, args...)
+function parse_la_input(laType::Type{LA}, args...) where {LA<:LoopAlgorithm}
     collected_options = tuple()
 
     ######### ALGORITHMS #########

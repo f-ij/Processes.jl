@@ -1,7 +1,7 @@
 """
 Generated expression form of the composite step! with a caller-provided name binding.
 """
-function step!_expr(ca::Type{<:CompositeAlgorithm}, context::Type{C}, name::Symbol, stability::Symbol) where {C<:AbstractContext}
+function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, stability::Symbol) where {CA<:CompositeAlgorithm, C<:AbstractContext}
     # This method does not execute the algorithm directly. Instead, it *builds an Expr*
     # representing the body of a `step!` method specialized to:
     # - the CompositeAlgorithm type `ca`
@@ -48,7 +48,7 @@ end
 """
 Generated expression form of the routine step! with a caller-provided name binding.
 """
-function step!_expr(routine::Type{<:Routine}, context::Type{C}, name::Symbol, stability::Symbol) where {C<:AbstractContext}
+function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability::Symbol) where {R<:Routine, C<:AbstractContext}
     # Builds an Expr representing the body of `step!` for a Routine:
     # each child algorithm runs `reps[i]` times before moving to the next.
 
