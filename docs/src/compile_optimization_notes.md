@@ -2,8 +2,10 @@
 
 Potential next targets:
 
-1. Reuse constructor metadata when resolving inputs.
-   `resolve_process_inputs_overrides` can build a `ProcessContext` only to get a registry, then `TaskData` builds the real empty context again. Reuse the first registry/context when inputs or overrides are present.
+1. Reduce the work after input names are resolved.
+   `resolve_process_inputs_overrides` now expects a resolved algorithm and only
+   maps user `Input`/`Override` objects to named inputs. The remaining compile
+   cost is probably in generated merge/init code after those names are known.
 
 2. Cache resolved algorithm metadata by concrete loop algorithm type.
    Registry setup, flat funcs/states/multipliers, and share/route resolution are mostly type-structural.

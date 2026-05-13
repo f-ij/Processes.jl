@@ -47,17 +47,21 @@ function one_trial()
         SimpleAlgo(CompileBenchStep)
     end
 
+    resolved_algo = timed_stage!(rows, "algo resolve") do
+        resolve(algo)
+    end
+
     inputs_overrides = (
         Input(CompileBenchStep, :start => 1.0),
         Override(CompileBenchStep, :x => 2.0, :gain => 3.0),
     )
 
     named_inputs, named_overrides = timed_stage!(rows, "input resolution") do
-        Processes.resolve_process_inputs_overrides(algo, inputs_overrides...)
+        Processes.resolve_process_inputs_overrides(resolved_algo, inputs_overrides...)
     end
 
     taskdata = timed_stage!(rows, "TaskData") do
-        Processes.TaskData(algo; lifetime = Repeat(1), inputs = named_inputs, overrides = named_overrides)
+        Processes.TaskData(resolved_algo; lifetime = Repeat(1), inputs = named_inputs, overrides = named_overrides)
     end
 
     context = timed_stage!(rows, "initcontext") do

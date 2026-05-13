@@ -16,6 +16,13 @@ This file records compile-latency experiments so failed paths are not repeated.
 - Moved `setfield` debug rendering out of generated-function generation.
   Large debug strings are now built only on the error path.
 
+- Made input/override resolution require a resolved algorithm.
+  `prepare_process_constructor` resolves the normalized algorithm before resolving
+  inputs or overrides. `resolve_process_inputs_overrides` now reads the registry
+  from that resolved algorithm and errors when called directly with an unresolved
+  algorithm. This is mostly a contract cleanup; measured compile latency was
+  neutral against the same benchmark using an already-resolved algorithm.
+
 ## Reverted Or Rejected
 
 - `@nospecialize` on process precompile helpers.
