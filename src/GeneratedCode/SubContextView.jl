@@ -9,18 +9,17 @@ end
 @inline function stablemerge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:ProcessContext, SubKey}
     return @inline getcontext(scv)
 end
-"""
-Merge but error if a var would be overwritten and only allow local merging
-"""
-@inline @generated function stablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    algo_varnames = fieldnames(args)
 
+function _subcontext_view_mergetuple_expr(SCV::Type, Args::Type)
+    @nospecialize SCV Args
+    SubKey = SCV.parameters[2]
+    algo_varnames = fieldnames(Args)
     # These are the names in the subcontext after applying aliases
-    subcontext_varnames = algo_to_subcontext_names.(Ref(scv), algo_varnames)
-    
-    locations = get_all_locations(scv)
+    subcontext_varnames = ntuple(i -> algo_to_subcontext_names(SCV, algo_varnames[i]), length(algo_varnames))
+
+    locations = get_all_locations(SCV)
     merge_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
-    
+
     for (var_idx, subcontext_varname) in enumerate(subcontext_varnames)
         # First look if varname is in locations
         if hasproperty(locations, subcontext_varname) # If the local variable exists
@@ -34,26 +33,39 @@ Merge but error if a var would be overwritten and only allow local merging
             end
 
             exprs = get!(merge_expressions_by_subcontext, target_subcontext, Expr[])
-               
+
             # Expression for targetname = getproperty(args, algo_varnames[var_idx])
             # Which will be used to construct subcontext = (; targetname = getproperty(args, this_algo_varname), ...)
-            push!(exprs, 
-                  Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(algo_varnames[var_idx]))))))
+            push!(
+                exprs,
+                Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(algo_varnames[var_idx]))))),
+            )
 
         else # New variable so add it to this subcontext
             exprs = get!(merge_expressions_by_subcontext, SubKey, Expr[])
-            push!(exprs, 
-                  Expr(:(=), subcontext_varname, :(getproperty(args, $(QuoteNode(algo_varnames[var_idx]))))))
+            push!(
+                exprs,
+                Expr(:(=), subcontext_varname, :(getproperty(args, $(QuoteNode(algo_varnames[var_idx]))))),
+            )
         end
     end
-    
+
     # Build the NamedTuple expression for mergetuple
     # There lines creates (;subcontext1 = (; varname1 = getproperty(args, :algoname_1), ...), subcontext2 = (...), ...)
 
-    subcontext_exprs = [Expr(:(=), subctx, Expr(:tuple, Expr(:parameters, field_exprs...))) 
-                        for (subctx, field_exprs) in merge_expressions_by_subcontext]
-    mergetuple_expr = Expr(:tuple, Expr(:parameters, subcontext_exprs...))
-    
+    subcontext_exprs = [
+        Expr(:(=), subctx, Expr(:tuple, Expr(:parameters, field_exprs...)))
+        for (subctx, field_exprs) in merge_expressions_by_subcontext
+    ]
+    return Expr(:tuple, Expr(:parameters, subcontext_exprs...))
+end
+
+"""
+Merge but error if a var would be overwritten and only allow local merging
+"""
+@inline @generated function stablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
+    mergetuple_expr = _subcontext_view_mergetuple_expr(scv, args)
+
     # Return the expression that does the merge
     return quote
         $(LineNumberNode(@__LINE__, @__FILE__))
@@ -71,47 +83,8 @@ This doesn't check for type stability, and allows overwriting existing variables
 
 """
 @inline @generated function unstablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    algo_varnames = fieldnames(args)
+    mergetuple_expr = _subcontext_view_mergetuple_expr(scv, args)
 
-    # These are the names in the subcontext after applying aliases
-    subcontext_varnames = algo_to_subcontext_names.(Ref(scv), algo_varnames)
-    
-    locations = get_all_locations(scv)
-    merge_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
-    
-    for (var_idx, subcontext_varname) in enumerate(subcontext_varnames)
-        # First look if varname is in locations
-        if hasproperty(locations, subcontext_varname) # If the local variable exists
-
-            target_location = getproperty(locations, subcontext_varname)
-
-            target_subcontext = get_subcontextname(target_location)
-            targetname = get_originalname(target_location)
-            if targetname isa Tuple
-                error("Algorithm returned a variable: $(algo_varnames[var_idx]) which it tries to merge into $(targetname) in subcontext $(target_subcontext) \n Merging into multiple variables is not supported at this moment, but might be supported in the future through inverse transforms.")
-            end
-
-            exprs = get!(merge_expressions_by_subcontext, target_subcontext, Expr[])
-               
-            # Expression for targetname = getproperty(args, algo_varnames[var_idx])
-            # Which will be used to construct subcontext = (; targetname = getproperty(args, this_algo_varname), ...)
-            push!(exprs, 
-                  Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(algo_varnames[var_idx]))))))
-
-        else # New variable so add it to this subcontext
-            exprs = get!(merge_expressions_by_subcontext, SubKey, Expr[])
-            push!(exprs, 
-                  Expr(:(=), subcontext_varname, :(getproperty(args, $(QuoteNode(algo_varnames[var_idx]))))))
-        end
-    end
-    
-    # Build the NamedTuple expression for mergetuple
-    # There lines creates (;subcontext1 = (; varname1 = getproperty(args, :algoname_1), ...), subcontext2 = (...), ...)
-
-    subcontext_exprs = [Expr(:(=), subctx, Expr(:tuple, Expr(:parameters, field_exprs...))) 
-                        for (subctx, field_exprs) in merge_expressions_by_subcontext]
-    mergetuple_expr = Expr(:tuple, Expr(:parameters, subcontext_exprs...))
-    
     # Return the expression that does the merge
     return quote
         $(LineNumberNode(@__LINE__, @__FILE__))
