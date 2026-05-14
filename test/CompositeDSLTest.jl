@@ -216,7 +216,7 @@ end
         end)
         expanded_str = sprint(show, Base.remove_linenums!(expanded))
         @test occursin("Share(", expanded_str)
-        @test occursin("IdentifiableAlgo", expanded_str)
+        @test occursin("_composite_dsl_owner", expanded_str)
     end
 
     @testset "Transform routes use explicit @transform syntax" begin
@@ -417,6 +417,66 @@ end
         ctx = fetch(p)
         @test ctx[:_state].clamping_beta === 3.0
         @test ctx[Processes.getkey(result_algo)].result === 3.0
+    end
+
+    @testset "State buffer indexes can be assigned directly" begin
+        @info "Composite DSL: State buffer indexes can be assigned directly"
+
+        algo = @Routine begin
+            @state somebuffer = [0, 0, 0]
+            somebuffer[1] = 2
+            somebuffer[2:3] = [4, 5]
+            result = keyword_value_identity_dsl_test(value = somebuffer)
+        end
+
+        resolved = resolve(algo)
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[:_state].somebuffer == [2, 4, 5]
+        @test ctx[Processes.getkey(Processes.getalgo(resolved, 3))].result == [2, 4, 5]
+    end
+
+    @testset "State buffers support broadcast assignment syntax" begin
+        @info "Composite DSL: State buffers support broadcast assignment syntax"
+        replacement = [7, 8]
+
+        algo = @Routine begin
+            @state somebuffer = [0, 0, 0]
+            somebuffer .= 1
+            somebuffer[2:3] .= replacement
+            result = keyword_value_identity_dsl_test(value = somebuffer)
+        end
+
+        resolved = resolve(algo)
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[:_state].somebuffer == [1, 7, 8]
+        @test ctx[Processes.getkey(Processes.getalgo(resolved, 3))].result == [1, 7, 8]
+    end
+
+    @testset "Owned state fields can be assigned from ref values" begin
+        @info "Composite DSL: Owned state fields can be assigned from ref values"
+        nudged = @Routine begin
+            @state nudged_beta = 0.0
+            result = keyword_value_identity_dsl_test(value = nudged_beta)
+        end
+
+        algo = @CompositeAlgorithm begin
+            @state clamping_beta = Ref(2.0)
+            @alias nudged = nudged
+
+            nudged.nudged_beta = clamping_beta[]
+            nudged()
+        end
+
+        resolved = resolve(algo)
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[:_state].nudged_beta === 2.0
+        @test ctx[:FuncWrapper_1].result === 2.0
     end
 
     @testset "FuncWrapper keyword args preserve routed display expressions" begin

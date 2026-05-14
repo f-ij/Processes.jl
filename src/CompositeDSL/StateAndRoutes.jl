@@ -7,7 +7,8 @@ function _dsl_known_outputs!(known_outputs::Set{Symbol}, stmt)
         _, include_body = _dsl_parse_include_if(stmt)
         _dsl_known_outputs_include_body!(known_outputs, include_body)
     elseif stmt isa Expr && stmt.head == :(=)
-        union!(known_outputs, _dsl_parse_output_symbols(stmt.args[1]))
+        outputs = _dsl_try_parse_output_symbols(stmt.args[1])
+        isnothing(outputs) || union!(known_outputs, outputs)
     end
     return known_outputs
 end
@@ -115,9 +116,30 @@ Internal rule: known alias/state keys should be preferred over raw values in
 emitted route/share ownership metadata, because those keyed endpoints can later
 be renamed during composition.
 """
+function _composite_dsl_owner(entity, name::Symbol)
+    if entity isa LoopAlgorithm
+        return entity
+    end
+    return IdentifiableAlgo(entity, name)
+end
+
+function _composite_dsl_entry(entity, name::Symbol)
+    if name == Symbol() || entity isa LoopAlgorithm
+        return entity
+    end
+    return name => entity
+end
+
 function _dsl_known_owner_expr(entity_expr, name::Symbol)
     name == Symbol() && return entity_expr
-    return :(Processes.IdentifiableAlgo($entity_expr, $(QuoteNode(name))))
+    return :(Processes._composite_dsl_owner($entity_expr, $(QuoteNode(name))))
+end
+
+function _composite_dsl_write_owner(entity, name::Symbol)
+    if entity isa LoopAlgorithm
+        return getproperty(entity, :_state)
+    end
+    return IdentifiableAlgo(entity, name)
 end
 
 """Build the general state expression used by both `@state` and the block DSL."""
@@ -220,13 +242,19 @@ Supported output bindings:
 Tuple bindings must contain only plain symbols.
 """
 function _dsl_parse_output_symbols(lhs)
+    parsed = _dsl_try_parse_output_symbols(lhs)
+    !isnothing(parsed) && return parsed
+    error("Unsupported left-hand side in the DSL: `$lhs`.")
+end
+
+function _dsl_try_parse_output_symbols(lhs)
     if lhs isa Symbol
         return (lhs,)
     elseif lhs isa Expr && lhs.head == :tuple
         all(x -> x isa Symbol, lhs.args) || error("Multi-output bindings must use plain symbols like `a, b = algo`.")
         return tuple(lhs.args...)
     end
-    error("Unsupported left-hand side in the DSL: `$lhs`.")
+    return nothing
 end
 
 """

@@ -66,6 +66,25 @@ function _dsl_rewrite_entry_root(alias_map, ex)
     return ex, Symbol()
 end
 
+"""Parse `source[idx...]` as a transformed route from `source` through `getindex`."""
+function _dsl_parse_ref_transform_input(alias_map, context_map, ex, destination::Symbol, known_outputs::Set{Symbol})
+    ex isa Expr && ex.head == :ref && !isempty(ex.args) || return nothing
+
+    source_expr = ex.args[1]
+    indices = ex.args[2:end]
+    argname = gensym(:dsl_ref)
+    transform_expr = Expr(:->, argname, Expr(:call, :getindex, argname, indices...))
+    display = _dsl_display_expr(ex)
+
+    if source_expr isa Symbol && source_expr in known_outputs
+        return (; kind = :simple_transform, source = source_expr, destination, transform_expr, display)
+    end
+
+    owned_route = _dsl_parse_owned_route_expr(alias_map, context_map, source_expr)
+    isnothing(owned_route) && return nothing
+    return (; kind = :context_transform, owner = owned_route.owner, source = owned_route.source, destination, transform_expr, display)
+end
+
 """
 Parse a plain Julia function call DSL entry.
 
@@ -92,6 +111,11 @@ function _dsl_parse_function_positional_arg(alias_map, context_map, arg, known_o
     transform_input = _dsl_parse_explicit_transform_input(alias_map, context_map, arg, gensym(Symbol(:dsl_pos_, index)))
     if !isnothing(transform_input)
         return (; kind = :routed, value = transform_input.destination, display = transform_input.display), transform_input
+    end
+
+    ref_input = _dsl_parse_ref_transform_input(alias_map, context_map, arg, gensym(Symbol(:dsl_pos_, index)), known_outputs)
+    if !isnothing(ref_input)
+        return (; kind = :routed, value = ref_input.destination, display = ref_input.display), ref_input
     end
 
     owned_route = _dsl_parse_owned_route_expr(alias_map, context_map, arg)
@@ -125,6 +149,13 @@ function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set
         if !isnothing(transform_input)
             push!(routed_keyword_inputs, transform_input)
             push!(keyword_specs, (; name, routed = true, value = name, display = transform_input.display))
+            return
+        end
+
+        ref_input = _dsl_parse_ref_transform_input(alias_map, context_map, value, name, known_outputs)
+        if !isnothing(ref_input)
+            push!(routed_keyword_inputs, ref_input)
+            push!(keyword_specs, (; name, routed = true, value = name, display = ref_input.display))
             return
         end
 
@@ -285,6 +316,12 @@ function _dsl_split_route_kwargs(alias_map, context_map, kwargs, known_outputs::
         transform_input = _dsl_parse_explicit_transform_input(alias_map, context_map, source, destination)
         if !isnothing(transform_input)
             push!(inputs, transform_input)
+            continue
+        end
+
+        ref_input = _dsl_parse_ref_transform_input(alias_map, context_map, source, destination, known_outputs)
+        if !isnothing(ref_input)
+            push!(inputs, ref_input)
             continue
         end
 
