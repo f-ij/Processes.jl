@@ -369,6 +369,56 @@ end
         @test ctx[wrapper_key].result == 5
     end
 
+    @testset "FuncWrapper positional @transform routes can source @state fields" begin
+        @info "Composite DSL: FuncWrapper positional @transform routes can source @state fields"
+        nested_identity(x) = x
+
+        algo = @Routine begin
+            @state clamping_beta = 2
+            result = nested_identity(@transform(x -> -x, clamping_beta))
+        end
+
+        resolved = resolve(algo)
+        wrapper = Processes.getalgo(resolved, 1)
+        wrapper_key = Processes.getkey(wrapper)
+        routes = Processes.getoptions(resolved)[wrapper_key]
+        @test length(routes) == 1
+        @test Processes.gettransform(first(routes)) !== nothing
+        @test occursin("@transform", sprint(show, wrapper))
+        @test occursin("clamping_beta", sprint(show, wrapper))
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[wrapper_key].result == -2
+    end
+
+    @testset "State fields can be assigned captured values directly" begin
+        @info "Composite DSL: State fields can be assigned captured values directly"
+        somevar = 3
+
+        algo = @Routine begin
+            @state clamping_beta = 1.0
+            clamping_beta = somevar
+            result = keyword_value_identity_dsl_test(value = clamping_beta)
+        end
+
+        resolved = resolve(algo)
+        writer = Processes.getalgo(resolved, 1)
+        writer_key = Processes.getkey(writer)
+        result_algo = Processes.getalgo(resolved, 2)
+        @test Processes.getalgo(writer) isa Processes.ContextWrite
+
+        routes = Processes.getoptions(resolved)[writer_key]
+        @test length(routes) == 1
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[:_state].clamping_beta === 3.0
+        @test ctx[Processes.getkey(result_algo)].result === 3.0
+    end
+
     @testset "FuncWrapper keyword args preserve routed display expressions" begin
         @info "Composite DSL: FuncWrapper keyword args preserve routed display expressions"
         plus = @Routine begin
