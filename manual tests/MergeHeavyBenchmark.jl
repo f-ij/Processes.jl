@@ -280,9 +280,8 @@ function build_algorithms()
 
     comp = CompositeAlgorithm(funcs..., intervals, routes...)
     threaded = ThreadedCompositeAlgorithm(funcs..., intervals, routes...)
-    dag = DaggerCompositeAlgorithm(funcs..., intervals, routes...)
 
-    return comp, threaded, dag
+    return comp, threaded
 end
 
 function run_once(algo, start_x, start_y, start_z; repeats)
@@ -356,7 +355,7 @@ function main()
     start_y = randn()
     start_z = randn()
 
-    comp, threaded, dag = build_algorithms()
+    comp, threaded = build_algorithms()
 
     println("Repeats: ", repeats)
     println("Trials: ", trials)
@@ -368,22 +367,14 @@ function main()
     println()
     threaded_times, threaded_ctx = benchmark(threaded, start_x, start_y, start_z; repeats, trials, label = "Threaded")
     println()
-    dag_times, dag_ctx = benchmark(dag, start_x, start_y, start_z; repeats, trials, label = "Dagger")
-    println()
-
     assert_match(comp_ctx, threaded_ctx)
-    assert_match(comp_ctx, dag_ctx)
 
     comp_best = minimum(comp_times)
     threaded_best = minimum(threaded_times)
-    dag_best = minimum(dag_times)
 
     println("Composite best: ", round(comp_best; digits = 4), " s")
     println("Threaded best: ", round(threaded_best; digits = 4), " s")
-    println("Dagger best: ", round(dag_best; digits = 4), " s")
     println("Threaded / Composite: ", round(threaded_best / comp_best; digits = 3), "x")
-    println("Dagger / Composite: ", round(dag_best / comp_best; digits = 3), "x")
-    println("Dagger / Threaded: ", round(dag_best / threaded_best; digits = 3), "x")
     println("Final total: ", round(comp_ctx[ReducerMerge].total; digits = 6))
 end
 

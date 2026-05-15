@@ -50,20 +50,6 @@ repeats = 4
 start_x = randn(n)
 start_y = randn(n)
 
-comp, threaded, dag = build_algorithms()
-dag_process = build_process(dag, start_x, start_y; repeats = 1)
-runtime_dag = getalgo(dag_process.taskdata)
-
-println("== Dagger graph ==")
-showdaggergraph(stdout, dag_process)
-println()
-println()
-
-quit(dag_process)
-
-println("== Spawn code ==")
-showdaggerspawncode(stdout, runtime_dag)
-println()
+_comp, threaded = build_algorithms()
 
 print_profile("Threaded", threaded, start_x, start_y; repeats, mincount = 5)
-print_profile("Dagger", dag, start_x, start_y; repeats, mincount = 5)

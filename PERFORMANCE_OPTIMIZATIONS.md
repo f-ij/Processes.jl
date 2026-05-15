@@ -31,7 +31,6 @@ Relevant files:
 
 - `src/LoopAlgorithms/CompositeAlgorithms.jl`
 - `src/Threaded/CompositeAlgorithms.jl`
-- `src/Worker/CompositeAlgorithms.jl`
 - `src/Packaging/Packaged.jl`
 
 The `inc!` methods compute a type-known LCM and update a `Ref` with `mod1`.
@@ -51,7 +50,6 @@ Relevant files:
 
 - `src/LoopAlgorithms/CompositeAlgorithms.jl`
 - `src/Threaded/CompositeAlgorithms.jl`
-- `src/Worker/CompositeAlgorithms.jl`
 
 `inc::Base.RefValue{Int}` may add an indirection in hot composite loops. A
 mutable field or a tiny typed counter object could be faster.
@@ -213,19 +211,17 @@ changing behavior.
 Relevant files:
 
 - `src/Threaded/Step.jl`
-- `src/Worker/Step.jl`
 
-`ThreadedCompositeAlgorithm` and `DaggerCompositeAlgorithm` spawn tasks for
-children/nodes. For small per-child work, task overhead can dominate. A
+`ThreadedCompositeAlgorithm` spawns tasks for children. For small per-child work,
+task overhead can dominate. A
 persistent worker or reusable task-pool mode could preserve dependency ordering
-while avoiding fresh task scheduling for every node on every step.
+while avoiding fresh task scheduling for every child on every step.
 
 ### 14. Add a serial fallback for small threaded layers
 
 Relevant files:
 
 - `src/Threaded/Step.jl`
-- `src/Worker/Step.jl`
 
 If a layer has too little work or only one runnable child, executing serially can
 beat spawning. Add a configurable or static threshold while preserving the same
@@ -236,7 +232,6 @@ dependency layers.
 Relevant files:
 
 - `src/Threaded/Step.jl`
-- `src/Worker/Step.jl`
 
 Layer/graph specs are currently generated from types. Runtime overhead should be
 low, but compile latency can grow with graph size. Store graph metadata in a
@@ -397,4 +392,3 @@ Suggested tools:
 - Do not optimize away per-iteration `shouldrun`, tick, or pause behavior unless
   the public semantics are explicitly narrowed or an opt-in mode is added.
 - Do not turn setup-time improvements into runtime type instability.
-

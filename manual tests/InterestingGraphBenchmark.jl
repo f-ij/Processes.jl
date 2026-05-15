@@ -22,7 +22,6 @@ The key difference from the earlier benchmarks is that this graph has:
 We benchmark the same routed graph against:
 - CompositeAlgorithm
 - ThreadedCompositeAlgorithm
-- DaggerCompositeAlgorithm
 """
 
 struct SourceXBench <: Processes.ProcessAlgorithm end
@@ -239,9 +238,8 @@ function build_algorithms()
 
     comp = CompositeAlgorithm(funcs..., intervals, routes...)
     threaded = ThreadedCompositeAlgorithm(funcs..., intervals, routes...)
-    dag = DaggerCompositeAlgorithm(funcs..., intervals, routes...)
 
-    return comp, threaded, dag
+    return comp, threaded
 end
 
 function run_once(algo, start_x, start_y; repeats)
@@ -299,7 +297,7 @@ function main()
     start_x = randn(n)
     start_y = randn(n)
 
-    comp, threaded, dag = build_algorithms()
+    comp, threaded = build_algorithms()
 
     println("Signal length: ", n)
     println("Repeats: ", repeats)
@@ -311,10 +309,7 @@ function main()
     println()
     threaded_times, threaded_ctx = benchmark(threaded, start_x, start_y; repeats, trials, label = "Threaded")
     println()
-    dag_times, dag_ctx = benchmark(dag, start_x, start_y; repeats, trials, label = "Dagger")
-    println()
-
-    for ctx in (threaded_ctx, dag_ctx)
+    for ctx in (threaded_ctx,)
         @assert isapprox(comp_ctx[SourceXBench].x_signal, ctx[SourceXBench].x_signal; rtol = 0.0, atol = 1e-10)
         @assert isapprox(comp_ctx[SourceYBench].y_signal, ctx[SourceYBench].y_signal; rtol = 0.0, atol = 1e-10)
         @assert isapprox(comp_ctx[StageABench].a_vec, ctx[StageABench].a_vec; rtol = 0.0, atol = 1e-10)
@@ -330,14 +325,10 @@ function main()
 
     comp_best = minimum(comp_times)
     threaded_best = minimum(threaded_times)
-    dag_best = minimum(dag_times)
 
     println("Composite best: ", round(comp_best; digits = 4), " s")
     println("Threaded best: ", round(threaded_best; digits = 4), " s")
-    println("Dagger best: ", round(dag_best; digits = 4), " s")
     println("Threaded / Composite: ", round(threaded_best / comp_best; digits = 3), "x")
-    println("Dagger / Composite: ", round(dag_best / comp_best; digits = 3), "x")
-    println("Dagger / Threaded: ", round(dag_best / threaded_best; digits = 3), "x")
     println("Final total: ", round(comp_ctx[ReducerBench].total; digits = 6))
 end
 

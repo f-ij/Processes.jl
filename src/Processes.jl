@@ -77,7 +77,6 @@ module Processes
     include("Inspection/Inspection.jl")
     include("Threaded/Threaded.jl")
     include("LoopAlgorithms/Edit/Edit.jl")
-    include("Worker/Worker.jl")
     include("Packaging/Packaging.jl")
     include("Loops.jl")
     include("Trackers/Trackers.jl")
