@@ -57,6 +57,8 @@ static_findkey(r::AbstractRegistry, obj) = error("static_findkey not implemented
 abstract type FunctionType end
 struct Generated <: FunctionType end
 struct NonGenerated <: FunctionType end
+
+struct Resuming{isresuming} end
 """
 The type of loop to use for a process. This is determined by the system and can be used to switch between generated and non-generated loops.
 """

@@ -117,7 +117,7 @@ end
     lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
     # p.consumed = true
-    return @inline loop(p, algo, runtime_context, lifetime, (;), NonGenerated())
+    return @inline loop(p, algo, runtime_context, lifetime)
 end
 
 @inline function init_and_run(p::InlineProcess, inputs_overrides...)

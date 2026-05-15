@@ -1,15 +1,31 @@
 
 export start, restart, quit, pause, syncclose, reinit
 
+function Base.run(p::Process, lifetime = nothing, inputs_and_overrides...; kwargs...)
+    @assert isidle(p) "Process is already in use"
+
+    if ispaused(p)
+        isnothing(lifetime) || error("Cannot change lifetime while resuming a paused Process.")
+        isempty(inputs_and_overrides) || error("Cannot pass init/override specs while resuming a paused Process.")
+        isempty(kwargs) || error("Cannot pass new runtime inputs while resuming a paused Process.")
+        return _resume_paused_loop!(p)
+    end
+
+    @atomic p.shouldrun = true
+    @atomic p.paused = false
+
+    if !isnothing(lifetime)
+        lt = normalize_process_lifetime(getalgo(p), lifetime)
+        context(p, merge_into_globals(context(p), (; lifetime = lt)))
+    end
+
+    makeloop!(p, (; kwargs...))
+end
+
 function Base.run(p::AP, lifetime = nothing, inputs_and_overrides...; kwargs...) where AP <: AbstractProcess
     @assert isidle(p) "Process is already in use"
     @atomic p.shouldrun = true
     @atomic p.paused = false
-    
-    if !isnothing(lifetime)
-        p.lifetime = lifetime
-    end
-
     makeloop!(p, (; kwargs...))
 end
 
@@ -39,7 +55,7 @@ function Base.close(p::Process)
         println("Process with error closed:")
         Base.showerror(stderr, err)
         p.task = nothing
-        p.algo = init(getalgo(p); lifetime = lifetime(p))
+        context(p, context(init(getalgo(p); lifetime = lifetime(p))))
 
     end
 
@@ -111,7 +127,7 @@ so that the new loop function is newly compiled
 """
 function reinit(p::Process)
     pause(p)
-    p.algo = init(getalgo(p); lifetime = lifetime(p))
+    context(p, context(init(getalgo(p); lifetime = lifetime(p))))
     run(p)
     return true
 end

@@ -11,10 +11,12 @@ execution.
 2. Normalize stop behavior: `repeats = n` becomes `Repeat(n)`, `lifetime` accepts `Lifetime` objects, and `Routine` defaults to `Repeat(1)` when no lifetime is provided.
 3. Resolve the loop algorithm when needed.
 4. Run lifecycle `init(algo, specs...; lifetime)` unless an initialized context is already provided.
-5. Store the initialized loop algorithm on the process.
+5. Store the algorithm and its current runtime context on the process.
 
 There is no `TaskData` layer. The initialized loop algorithm carries the
-persistent context plus stored init/override specs.
+persistent context plus stored init/override specs. `Process` keeps its current
+context separately so pausing can preserve a suspended runtime context without
+rebaking it into the algorithm.
 
 ## 2. Init Phase
 
@@ -77,9 +79,33 @@ Step bodies are produced by `step!_expr` (`src/LoopAlgorithms/GeneratedStep.jl` 
 
 `after_while` (`src/Loops.jl`) does:
 
-- interrupted or indefinite: store current context, return it.
+- paused process: store the suspended runtime context, including `:_input`, and return it.
+- interrupted or indefinite: store the current runtime context and return it.
 - natural finite completion: store `cleanup(func, context)` into process context, then return the loop result.
 
-Before context is stored, `_stored_loop_context` removes the transient
-`:_input` subcontext and strips the `process` global. Runtime inputs are never
-stored in the initialized loop algorithm or process after the run.
+For `Process`, the process owns the current runtime context, so `after_while`
+stores that context as-is. `InlineProcess` and direct `run(la::LoopAlgorithm)`
+store contexts that may be absorbed back into an algorithm; those paths strip
+runtime-only fields such as `:_input` and `process`.
+
+Paused processes resume through the normal `loop` path with a `Resuming{true}`
+entry trait. Fresh runs use `Resuming{false}`. This keeps the bootstrap decision
+in dispatch, so fresh runs infer the post-bootstrap context type and resumed
+runs infer the already-grown context type. New runtime inputs, init specs, and
+lifetime changes are rejected while resuming.
+
+## 6. Open Discovery Phase Need
+
+Some future process algorithms may need type discovery after lifecycle `init`
+has run and after routes are known, but before normal scheduled stepping begins.
+This should not become public bootstrap API: the bootstrap/unsafe step remains
+loop-owned, and transient values created only to discover route shapes should be
+discarded after the run.
+
+The intended future direction is a small route-aware discovery phase exposed
+through the `@ProcessAlgorithm` API. That phase would let an algorithm declare
+or compute first-step value shapes without requiring its scheduled `step!` to
+run early. Until that exists, delayed algorithms that expose values to other
+steps must initialize those values in persistent state or be wrapped in a
+routine/composition whose first scheduled step makes the value available before
+consumers run.

@@ -46,7 +46,7 @@
 """
 Set up an empty ProcessContext for a LoopAlgorithm with given shared specifications
 """
-function _build_process_context(registry, sharedcontexts, sharedvars; globals = (;))
+function _build_process_context(registry::R, sharedcontexts::SC, sharedvars::SV; globals::G = (;)) where {R<:NameSpaceRegistry, SC, SV, G}
     @DebugMode "Creating ProcessContext with registry: $registry"
     @DebugMode "Resolved shared contexts: $sharedcontexts" "Resolved shared vars: $sharedvars"
 
@@ -67,7 +67,7 @@ function _build_process_context(registry, sharedcontexts, sharedvars; globals = 
     return ProcessContext(named_subcontexts, registry)
 end
 
-function ProcessContext(la::LoopAlgorithm; globals = (;))
+function ProcessContext(la::LA; globals::G = (;)) where {LA<:LoopAlgorithm, G}
     la = resolve(la)
     sharedcontexts, sharedvars = _resolve_options(la)
     return _build_process_context(

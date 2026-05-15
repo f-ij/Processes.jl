@@ -76,6 +76,14 @@ function one_trial()
         run_once!(process)
     end
 
+    initialized_process = timed_stage!(rows, "Process from initialized") do
+        Process(initialized_algo; repeats = 1)
+    end
+
+    timed_stage!(rows, "initialized first run") do
+        run_once!(initialized_process)
+    end
+
     timed_stage!(rows, "hot runs") do
         run_hot!(process, PCL_HOT_RUNS)
     end

@@ -9,7 +9,7 @@ p = Process(algo, Init(...), Override(...); repeats = 1_000)
 ```
 
 `Process(...)` resolves the loop algorithm when needed, runs the lifecycle
-`init` path, and stores the initialized loop algorithm on the process.
+`init` path, and stores the algorithm plus its current context on the process.
 
 Persistent context is built from `Init(...)`, `Override(...)`, `@state`, routes,
 shares, and managed state. Runtime `@input` values are not stored at
@@ -21,7 +21,9 @@ construction time.
 run(p)
 ```
 
-`run(p)` starts the process loop task. If the process was paused, `run(p)` resumes it.
+`run(p)` starts the process loop task. If the process was paused, `run(p)`
+resumes the suspended runtime context; new runtime inputs, init specs, and
+lifetime changes are rejected during resume.
 
 If the loop algorithm declares runtime `@input` values, pass them as run
 keywords:
@@ -32,7 +34,8 @@ run(p; temperature = 2.0, sweep = 10)
 
 The keywords are converted to a `NamedTuple`, validated against the algorithm's
 runtime input declarations, and merged into `:_input` only for that loop run.
-The stored process context after completion does not include `:_input`.
+`Process` stores its current runtime context, so `context(p)` may include
+`:_input` after a run. This is what makes pause/resume a process-level facility.
 
 Initialized loop algorithms can also be run directly:
 
@@ -42,8 +45,8 @@ la = run(la; temperature = 2.0)
 ```
 
 The returned loop algorithm contains the next persistent context. Use the
-returned value; runtime inputs and loop bootstrap can change the transient
-context type.
+returned value; runtime inputs are stripped before the context is stored back
+on the returned algorithm.
 
 ## Lifetime
 
@@ -97,6 +100,9 @@ run(ip)
 
 `InlineProcess` also accepts `lifetime = 10_000` and converts it to a repeat
 count. For `Process`, use `repeats = 10_000` or `lifetime = Repeat(10_000)`.
+Unlike `Process`, `InlineProcess` stores a context that can be absorbed back
+into an algorithm, so runtime-only fields such as `:_input` and `process` are
+stripped after the loop.
 
 If you need buffered external updates to context variables, see
 [Interactive Contexts](@ref interactive_user).

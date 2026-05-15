@@ -72,7 +72,7 @@ function _runtime_input_defaults(specs::Tuple)
     return (; pairs...)
 end
 
-function _validate_runtime_inputs(la::LoopAlgorithm, inputs::NamedTuple)
+function _validate_runtime_inputs(la::LA, inputs::I) where {LA<:LoopAlgorithm, I<:NamedTuple}
     specs = runtimeinputs(la).specs
     isempty(specs) && (isempty(inputs) || error("Runtime inputs were passed, but this LoopAlgorithm declares no @input values."))
 
@@ -96,25 +96,28 @@ function _validate_runtime_inputs(la::LoopAlgorithm, inputs::NamedTuple)
 end
 
 @inline _merge_runtime_inputs(context, ::NamedTuple{()}) = context
-@inline _merge_runtime_inputs(context, inputs::NamedTuple) =
+@inline _merge_runtime_inputs(context, inputs::I) where {I<:NamedTuple} =
     merge_into_subcontexts(context, (; _input = inputs))
 
 @inline _strip_runtime_inputs(context) = context
 
-function _strip_runtime_inputs(context::ProcessContext)
+function _strip_runtime_inputs(context::C) where {C<:ProcessContext}
     subcontexts = get_subcontexts(context)
-    haskey(subcontexts, :_input) || return context
-    stripped = deletekeys(subcontexts, :_input)
+    globals = getglobals(context)
+    haskey(subcontexts, :_input) || haskey(globals, :process) || return context
+    stripped = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
+    stripped_globals = haskey(globals, :process) ? deletekeys(globals, :process) : globals
+    stripped = (; stripped..., globals = stripped_globals)
     return ProcessContext(stripped, getregistry(context))
 end
 
-@inline getstoredinits(la::LoopAlgorithm) = hasfield(typeof(la), :inits) ? getfield(la, :inits) : ()
-@inline getstoredoverrides(la::LoopAlgorithm) = hasfield(typeof(la), :overrides) ? getfield(la, :overrides) : ()
-@inline getstoredcontext(la::LoopAlgorithm) = hasfield(typeof(la), :context) ? getfield(la, :context) : nothing
-@inline context(la::LoopAlgorithm) = getstoredcontext(la)
-@inline _without_lifecycle(la::LoopAlgorithm) = _with_lifecycle(la, nothing, (), ())
+@inline getstoredinits(la::LA) where {LA<:LoopAlgorithm} = hasfield(LA, :inits) ? getfield(la, :inits) : ()
+@inline getstoredoverrides(la::LA) where {LA<:LoopAlgorithm} = hasfield(LA, :overrides) ? getfield(la, :overrides) : ()
+@inline getstoredcontext(la::LA) where {LA<:LoopAlgorithm} = hasfield(LA, :context) ? getfield(la, :context) : nothing
+@inline context(la::LA) where {LA<:LoopAlgorithm} = getstoredcontext(la)
+@inline _without_lifecycle(la::LA) where {LA<:LoopAlgorithm} = _with_lifecycle(la, nothing, (), ())
 
-function _merge_specs_by_target(base::Tuple, updates::Tuple)
+function _merge_specs_by_target(base::B, updates::U) where {B<:Tuple, U<:Tuple}
     merged = collect(Any, base)
     for update in updates
         target = get_target_name(update)
@@ -136,7 +139,7 @@ function _split_init_override(specs...)
     return inits, overrides
 end
 
-function _resolve_lifecycle_specs(la::LoopAlgorithm, specs...)
+function _resolve_lifecycle_specs(la::LA, specs::Vararg{Any,N}) where {LA<:LoopAlgorithm,N}
     reg = getregistry(resolve(la))
     resolved = ()
     for spec in specs
@@ -151,7 +154,7 @@ function _resolve_lifecycle_specs(la::LoopAlgorithm, specs...)
     return resolved
 end
 
-function _init_context_for(la::LoopAlgorithm, inits::Tuple, overrides::Tuple, lifetime)
+function _init_context_for(la::LA, inits::I, overrides::O, lifetime::LT) where {LA<:LoopAlgorithm, I<:Tuple, O<:Tuple, LT}
     resolved = _without_lifecycle(resolve(la))
     sharedcontexts, sharedvars = _resolve_options(resolved)
     empty_context = _build_process_context(
@@ -215,5 +218,6 @@ function Base.run(la::LA; repeats = 1, lifetime = nothing, kwargs...) where {LA<
     runtime_context = merge_into_globals(getstoredcontext(initialized), (; process, lifetime = lt))
     result = loop(process, initialized, runtime_context, lt, inputs)
     stored = result isa AbstractContext ? result : getstoredcontext(initialized)
-    return _with_lifecycle(initialized, _stored_loop_context(stored), getstoredinits(initialized), getstoredoverrides(initialized))
+    stored = _strip_runtime_inputs(stored)
+    return _with_lifecycle(initialized, stored, getstoredinits(initialized), getstoredoverrides(initialized))
 end

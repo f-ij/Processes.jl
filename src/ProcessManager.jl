@@ -93,7 +93,7 @@ Rebuild the worker context through the normal process init pipeline and return
 the slot. For `Process` workers this delegates to `makecontext!`.
 """
 function reinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...; kwargs...)
-    slot.worker.algo = init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))
+    context(slot.worker, context(init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))))
     return slot
 end
 

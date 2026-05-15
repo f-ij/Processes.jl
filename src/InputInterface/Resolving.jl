@@ -27,16 +27,16 @@ get_vars(ov::Union{NamedOverride, NamedInput}) = ov.vars
 If Overrides and inputs target a LoopAlgorithm, duplicate them for all contained algorithms
     Maybe this is not used anymore after the fusing system
 """
-function resolve(cla::LoopAlgorithm, ov::Union{Override, Input})
+function resolve(cla::LA, ov::OI) where {LA<:LoopAlgorithm, OI<:Union{Override, Input}}
     target_obj = get_target_algo(ov)
     return resolve(getregistry(cla), ov)
 end
 
-resolve(reg::NameSpaceRegistry, ov::Union{Override, Input}...) = flat_collect_broadcast(ov) do o
+resolve(reg::R, ov::Vararg{Union{Override, Input},N}) where {R<:NameSpaceRegistry,N} = flat_collect_broadcast(ov) do o
     resolve(reg, o)
 end
 
-@inline function resolve(reg::NameSpaceRegistry, ov::Union{Override, Input})
+@inline function resolve(reg::R, ov::OI) where {R<:NameSpaceRegistry, OI<:Union{Override, Input}}
     target_algo = get_target_algo(ov)
     if target_algo isa Symbol
         @assert haskey(reg, target_algo) "Target algorithm $(target_algo) not found in registry: $reg \n Cannot convert to Named"
@@ -53,7 +53,7 @@ end
     return (Named(typeof(ov), key, get_vars(ov)),)
 end
 
-resolve(cla::LoopAlgorithm, ovs::Union{Override, Input}...) = flat_collect_broadcast(ovs) do ov
+resolve(cla::LA, ovs::Vararg{Union{Override, Input},N}) where {LA<:LoopAlgorithm,N} = flat_collect_broadcast(ovs) do ov
     resolve(cla, ov)
 end
 
@@ -65,7 +65,7 @@ resolve(::Any) = ()
 """
 From inputs and overrides construct NamedTuples for merging into ProcessContext
 """
-@inline function construct_context_merge_tuples(named_overrides_inputs::Union{NamedOverride, NamedInput}...; to_all = (;)) 
+@inline function construct_context_merge_tuples(named_overrides_inputs::Vararg{Union{NamedOverride, NamedInput},N}; to_all::TA = (;)) where {N, TA}
     if isempty(named_overrides_inputs)
         return (;)
     end
@@ -80,7 +80,7 @@ end
 """
 Merge NamedOverrides and NamedInputs into a ProcessContext
 """
-@inline function Base.merge(context::ProcessContext, overrides_or_inputs::Union{NamedOverride, NamedInput}...; to_all = (;))
+@inline function Base.merge(context::C, overrides_or_inputs::Vararg{Union{NamedOverride, NamedInput},N}; to_all::TA = (;)) where {C<:ProcessContext, N, TA}
     if isempty(overrides_or_inputs)
         return context
     end
