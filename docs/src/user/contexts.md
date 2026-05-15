@@ -48,8 +48,11 @@ subcontext.
 From a process:
 
 ```julia
-ctx = getcontext(p)
+ctx = context(p)
 ```
+
+`context(p)` returns the stored persistent context. `getcontext(p)` returns a
+runtime-flavored context with the process injected into globals.
 
 From a context, index by:
 

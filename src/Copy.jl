@@ -1,6 +1,17 @@
 export copyinputs, copyoverrides, copyprocess
 
+"""
+    copyinputs(process_or_la)
+
+Return the stored `Init` specs for an initialized process or loop algorithm.
+"""
 @inline copyinputs(la::LoopAlgorithm) = getstoredinits(la)
+
+"""
+    copyoverrides(process_or_la)
+
+Return the stored `Override` specs for an initialized process or loop algorithm.
+"""
 @inline copyoverrides(la::LoopAlgorithm) = getstoredoverrides(la)
 @inline copyinputs(p::Process) = copyinputs(getalgo(p))
 @inline copyoverrides(p::Process) = copyoverrides(getalgo(p))

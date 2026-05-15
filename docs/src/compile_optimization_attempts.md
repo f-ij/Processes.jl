@@ -2,6 +2,10 @@
 
 This file records compile-latency experiments so failed paths are not repeated.
 
+Some older entries below mention `TaskData`. That type has been removed from
+the active lifecycle; those notes are retained as historical compile-latency
+context only.
+
 ## Kept Changes
 
 - Captured concrete loop algorithm types in helper signatures.
@@ -101,15 +105,17 @@ This file records compile-latency experiments so failed paths are not repeated.
 - `manual tests/ProcessHotLoopBenchmark.jl` checks normal hot-loop runtime.
   Recent larger runs did not show a normal `Process` hot-loop regression against clean `HEAD`.
 
-- `manual tests/ProcessCompileLatencyBenchmark.jl` breaks compile-facing work into:
-  algorithm construction, input resolution, `TaskData`, `initcontext`, `Process` constructor, first run, and warmed hot runs.
+- `manual tests/ProcessCompileLatencyBenchmark.jl` should break compile-facing
+  work into algorithm construction, `resolve`, lifecycle `init`, `Process`
+  constructor, first run, and warmed hot runs.
 
 - `manual tests/ProcessResolveBenchmark.jl` measures fresh construction,
   `resolve`, already-resolved `resolve`, `initcontext`, `Process` construction,
   first run, and warmed fresh-resolve throughput for simple, routed, shared, and
   nested algorithms.
 
-- The current benchmark suggests the next useful target is not simple `TaskData` specialization. Metadata reuse should stay on narrow internal paths and avoid changing the public `TaskData` keyword constructor shape.
+- The current benchmark should be refreshed against the lifecycle-init path.
+  Metadata reuse should stay on narrow internal paths.
 
 ## SnoopCompile Pass
 
@@ -132,7 +138,7 @@ Important inclusive paths:
 - `resolve(::CompositeAlgorithm)`: about `207 ms`, mostly through registry setup.
 - `loop(::Process, ::CompositeAlgorithm, ::ProcessContext, ::Repeat, ::NonGenerated)`:
   about `122 ms`.
-- `initcontext(::TaskData{... inputs/overrides ...})`: about `92 ms`.
+- legacy `initcontext(::TaskData{... inputs/overrides ...})`: about `92 ms`.
 - `Process(...; repeats=1)`: about `87 ms`.
 
 The pass also showed inference under background precompile tasks launched from

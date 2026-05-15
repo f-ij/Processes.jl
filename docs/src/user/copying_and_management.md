@@ -12,25 +12,25 @@ available and gives jobs to whichever worker is free.
 
 ## Why Copy Instead of `deepcopy`
 
-`Process` contexts are often built from `Input(...)` values that point at external storage,
+`Process` contexts are often built from `Init(...)` values that point at external storage,
 buffers, or data views. A raw `deepcopy` of the live context can therefore copy the wrong
 thing or preserve sharing that should be rebuilt per process.
 
-The copying helpers work from `TaskData` and the normal init pipeline instead:
+The copying helpers work from the initialized loop algorithm and the normal
+lifecycle init pipeline instead:
 
-- copy the task description,
+- copy the stored loop algorithm recipe,
 - replace selected inputs and overrides,
 - initialize a fresh context for each copy.
 
-`TaskData` is the saved recipe for building a process context: the algorithm,
-the inputs, the overrides, and the lifetime.
+The saved recipe is the initialized loop algorithm: it stores the resolved
+algorithm, persistent context, and replayable `Init`/`Override` specs.
 
 ## Copy APIs
 
 ```@docs
 Processes.copyinputs
 Processes.copyoverrides
-Processes.copytaskdata
 Processes.copyprocess
 ```
 
@@ -39,14 +39,14 @@ Processes.copyprocess
 ```julia
 template = Process(
     MyAlgo,
-    Input(MyAlgo, :start => 0, :buffer => Int[]),
-    Override(MyAlgo, :delta => 2);
+    Init(MyAlgo; start = 0, buffer = Int[]),
+    Override(MyAlgo; delta = 2);
     repeats = 10,
 )
 
 p = copyprocess(
     template,
-    Input(MyAlgo, :start => 100, :buffer => Int[]),
+    Init(MyAlgo; start = 100, buffer = Int[]),
 )
 
 run(p)
@@ -54,8 +54,8 @@ wait(p)
 close(p)
 ```
 
-If the context needs custom rebuilding logic, pass `context_builder = (taskdata, original) -> ...`
-or provide a fully prepared `context = ...` directly.
+If the context needs custom rebuilding logic, provide a fully prepared
+`context = ...` directly.
 
 ## Worker Orchestration
 
@@ -76,7 +76,7 @@ recipe = (;
     makeworker = (idx, manager) -> Process(MyAlgo; repeats = 1),
 
     prepare! = (slot, job, manager) -> begin
-        ctx = slot.worker.context[MyAlgo]
+        ctx = context(slot.worker)[MyAlgo]
         ctx.value[] = job.value
         resetworker!(slot)
     end,
@@ -98,11 +98,11 @@ recipe = (;
     makeworker = (idx, manager) -> Process(MyAlgo; repeats = 1),
 
     makecontext = (idx, manager, template) -> begin
-        td = copytaskdata(
-            template,
-            Input(MyAlgo, :seed => idx),
+        initialized = init(
+            getalgo(template),
+            Init(MyAlgo; seed = idx),
         )
-        initcontext(td)
+        context(initialized)
     end,
 )
 
@@ -201,7 +201,7 @@ Use direct mutation when only a few fields change:
 
 ```julia
 prepare! = (slot, job, manager) -> begin
-    ctx = slot.worker.context[MyAlgo]
+    ctx = context(slot.worker)[MyAlgo]
     ctx.x[] = job.x
     empty!(ctx.buffer)
     resetworker!(slot)
@@ -214,7 +214,7 @@ path:
 ```julia
 prepare! = (slot, job, manager) -> reinitworker!(
     slot,
-    Input(MyAlgo, :x => job.x),
+    Init(MyAlgo; x = job.x),
 )
 ```
 
@@ -233,7 +233,7 @@ unless you know they will not be overwritten. Store copied values instead:
 
 ```julia
 consume! = (slot, job, manager) -> begin
-    ctx = slot.worker.context[MyAlgo]
+    ctx = context(slot.worker)[MyAlgo]
     push!(manager.state.outputs, (; value = ctx.value[], loss = ctx.loss[]))
 end
 ```
@@ -312,8 +312,8 @@ Processes.reinitworker!
 ```julia
 template = Process(
     MyAlgo,
-    Input(MyAlgo, :value => Ref(0), :local_buffer => Int[]),
-    Override(MyAlgo, :delta => 3);
+    Init(MyAlgo; value = Ref(0), local_buffer = Int[]),
+    Override(MyAlgo; delta = 3);
     repeats = 20,
 )
 
@@ -323,17 +323,17 @@ recipe = (;
         scale = config.scale,
     ),
 
-    makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(template.context)),
+    makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(context(template))),
 
     prepare! = (slot, job, manager) -> begin
-        ctx = slot.worker.context[MyAlgo]
+        ctx = context(slot.worker)[MyAlgo]
         ctx.value[] = job.value * manager.state.scale
         resetworker!(slot)
     end,
 
     flush! = manager -> begin
         for slot in slots(manager)
-            ctx = slot.worker.context[MyAlgo]
+            ctx = context(slot.worker)[MyAlgo]
             append!(manager.state.output, ctx.local_buffer)
             empty!(ctx.local_buffer)
         end
@@ -363,13 +363,13 @@ workers = [Process(MyAlgo; repeats = 1) for _ in 1:4]
 
 recipe = (;
     prepare! = (slot, job, manager) -> begin
-        ctx = slot.worker.context[MyAlgo]
+        ctx = context(slot.worker)[MyAlgo]
         ctx.value[] = job.value
         resetworker!(slot)
     end,
 
     consume! = (slot, job, manager) -> begin
-        ctx = slot.worker.context[MyAlgo]
+        ctx = context(slot.worker)[MyAlgo]
         push!(manager.state.outputs, ctx.value[])
     end,
 

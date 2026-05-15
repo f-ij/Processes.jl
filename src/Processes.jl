@@ -84,9 +84,7 @@ module Processes
     include("Saving.jl")
 
     include("GeneratedCode/GeneratedCode.jl")
-    # Precompile workload is disabled while the LoopAlgorithm lifecycle is being
-    # reshaped; re-enable after the new init/runtime-input paths settle.
-    # include("Precompile.jl")
+    include("Precompile.jl")
 
     # @setup_workload begin
     #     @compile_workload begin

@@ -240,10 +240,13 @@ function _loop_precompile_task!(loopfunc_type::Type, process_type::Type, func_ty
 end
 
 function schedule_loop_precompile!(p::Process, lt = lifetime(p); loopfunc = loop)
+    _loop_precompile_task!(typeof(loopfunc), typeof(p), typeof(getalgo(p)), _global_context_type(p), typeof(lt))
     return p
 end
 
 function wait_loop_precompile!(p::Process, func, context, lt; loopfunc = loop)
+    task = _loop_precompile_task!(typeof(loopfunc), typeof(p), typeof(func), typeof(context), typeof(lt))
+    isnothing(task) || wait(task)
     return nothing
 end
 

@@ -23,7 +23,7 @@ If you are new to the package, read these first:
 1. [Algorithms and States](@ref algorithms_states_user)
 2. [Running, Wait, Fetch](@ref running_user)
 3. [Contexts and Indexing](@ref contexts_user)
-4. [Inputs and Overrides](@ref inputs_overrides_user)
+4. [Init, Overrides, and Runtime Inputs](@ref inputs_overrides_user)
 5. [Routes and Shares](@ref routes_shares_user)
 6. [Composite DSL](@ref composite_dsl_user)
 
@@ -35,7 +35,7 @@ If you are new to the package, read these first:
 - [Contexts and Indexing](@ref contexts_user)
 - [Init Analysis](@ref init_analysis_user)
 - [Routes and Shares](@ref routes_shares_user)
-- [Inputs and Overrides](@ref inputs_overrides_user)
+- [Init, Overrides, and Runtime Inputs](@ref inputs_overrides_user)
 - [Vars (`Var` Selectors)](@ref vars_user)
 - [Lifetime](@ref lifetime_user)
 - [Running, Wait, Fetch](@ref running_user)

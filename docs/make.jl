@@ -19,7 +19,7 @@ makedocs(
             "Contexts and Indexing" => "user/contexts.md",
             "Init Analysis" => "user/init_analysis.md",
             "Routes and Shares" => "user/routes_shares.md",
-            "Inputs and Overrides" => "user/inputs_overrides.md",
+            "Init, Overrides, and Runtime Inputs" => "user/inputs_overrides.md",
             "Vars (Var Selectors)" => "user/vars.md",
             "Interactive Contexts" => "user/interactive.md",
             "Lifetime" => "user/lifetime.md",

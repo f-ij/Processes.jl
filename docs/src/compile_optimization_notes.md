@@ -4,8 +4,8 @@ Potential next targets, in the order they should be investigated:
 
 1. Run a SnoopCompile pass on the compile benchmark.
    Use a call tree before changing more generated code. The current benchmark
-   separates algorithm construction, `resolve`, input resolution, `TaskData`,
-   `initcontext`, process construction, first run, and warmed runs, but it does
+   separates algorithm construction, `resolve`, lifecycle `init`,
+   `Process` construction, first run, and warmed runs, but it does
    not show which callees dominate inference time.
 
 2. Reduce generated merge expression size.
@@ -23,10 +23,10 @@ Potential next targets, in the order they should be investigated:
    shrink the unstable generated path.
 
 4. Isolate context init merge cost.
-   `resolve_process_inputs_overrides` now expects a resolved algorithm and only
-   maps user `Input`/`Override` objects to names. The remaining cost is probably
-   applying those named inputs/overrides through generated context merge/init
-   code. Benchmark `initcontext(td)` with and without inputs separately.
+   Lifecycle `init` now resolves `Init`/`Override` specs and stores them on the
+   initialized loop algorithm. The remaining cost is probably applying named
+   specs through generated context merge/init code. Benchmark `init(la)` with
+   and without specs separately.
 
 5. Cache resolved algorithm metadata by concrete loop algorithm type.
    Registry setup, flat funcs/states/multipliers, and share/route resolution are
@@ -34,8 +34,8 @@ Potential next targets, in the order they should be investigated:
    options that are value-dependent.
 
 6. Expand background precompile from constructed values.
-   On `Process` or `TaskData` construction, schedule precompile work from
-   `typeof(algo)`, `typeof(taskdata)`, `typeof(context)`, and `typeof(lifetime)`.
+   On `Process` or initialized loop algorithm construction, schedule precompile
+   work from `typeof(algo)`, `typeof(context)`, and `typeof(lifetime)`.
    Likely targets are `initcontext`, `loop`, first `step!`, and common merge
    calls. Measure this separately from normal workload inference because
    background precompile tasks showed up in the first SnoopCompile pass.

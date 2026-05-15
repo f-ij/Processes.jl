@@ -48,6 +48,42 @@ algo = @CompositeAlgorithm begin
 end
 ```
 
+## Runtime Inputs
+
+Declare per-run values with `@input`.
+
+```julia
+algo = @CompositeAlgorithm begin
+    @state energy = 0.0
+    @input temperature::AbstractFloat
+    @input sweep = 1
+
+    accepted = metropolis_step(energy, temperature; sweep = sweep)
+end
+```
+
+Runtime inputs are supplied to `run` as keyword arguments:
+
+```julia
+p = Process(algo; repeats = 100)
+run(p; temperature = 2.0)
+```
+
+They are validated once before the loop starts and are visible during the run
+through the transient `:_input` context. They are not stored in the initialized
+loop algorithm or process context after the run.
+
+Forms:
+
+```julia
+@input required_name
+@input typed_name::AbstractFloat
+@input defaulted_name = 1
+```
+
+Use runtime `@input` for scalar parameters or small values that can change from
+run to run. Use `@state` or `Init(...)` for persistent buffers and setup data.
+
 ## Aliases
 
 Use `@alias` to name an algorithm constructor or value for later DSL entries.

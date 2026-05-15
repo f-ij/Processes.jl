@@ -10,7 +10,7 @@ For current documentation, use the split docs below.
 - [Referencing Algorithms](@ref referencing_algorithms_user)
 - [Contexts and Indexing](@ref contexts_user)
 - [Routes and Shares](@ref routes_shares_user)
-- [Inputs and Overrides](@ref inputs_overrides_user)
+- [Init, Overrides, and Runtime Inputs](@ref inputs_overrides_user)
 - [Vars (`Var` Selectors)](@ref vars_user)
 - [Lifetime](@ref lifetime_user)
 - [Running, Wait, Fetch](@ref running_user)

@@ -60,12 +60,12 @@ function one_trial()
         Processes.resolve_process_inputs_overrides(resolved_algo, inputs_overrides...)
     end
 
-    taskdata = timed_stage!(rows, "TaskData") do
-        Processes.TaskData(resolved_algo; lifetime = Repeat(1), inputs = named_inputs, overrides = named_overrides)
+    initialized_algo = timed_stage!(rows, "lifecycle init") do
+        Processes.init(algo, inputs_overrides...; lifetime = Repeat(1))
     end
 
-    context = timed_stage!(rows, "initcontext") do
-        initcontext(taskdata)
+    context = timed_stage!(rows, "stored context") do
+        Processes.getstoredcontext(initialized_algo)
     end
 
     process = timed_stage!(rows, "Process constructor") do
