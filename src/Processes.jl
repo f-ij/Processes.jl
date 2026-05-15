@@ -73,6 +73,8 @@ module Processes
     # include("ProcessAlgorithms.jl")
 
     include("LoopAlgorithms/LoopAlgorithms.jl")
+    include("ContextAnalyzer/ContextAnalyzer.jl")
+    include("Inspection/Inspection.jl")
     include("Threaded/Threaded.jl")
     include("LoopAlgorithms/Edit/Edit.jl")
     include("Worker/Worker.jl")

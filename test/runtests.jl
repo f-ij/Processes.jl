@@ -21,4 +21,5 @@ using Processes
     include("CompositeDSLTest.jl")
     include("ProcessAlgorithmMacroTest.jl")
     include("ContextAnalyzerTest.jl")
+    include("InspectionTest.jl")
 end
