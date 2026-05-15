@@ -3,13 +3,13 @@ const start_finished = Ref(false)
 @inline _stored_loop_context(context) = context
 
 function _stored_loop_context(context::ProcessContext)
-    subcontexts = getfield(context, :subcontexts)
-    globals = getproperty(subcontexts, :globals)
+    context = _strip_runtime_inputs(context)
+    globals = getglobals(context)
     haskey(globals, :process) || return context
 
     globals = deletekeys(globals, :process)
-    subcontexts = (; subcontexts..., globals)
-    return ProcessContext(subcontexts, getfield(context, :registry))
+    subcontexts = (; get_subcontexts(context)..., globals)
+    return ProcessContext(subcontexts, getregistry(context))
 end
 
 @inline function before_while(p::P) where P <: AbstractProcess
@@ -47,7 +47,11 @@ end
 end
 
 
-@inline loop(p::P, f::F, c::C, lt::LT) where {P, F, C, LT} = loop(p, f, c, lt, sys_looptype)
+@inline loop(p::P, f::F, c::C, lt::LT) where {P, F, C, LT} = loop(p, f, c, lt, (;), sys_looptype)
+@inline loop(p::P, f::F, c::C, lt::LT, inputs::NamedTuple) where {P, F, C, LT} =
+    loop(p, f, _merge_runtime_inputs(c, inputs), lt, sys_looptype)
+@inline loop(p::P, f::F, c::C, lt::LT, inputs::NamedTuple, looptype) where {P, F, C, LT} =
+    loop(p, f, _merge_runtime_inputs(c, inputs), lt, looptype)
 """
 Run a single function in a loop indefinitely
 """
@@ -59,7 +63,9 @@ Run a single function in a loop indefinitely
     @inline inc!(process)
 
     while true
-        context = @inline step!(func, context, Stable())
+        nextcontext = @inline step!(func, context, Stable())
+        typeof(nextcontext) === typeof(context) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(context)).")
+        context = nextcontext
         @inline tick!(process)
         @inline inc!(process) 
         if @inline breakcondition(lt, process, context)
@@ -91,7 +97,9 @@ Base.@constprop :aggressive function loop(process::AbstractProcess, algo::F, uns
     
     for _ in start_idx:end_idx
     
-        stablecontext = @inline step!(algo, stablecontext, Stable())
+        nextcontext = @inline step!(algo, stablecontext, Stable())
+        typeof(nextcontext) === typeof(stablecontext) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(stablecontext)).")
+        stablecontext = nextcontext
         @inline tick!(process)
         @inline inc!(process)
         if @inline breakcondition(r, process, stablecontext)

@@ -1,4 +1,4 @@
-export Input, Override
+export Init, Input, Override
 
 abstract type InputInterface end
 
@@ -9,15 +9,24 @@ change_target(ii::InputInterface, newtarget) = setfield(ii, :target_algo, newtar
 ########### User Interface #############
 ########################################
 
-struct Input{T,NT<:NamedTuple} <: InputInterface
+struct Init{T,NT<:NamedTuple} <: InputInterface
     target_algo::T
     vars::NT
 end
 
-function Input(target_algo::T, pairs::Pair{Symbol,<:Any}...; kwargs...) where {T}
+"""
+    Init(target, :name => value, ...; kwargs...)
+
+Initialization-time values for one process algorithm or state. These values are
+merged before `init` runs and are replayed by `init(la)` when stored on an
+initialized loop algorithm.
+"""
+function Init(target_algo::T, pairs::Pair{Symbol,<:Any}...; kwargs...) where {T}
     nt = (;pairs..., kwargs...)
-    Input{T, typeof(nt)}(target_algo, nt)
+    Init{T, typeof(nt)}(target_algo, nt)
 end
+
+const Input = Init
 
 
 """
@@ -57,4 +66,3 @@ end
 function NamedOverride{Name}(vars::NT) where {Name, NT}
     NamedOverride{Name, NT}(vars)
 end
-

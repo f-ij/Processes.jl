@@ -122,7 +122,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
     end
 
     function _process_manager_precompile_context(worker)
-        return worker.context[ProcessManagerPrecompileStep]
+        return context(worker)[ProcessManagerPrecompileStep]
     end
 
     function _process_manager_precompile_reset!(ctx)
@@ -273,17 +273,9 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         )
         copyinputs(base_process)
         copyoverrides(base_process)
-        copytaskdata(
-            base_process,
-            Input(_ProcessPrecompileScaler, :factor => 5);
-            keep_inputs = true,
-            keep_overrides = true,
-        )
         copied_process = copyprocess(
             base_process,
             Input(_ProcessPrecompileScaler, :factor => 6);
-            keep_inputs = false,
-            context_builder = td -> initcontext(td),
         )
         run(copied_process)
         wait(copied_process)
@@ -322,7 +314,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         generated_context = merge_into_globals(context(composite_inline), (; process = composite_inline))
         loop(
             composite_inline,
-            getalgo(taskdata(composite_inline)),
+            getalgo(composite_inline),
             generated_context,
             lifetime(composite_inline),
             Generated(),

@@ -47,44 +47,11 @@ function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), override
     return overridden_context
 end
 
-"""
-Init context from TaskData
-"""
-function initcontext(td::TD; lifetime=nothing) where {TD<:TaskData}
-    lifetime = getlifetime(td)
-    overrides = getoverrides(td)
-    inputs = getinputs(td)
-    empty_c = getcontext(td)
-
-    if isempty(inputs) && isempty(overrides)
-        return initcontext(getalgo(td), empty_c; lifetime = lifetime)
-    else
-        return initcontext(getalgo(td), empty_c, overrides..., inputs...; lifetime = lifetime)
-    end
-end
-
-function initcontext(td::TD, new_inputs_overrides::Union{NamedInput, NamedOverride}...; lifetime=nothing) where {TD<:TaskData}
-    lifetime = getlifetime(td)
-    overrides = getoverrides(td)
-    inputs = getinputs(td)
-    empty_c = getcontext(td)
-
-    if isempty(new_inputs_overrides)
-        return initcontext(getalgo(td), empty_c, overrides..., inputs...; lifetime = lifetime)
-    else # Override inputs and overrides with new ones 
-        # TODO: Do we set the new inputs and overrides to the TaskData? Or do we just use them for this context? 
-        # For now, just use them for this context
-        return initcontext(getalgo(td), empty_c, new_inputs_overrides...; lifetime = lifetime)
-    end
-
-end
-
 function makecontext(p::AbstractProcess, inputs_overrides...; lifetime=nothing)
-    initcontext(taskdata(p), inputs_overrides...; lifetime=lifetime)
+    lt = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
+    context(init(getalgo(p), inputs_overrides...; lifetime = lt))
 end
-"""
-From a process and its taskdata, make a context and set it to the process
-"""
+"""Build a fresh context for a process by replaying lifecycle init on its LA."""
 function makecontext!(p::AbstractProcess, inputs_overrides...; lifetime=nothing)
     c = makecontext(p, inputs_overrides...; lifetime)
     context(p,c)

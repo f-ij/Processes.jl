@@ -7,7 +7,7 @@ This doesn't provide the multitasking features of Process, but is faster to rest
 """
 mutable struct InlineProcess{TD,ContextType, Lt,Mode} <: AbstractProcess
     const id::UUID
-    const taskdata::TD
+    algo::TD
     context::ContextType
     consumed::Bool
     loopidx::UInt
@@ -43,13 +43,13 @@ end
 
 @inline function InlineProcess(func, inputs_overrides...; threaded=false, repeats=nothing, lifetime=nothing, context=nothing)
     lifetime = _inline_process_lifetime(func, repeats, lifetime)
-    prepared = prepare_process_constructor(func, inputs_overrides...; lifetime, context)
-    
-    tf = prepared.taskdata
-    prepared_context = prepared.context
+    algo = normalize_process_algo(func)
+    lifetime = normalize_process_lifetime(algo, lifetime)
+    algo = isnothing(context) ? init(algo, inputs_overrides...; lifetime) : _with_lifecycle(resolve(algo), context, (), ())
+    prepared_context = getstoredcontext(algo)
     mode = _inline_process_mode(threaded)
 
-    p = InlineProcess{typeof(tf), typeof(prepared_context), typeof(lifetime),mode}(uuid1(), tf, prepared_context, false, UInt(1), lifetime, nothing, nothing)
+    p = InlineProcess{typeof(algo), typeof(prepared_context), typeof(lifetime),mode}(uuid1(), algo, prepared_context, false, UInt(1), lifetime, nothing, nothing)
     return p
 end
 
@@ -63,21 +63,22 @@ end
 
 @inline set_starttime!(ip::InlineProcess) = (ip.starttime = time_ns())
 @inline set_endtime!(ip::InlineProcess) = (ip.endtime = time_ns())
-taskdata(ip::InlineProcess) = ip.taskdata
+getalgo(ip::InlineProcess) = ip.algo
 
 @inline context(ip::InlineProcess, c) = (ip.context = c)
 @inline context(ip::InlineProcess) = ip.context::contexttype(ip)
 
 @inline function reset!(p::InlineProcess, inputs_overrides...)
     p.loopidx = 1
-    p.context = makecontext(p, inputs_overrides...)
+    initialized = init(getalgo(p), inputs_overrides...; lifetime = lifetime(p))
+    p.context = Processes.context(initialized)
     # TODO: Probably remove consumed flag
     p.consumed = false
     return true
 end
 
 @inline function Base.run(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing)
-    algo = p.taskdata.func
+    algo = getalgo(p)
     
     if isnothing(context)
         context = Processes.context(p)
@@ -86,21 +87,22 @@ end
     end
 
     p.loopidx = 1
+    runtime_inputs = _validate_runtime_inputs(algo, (;))
     runtime_context = @inline merge_into_globals(context, (; process=p))
     inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
     lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
     if (isnothing(threaded) && isthreaded(p)) || threaded === true
-        return Threads.@spawn @inline loop(p, algo, runtime_context, lifetime)
+        return Threads.@spawn @inline loop(p, algo, runtime_context, lifetime, runtime_inputs)
     elseif (isnothing(threaded) && isasync(p)) || threaded === :async
-        return @async @inline loop(p, algo, runtime_context, lifetime)
+        return @async @inline loop(p, algo, runtime_context, lifetime, runtime_inputs)
     else 
-        return @inline @inline loop(p, algo, runtime_context, lifetime)
+        return @inline @inline loop(p, algo, runtime_context, lifetime, runtime_inputs)
     end
 end
 
 @inline function run_nogen(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing)
-    algo = p.taskdata.func
+    algo = getalgo(p)
     
     if isnothing(context)
         context = Processes.context(p)
@@ -115,7 +117,7 @@ end
     lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
     # p.consumed = true
-    return @inline loop(p, algo, runtime_context, lifetime, NonGenerated())
+    return @inline loop(p, algo, runtime_context, lifetime, (;), NonGenerated())
 end
 
 @inline function init_and_run(p::InlineProcess, inputs_overrides...)

@@ -3,8 +3,7 @@ export Process, getallocator, getnewallocator, getcontext, getticks
 
 mutable struct Process{F} <: AbstractProcess
     id::UUID
-    context::AbstractContext
-    taskdata::TaskData{F}
+    algo::Any
     timeout::Float64
     task::Union{Nothing, Task}
     loopidx::UInt # To track the current loop index for resuming
@@ -54,7 +53,7 @@ shouldrun(p::Process, val) = @atomic p.shouldrun = val
 end
 
 @inline function _process_algo_summary(p::Process)
-    return sprint(summary, getalgo(taskdata(p)))
+    return sprint(summary, getalgo(p))
 end
 
 @inline function _process_constructor_lifetime(repeats, lifetime, repeat)
@@ -84,15 +83,16 @@ end
 function Process(func, inputs_overrides...; context = nothing, repeats = nothing, lifetime = nothing, repeat = nothing, timeout = 1.0)
     lifetime = _process_constructor_lifetime(repeats, lifetime, repeat)
 
-    prepared = prepare_process_constructor(func, inputs_overrides...; lifetime, context)
-    td = prepared.taskdata
-    context = prepared.context
+    algo = normalize_process_algo(func)
+    lifetime = normalize_process_lifetime(algo, lifetime)
+    algo = isnothing(context) ? init(algo, inputs_overrides...; lifetime) : _with_lifecycle(resolve(algo), context, getstoredinits(algo), getstoredoverrides(algo))
+    algo = _with_lifecycle(algo, merge_into_globals(getstoredcontext(algo), (; lifetime,)), getstoredinits(algo), getstoredoverrides(algo))
 
     # p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
-    p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, nothing, RuntimeListeners(), 0)
+    p = Process{typeof(algo)}(uuid1(), algo, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, nothing, RuntimeListeners(), 0)
 
     register_process!(p)
-    schedule_loop_precompile!(p)
+    schedule_loop_precompile!(p, lifetime)
     @DebugMode "Created process with id $(p.id), now preparing data"
     
     finalizer(remove_process!, p)
@@ -106,12 +106,18 @@ end
 
 Base.:(==)(p1::Process, p2::Process) = p1.id == p2.id
 
+getalgo(p::Process) = p.algo
+context(p::Process) = getstoredcontext(getalgo(p))
+function context(p::Process, c)
+    p.algo = _with_lifecycle(getalgo(p), _stored_loop_context(c), getstoredinits(getalgo(p)), getstoredoverrides(getalgo(p)))
+end
+
 function getcontext(p::Process)
-    return merge_into_globals(p.context, (;process = p))
+    return merge_into_globals(context(p), (;process = p))
 end
 
 getcontext(p::Process, context) = getcontext(p)[context]
-lifetime(p::Process) = p.taskdata.lifetime
+lifetime(p::Process) = get(getglobals(context(p)), :lifetime, Indefinite())
 
 set_starttime!(p::Process) = p.starttime = time_ns()
 set_endtime!(p::Process) = p.endtime = time_ns()
@@ -126,7 +132,7 @@ isthreaded(p::Process) = true
 different loopfunction can be passed to the process through overrides
 """
 function getloopfunc(p::Process)
-    get(p.taskdata.overrides, :loopfunc, processloop)
+    loop
 end
 
 
@@ -159,10 +165,9 @@ function stop_time(p::Process)
 end
 
 function createfrom!(p1::Process, p2::Process)
-    p1.taskdata = p2.taskdata
+    p1.algo = p2.algo
     p1.timeout = p2.timeout
-    p1.context = p2.context
-    preparedata!(p1)
+    reset!(p1)
 end
 
 
@@ -210,7 +215,7 @@ function precompile_loop!(loopfunc_type::Type, process_type::Type, func_type::Ty
 end
 
 function _global_context_type(p::Process)
-    return typeof(merge_into_globals(p.context, (; process = p)))
+    return typeof(merge_into_globals(context(p), (; process = p)))
 end
 
 function _loop_precompile_signature(loopfunc_type::Type, process_type::Type, func_type::Type, context_type::Type, lifetime_type::Type)
@@ -235,13 +240,10 @@ function _loop_precompile_task!(loopfunc_type::Type, process_type::Type, func_ty
 end
 
 function schedule_loop_precompile!(p::Process, lt = lifetime(p); loopfunc = loop)
-    _loop_precompile_task!(typeof(loopfunc), typeof(p), typeof(p.taskdata.func), _global_context_type(p), typeof(lt))
     return p
 end
 
 function wait_loop_precompile!(p::Process, func, context, lt; loopfunc = loop)
-    task = _loop_precompile_task!(typeof(loopfunc), typeof(p), typeof(func), typeof(context), typeof(lt))
-    isnothing(task) || wait(task)
     return nothing
 end
 
@@ -249,21 +251,25 @@ end
 """
 Runs the prepared task of a process on a thread
 """
-function makeloop!(p::Process, lt = lifetime(p); threaded = true, loopfunc::LF = loop) where LF 
+function makeloop!(p::Process, inputs::NamedTuple = (;), lt = lifetime(p); threaded = true, loopfunc::LF = loop) where LF 
     @atomic p.paused = false
     @atomic p.shouldrun = true
     p.lastresult = nothing
 
-    func = p.taskdata.func
-    context = merge_into_globals(p.context, (;process = p))
-    wait_loop_precompile!(p, func, context, lt; loopfunc)
+    func = getalgo(p)
+    inputs = _validate_runtime_inputs(func, inputs)
+    runtime_context = merge_into_globals(Processes.context(p), (;process = p))
+    wait_loop_precompile!(p, func, runtime_context, lt; loopfunc)
     if threaded
-        p.task = Threads.@spawn loopfunc(p, func, context, lt)
+        p.task = Threads.@spawn loopfunc(p, func, runtime_context, lt, inputs)
     else
-        p.task = @async loopfunc(p, func, context, lt)
+        p.task = @async loopfunc(p, func, runtime_context, lt, inputs)
     end
     return p
 end
+
+makeloop!(p::Process, lt::Lifetime; threaded = true, loopfunc::LF = loop) where {LF} =
+    makeloop!(p, (;), lt; threaded, loopfunc)
 
 """
 Reset process to initial state
@@ -274,7 +280,7 @@ function reset!(p::Process)
     @atomic p.paused = false
     @atomic p.shouldrun = true
     reset_times!(p)
-    algo = getalgo(p.taskdata)
+    algo = getalgo(p)
     reset!(algo)
     return p
 end
@@ -310,14 +316,14 @@ function Base.show(io::IO, ::MIME"text/plain", p::Process)
     println(io, "├── loopidx = ", loopint(p))
     println(io, "├── timeout = ", p.timeout)
 
-    algo_lines = split(sprint(show, getalgo(taskdata(p))), '\n')
+    algo_lines = split(sprint(show, getalgo(p)), '\n')
     print(io, "├── algo = ", algo_lines[1])
     for line in Iterators.drop(algo_lines, 1)
         print(io, "\n", "│   ", line)
     end
 
     context_lines = split(
-        sprint(show, p.context; context = IOContext(io, :printcontextglobals => false, :limit => get(io, :limit, false), :color => get(io, :color, false))),
+        sprint(show, context(p); context = IOContext(io, :printcontextglobals => false, :limit => get(io, :limit, false), :color => get(io, :color, false))),
         '\n',
     )
     print(io, "\n", "└── context = ", context_lines[1])

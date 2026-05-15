@@ -59,7 +59,7 @@ using Processes
     # Test for correct cleanup output
     @test c isa ProcessContext
 
-    actual = p.context[Walker].state
+    actual = Processes.context(p)[Walker].state
     expected = [
         1.0,
         1.01,

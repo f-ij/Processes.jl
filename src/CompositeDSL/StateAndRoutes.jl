@@ -3,6 +3,8 @@ function _dsl_known_outputs!(known_outputs::Set{Symbol}, stmt)
     if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
         _, fields = _dsl_parse_state_statement(stmt)
         union!(known_outputs, getproperty.(fields, :name))
+    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@input")
+        push!(known_outputs, _dsl_parse_input_statement(stmt).name)
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@include_if")
         _, include_body = _dsl_parse_include_if(stmt)
         _dsl_known_outputs_include_body!(known_outputs, include_body)
@@ -205,6 +207,31 @@ function _dsl_parse_state_statement(stmt)
     return :_state, _dsl_collect_state_fields(args)
 end
 
+function _dsl_parse_input_entry(ex)
+    default = nothing
+    required = true
+    lhs = ex
+    if ex isa Expr && ex.head == :(=)
+        lhs = ex.args[1]
+        default = ex.args[2]
+        required = false
+    end
+    name, typeexpr = if lhs isa Expr && lhs.head == :(::)
+        lhs.args[1], lhs.args[2]
+    else
+        lhs, :Any
+    end
+    name isa Symbol || error("@input fields must be plain symbols or typed symbols. Got `$lhs`.")
+    return (; name, typeexpr, required, default)
+end
+
+function _dsl_parse_input_statement(stmt)
+    stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@input") || error("Invalid @input statement `$stmt`.")
+    args = [stmt.args[i] for i in 3:length(stmt.args) if !(stmt.args[i] isa LineNumberNode)]
+    length(args) == 1 || error("@input expects one declaration, got `$args`.")
+    return _dsl_parse_input_entry(only(args))
+end
+
 """Accumulate one `@state` statement into the current block-level inline state."""
 function _dsl_merge_state_statement!(state_fields::Vector, state_name::Symbol, stmt)
     this_state_name, this_state_fields = _dsl_parse_state_statement(stmt)
@@ -229,6 +256,22 @@ function _dsl_state_setup_expr(state_fields, state_name::Symbol)
         local _dsl_state_owner = $state_owner_expr
         Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_state_owner, $outputs_expr)
         Processes._composite_dsl_register_state_outputs!(_dsl_state_owners, _dsl_state_owner, $outputs_expr)
+    end
+end
+
+function _dsl_runtime_input_setup_expr(input_fields)
+    isempty(input_fields) && return nothing
+    specs = map(input_fields) do field
+        :(Processes.RuntimeInput($(QuoteNode(field.name)), $(esc(field.typeexpr)); required = $(field.required), default = $(field.required ? nothing : esc(field.default))))
+    end
+    outputs_expr = Expr(:tuple, [QuoteNode(field.name) for field in input_fields]...)
+    return quote
+        local _dsl_runtime_input_specs = ($(specs...),)
+        local _dsl_input_state = Processes.RuntimeInputState(_dsl_runtime_input_specs)
+        push!(_dsl_states, :_input => _dsl_input_state)
+        push!(_dsl_options, Processes.RuntimeInputs(_dsl_runtime_input_specs))
+        local _dsl_input_owner = Processes._composite_dsl_owner(_dsl_input_state, :_input)
+        Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_input_owner, $outputs_expr)
     end
 end
 

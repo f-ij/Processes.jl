@@ -10,6 +10,7 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
     collected = _dsl_collect_block(statements, expected_schedule, constructor_name; allow_final = true)
 
     state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
+    input_setup_expr = _dsl_runtime_input_setup_expr(collected.input_fields)
     final_expr = collected.final_expr
 
     expanded = quote
@@ -25,6 +26,7 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
 
             $(isnothing(state_setup_expr) ? nothing : state_setup_expr)
+            $(isnothing(input_setup_expr) ? nothing : input_setup_expr)
             $(collected.step_exprs...)
 
             isempty(_dsl_algos) && error("`@$constructor_name` requires at least one algorithm entry.")
@@ -64,6 +66,7 @@ function _dsl_expand_simplealgorithm_resolved(block)
     collected = _dsl_collect_block(statements, :none, :repeat; allow_final = false)
 
     state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
+    input_setup_expr = _dsl_runtime_input_setup_expr(collected.input_fields)
 
     expanded = quote
         let
@@ -78,6 +81,7 @@ function _dsl_expand_simplealgorithm_resolved(block)
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
 
             $(isnothing(state_setup_expr) ? nothing : state_setup_expr)
+            $(isnothing(input_setup_expr) ? nothing : input_setup_expr)
             $(collected.step_exprs...)
 
             isempty(_dsl_algos) && error("`@repeat n begin ... end` requires at least one algorithm entry.")

@@ -1,15 +1,20 @@
-export Routine
+export Routine, RoutinePlan
 
 """
 Struct to create routines
 """
-struct Routine{T, Repeats, S, MV, O, R, id} <: LoopAlgorithm
+struct Routine{T, Repeats, S, MV, O, R, id, C, Inits, Overrides} <: LoopAlgorithm
     funcs::T     
     states::S
     options::O
     resume_idxs::MV
     reg::R
+    context::C
+    inits::Inits
+    overrides::Overrides
 end
+
+const RoutinePlan = Routine
 
 function Routine(args...)
     parse_la_input(Routine, args...)
@@ -17,7 +22,7 @@ end
 
 function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple, repeats; id = nothing) where F
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
-    return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), Nothing, id}(funcs, states, options, resume_idxs, nothing)
+    return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), Nothing, id, Nothing, Tuple{}, Tuple{}}(funcs, states, options, resume_idxs, nothing, nothing, (), ())
 end
 
 function newfuncs(r::Routine, funcs)
@@ -25,12 +30,16 @@ function newfuncs(r::Routine, funcs)
 end
 
 function setoptions(r::Routine{T, Repeats, S, MV, O, R, id}, options) where {T, Repeats, S, MV, O, R, id}
-    Routine{T, Repeats, S, MV, typeof(options), R, id}(getalgos(r), getstates(r), options, get_resume_idxs(r), getregistry(r))
+    Routine{T, Repeats, S, MV, typeof(options), R, id, typeof(getstoredcontext(r)), typeof(getstoredinits(r)), typeof(getstoredoverrides(r))}(getalgos(r), getstates(r), options, get_resume_idxs(r), getregistry(r), getstoredcontext(r), getstoredinits(r), getstoredoverrides(r))
 end
 
 @inline getregistry(r::Routine) = getfield(r, :reg)
 @inline _attach_registry(r::Routine, registry::NameSpaceRegistry) = setfield(r, :reg, registry)
 @inline isresolved(r::Routine) = !isnothing(getregistry(r))
+
+function _with_lifecycle(r::Routine{T, Repeats, S, MV, O, R, id}, context::C, inits::I, overrides::Ov) where {T, Repeats, S, MV, O, R, id, C, I, Ov}
+    Routine{T, Repeats, S, MV, O, R, id, C, I, Ov}(getalgos(r), getstates(r), getoptions(r), get_resume_idxs(r), getregistry(r), context, inits, overrides)
+end
 
 @inline getalgos(r::Routine) = getfield(r, :funcs)
 @inline getalgo(r::Routine, idx) = getfield(r, :funcs)[idx]

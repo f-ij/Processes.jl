@@ -1,26 +1,27 @@
 mutable struct TimedProcess{TD, C} <: AbstractProcess
     timer::Union{Timer, Nothing}
-    taskdata::TD
+    algo::TD
     callback::Function
     context::C
     paused::Bool
 end
 
 function TimedProcess(func::F; lifetime = Indefinite(), interval::Real = 0., context = nothing) where F
-    tf = TaskData(func; lifetime = Repeat(1), context...)
-    prepared_context = initcontext(tf)
+    algo = isnothing(context) ? init(normalize_process_algo(func)) : _with_lifecycle(resolve(normalize_process_algo(func)), context, (), ())
+    prepared_context = getstoredcontext(algo)
 
     callback = let context = prepared_context
-        timer -> @inline step!(func, context)
+        timer -> @inline step!(algo, context)
     end
 
-    return TimedProcess(nothing, tf, callback, prepared_context, true)
+    return TimedProcess(nothing, algo, callback, prepared_context, true)
 end
 
 function init!(tp::TimedProcess)
-    tp.context = initcontext(tp.taskdata)
+    tp.algo = init(tp.algo)
+    tp.context = getstoredcontext(tp.algo)
     tp.callback = let context = tp.context
-        timer -> @inline step!(tp.taskdata.func, context)
+        timer -> @inline step!(tp.algo, context)
     end
     return tp
 end
@@ -51,5 +52,4 @@ function Base.close(tp::TimedProcess)
     end
     return tp
 end
-
 

@@ -72,7 +72,7 @@ this automatically; recipes opt into reset timing explicitly.
 resetworker!(slot::WorkerSlot) = (reset!(slot.worker); slot)
 
 function _resolve_reinit_input(worker::Process, input::Union{Input, Override})
-    reg = getregistry(getcontext(taskdata(worker)))
+    reg = getregistry(context(worker))
     return resolve(reg, input)
 end
 
@@ -93,8 +93,7 @@ Rebuild the worker context through the normal process init pipeline and return
 the slot. For `Process` workers this delegates to `makecontext!`.
 """
 function reinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...; kwargs...)
-    resolved = _resolve_reinit_inputs(slot.worker, inputs_overrides...)
-    makecontext!(slot.worker, resolved...; kwargs...)
+    slot.worker.algo = init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))
     return slot
 end
 
@@ -164,22 +163,6 @@ function _precompile_processmanager!(::Type{M}, ::Type{Slot}, ::Type{Job}) where
 end
 
 function schedule_processmanager_precompile!(manager::ProcessManager)
-    _is_generating_package_output() && return nothing
-    isempty(slots(manager)) && return nothing
-
-    manager_type = typeof(manager)
-    slot_type = _first_slot_type(slots(manager))
-    job_type = _slot_job_type(first(slots(manager)))
-    signature = (manager_type, slot_type, job_type)
-
-    should_schedule = lock(_PROCESSMANAGER_PRECOMPILE_LOCK) do
-        if !(signature in _PROCESSMANAGER_PRECOMPILE_TYPES)
-            push!(_PROCESSMANAGER_PRECOMPILE_TYPES, signature)
-            return true
-        end
-        return false
-    end
-    should_schedule && Threads.@spawn _precompile_processmanager!(manager_type, slot_type, job_type)
     return nothing
 end
 
@@ -207,10 +190,10 @@ end
 
 function _process_with_context(template::Process, idx::Integer, prepared_context)
     if idx == 1
-        template.context = prepared_context
+        context(template, prepared_context)
         return template
     else
-        return _makecopiedprocess(taskdata(template), prepared_context, template.timeout)
+        return Process(getalgo(template); context = prepared_context, lifetime = lifetime(template), timeout = template.timeout)
     end
 end
 
@@ -333,7 +316,7 @@ end
 
 makeworker(recipe, idx, manager) = _call_recipe_field(recipe, Val(:makeworker), idx, manager)
 function _default_copyworker(template::Process, idx, manager)
-    return _makecopiedprocess(taskdata(template), deepcopy(template.context), template.timeout)
+    return Process(getalgo(template); context = deepcopy(context(template)), lifetime = lifetime(template), timeout = template.timeout)
 end
 _default_copyworker(template, idx, manager) = deepcopy(template)
 

@@ -6,7 +6,7 @@ Unresolved `CompositeAlgorithm` recipe.
 This is the constructor-time form before a registry is attached by `resolve` or
 `ProcessContext`.
 """
-const CompositeAlgorithmRecipe = CompositeAlgorithm{T, I, S, O, Nothing, id} where {T, I, S, O, id}
+const CompositeAlgorithmRecipe = CompositeAlgorithm{T, I, S, O, Nothing, Nothing, Tuple{}, Tuple{}, id} where {T, I, S, O, id}
 
 """
 Unresolved `Routine` recipe.

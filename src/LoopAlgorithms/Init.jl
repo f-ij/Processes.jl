@@ -29,7 +29,7 @@ end
 For testing purposes, allow init to be called with a NamedTuple of input arguments instead of a ProcessContext
     This works like a subcontext
 """
-function init(algos::LoopAlgorithm, input::NamedTuple = (;))
+function init(algos::LoopAlgorithm, input::NamedTuple)
     # If prepared from a namedtuple, create an empty context first
     newcontext = ProcessContext(algos)
     

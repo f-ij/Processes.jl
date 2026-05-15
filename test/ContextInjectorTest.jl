@@ -134,7 +134,7 @@ end
     end
     @test loopint(process) >= 3
 
-    ref = view(getfield(process, :context), Var(:target, :value))
+    ref = view(context(process), Var(:target, :value))
     ref[] = 42
 
     injected_deadline = time() + 2.0
@@ -143,6 +143,6 @@ end
     end
 
     close(process)
-    @test getfield(process, :context).target.value == 42
-    @test getfield(process, :context).target.seen > 0
+    @test context(process).target.value == 42
+    @test context(process).target.seen > 0
 end

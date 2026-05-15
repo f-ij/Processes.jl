@@ -99,7 +99,7 @@ function _context_injectors(context::ProcessContext)
 end
 
 @inline isinteractive(context::ProcessContext) = !isempty(_context_injectors(context))
-@inline isinteractive(process::AbstractProcess) = isinteractive(getfield(process, :context))
+@inline isinteractive(process::AbstractProcess) = isinteractive(context(process))
 
 function _resolve_scoped_target(context::ProcessContext, target)
     reg = getregistry(context)
@@ -248,7 +248,7 @@ function interact!(context::ProcessContext, input; injector = nothing)
 end
 
 interact!(process::AbstractProcess, input; injector = nothing) =
-    interact!(getfield(process, :context), input; injector)
+    interact!(context(process), input; injector)
 
 """
 Ref-like interactive view of one context variable.

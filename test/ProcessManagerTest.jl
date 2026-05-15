@@ -209,7 +209,7 @@ function Processes.step!(::ManagerProcessAccumulator, context)
 end
 
 function manager_process_context(worker)
-    subcontexts = getfield(worker.context, :subcontexts)
+    subcontexts = Processes.get_subcontexts(Processes.context(worker))
     names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
     return getproperty(subcontexts, only(names))
 end
@@ -227,12 +227,10 @@ end
     manager_slots = slots(manager)
 
     @test make_count[] == 1
-    @test all(taskdata(slot.worker) === taskdata(manager_slots[1].worker) for slot in manager_slots)
+    @test allequal(typeof(getalgo(slot.worker)) for slot in manager_slots)
     @test allequal(typeof(slot.worker) for slot in manager_slots)
-    @test allequal(typeof(taskdata(slot.worker)) for slot in manager_slots)
-    @test allequal(typeof(getalgo(taskdata(slot.worker))) for slot in manager_slots)
-    @test allequal(typeof(slot.worker.context) for slot in manager_slots)
-    @test length(unique(objectid(slot.worker.context) for slot in manager_slots)) == 3
+    @test allequal(typeof(Processes.context(slot.worker)) for slot in manager_slots)
+    @test length(unique(objectid(Processes.context(slot.worker)) for slot in manager_slots)) == 3
 end
 
 @testset "ProcessManager can build per-slot Process contexts" begin
@@ -249,11 +247,11 @@ end
         end,
         makecontext = (idx, manager, template) -> begin
             context_count[] += 1
-            td = copytaskdata(
-                template,
+            initialized = init(
+                getalgo(template),
                 Input(ManagerProcessAccumulator, :start => idx),
             )
-            initcontext(td)
+            Processes.context(initialized)
         end,
     )
 
@@ -263,9 +261,9 @@ end
 
     @test make_count[] == 1
     @test context_count[] == 3
-    @test all(taskdata(slot.worker) === taskdata(manager_slots[1].worker) for slot in manager_slots)
-    @test allequal(typeof(slot.worker.context) for slot in manager_slots)
-    @test length(unique(objectid(slot.worker.context) for slot in manager_slots)) == 3
+    @test allequal(typeof(getalgo(slot.worker)) for slot in manager_slots)
+    @test allequal(typeof(Processes.context(slot.worker)) for slot in manager_slots)
+    @test length(unique(objectid(Processes.context(slot.worker)) for slot in manager_slots)) == 3
     @test [ctx.value[] for ctx in contexts] == [1, 2, 3]
 end
 

@@ -197,6 +197,8 @@ Accepted top-level statements inside the block:
 function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{Symbol}, state_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol; include_condition = nothing)
     if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
         return nothing
+    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@input")
+        return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@context")
@@ -442,6 +444,7 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
     known_outputs = Set{Symbol}()
     step_exprs = Any[]
     state_fields = Any[]
+    input_fields = Any[]
     state_outputs = Set{Symbol}()
     state_name = :_state
     final_expr = nothing
@@ -459,6 +462,11 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
             _, fields = _dsl_parse_state_statement(stmt)
             union!(state_outputs, getproperty.(fields, :name))
             _dsl_known_outputs!(known_outputs, stmt)
+            continue
+        elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@input")
+            field = _dsl_parse_input_statement(stmt)
+            push!(input_fields, field)
+            push!(known_outputs, field.name)
             continue
         elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
             # Aliases only affect later statements, so store them and keep moving.
@@ -502,5 +510,5 @@ function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::S
         _dsl_known_outputs!(known_outputs, stmt)
     end
 
-    return (; step_exprs, state_fields, state_name, final_expr)
+    return (; step_exprs, state_fields, input_fields, state_name, final_expr)
 end

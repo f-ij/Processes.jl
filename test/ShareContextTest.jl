@@ -28,7 +28,7 @@ using Processes
     run(p)
     wait(p)
 
-    actual_traj = p.context[Oscillator].trajectory
+    actual_traj = Processes.context(p)[Oscillator].trajectory
     @test length(actual_traj) == 41  # 1 initial + 2 pushes per step for 20 steps
 
     # Build expected trajectory assuming:
@@ -52,5 +52,4 @@ using Processes
 
     @test isapprox(actual_traj, expected_traj; rtol = 0.0, atol = 1e-12)
 end
-
 

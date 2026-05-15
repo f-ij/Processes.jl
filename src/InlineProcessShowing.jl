@@ -9,7 +9,7 @@
 end
 
 @inline function _inline_process_algo_summary(ip::InlineProcess)
-    return sprint(summary, getalgo(taskdata(ip)))
+    return sprint(summary, getalgo(ip))
 end
 
 function Base.summary(io::IO, ip::InlineProcess)
@@ -37,7 +37,7 @@ function Base.show(io::IO, ::MIME"text/plain", ip::InlineProcess)
     println(io, "├── lifetime = ", lifetime(ip))
     println(io, "├── loopidx = ", loopint(ip))
 
-    algo_lines = split(sprint(show, getalgo(taskdata(ip))), '\n')
+    algo_lines = split(sprint(show, getalgo(ip)), '\n')
     print(io, "├── algo = ", algo_lines[1])
     for line in Iterators.drop(algo_lines, 1)
         print(io, "\n", "│   ", line)

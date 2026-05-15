@@ -1,19 +1,25 @@
 #AlgoTracker
 export inc!, nextalgo!, intervals, interval
-export CompositeAlgorithm
-struct CompositeAlgorithm{T, Intervals, S , O, R,id} <: LoopAlgorithm
+export CompositeAlgorithm, CompositePlan
+
+struct CompositeAlgorithm{T, Intervals, S, O, R, C, Inits, Overrides, id} <: LoopAlgorithm
     funcs::T
     states::S
     options::O
-    inc::Base.RefValue{Int} # To track the intervals
     reg::R
+    context::C
+    inits::Inits
+    overrides::Overrides
+    inc::Base.RefValue{Int} # Runtime interval cursor.
 end
+
+const CompositePlan = CompositeAlgorithm
 
 getmultipliers_from_specification_num(::Type{CA}, specification_num) where {CA<:CompositeAlgorithm} = 1 ./(Float64.(specification_num))
 
 CompositeAlgorithm(args...) = parse_la_input(CompositeAlgorithm, args...)
 function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
-    return CompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), Nothing, id}(funcs, states, options, Ref(1), nothing)
+    return CompositeAlgorithm{typeof(funcs), intervals, typeof(states), typeof(options), Nothing, Nothing, Tuple{}, Tuple{}, id}(funcs, states, options, nothing, nothing, (), (), Ref(1))
 end
 
 function newfuncs(ca::CompositeAlgorithm, funcs)
@@ -21,13 +27,17 @@ function newfuncs(ca::CompositeAlgorithm, funcs)
     setfield(ca, :funcs, funcs)
 end
 
-function setoptions(ca::CompositeAlgorithm{T, Intervals, S, O, R, id}, options) where {T, Intervals, S, O, R, id}
-    CompositeAlgorithm{T, Intervals, S, typeof(options), R, id}(getalgos(ca), getstates(ca), options, getinc(ca), getregistry(ca))
+function setoptions(ca::CompositeAlgorithm{T, Intervals, S, O, R, C, Inits, Overrides, id}, options) where {T, Intervals, S, O, R, C, Inits, Overrides, id}
+    CompositeAlgorithm{T, Intervals, S, typeof(options), R, typeof(getstoredcontext(ca)), typeof(getstoredinits(ca)), typeof(getstoredoverrides(ca)), id}(getalgos(ca), getstates(ca), options, getregistry(ca), getstoredcontext(ca), getstoredinits(ca), getstoredoverrides(ca), getinc(ca))
 end
 
 @inline getregistry(ca::CompositeAlgorithm) = getfield(ca, :reg)
 @inline _attach_registry(ca::CompositeAlgorithm, registry::NameSpaceRegistry) = setfield(ca, :reg, registry)
 @inline isresolved(ca::CompositeAlgorithm) = !isnothing(getregistry(ca))
+
+function _with_lifecycle(ca::CompositeAlgorithm{T, Intervals, S, O, R, OldC, OldI, OldOv, id}, context::C, inits::I, overrides::Ov) where {T, Intervals, S, O, R, OldC, OldI, OldOv, id, C, I, Ov}
+    CompositeAlgorithm{T, Intervals, S, O, R, C, I, Ov, id}(getalgos(ca), getstates(ca), getoptions(ca), getregistry(ca), context, inits, overrides, getinc(ca))
+end
 
 subalgorithms(ca::CompositeAlgorithm) = getfield(ca, :funcs)
 algotypes(ca::Union{CompositeAlgorithm{FT}, Type{<:CompositeAlgorithm{FT}}}) where FT = FT.parameters
@@ -40,8 +50,8 @@ subalgotypes(::Type{CA}) where {FT, CA<:CompositeAlgorithm{FT}} = FT.parameters
 getinc(ca::CompositeAlgorithm) = getfield(ca, :inc)
 getoptions(ca::CompositeAlgorithm) = getfield(ca, :options)
 
-getid(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id}}}) where {T,I,NSR,O,R,id} = id
-setid(ca::CA, id = uuid4()) where CA = setparameter(ca, 6, id)
+getid(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,C,Inits,Overrides,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,C,Inits,Overrides,id}}}) where {T,I,NSR,O,R,C,Inits,Overrides,id} = id
+setid(ca::CA, id = uuid4()) where CA = setparameter(ca, 9, id)
 
 # setname(ca::CA, name::Symbol) where CA <: CompositeAlgorithm = setparameter(ca, 6, name)
 # getname(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}}}) where {T,I,NSR,O,R,id,CustomName} = CustomName
@@ -86,8 +96,8 @@ end
 # intervals(caT::Type{<:CompositeAlgorithm}) = caT.parameters[2]
 get_intervals(ca) = intervals(ca)
 
-hasid(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id}}}) where {T,I,NSR,O,R,id} = !isnothing(id)
-id(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id}}}) where {T,I,NSR,O,R,id} = id
+hasid(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,C,Inits,Overrides,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,C,Inits,Overrides,id}}}) where {T,I,NSR,O,R,C,Inits,Overrides,id} = !isnothing(id)
+id(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,C,Inits,Overrides,id}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,C,Inits,Overrides,id}}}) where {T,I,NSR,O,R,C,Inits,Overrides,id} = id
 
 
 

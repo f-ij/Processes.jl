@@ -1,7 +1,7 @@
 
 export start, restart, quit, pause, syncclose, reinit
 
-function Base.run(p::AP, lifetime = nothing, inputs_and_overrides...) where AP <: AbstractProcess
+function Base.run(p::AP, lifetime = nothing, inputs_and_overrides...; kwargs...) where AP <: AbstractProcess
     @assert isidle(p) "Process is already in use"
     @atomic p.shouldrun = true
     @atomic p.paused = false
@@ -10,8 +10,10 @@ function Base.run(p::AP, lifetime = nothing, inputs_and_overrides...) where AP <
         p.lifetime = lifetime
     end
 
-    makeloop!(p)
+    makeloop!(p, (; kwargs...))
 end
+
+run!(p::Process; kwargs...) = run(p; kwargs...)
 
 """
 Wait for a process to finish
@@ -37,7 +39,7 @@ function Base.close(p::Process)
         println("Process with error closed:")
         Base.showerror(stderr, err)
         p.task = nothing
-        makecontext!(p)
+        p.algo = init(getalgo(p); lifetime = lifetime(p))
 
     end
 
@@ -54,7 +56,7 @@ function restart(p::Process)
     close(p)
     wait(p)
     @atomic p.paused = false # Force reinit
-    run!(p)
+    run(p)
 end
 
 """
@@ -108,9 +110,8 @@ This may be used also to levarge the dispatch system, if the types of the data c
 so that the new loop function is newly compiled
 """
 function reinit(p::Process)
-    @assert !isnothing(p.taskdata) "No task to run"
     pause(p)
-    makecontext!(p)
+    p.algo = init(getalgo(p); lifetime = lifetime(p))
     run(p)
     return true
 end
@@ -123,9 +124,8 @@ are merged into the target subcontext before `init`, and `overrides` are merged
 afterwards.
 """
 function reinit(p::Process, target; inputs = (;), overrides = (;))
-    @assert !isnothing(p.taskdata) "No task to run"
     pause(p)
-    context(p, initcontext(p.context, target; inputs, overrides))
+    context(p, initcontext(context(p), target; inputs, overrides))
     run(p)
     return true
 end
@@ -134,7 +134,6 @@ end
 # Close and restart a process
 # """
 # function restart(p::Process; context...)
-#     @assert !isnothing(p.taskdata) "No task to run"
     
 #     if !isempty(context)
 #         changecontext!(p, context...)
