@@ -86,6 +86,11 @@ function parse_la_input(laType::Type{LA}, args...) where {LA<:LoopAlgorithm}
             keep = !isnothing(parsed_el)
             kept_algos = tuple(kept_algos..., keep)
             if keep
+                # Finalized wrappers are process-root concerns. When users
+                # accidentally compose one into another loop algorithm, strip
+                # it before input normalization so inner algorithms keep normal
+                # context and result semantics.
+                @warn "Passing a FinalizedAlgorithm inside another LoopAlgorithm drops the finalization wrapper because finalization is a final step. If you intended to finalize the whole LoopAlgorithm write a new finalization function that takes the whole LoopAlgorithm"
                 parsed_el = _strip_nested_finalized_algorithm(parsed_el)
                 processalgos = tuple(processalgos..., _normalize_loopalgorithm_entity_input(parsed_el))
             end

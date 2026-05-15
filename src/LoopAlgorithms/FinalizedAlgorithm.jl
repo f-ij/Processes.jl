@@ -1,5 +1,16 @@
 export FinalizedAlgorithm, finalstep
 
+# Finalized loop algorithms
+#
+# `FinalizedAlgorithm` is a transparent LoopAlgorithm wrapper used only at the
+# root of a process. It forwards normal loop-algorithm behavior to `inner`, but
+# intercepts the result path after loop cleanup so callers can project the final
+# cleaned context into the value returned by `fetch(process)`.
+#
+# Nested finalized wrappers are intentionally rejected by the parser in
+# `Setup.jl`: only the outer process has a single final result, while inner loop
+# algorithms must continue to behave like ordinary algorithms.
+
 """
 Root-only loop-algorithm wrapper that post-processes the cleaned final context.
 
@@ -12,10 +23,29 @@ struct FinalizedAlgorithm{LA<:LoopAlgorithm, F} <: LoopAlgorithm
     final::F
 end
 
+"""
+    finalstep(la::LoopAlgorithm, final)
+
+Wrap `la` so `final(cleaned_context)` becomes the process result after the
+loop algorithm has finished and its normal `cleanup` step has run.
+
+The wrapper is root-only: pass the returned `FinalizedAlgorithm` directly to a
+`Process` or to `resolve`. If it is placed inside another loop-algorithm
+constructor, the parser warns and drops the final wrapper because nested loop
+algorithms do not own the process-level result.
+"""
 function finalstep(la::LoopAlgorithm, final)
     return FinalizedAlgorithm{typeof(la), typeof(final)}(la, final)
 end
 
+"""
+    finalstep(::Type{<:LoopAlgorithm}, final)
+
+Reject type-level loop algorithms for finalization.
+
+`finalstep` needs an instantiated loop algorithm so the final wrapper can
+preserve the concrete algorithm value and forward all loop operations to it.
+"""
 function finalstep(::Type{LA}, final) where {LA<:LoopAlgorithm}
     error("`finalstep` requires an instantiated LoopAlgorithm, not a LoopAlgorithm type.")
 end
