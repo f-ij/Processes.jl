@@ -17,19 +17,21 @@ instance, a saved `Unique(...)` value, or an explicit symbol key.
 ## API
 
 ```julia
-Init(target_algo; name = value, ...)
-Override(target_algo; name = value, ...)
+Init(target; name = value, ...)
+Override(target; name = value, ...)
 ```
 
 Pair syntax is also accepted:
 
 ```julia
-Init(target_algo, :name => value)
-Override(target_algo, :name => value)
+Init(target, :name => value)
+Override(target, :name => value)
 ```
 
 Targets are resolved through the composed algorithm registry: the table of
-registered algorithms and states for the final process.
+registered algorithms and states for the final process. After resolving, the
+target namespace is stored in the spec type and the matched registry entry is
+kept as `ref` for display and inspection.
 
 ## When They Apply
 

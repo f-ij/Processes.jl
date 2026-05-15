@@ -181,19 +181,12 @@ function _resolved_update_from_view(context::ProcessContext, target, varname::Sy
     return _resolved_update(context, target_subcontext, target_varname, value)
 end
 
-function _resolved_updates(context::ProcessContext, input::NamedInput)
-    target = get_target_name(input)
-    # get_vars(input) is a NamedTuple, so iterate its pairs directly instead of
-    # calling map on the Pairs wrapper.
-    return tuple((_resolved_update_from_view(context, target, first(pair), last(pair)) for pair in pairs(get_vars(input)))...)
-end
-
-function _resolved_updates(context::ProcessContext, input::NamedOverride)
-    target = get_target_name(input)
-    return tuple((_resolved_update_from_view(context, target, first(pair), last(pair)) for pair in pairs(get_vars(input)))...)
-end
-
 function _resolved_updates(context::ProcessContext, input::Union{Input, Override})
+    if _is_resolved_input(input)
+        target = get_target_name(input)
+        return tuple((_resolved_update_from_view(context, target, first(pair), last(pair)) for pair in pairs(get_vars(input)))...)
+    end
+
     resolved = resolve(getregistry(context), input)
     return Iterators.flatten(_resolved_updates(context, named) for named in resolved)
 end

@@ -29,11 +29,10 @@ function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where 
     return prepared_context
 end
 
-function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{NamedInput, NamedOverride}...; lifetime = Indefinite()) where {F <: LoopAlgorithm}
-    inputs = filter(x -> x isa NamedInput, overrides_and_inputs)
-    overrides = filter(x -> x isa NamedOverride, overrides_and_inputs)
-    
+function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{Input, Override}...; lifetime = Indefinite()) where {F <: LoopAlgorithm}
     input_context = merge_into_globals(c, (;algo, lifetime))
+    resolved = _resolve_lifecycle_specs(getregistry(input_context), overrides_and_inputs...)
+    inputs, overrides = _split_init_override(resolved...)
     input_context = merge(input_context, inputs...)
 
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"

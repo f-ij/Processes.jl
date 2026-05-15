@@ -4,13 +4,13 @@
 ########################
 
 
-@inline function _target_label(x)
-    T = Base.unwrap_unionall(typeof(x))
-    return string(nameof(T))
-end
+@inline _target_label(x) = string(x)
+@inline _target_label(x::Symbol) = String(x)
+@inline _target_label(::Type{T}) where {T} = string(nameof(T))
+@inline _target_label(::Nothing) = "nothing"
 
 function Base.summary(io::IO, ov::Input)
-    print(io, "Input(target=", _target_label(get_target_algo(ov)), ", vars=", get_vars(ov), ")")
+    print(io, "Input(target=", _target_label(get_target(ov)), ", ref=", _target_label(get_ref(ov)), ", vars=", get_vars(ov), ")")
 end
 
 function Base.show(io::IO, ov::Input)
@@ -18,25 +18,9 @@ function Base.show(io::IO, ov::Input)
 end
 
 function Base.summary(io::IO, ov::Override)
-    print(io, "Override(target=", _target_label(get_target_algo(ov)), ", vars=", get_vars(ov), ")")
+    print(io, "Override(target=", _target_label(get_target(ov)), ", ref=", _target_label(get_ref(ov)), ", vars=", get_vars(ov), ")")
 end
 
 function Base.show(io::IO, ov::Override)
-    summary(io, ov)
-end
-
-function Base.summary(io::IO, ov::NamedInput)
-    print(io, "NamedInput(name=", get_target_name(ov), ", vars=", get_vars(ov), ")")
-end
-
-function Base.show(io::IO, ov::NamedInput)
-    summary(io, ov)
-end
-
-function Base.summary(io::IO, ov::NamedOverride)
-    print(io, "NamedOverride(name=", get_target_name(ov), ", vars=", get_vars(ov), ")")
-end
-
-function Base.show(io::IO, ov::NamedOverride)
     summary(io, ov)
 end

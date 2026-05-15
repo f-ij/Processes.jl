@@ -174,6 +174,26 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         step!(_ProcessPrecompileManaged(), (; x = 2.0, total = managed_state.total, gain = 3.0))
         step!(_ProcessPrecompileManaged(), 2.0; _init = (; start = 1.0), gain = 3.0)
 
+        managed_algo = SimpleAlgo(_ProcessPrecompileManaged)
+        managed_specs = (
+            Input(_ProcessPrecompileManaged, :start => 1.0),
+            Override(_ProcessPrecompileManaged, :x => 2.0, :gain => 3.0),
+        )
+        resolved_managed_algo = resolve(managed_algo)
+        resolve_process_inputs_overrides(resolved_managed_algo, managed_specs...)
+        initialized_managed_algo = Processes.init(managed_algo, managed_specs...; lifetime = Repeat(1))
+        getstoredcontext(initialized_managed_algo)
+
+        managed_process = Process(managed_algo, managed_specs...; repeats = 1)
+        run(managed_process)
+        wait(managed_process)
+        close(managed_process)
+
+        initialized_managed_process = Process(initialized_managed_algo; repeats = 1)
+        run(initialized_managed_process)
+        wait(initialized_managed_process)
+        close(initialized_managed_process)
+
         configured = _ProcessPrecompileConfigured(offset = 2.0)
         init(configured, (;))
         step!(configured, 2.0; gain = 3.0)

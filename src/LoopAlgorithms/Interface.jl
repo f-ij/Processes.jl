@@ -1,29 +1,29 @@
 export SimpleAlgo, CompositeAlgorithm, Routine
 export step!, init, getmultiplier, getoptions, setoptions, get_shares, get_routes
 
-getmultiplier(cla::LoopAlgorithm, obj) = getmultiplier(getregistry(cla), obj)
-Base.getkey(cla::LoopAlgorithm, obj) = getkey(getregistry(cla), obj)
-getoptions(cla::LoopAlgorithm) = getfield(cla, :options)
+@inline getmultiplier(cla::LoopAlgorithm, obj) = getmultiplier(getregistry(cla), obj)
+@inline Base.getkey(cla::LoopAlgorithm, obj) = getkey(getregistry(cla), obj)
+@inline getoptions(cla::LoopAlgorithm) = getfield(cla, :options)
 get_shares(cla::LoopAlgorithm) = @inline filter_by_type(Share, getoptions(cla))
 get_routes(cla::LoopAlgorithm) = @inline filter_by_type(Route, getoptions(cla))
-getstates(cla::LoopAlgorithm) = getfield(cla, :states)
+@inline getstates(cla::LoopAlgorithm) = getfield(cla, :states)
 
-getoptions(la::LoopAlgorithm, T::Type{O}) where O = @inline filter_by_type(O, getoptions(la))
+@inline getoptions(la::LoopAlgorithm, T::Type{O}) where {O} = filter_by_type(O, getoptions(la))
 setoptions(la::LoopAlgorithm, options) = error("setoptions not implemented for $(typeof(la))")
 
 """
 Trait for setup
 """
-iscomposite(::Any) = false
-iscomposite(::Type{<:LoopAlgorithm}) = false
-iscomposite(::Type{<:CompositeAlgorithm}) = true
-iscomposite(la::LoopAlgorithm) = iscomposite(typeof(la))
+@inline iscomposite(::Any) = false
+@inline iscomposite(::Type{<:LoopAlgorithm}) = false
+@inline iscomposite(::Type{<:CompositeAlgorithm}) = true
+@inline iscomposite(la::LoopAlgorithm) = iscomposite(typeof(la))
 
 statetypes(::Type{LoopAlgorithm}) = error("statetypes not implemented for LoopAlgorithm, got $(la)")
 algotypes(::Type{LoopAlgorithm}) = error("algotypes not implemented for LoopAlgorithm, got $(la)")
 
 # Reset needs to be implemented
-reset!(a::Any) = a
+@inline reset!(a::Any) = a
 
 """
 Get the numbers Val(1), Val(2), ... Val(N) for the N algorithms in a composite or routine, as a tuple.

@@ -1,59 +1,56 @@
 """
-A named override or input is an entity that has a name and associated variables.
+A lifecycle input or override is resolved when its target parameter is the
+context namespace symbol.
 
 It specifies variables with names and values that target a namespace
-They are resolved versions of Inputs and Overrides
-
-The resolver will take an Override or Input that either targets a namespace directly, or an ProcessEntity
-and resolve it to a NamedOverride or NamedInput with the name of the target namespace and the variables
+The resolver takes an Override or Input that either targets a namespace directly
+or a process entity and returns the same kind of object with the target changed
+to the resolved namespace symbol.
 """
-function Named(T::Type, name, vars::NT) where {NT}
-    if T <: Override
-        return NamedOverride{name, NT}(vars)
-    elseif T <: Input
-        return NamedInput{name, NT}(vars)
-    else
-        error("Type $T is not supported for Named")
-    end
-end
+@inline _retarget_input(::Init{Target,NT,Ref}, name) where {Target,NT,Ref} = Init{name,NT,Ref}
+@inline _retarget_input(::Override{Target,NT,Ref}, name) where {Target,NT,Ref} = Override{name,NT,Ref}
+@inline retarget(ov::InputInterface, name) = _retarget_input(ov, name)(get_vars(ov), get_ref(ov))
+@inline _with_ref_input(::Init{Target,NT,Ref}, ref::NewRef) where {Target,NT,Ref,NewRef} = Init{Target,NT,NewRef}
+@inline _with_ref_input(::Override{Target,NT,Ref}, ref::NewRef) where {Target,NT,Ref,NewRef} = Override{Target,NT,NewRef}
+@inline with_ref(ov::InputInterface, ref) = _with_ref_input(ov, ref)(get_vars(ov), ref)
 
-get_target_algo(ov::Union{Override, Input}) = ov.target_algo
-get_vars(ov::Union{Override, Input}) = ov.vars
+@inline get_target(::Union{Init{Target}, Override{Target}}) where {Target} = Target
+@inline get_ref(ov::OI) where {OI<:Union{Override, Input}} = ov.ref
+@inline get_vars(ov::OI) where {OI<:Union{Override, Input}} = ov.vars
 
-get_target_name(ov::Union{NamedOverride{N, NT}, NamedInput{N, NT}}) where {N, NT} = N
-get_vars(ov::Union{NamedOverride, NamedInput}) = ov.vars
+@inline get_target_name(ov::Union{Init, Override}) = get_target(ov)
+@inline _is_resolved_input(::Union{Init{Name}, Override{Name}}) where {Name} = Name isa Symbol
 
 """
 If Overrides and inputs target a LoopAlgorithm, duplicate them for all contained algorithms
     Maybe this is not used anymore after the fusing system
 """
-function resolve(cla::LA, ov::OI) where {LA<:LoopAlgorithm, OI<:Union{Override, Input}}
-    target_obj = get_target_algo(ov)
+@inline function resolve(cla::LA, ov::OI) where {LA<:LoopAlgorithm, OI<:Union{Override, Input}}
     return resolve(getregistry(cla), ov)
 end
 
-resolve(reg::R, ov::Vararg{Union{Override, Input},N}) where {R<:NameSpaceRegistry,N} = flat_collect_broadcast(ov) do o
+@inline resolve(reg::R, ov::Vararg{Union{Override, Input},N}) where {R<:NameSpaceRegistry,N} = flat_collect_broadcast(ov) do o
     resolve(reg, o)
 end
 
 @inline function resolve(reg::R, ov::OI) where {R<:NameSpaceRegistry, OI<:Union{Override, Input}}
-    target_algo = get_target_algo(ov)
-    if target_algo isa Symbol
-        @assert haskey(reg, target_algo) "Target algorithm $(target_algo) not found in registry: $reg \n Cannot convert to Named"
-        return (Named(typeof(ov), target_algo, get_vars(ov)),)
-    elseif target_algo isa Tuple #i.e. multiple targets for same variables
-        duplicated_ovs = map(t -> typeof(ov)(t, get_vars(ov)), target_algo)
+    target = get_target(ov)
+    if target isa Symbol
+        @assert haskey(reg, target) "Target algorithm $(target) not found in registry: $reg \n Cannot resolve lifecycle target."
+        return (with_ref(ov, reg[target]),)
+    elseif target isa Tuple #i.e. multiple targets for same variables
+        duplicated_ovs = map(t -> retarget(ov, t), target)
         return resolve(reg, duplicated_ovs...)
     end
 
-    key = static_findkey(reg, target_algo)
+    key = static_findkey(reg, target)
     if isnothing(key)
-        error("Target algorithm $(target_algo) not found in registry: $reg \n Cannot convert to Named")
+        error("Target algorithm $(target) not found in registry: $reg \n Cannot resolve lifecycle target.")
     end
-    return (Named(typeof(ov), key, get_vars(ov)),)
+    return (retarget(ov, key),)
 end
 
-resolve(cla::LA, ovs::Vararg{Union{Override, Input},N}) where {LA<:LoopAlgorithm,N} = flat_collect_broadcast(ovs) do ov
+@inline resolve(cla::LA, ovs::Vararg{Union{Override, Input},N}) where {LA<:LoopAlgorithm,N} = flat_collect_broadcast(ovs) do ov
     resolve(cla, ov)
 end
 
@@ -63,9 +60,10 @@ Termination
 resolve(::Any) = ()
 
 """
-From inputs and overrides construct NamedTuples for merging into ProcessContext
+From resolved inputs and overrides construct NamedTuples for merging into
+ProcessContext.
 """
-@inline function construct_context_merge_tuples(named_overrides_inputs::Vararg{Union{NamedOverride, NamedInput},N}; to_all::TA = (;)) where {N, TA}
+@inline function construct_context_merge_tuples(named_overrides_inputs::Vararg{Union{Override, Input},N}; to_all::TA = (;)) where {N, TA}
     if isempty(named_overrides_inputs)
         return (;)
     end
@@ -78,9 +76,9 @@ From inputs and overrides construct NamedTuples for merging into ProcessContext
 end
 
 """
-Merge NamedOverrides and NamedInputs into a ProcessContext
+Merge resolved overrides and inputs into a ProcessContext.
 """
-@inline function Base.merge(context::C, overrides_or_inputs::Vararg{Union{NamedOverride, NamedInput},N}; to_all::TA = (;)) where {C<:ProcessContext, N, TA}
+@inline function Base.merge(context::C, overrides_or_inputs::Vararg{Union{Override, Input},N}; to_all::TA = (;)) where {C<:ProcessContext, N, TA}
     if isempty(overrides_or_inputs)
         return context
     end

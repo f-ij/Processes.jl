@@ -4,7 +4,7 @@ export Process, getallocator, getnewallocator, getcontext, getticks
 mutable struct Process{F} <: AbstractProcess
     id::UUID
     algo::F
-    runtime_context::Any
+    runtime_context::Union{Nothing, ProcessContext}
     timeout::Float64
     task::Union{Nothing, Task}
     loopidx::UInt # To track the current loop index for resuming
@@ -25,7 +25,7 @@ end
 const _LOOP_PRECOMPILE_LOCK = ReentrantLock()
 const _LOOP_PRECOMPILE_TASKS = Dict{Any, Task}()
 
-@setterGetter Process lock shouldrun
+@setterGetter Process lock shouldrun runtime_context
 """
 Get value of run of a process, denoting wether it should run or not
 """
@@ -87,11 +87,24 @@ function Process(func::Func, inputs_overrides::Vararg{Any,N}; context::C = nothi
     algo = normalize_process_algo(func)
     lifetime = normalize_process_lifetime(algo, lifetime)
     algo = _process_constructor_algo(algo, context, inputs_overrides, lifetime)
-    runtime_context = isnothing(context) ? getstoredcontext(algo) : context
-    runtime_context = merge_into_globals(runtime_context, (; lifetime,))
+    return _finish_process_constructor(algo, context, lifetime, timeout)
+end
+
+@inline function _finish_process_constructor(algo::A, ::Nothing, lifetime::LT, timeout) where {A<:LoopAlgorithm, LT}
+    prepared_context = getstoredcontext(algo)
+    return _finish_process_constructor_with_context(algo, prepared_context, lifetime, timeout)
+end
+
+@inline function _finish_process_constructor(algo::A, context::C, lifetime::LT, timeout) where {A<:LoopAlgorithm, C, LT}
+    return _finish_process_constructor_with_context(algo, context, lifetime, timeout)
+end
+
+function _finish_process_constructor_with_context(algo::A, prepared_context::PC, lifetime::LT, timeout) where {A<:LoopAlgorithm, PC, LT}
+    prepared_context = merge_into_globals(prepared_context, (; lifetime,))
+    algo = _with_lifecycle(algo, prepared_context, getstoredinits(algo), getstoredoverrides(algo))
 
     # p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
-    p = Process{typeof(algo)}(uuid1(), algo, runtime_context, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, nothing, RuntimeListeners(), 0)
+    p = Process{typeof(algo)}(uuid1(), algo, nothing, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, nothing, RuntimeListeners(), 0)
 
     register_process!(p)
     schedule_loop_precompile!(p, lifetime)
@@ -101,16 +114,16 @@ function Process(func::Func, inputs_overrides::Vararg{Any,N}; context::C = nothi
     return p
 end
 
-function _process_constructor_algo(algo::LA, ::Nothing, inputs_overrides::Tuple{}, lifetime::LT) where {LA<:LoopAlgorithm, LT}
+@inline function _process_constructor_algo(algo::LA, ::Nothing, inputs_overrides::Tuple{}, lifetime::LT) where {LA<:LoopAlgorithm, LT}
     isnothing(getstoredcontext(algo)) || return algo
     return init(algo; lifetime)
 end
 
-function _process_constructor_algo(algo::LA, ::Nothing, inputs_overrides::IO, lifetime::LT) where {LA<:LoopAlgorithm, IO<:Tuple, LT}
+@inline function _process_constructor_algo(algo::LA, ::Nothing, inputs_overrides::IO, lifetime::LT) where {LA<:LoopAlgorithm, IO<:Tuple, LT}
     return init(algo, inputs_overrides...; lifetime)
 end
 
-function _process_constructor_algo(algo::LA, context::C, inputs_overrides::IO, lifetime::LT) where {LA<:LoopAlgorithm, C, IO<:Tuple, LT}
+@inline function _process_constructor_algo(algo::LA, context::C, inputs_overrides::IO, lifetime::LT) where {LA<:LoopAlgorithm, C, IO<:Tuple, LT}
     isempty(inputs_overrides) || error("Pass either an initialized `context` or init/override specs to `Process`, not both.")
     isnothing(getstoredcontext(algo)) || return algo
     return _with_lifecycle(resolve(algo), nothing, getstoredinits(algo), getstoredoverrides(algo))
@@ -124,18 +137,30 @@ end
 Base.:(==)(p1::Process, p2::Process) = p1.id == p2.id
 
 getalgo(p::P) where {P<:Process} = p.algo
-context(p::P) where {P<:Process} = p.runtime_context
-@inline _store_runtime_context!(p::P, c::C) where {P<:Process, C} = (p.runtime_context = c)
+function context(p::P) where {P<:Process}
+    runtime_context = p.runtime_context
+    return isnothing(runtime_context) ? getstoredcontext(getalgo(p)) : runtime_context
+end
+@inline function _store_runtime_context!(p::P, c::C) where {P<:Process, C}
+    context(p, c)
+    return c
+end
 function context(p::P, c::C) where {P<:Process, C}
     p.runtime_context = c
+    return c
 end
+
+@inline _has_typed_runtime_context(p::P) where {P<:Process} = isnothing(p.runtime_context)
+@inline _typed_runtime_context(p::P) where {P<:Process} = getstoredcontext(getalgo(p))
+@inline _context_lifetime(context) = getproperty(getglobals(context), :lifetime)
 
 function getcontext(p::Process)
     return merge_into_globals(context(p), (;process = p))
 end
 
 getcontext(p::Process, context) = getcontext(p)[context]
-lifetime(p::Process) = get(getglobals(context(p)), :lifetime, Indefinite())
+@inline lifetime(p::Process) =
+    _has_typed_runtime_context(p) ? _context_lifetime(_typed_runtime_context(p)) : get(getglobals(context(p)), :lifetime, Indefinite())
 
 set_starttime!(p::Process) = p.starttime = time_ns()
 set_endtime!(p::Process) = p.endtime = time_ns()
@@ -184,7 +209,7 @@ end
 
 function createfrom!(p1::Process, p2::Process)
     p1.algo = p2.algo
-    p1.runtime_context = context(p2)
+    context(p1, context(p2))
     p1.timeout = p2.timeout
     reset!(p1)
 end
@@ -234,7 +259,8 @@ function precompile_loop!(loopfunc_type::Type, process_type::Type, func_type::Ty
 end
 
 function _global_context_type(p::Process)
-    return typeof(merge_into_globals(context(p), (; process = p)))
+    base_context = _has_typed_runtime_context(p) ? _typed_runtime_context(p) : context(p)
+    return typeof(merge_into_globals(base_context, (; process = p)))
 end
 
 function _loop_precompile_signature(loopfunc_type::Type, process_type::Type, func_type::Type, context_type::Type, lifetime_type::Type)
@@ -273,14 +299,37 @@ end
 """
 Runs the prepared task of a process on a thread
 """
-function makeloop!(p::Process, inputs::NamedTuple = (;), lt = lifetime(p); threaded = true, loopfunc::LF = loop) where LF 
+function makeloop!(p::Process, inputs::NamedTuple = (;); threaded = true, loopfunc::LF = loop) where {LF}
+    if _has_typed_runtime_context(p)
+        runtime_context = _typed_runtime_context(p)
+        return _makeloop!(p, inputs, _context_lifetime(runtime_context), runtime_context; threaded, loopfunc)
+    else
+        return _makeloop_dynamic!(p, inputs; threaded, loopfunc)
+    end
+end
+
+function makeloop!(p::Process, inputs::NamedTuple, lt; threaded = true, loopfunc::LF = loop) where {LF}
+    if _has_typed_runtime_context(p)
+        return _makeloop!(p, inputs, lt, _typed_runtime_context(p); threaded, loopfunc)
+    else
+        return _makeloop_dynamic!(p, inputs, lt; threaded, loopfunc)
+    end
+end
+
+@noinline _makeloop_dynamic!(p::Process, inputs::NamedTuple; threaded = true, loopfunc::LF = loop) where {LF} =
+    _makeloop!(p, inputs, lifetime(p), Processes.context(p); threaded, loopfunc)
+
+@noinline _makeloop_dynamic!(p::Process, inputs::NamedTuple, lt; threaded = true, loopfunc::LF = loop) where {LF} =
+    _makeloop!(p, inputs, lt, Processes.context(p); threaded, loopfunc)
+
+function _makeloop!(p::Process, inputs::NamedTuple, lt, base_context; threaded = true, loopfunc::LF = loop) where {LF}
     @atomic p.paused = false
     @atomic p.shouldrun = true
     p.lastresult = nothing
 
     func = getalgo(p)
     inputs = _validate_runtime_inputs(func, inputs)
-    runtime_context = merge_into_globals(Processes.context(p), (;process = p))
+    runtime_context = merge_into_globals(base_context, (;process = p))
     return _makeloop_prepared!(p, func, runtime_context, lt, inputs; threaded, loopfunc)
 end
 

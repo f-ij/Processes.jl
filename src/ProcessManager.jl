@@ -72,11 +72,10 @@ this automatically; recipes opt into reset timing explicitly.
 resetworker!(slot::WorkerSlot) = (reset!(slot.worker); slot)
 
 function _resolve_reinit_input(worker::Process, input::Union{Input, Override})
+    _is_resolved_input(input) && return (input,)
     reg = getregistry(context(worker))
     return resolve(reg, input)
 end
-
-_resolve_reinit_input(::Process, input::Union{NamedInput, NamedOverride}) = (input,)
 
 function _resolve_reinit_inputs(worker::Process, inputs_overrides...)
     resolved = ()
@@ -205,12 +204,7 @@ function _worker_context(recipe, idx, manager, template)
 end
 
 function _process_with_context(template::Process, idx::Integer, prepared_context)
-    if idx == 1
-        context(template, prepared_context)
-        return template
-    else
-        return Process(getalgo(template); context = prepared_context, lifetime = lifetime(template), timeout = template.timeout)
-    end
+    return Process(getalgo(template); context = prepared_context, lifetime = lifetime(template), timeout = template.timeout)
 end
 
 function _process_with_context(template, idx::Integer, prepared_context)

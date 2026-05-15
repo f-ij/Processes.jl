@@ -44,6 +44,36 @@ context only.
   after the fused resolve change. This is not only useful for `Type` arguments;
   it can help value arguments too.
 
+- Added narrow lifecycle/input resolution fast paths.
+  `init(la, Input(...), Override(...))` now resolves specs through typed methods
+  for empty, already-named, and raw `Init`/`Override` tuples. Context
+  construction receives the already-resolved lifecycle-stripped algorithm, so it
+  does not resolve again. The public input/override resolver also has a typed
+  all-`Input`/`Override` path while preserving the old generic fallback.
+
+- Inlined only small setup-path accessors and wrappers that improved the simple
+  compile benchmark.
+  The retained inline hints are on the resolve preparation chain, lifecycle
+  constructor helpers, input/override accessors, and generic `LoopAlgorithm`
+  interface accessors.
+
+- Kept the normal first-entry `Process` context on the concrete algorithm path.
+  `Process.runtime_context` now starts as `nothing`; `makeloop!` reads the
+  stored algorithm context for the first run and only falls back to
+  `runtime_context` after external context replacement or a returned runtime
+  context. This removes the `runtime_context::Any` leak from the first-entry
+  loop path without changing the public `context(process)` behavior after a run.
+
+- Extended the PrecompileTools workload for the managed `@ProcessAlgorithm`
+  normal `Process` path.
+  The workload now covers `SimpleAlgo(_ProcessPrecompileManaged)`, typed
+  `Input`/`Override` resolution, lifecycle `init(...; lifetime = Repeat(1))`,
+  `Process(...)`, first run, and construction from an already initialized
+  algorithm. This covers the package-side version of the compile benchmark's
+  managed lifecycle path. It cannot remove compilation of user-defined
+  `Main.@ProcessAlgorithm` generated methods, but it does precompile the
+  package helper methods those generated algorithms call.
+
 ## Reverted Or Rejected
 
 - `@nospecialize` on process precompile helpers.
@@ -100,6 +130,34 @@ context only.
   consistently to the resolve helper chain did improve the full process
   benchmark.
 
+- Broad `@inline` pass over `Process` utility helpers.
+  Inlining one-hop helpers around process state, runtime, precompile signatures,
+  and loop scheduling did not improve direct time to first process run and made
+  staged lifecycle/hot timings noisier, so it was reverted.
+
+- Broad `@inline` pass over `CompositeAlgorithm` and `Routine` accessors.
+  This worsened direct time to first process run substantially in the simple
+  benchmark, with samples around `679 / 721 / 826 ms`, so it was reverted. The
+  useful inline hints are much narrower.
+
+- Adding the process context type as a second `Process{F,C}` parameter.
+  This made first-entry context access infer, but it also made the process type
+  larger and worsened direct time to first run. The retained version keeps
+  `Process{F}` and reads the typed context from `getstoredcontext(getalgo(p))`
+  while `runtime_context` is empty.
+
+- Type-level replacement for `_global_context_type`.
+  A generated helper computed the context type for `merge_into_globals(context,
+  (; process = p))` without doing the merge. It made staged `Process`
+  construction slower, so the value-based implementation was restored.
+
+- Stripping `:_input` and `:process` before storing a finished `Process`
+  context.
+  This kept the typed first-entry path available after completion, but it changed
+  the public `context(process)` result. Existing runtime-input tests expect those
+  transient entries to remain visible after `run`/`wait`, so the stripping was
+  reverted for `Process`.
+
 ## Current Benchmark Notes
 
 - `manual tests/ProcessHotLoopBenchmark.jl` checks normal hot-loop runtime.
@@ -116,6 +174,12 @@ context only.
 
 - The current benchmark should be refreshed against the lifecycle-init path.
   Metadata reuse should stay on narrow internal paths.
+
+- Current lifecycle fast-path benchmark on 8 Julia threads:
+  direct time to first process run was about `657 / 657 / 654 ms` across three
+  cold Julia processes. The staged compile benchmark reported lifecycle init
+  around `148 ms`, first run around `145 ms`, and warmed hot runs around
+  `35-47 us`.
 
 ## SnoopCompile Pass
 
