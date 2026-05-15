@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Composite DSL · Processes</title><meta name="title" content="Composite DSL · Processes"/><meta property="og:title" content="Composite DSL · Processes"/><meta property="twitter:title" content="Composite DSL · Processes"/><meta name="description" content="Documentation for Processes."/><meta property="og:description" content="Documentation for Processes."/><meta property="twitter:description" content="Documentation for Processes."/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">Processes</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">User Documentation</span><ul><li><a class="tocitem" href="../algorithms_states/">Algorithms and States</a></li><li class="is-active"><a class="tocitem" href>Composite DSL</a><ul class="internal"><li><a class="tocitem" href="#Inline-State"><span>Inline State</span></a></li><li><a class="tocitem" href="#Aliases"><span>Aliases</span></a></li><li><a class="tocitem" href="#Function-Calls"><span>Function Calls</span></a></li><li><a class="tocitem" href="#Algorithm-Routes"><span>Algorithm Routes</span></a></li><li><a class="tocitem" href="#Transform-Routes"><span>Transform Routes</span></a></li><li><a class="tocitem" href="#Ref-and-Indexed-Reads"><span>Ref and Indexed Reads</span></a></li><li><a class="tocitem" href="#Direct-State-Writes"><span>Direct State Writes</span></a></li><li><a class="tocitem" href="#Indexed-Mutation"><span>Indexed Mutation</span></a></li><li><a class="tocitem" href="#Broadcast-Mutation"><span>Broadcast Mutation</span></a></li><li><a class="tocitem" href="#Owned-Field-Reads"><span>Owned Field Reads</span></a></li><li><a class="tocitem" href="#Owned-Field-Writes"><span>Owned Field Writes</span></a></li><li><a class="tocitem" href="#Context-Aliases"><span>Context Aliases</span></a></li><li><a class="tocitem" href="#Full-Context-Shares"><span>Full-Context Shares</span></a></li><li><a class="tocitem" href="#Scheduling"><span>Scheduling</span></a></li><li><a class="tocitem" href="#Conditional-Entries"><span>Conditional Entries</span></a></li><li><a class="tocitem" href="#Final-Post-Processing"><span>Final Post-Processing</span></a></li></ul></li><li><a class="tocitem" href="../referencing_algorithms/">Referencing Algorithms</a></li><li><a class="tocitem" href="../contexts/">Contexts and Indexing</a></li><li><a class="tocitem" href="../init_analysis/">Init Analysis</a></li><li><a class="tocitem" href="../routes_shares/">Routes and Shares</a></li><li><a class="tocitem" href="../inputs_overrides/">Inputs and Overrides</a></li><li><a class="tocitem" href="../vars/">Vars (Var Selectors)</a></li><li><a class="tocitem" href="../interactive/">Interactive Contexts</a></li><li><a class="tocitem" href="../lifetime/">Lifetime</a></li><li><a class="tocitem" href="../running/">Running, Wait, Fetch</a></li><li><a class="tocitem" href="../copying_and_management/">Copying and Process Management</a></li><li><a class="tocitem" href="../value_semantics/">Value Semantics and Unique</a></li></ul></li><li><span class="tocitem">Internals</span><ul><li><a class="tocitem" href="../../internals/registry/">Registry</a></li><li><a class="tocitem" href="../../internals/contexts/">Contexts</a></li><li><a class="tocitem" href="../../internals/routes_shares/">Routes and Shares</a></li><li><a class="tocitem" href="../../internals/process_pipeline/">Process Pipeline</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">User Documentation</a></li><li class="is-active"><a href>Composite DSL</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Composite DSL</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/f-ij/Processes.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/f-ij/Processes.jl/blob/main/docs/src/user/composite_dsl.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="composite_dsl_user"><a class="docs-heading-anchor" href="#composite_dsl_user">Composite DSL</a><a id="composite_dsl_user-1"></a><a class="docs-heading-anchor-permalink" href="#composite_dsl_user" title="Permalink"></a></h1><p>The composite DSL builds <code>CompositeAlgorithm</code> and <code>Routine</code> values from a block syntax. It is a constructor shorthand: entries still become normal algorithms, states, routes, shares, and schedules.</p><p>Use <code>@CompositeAlgorithm</code> when child entries should run on interval schedules. Use <code>@Routine</code> when child entries should run sequentially with repeat counts.</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @state seed = 3
+    @alias source = SourceAlgo
+
+    produced, passthrough = source(seed = seed)
+    doubled = @interval 10 double(produced)
+    Sink(value = doubled)
+end</code></pre><h2 id="Inline-State"><a class="docs-heading-anchor" href="#Inline-State">Inline State</a><a id="Inline-State-1"></a><a class="docs-heading-anchor-permalink" href="#Inline-State" title="Permalink"></a></h2><p>Declare local state with <code>@state</code>.</p><pre><code class="language-julia hljs">algo = @Routine begin
+    @state equilibrium_state
+    @state clamping_beta = 0.0
+    @state buffers = Float64[]
+
+    Step(value = clamping_beta)
+end</code></pre><p>Fields without defaults are required during init. Fields with defaults are rebuilt for each process initialization.</p><p>You can also give the inline state an explicit key:</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @state learning_state begin
+        loss = 0.0
+        buffer = Float64[]
+    end
+
+    Logger(value = loss)
+end</code></pre><h2 id="Aliases"><a class="docs-heading-anchor" href="#Aliases">Aliases</a><a id="Aliases-1"></a><a class="docs-heading-anchor-permalink" href="#Aliases" title="Permalink"></a></h2><p>Use <code>@alias</code> to name an algorithm constructor or value for later DSL entries.</p><pre><code class="language-julia hljs">algo = @Routine begin
+    @alias dynamics = Metropolis(model)
+    @alias capture = Capturer()
+
+    state = dynamics()
+    capture(value = state)
+end</code></pre><p>Aliases are macro-time names. They affect later uses of the alias in the DSL; they are not runtime variables.</p><h2 id="Function-Calls"><a class="docs-heading-anchor" href="#Function-Calls">Function Calls</a><a id="Function-Calls-1"></a><a class="docs-heading-anchor-permalink" href="#Function-Calls" title="Permalink"></a></h2><p>Plain Julia function calls are wrapped in a small process algorithm.</p><pre><code class="language-julia hljs">algo = @Routine begin
+    @state x = 2
+    y = sqrt(x)
+    z = scale_value(y; scale = 3)
+end</code></pre><p>Known DSL names such as <code>x</code> and <code>y</code> are routed from context. Other Julia values are captured into the wrapper.</p><h2 id="Algorithm-Routes"><a class="docs-heading-anchor" href="#Algorithm-Routes">Algorithm Routes</a><a id="Algorithm-Routes-1"></a><a class="docs-heading-anchor-permalink" href="#Algorithm-Routes" title="Permalink"></a></h2><p>Keyword arguments to process algorithms are route declarations.</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @state seed = 3
+    produced = Source(seed = seed)
+    Sink(value = produced)
+end</code></pre><p><code>Sink(value = produced)</code> routes <code>produced</code> into the target as <code>value</code>.</p><p>Process algorithms created with <code>@ProcessAlgorithm</code> can also use direct positional syntax when their positional argument names are known:</p><pre><code class="language-julia hljs">algo = @Routine begin
+    @state value = 1
+    MyGeneratedAlgo(value)
+end</code></pre><h2 id="Transform-Routes"><a class="docs-heading-anchor" href="#Transform-Routes">Transform Routes</a><a id="Transform-Routes-1"></a><a class="docs-heading-anchor-permalink" href="#Transform-Routes" title="Permalink"></a></h2><p>Use explicit <code>@transform(f, source)</code> when a routed value should be transformed before it reaches the target.</p><pre><code class="language-julia hljs">algo = @Routine begin
+    @state clamping_beta = 2.0
+    SetBeta(value = @transform(x -&gt; -x, clamping_beta))
+end</code></pre><p>The source can be a normal DSL symbol or an owned-field reference:</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @context c = nested()
+    result = identity(@transform(x -&gt; x + 1, c.capture.value))
+end</code></pre><p>Transforms are route syntax, not general Julia expression syntax. Write <code>@transform(x -&gt; -x, clamping_beta)</code>, not <code>-clamping_beta</code>, when the value must come from the process context.</p><h2 id="Ref-and-Indexed-Reads"><a class="docs-heading-anchor" href="#Ref-and-Indexed-Reads">Ref and Indexed Reads</a><a id="Ref-and-Indexed-Reads-1"></a><a class="docs-heading-anchor-permalink" href="#Ref-and-Indexed-Reads" title="Permalink"></a></h2><p>Indexed reads from context values are routed as transform routes.</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @state clamping_beta = Ref(2.0)
+    Sink(value = clamping_beta[])
+end</code></pre><p>This routes <code>clamping_beta</code> and applies <code>getindex</code> before the target sees it. The same shape works with indexes and ranges:</p><pre><code class="language-julia hljs">algo = @Routine begin
+    @state buffer = [1, 2, 3]
+    first_value = identity(buffer[1])
+    tail = identity(buffer[2:3])
+end</code></pre><h2 id="Direct-State-Writes"><a class="docs-heading-anchor" href="#Direct-State-Writes">Direct State Writes</a><a id="Direct-State-Writes-1"></a><a class="docs-heading-anchor-permalink" href="#Direct-State-Writes" title="Permalink"></a></h2><p>Assigning a captured Julia value to an inline state field lowers to a <code>ContextWrite</code> widget.</p><pre><code class="language-julia hljs">somevar = 3
+
+algo = @Routine begin
+    @state clamping_beta = 1.0
+    clamping_beta = somevar
+end</code></pre><p>The assignment captures <code>somevar</code> when the loop algorithm is constructed. At step time, the value is converted to the current context field type when the field already exists.</p><p>If the right-hand side is a context value, route it explicitly through normal DSL syntax:</p><pre><code class="language-julia hljs">algo = @Routine begin
+    @state source = 2.0
+    @state target = 0.0
+    target = source
+end</code></pre><h2 id="Indexed-Mutation"><a class="docs-heading-anchor" href="#Indexed-Mutation">Indexed Mutation</a><a id="Indexed-Mutation-1"></a><a class="docs-heading-anchor-permalink" href="#Indexed-Mutation" title="Permalink"></a></h2><p>Use normal indexed assignment to mutate buffers stored in context.</p><pre><code class="language-julia hljs">algo = @Routine begin
+    @state buffer = [0, 0, 0]
+
+    buffer[1] = 2
+    buffer[2:3] = [4, 5]
+end</code></pre><p>This lowers to a wrapped <code>setindex!</code> call. The buffer itself is routed from the context, then mutated in place.</p><p>Indexes may be literals, variables captured from the surrounding Julia scope, or ranges:</p><pre><code class="language-julia hljs">idx = 2
+
+algo = @Routine begin
+    @state buffer = [0, 0, 0]
+    buffer[idx] = 9
+end</code></pre><h2 id="Broadcast-Mutation"><a class="docs-heading-anchor" href="#Broadcast-Mutation">Broadcast Mutation</a><a id="Broadcast-Mutation-1"></a><a class="docs-heading-anchor-permalink" href="#Broadcast-Mutation" title="Permalink"></a></h2><p>Broadcast assignment is also supported for context buffers.</p><pre><code class="language-julia hljs">replacement = [7, 8]
+
+algo = @Routine begin
+    @state buffer = [0, 0, 0]
+
+    buffer .= 1
+    buffer[2:3] .= replacement
+end</code></pre><p>Whole-buffer broadcast lowers to <code>context_broadcast!(buffer, value)</code>. Indexed broadcast lowers through <code>view(buffer, inds...)</code>, so range writes mutate the original buffer rather than a copied slice.</p><h2 id="Owned-Field-Reads"><a class="docs-heading-anchor" href="#Owned-Field-Reads">Owned Field Reads</a><a id="Owned-Field-Reads-1"></a><a class="docs-heading-anchor-permalink" href="#Owned-Field-Reads" title="Permalink"></a></h2><p>Use dotted references to read fields owned by aliased algorithms or nested contexts.</p><pre><code class="language-julia hljs">algo = @Routine begin
+    @alias dynamics = Dynamics()
+
+    seen = Sink(value = dynamics.state)
+    state = dynamics()
+end</code></pre><p>The special binding form:</p><pre><code class="language-julia hljs">state = dynamics.state</code></pre><p>exposes the owned field under the plain DSL name <code>state</code> for later statements.</p><h2 id="Owned-Field-Writes"><a class="docs-heading-anchor" href="#Owned-Field-Writes">Owned Field Writes</a><a id="Owned-Field-Writes-1"></a><a class="docs-heading-anchor-permalink" href="#Owned-Field-Writes" title="Permalink"></a></h2><p>You can assign to an owned field target.</p><pre><code class="language-julia hljs">nudged = @Routine begin
+    @state nudged_beta = 0.0
+    Step(beta = nudged_beta)
+end
+
+algo = @CompositeAlgorithm begin
+    @state clamping_beta = Ref(2.0)
+    @alias nudged = nudged
+
+    nudged.nudged_beta = clamping_beta[]
+    nudged()
+end</code></pre><p>This creates a <code>ContextWrite</code> entry and routes the assigned value into it. For a nested routine&#39;s inline state, the write targets the nested state field through the normal route and merge machinery.</p><h2 id="Context-Aliases"><a class="docs-heading-anchor" href="#Context-Aliases">Context Aliases</a><a id="Context-Aliases-1"></a><a class="docs-heading-anchor-permalink" href="#Context-Aliases" title="Permalink"></a></h2><p>Use <code>@context</code> when later statements need to refer to the subcontext produced by a nested DSL entry.</p><pre><code class="language-julia hljs">plus = @Routine begin
+    @alias capture = Capturer()
+    capture()
+end
+
+algo = @CompositeAlgorithm begin
+    @context c1 = plus()
+    result = identity(c1.capture.value)
+end</code></pre><p><code>@context</code> is only a macro-time reference. The wrapped entry still runs as the right-hand side expression says.</p><h2 id="Full-Context-Shares"><a class="docs-heading-anchor" href="#Full-Context-Shares">Full-Context Shares</a><a id="Full-Context-Shares-1"></a><a class="docs-heading-anchor-permalink" href="#Full-Context-Shares" title="Permalink"></a></h2><p>Use <code>@all(source)</code> or <code>@all(source...)</code> in an algorithm call to lower to a normal <code>Share</code>.</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @alias source = Source
+    source()
+    Consumer(@all(source...))
+end</code></pre><h2 id="Scheduling"><a class="docs-heading-anchor" href="#Scheduling">Scheduling</a><a id="Scheduling-1"></a><a class="docs-heading-anchor-permalink" href="#Scheduling" title="Permalink"></a></h2><p>Inside <code>@CompositeAlgorithm</code>, use <code>@interval</code> or <code>@every</code> on the right-hand side of an entry.</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @state value = 1
+    sampled = @interval 10 Sample(value)
+end</code></pre><p>Inside <code>@Routine</code>, use <code>@repeat</code>.</p><pre><code class="language-julia hljs">routine = @Routine begin
+    @state value = 1
+    value = @repeat 5 Step(value = value)
+end</code></pre><p>For repeated sub-blocks:</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @state value = 1
+
+    result = @repeat 3 begin
+        value = Step(value = value)
+        value = Step(value = value)
+    end
+end</code></pre><p>Write schedules on the right-hand side:</p><pre><code class="language-julia hljs">value = @interval 10 Step(value = value)</code></pre><p>not:</p><pre><code class="language-julia hljs">@interval 10 value = Step(value = value)</code></pre><h2 id="Conditional-Entries"><a class="docs-heading-anchor" href="#Conditional-Entries">Conditional Entries</a><a id="Conditional-Entries-1"></a><a class="docs-heading-anchor-permalink" href="#Conditional-Entries" title="Permalink"></a></h2><p>Use <code>@include_if</code> to include or skip entries when constructing the loop algorithm.</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @state seed = 3
+    @include_if include_source produced = Source(seed = seed)
+    Sink(value = seed)
+end</code></pre><p>The condition is evaluated at construction time. Skipped entries are not registered and do not contribute routes, shares, or schedules.</p><h2 id="Final-Post-Processing"><a class="docs-heading-anchor" href="#Final-Post-Processing">Final Post-Processing</a><a id="Final-Post-Processing-1"></a><a class="docs-heading-anchor-permalink" href="#Final-Post-Processing" title="Permalink"></a></h2><p>Use one root-level <code>@finally</code> to wrap the outer algorithm with a final post-processing function.</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @state seed = 8
+    Sink(value = seed)
+    @finally summarize_context
+end</code></pre><p><code>@finally</code> is only valid at the outer DSL block level.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../algorithms_states/">« Algorithms and States</a><a class="docs-footer-nextpage" href="../referencing_algorithms/">Referencing Algorithms »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Friday 15 May 2026 09:09">Friday 15 May 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
