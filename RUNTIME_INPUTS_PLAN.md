@@ -128,3 +128,74 @@ source tree. It should report:
 
 This is structural inspection, not performance profiling.
 
+## Follow-Up Work
+
+These items remain after the runtime input/init split and should be handled in
+separate passes.
+
+### `run!` For Initialized Loop Algorithms
+
+Initialized loop algorithms should own their persistent context through a stable
+context reference, e.g. `Ref{C}`. That makes `run!(la; kwargs...)` meaningful:
+it can run with the referenced context, strip runtime-only fields from the
+result, and write the persistent context back into the same reference.
+
+Contract:
+
+- `run(la; kwargs...)` remains functional and may return a loop algorithm whose
+  context type changed.
+- `run!(la; kwargs...)` mutates the existing context reference and must preserve
+  the stored context type `C`.
+- If the stripped persistent result is not assignable to `C`, `run!` should
+  error and tell the caller to use `run(...)` or reinitialize.
+- Runtime-only fields such as `:_input` and `process` are never written back by
+  `run!`.
+
+### Process Naming And Handles
+
+The current `Process` type is the interactive/asynchronous process handle: it
+owns runtime context, task state, pausing, resuming, listeners, and lifecycle
+control. That role should be made explicit.
+
+Planned direction:
+
+- Introduce `InteractiveProcess` for the pausable runtime handle.
+- Keep `Process(...)` as a compatibility constructor or alias during migration.
+- Keep `InlineProcess` as the no-pausing synchronous handle.
+- Keep direct initialized loop algorithms as the advanced low-level entrypoint
+  for repeated runs and context reference mutation.
+
+### Route-Aware Discovery Phase
+
+Some process algorithms may need route-aware type discovery after lifecycle
+`init` but before scheduled loop stepping. This should not expose bootstrap as
+user API. Bootstrap remains loop-owned.
+
+Planned direction:
+
+- Add a small `@ProcessAlgorithm` API for route-aware discovery/type-shape
+  declaration.
+- Let algorithms declare or compute first-step value shapes without requiring
+  their scheduled `step!` to run early.
+- Keep transient discovery state discardable; it must not become persistent
+  context unless explicitly initialized as state.
+- Until this exists, delayed algorithms that expose values to consumers must
+  initialize those values in persistent state or be wrapped so producers run
+  before consumers.
+
+### Generated And Threaded Loop Support
+
+The current runtime-input and resume semantics are defined for the direct
+non-generated loop path. Generated and threaded loops need a separate pass.
+
+Planned direction:
+
+- Add explicit `Resuming{isresuming}` handling to generated loops instead of
+  forwarding to non-generated loops.
+- Keep runtime input merging at the beginning of the loop path so the merged
+  context type is visible before bootstrap.
+- Preserve the same context rules: fresh runs perform the unsafe/bootstrap step,
+  resumed runs skip it with an already-grown context, and steady-state steps
+  preserve context type.
+- Treat the existing threaded implementation as out of scope until it is brought
+  back into the main API.
