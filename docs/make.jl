@@ -14,6 +14,7 @@ makedocs(
         "Home" => "index.md",
         "User Documentation" => [
             "Algorithms and States" => "user/algorithms_states.md",
+            "Composite DSL" => "user/composite_dsl.md",
             "Referencing Algorithms" => "user/referencing_algorithms.md",
             "Contexts and Indexing" => "user/contexts.md",
             "Init Analysis" => "user/init_analysis.md",

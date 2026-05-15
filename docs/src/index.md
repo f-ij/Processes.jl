@@ -25,10 +25,12 @@ If you are new to the package, read these first:
 3. [Contexts and Indexing](@ref contexts_user)
 4. [Inputs and Overrides](@ref inputs_overrides_user)
 5. [Routes and Shares](@ref routes_shares_user)
+6. [Composite DSL](@ref composite_dsl_user)
 
 ## User Documentation
 
 - [Algorithms and States](@ref algorithms_states_user)
+- [Composite DSL](@ref composite_dsl_user)
 - [Referencing Algorithms](@ref referencing_algorithms_user)
 - [Contexts and Indexing](@ref contexts_user)
 - [Init Analysis](@ref init_analysis_user)
