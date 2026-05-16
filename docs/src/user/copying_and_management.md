@@ -67,6 +67,37 @@ The manager is meant to be long-lived when worker contexts are expensive. Build
 it once, then call `run!(manager, jobs)` many times. The same slots and workers
 are reused on every call.
 
+### Whole Manager Workflow
+
+A manager run has four parts:
+
+1. Construction creates the fixed worker slots. If you pass `workers = ...`,
+   those worker objects are wrapped as-is. If you omit `workers`, the recipe must
+   define `makeworker`; the manager builds a template worker, then copies it for
+   the other slots. For `Process` workers, `makecontext` can build separate
+   per-slot contexts while keeping the same algorithm.
+2. Dispatch assigns one job to one free slot. The manager stores the job in
+   `slot.job`, clears the previous `slot.result` and `slot.error`, runs
+   `prepare!`, then runs `start!`. Use `prepare!` for persistent worker context
+   changes. Use `start!` for runtime `@input` values that are passed to
+   `run(slot.worker; kwargs...)`.
+3. Completion is detected by polling. When a slot finishes, the manager runs
+   `finalize!`, `afterrun!`, `consume!`, and `release!`, then marks the slot free
+   so another job can use the same worker.
+4. Flushing is manager-level synchronization. `flush_policy` decides when
+   `flush!` runs. Use `flush!` to merge worker-local buffers into manager state,
+   external storage, or another object.
+
+All lifecycle callbacks run on the thread that is driving the manager. Worker
+tasks may run elsewhere, but `consume!` and `flush!` are manager-side hooks. This
+means users can keep synchronization simple by only merging data after a worker
+has finished.
+
+The recipe is stored directly in `ProcessManager{Recipe,...}`. A named tuple of
+closures therefore keeps the concrete closure types visible to Julia. For lower
+overhead, also pass `job_type`, `result_type`, `scratch_type`, or `error_type`
+when those slot field types are known.
+
 ### Worker Ownership
 
 The usual form is to let the manager create and own its workers:
@@ -145,12 +176,15 @@ For each job, the manager uses this order:
 1. Wait for a free slot.
 2. Store the job in `slot.job`.
 3. Call `prepare!(slot, job, manager)`.
-4. Start the worker.
+4. Call `start!(slot, job, manager)`, or `run(slot.worker)` if no `start!`
+   callback exists.
 5. Poll active workers until one finishes.
-6. Finalize the finished worker.
-7. Call `consume!(slot, job, manager)`.
-8. Call `release!(slot, job, manager)`.
-9. Mark the slot free.
+6. Call `finalize!(slot, job, manager)`, or `wait(slot.worker); close(slot.worker)`
+   if no `finalize!` callback exists.
+7. Call `afterrun!(slot, job, manager)`.
+8. Call `consume!(slot, job, manager)`.
+9. Call `release!(slot, job, manager)`.
+10. Mark the slot free.
 
 For `Process` workers, the default start/finalize behavior is:
 
@@ -326,6 +360,9 @@ Processes.FlushPolicy
 Processes.FlushAtEnd
 Processes.NoFlush
 Processes.FlushEvery
+Processes.slots
+Processes.workers
+Processes.copyworker
 Processes.dispatch!
 Processes.poll!
 Processes.drain!
