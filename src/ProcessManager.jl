@@ -138,11 +138,11 @@ overload the callback functions below. The default worker protocol supports
 `Process` workers.
 
 For each job, the manager moves through fixed lifecycle steps: assign a free
-slot, call `prepare!`, call `start!`, poll for completion, finalize, consume,
-release, and eventually flush. Attach behavior to these steps with recipe
-callbacks. For example, `prepare!` may mutate or reinitialize a worker context,
-and `start!` may call `run(slot.worker; kwargs...)` to pass loop-level runtime
-inputs.
+slot, call `prepare!`, call `beforerun!`, implicitly run the worker, poll for
+completion, finalize, consume, release, and eventually flush. Attach behavior to
+these steps with recipe callbacks. For example, `prepare!` may mutate or
+reinitialize a worker context, and `beforerun!` may return keyword arguments for
+`run(slot.worker; kwargs...)`.
 
 When `workers` is omitted, the recipe must define `makeworker`. The manager calls
 `makeworker` once to create a template worker, then copies that template for the
@@ -208,6 +208,7 @@ function _precompile_processmanager!(::Type{M}, ::Type{Slot}, ::Type{Job}) where
     _try_precompile(_finish_done_slots!, (M,))
     _try_precompile(_finish_slot!, (M, Slot))
     _try_precompile(_start_slot!, (M, Slot, Job))
+    _try_precompile(_run_kwargs, (M, Slot, Job))
     _try_precompile(_slot_isdone, (M, Slot))
     return nothing
 end
@@ -512,15 +513,27 @@ end
     prepare!(recipe, slot, job, manager)
 
 Optional dispatch-step callback. This is where jobs usually mutate or
-reinitialize worker-local context before `start!`.
+reinitialize worker-local context before `beforerun!` and the implicit worker
+run.
 """
 prepare!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:prepare!), slot, job, manager)
 
 """
+    beforerun!(recipe, slot, job, manager)
+
+Optional dispatch-step callback called immediately before the manager launches
+the worker. The callback may run arbitrary manager-side code and should return a
+`NamedTuple` of keyword arguments for `run(slot.worker; kwargs...)`. Missing
+callbacks, or callbacks returning `nothing`, mean no runtime keyword arguments.
+"""
+beforerun!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:beforerun!), slot, job, manager)
+
+"""
     start!(recipe, slot, job, manager)
 
-Optional dispatch-step callback that starts the worker. Missing callbacks use
-the manager default, which calls `run(slot.worker)`.
+Advanced dispatch-step callback that replaces the implicit launch completely.
+Use this for custom workers or nonstandard scheduling. Missing callbacks use
+`beforerun!` and then call `run(slot.worker; kwargs...)`.
 """
 start!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:start!), slot, job, manager)
 
@@ -583,25 +596,45 @@ Optional callback called when a lifecycle step throws.
 onerror!(recipe, slot, err, manager) = _call_optional_recipe_field(recipe, Val(:onerror!), slot, err, manager)
 
 """
-    _start_worker!(worker)
+    _start_worker!(worker, kwargs)
 
-Default worker start step. `Process` workers are launched with `run(worker)`;
-custom worker types can either implement `run(worker)` or provide recipe
-`start!`.
+Default worker launch step. `Process` workers are launched with
+`run(worker; kwargs...)`; custom worker types can either support the same call
+shape or provide recipe `start!`.
 """
-function _start_worker!(worker::Process)
-    run(worker)
+function _start_worker!(worker::Process, kwargs::NamedTuple)
+    run(worker; kwargs...)
+    return worker
+end
+
+"""
+    _start_worker!(worker, kwargs)
+
+Generic default worker launch step for non-`Process` workers.
+"""
+function _start_worker!(worker, kwargs::NamedTuple)
+    run(worker; kwargs...)
     return worker
 end
 
 """
     _start_worker!(worker)
 
-Generic default worker start step for non-`Process` workers.
+Launch a worker with no runtime keyword arguments.
 """
-function _start_worker!(worker)
-    run(worker)
-    return worker
+_start_worker!(worker) = _start_worker!(worker, (;))
+
+"""
+    _run_kwargs(manager, slot, job)
+
+Run recipe `beforerun!` and normalize its return value to keyword arguments for
+the implicit worker launch.
+"""
+function _run_kwargs(manager::ProcessManager, slot::WorkerSlot, job)
+    result = beforerun!(manager.recipe, slot, job, manager)
+    (_is_no_recipe_callback(result) || isnothing(result)) && return (;)
+    result isa NamedTuple && return result
+    throw(ArgumentError("Recipe callback `beforerun!` must return a NamedTuple of keyword arguments or `nothing`, got $(typeof(result))."))
 end
 
 """
@@ -639,12 +672,14 @@ end
 """
     _start_slot!(manager, slot, job)
 
-Run the recipe `start!` hook for one assigned slot, or use the default worker
-start when the hook is absent.
+Start one assigned slot. Recipe `start!` is an advanced full override; otherwise
+the manager runs `beforerun!` and launches the worker with the returned keyword
+arguments.
 """
 function _start_slot!(manager::ProcessManager, slot::WorkerSlot, job)
     result = start!(manager.recipe, slot, job, manager)
-    return _is_no_recipe_callback(result) ? _start_worker!(slot.worker) : result
+    _is_no_recipe_callback(result) || return result
+    return _start_worker!(slot.worker, _run_kwargs(manager, slot, job))
 end
 
 """
@@ -866,8 +901,9 @@ Schedule `job` on the next available worker slot, waiting for a slot to become
 free when all workers are active.
 
 The dispatch order is fixed: assign `slot.job`, clear old result/error state,
-call recipe `prepare!`, call recipe `start!` or the default worker start, then
-mark the slot active.
+call recipe `prepare!`, call recipe `beforerun!`, implicitly run the worker, then
+mark the slot active. Recipe `start!` replaces the `beforerun!` and implicit run
+steps when present.
 """
 function dispatch!(manager::ProcessManager, job)
     manager.closed && throw(ArgumentError("Cannot dispatch to a closed ProcessManager."))

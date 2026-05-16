@@ -78,8 +78,9 @@ A manager run has four parts:
    per-slot contexts while keeping the same algorithm.
 2. Dispatch assigns one job to one free slot. The manager stores the job in
    `slot.job`, clears the previous `slot.result` and `slot.error`, runs
-   `prepare!`, then runs `start!`. Use `prepare!` for persistent worker context
-   changes. Use `start!` for runtime `@input` values that are passed to
+   `prepare!`, runs `beforerun!`, then launches the worker. Use `prepare!` for
+   persistent worker context changes. Use `beforerun!` for runtime `@input`
+   values by returning a named tuple, which is passed to
    `run(slot.worker; kwargs...)`.
 3. Completion is detected by polling. When a slot finishes, the manager runs
    `finalize!`, `afterrun!`, `consume!`, and `release!`, then marks the slot free
@@ -176,15 +177,19 @@ For each job, the manager uses this order:
 1. Wait for a free slot.
 2. Store the job in `slot.job`.
 3. Call `prepare!(slot, job, manager)`.
-4. Call `start!(slot, job, manager)`, or `run(slot.worker)` if no `start!`
-   callback exists.
-5. Poll active workers until one finishes.
-6. Call `finalize!(slot, job, manager)`, or `wait(slot.worker); close(slot.worker)`
+4. Call `beforerun!(slot, job, manager)`.
+5. Call `run(slot.worker; kwargs...)`, where `kwargs` is the named tuple returned
+   by `beforerun!`.
+6. Poll active workers until one finishes.
+7. Call `finalize!(slot, job, manager)`, or `wait(slot.worker); close(slot.worker)`
    if no `finalize!` callback exists.
-7. Call `afterrun!(slot, job, manager)`.
-8. Call `consume!(slot, job, manager)`.
-9. Call `release!(slot, job, manager)`.
-10. Mark the slot free.
+8. Call `afterrun!(slot, job, manager)`.
+9. Call `consume!(slot, job, manager)`.
+10. Call `release!(slot, job, manager)`.
+11. Mark the slot free.
+
+If a recipe defines `start!(slot, job, manager)`, that callback replaces steps 4
+and 5. Use `start!` only when you want to take over worker launch completely.
 
 For `Process` workers, the default start/finalize behavior is:
 
@@ -200,7 +205,7 @@ worker context values.
 
 If a job needs to affect both persistent context and loop-level runtime inputs,
 use two different steps: prepare the context in `prepare!`, then pass runtime
-inputs from `start!`.
+inputs from `beforerun!`.
 
 ### Recipe Callbacks
 
@@ -216,9 +221,12 @@ functions in a named tuple are part of the manager type.
 - `prepare!(slot, job, manager)`: write one job into a worker before it starts.
   This is the usual place to mutate context, call `reinitworker!`, or call
   `partialinitworker!`.
-- `start!(slot, job, manager)`: custom worker start. Defaults to `run(worker)`
-  for `Process` workers. Use this hook when the job supplies loop-level runtime
-  `@input` values, for example `run(slot.worker; temperature = job.temperature)`.
+- `beforerun!(slot, job, manager)`: run arbitrary manager-side code immediately
+  before launch and return a named tuple of runtime keyword arguments. For
+  example, `(; temperature = job.temperature)` becomes
+  `run(slot.worker; temperature = job.temperature)`.
+- `start!(slot, job, manager)`: advanced custom worker start. If this callback
+  exists, it replaces `beforerun!` and the implicit `run(...)` call.
 - `isdone(slot, manager)`: custom completion check. Defaults to
   `isdone(worker)` for `Process` workers.
 - `finalize!(slot, job, manager)`: custom finish step. Defaults to
@@ -270,14 +278,14 @@ prepare! = (slot, job, manager) -> partialinitworker!(
 )
 ```
 
-Use `start!` for loop-level runtime `@input` values:
+Use `beforerun!` for loop-level runtime `@input` values:
 
 ```julia
-start! = (slot, job, manager) -> run(slot.worker; temperature = job.temperature)
+beforerun! = (slot, job, manager) -> (; temperature = job.temperature)
 ```
 
 You can use both for the same job. The manager calls `prepare!` first, then
-`start!`.
+`beforerun!`, then `run(slot.worker; temperature = job.temperature)`.
 
 Direct mutation is usually faster. `reinitworker!` and `partialinitworker!` are
 useful when the context shape, inputs, or initialized state must be rebuilt. Do
@@ -363,6 +371,9 @@ Processes.FlushEvery
 Processes.slots
 Processes.workers
 Processes.copyworker
+Processes.prepare!
+Processes.beforerun!
+Processes.start!
 Processes.dispatch!
 Processes.poll!
 Processes.drain!

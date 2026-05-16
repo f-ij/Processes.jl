@@ -491,6 +491,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
                 ctx.params[] = manager.state.params[]
                 resetworker!(slot)
             end,
+            beforerun! = (slot, job, manager) -> (;),
             flush! = manager -> _process_manager_precompile_flush!(manager.state, workers(manager)),
         )
 

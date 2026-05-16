@@ -347,6 +347,7 @@ end
     end
     worker = Process(algo, Init(ManagerRuntimeJobStep; base = 0); repeats = 1)
     outputs = Int[]
+    before_jobs = Int[]
     jobs = [
         (; base = 10, delta = 1),
         (; base = 20, delta = 2),
@@ -356,7 +357,10 @@ end
             slot,
             Init(ManagerRuntimeJobStep; base = job.base),
         ),
-        start! = (slot, job, manager) -> run(slot.worker; delta = job.delta),
+        beforerun! = (slot, job, manager) -> begin
+            push!(before_jobs, job.base)
+            (; delta = job.delta)
+        end,
         consume! = (slot, job, manager) -> push!(
             outputs,
             context(slot.worker)[ManagerRuntimeJobStep].total,
@@ -367,4 +371,18 @@ end
     run!(manager, jobs)
 
     @test outputs == [11, 22]
+    @test before_jobs == [10, 20]
+end
+
+@testset "ProcessManager rejects non-keyword beforerun! results" begin
+    worker = Process(ManagerProcessAccumulator(); repeats = 1)
+    recipe = (;
+        beforerun! = (slot, job, manager) -> job,
+    )
+    manager = ProcessManager(recipe; workers = [worker], flush_policy = NoFlush(), throw = false)
+
+    dispatch!(manager, 1)
+
+    @test manager.dispatched == 0
+    @test only(slots(manager)).error isa ArgumentError
 end
