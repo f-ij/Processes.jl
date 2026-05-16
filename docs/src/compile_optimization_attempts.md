@@ -16,7 +16,36 @@ context only.
 
 - Kept constructor-time `Process` loop precompile scheduling.
   This is close enough to the first `run` call to reduce first-run latency without
-  precompiling broad `LoopAlgorithm` metadata paths too early.
+  precompiling broad `LoopAlgorithm` metadata paths too early. The precompile
+  signature now targets the actual non-generated loop method:
+  `loop(process, algo, context, lifetime, inputs, Resuming{false}, NonGenerated)`.
+  The previous signature omitted `inputs` and `Resuming`, so it aimed at a
+  wrapper shape that did not match the first-run call.
+
+- Moved process loop precompile helpers to `ProcessPrecompile.jl` and removed
+  lock/dedup task bookkeeping.
+  The construction hook now schedules a plain best-effort precompile task, and
+  first run no longer waits on or coordinates a global precompile task registry.
+  This reduced nearby constructor overhead and made the profile easier to read.
+
+- Added a narrow `SimpleAlgo(single_algorithm)` construction fast path.
+  The common one-algorithm case now builds the simple `LoopAlgorithm` directly
+  instead of going through the full `CompositeAlgorithm` parser and
+  `flatten_comp_funcs`. `intervals(::SimpleAlgo)` still returns `Interval(1)`
+  values so existing multiplier code sees the same shape.
+
+- Reduced generation-time work in context constructors and merges.
+  Generated helpers now use simple static loops instead of closure-based
+  `all`/`filter`/`findfirst` scans, and `merge_into_globals` constructs a
+  `ProcessContext` directly instead of going through the generic `setfield`
+  generated helper.
+
+- Added single-name `SubContextView` location lookup for generated read and
+  merge paths.
+  Normal `getproperty(view, Val(name))`, `haskey(view, Val(name))`, and
+  `stablemerge`/`unstablemerge` planning no longer build the full location
+  table just to resolve one name. The full `get_all_locations` path remains for
+  property enumeration and error reporting.
 
 - Avoided empty process setup work.
   Empty input/override construction now skips a throwaway context build, and empty `initcontext` paths avoid vararg filtering.
@@ -63,6 +92,16 @@ context only.
   `runtime_context` after external context replacement or a returned runtime
   context. This removes the `runtime_context::Any` leak from the first-entry
   loop path without changing the public `context(process)` behavior after a run.
+  The runtime field itself is now `Union{Nothing, ProcessContext}` rather than
+  `Any`, so resumed contexts are intentionally abstract only at the
+  `ProcessContext` level.
+
+- Kept concrete stored contexts on initialized `LoopAlgorithm` values.
+  `CompositeAlgorithm` and `Routine` both store `context::C`, where `C` is a
+  type parameter. For an initialized algorithm,
+  `fieldtype(typeof(la), :context) === typeof(getstoredcontext(la))` holds, and
+  the first-entry process path through `_typed_runtime_context(process)` infers
+  the exact `ProcessContext{...}` type.
 
 - Extended the PrecompileTools workload for the managed `@ProcessAlgorithm`
   normal `Process` path.
@@ -73,6 +112,14 @@ context only.
   managed lifecycle path. It cannot remove compilation of user-defined
   `Main.@ProcessAlgorithm` generated methods, but it does precompile the
   package helper methods those generated algorithms call.
+
+- Added narrow `@nospecialize` barriers on `Base.wait(::Process)` and
+  `Base.fetch(::Process)`.
+  These methods only touch `p.task` or `p.lastresult`, so they do not need a
+  separate specialization for every full `Process{CompositeAlgorithm{...}}`
+  type. A trace-compile pass on the simple TTFP script dropped from about `137`
+  lines to about `116` lines after the exact loop precompile and wait/fetch
+  barriers.
 
 ## Reverted Or Rejected
 
@@ -158,7 +205,40 @@ context only.
   transient entries to remain visible after `run`/`wait`, so the stripping was
   reverted for `Process`.
 
+- Forcing `context(process)` to always return the stored loop algorithm context.
+  This was tested as a temporary diagnostic to check whether the abstract
+  `runtime_context` branch explained TTFP. It did not. With 8 Julia threads,
+  direct time to first process run stayed at about `546-549 ms`, matching the
+  restored getter. The patch was reverted.
+
+- Async `resolve(typeof(la))` precompile immediately after loop algorithm
+  construction.
+  A narrow manual test still worsened direct TTFP: with an explicit wait it was
+  about `560-569 ms`, and without waiting it was about `566-569 ms`, compared
+  with a current baseline around `547-552 ms`. This confirms that resolve-time
+  precompile is still too early for the immediate construct-and-run path.
+
+- Disabling constructor loop precompile.
+  This was neutral to slightly worse for direct TTFP and moved work from
+  `Process` construction into first run. The constructor precompile remains
+  useful, but only when it targets the exact loop signature.
+
+- `@nospecialize` on `run!(::Process)`.
+  This wrapper looked like an easy compile barrier, but it regressed direct TTFP
+  to about `571-578 ms`, so it was reverted. `run!` should keep the concrete
+  process type so the call into `run`/`makeloop!` remains well inferred.
+
 ## Current Benchmark Notes
+
+- After the latest profiling pass on the simple managed `@ProcessAlgorithm`
+  microbench with 8 Julia threads, direct construct-to-first-run timings were
+  about `295 / 303 / 298 ms`. Before these local changes the same path was
+  around `516-529 ms`; after only the `SimpleAlgo` fast path it was around
+  `434-444 ms`.
+
+- The main wins came from avoiding the full parser for single `SimpleAlgo`, not
+  building full location tables for one-name view access/merge planning, and
+  removing generic `setfield` from `merge_into_globals`.
 
 - `manual tests/ProcessHotLoopBenchmark.jl` checks normal hot-loop runtime.
   Recent larger runs did not show a normal `Process` hot-loop regression against clean `HEAD`.
@@ -176,10 +256,28 @@ context only.
   Metadata reuse should stay on narrow internal paths.
 
 - Current lifecycle fast-path benchmark on 8 Julia threads:
-  direct time to first process run was about `657 / 657 / 654 ms` across three
-  cold Julia processes. The staged compile benchmark reported lifecycle init
-  around `148 ms`, first run around `145 ms`, and warmed hot runs around
-  `35-47 us`.
+  direct time to first process run is about `545-552 ms` across cold Julia
+  processes after the lifecycle/input refactor and first-entry context cleanup.
+  Temporarily bypassing `runtime_context` entirely did not improve this number.
+  The staged compile benchmark still shows the cold cost mainly in algorithm
+  construction, `Process` construction, and first run; warmed construction and
+  warmed first run are small.
+
+## LoopAlgorithm Stored Context Check
+
+The initialized loop algorithm context is typed correctly. A small diagnostic
+using a one-step `CompositeAlgorithm` showed:
+
+- `typeof(la).parameters[6]` is the concrete stored context type.
+- `fieldtype(typeof(la), :context) === typeof(getstoredcontext(la))`.
+- `getstoredcontext(la)` infers the concrete `ProcessContext{...}`.
+- `_typed_runtime_context(process)` infers the same concrete `ProcessContext{...}`
+  before the process has stored a returned runtime context.
+
+This means the remaining first-run compile cost is not caused by the stored
+LoopAlgorithm context being abstract. The intentionally abstract point is only
+the mutable `Process.runtime_context` after a runtime context has been stored or
+externally replaced.
 
 ## SnoopCompile Pass
 

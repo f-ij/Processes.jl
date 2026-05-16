@@ -16,6 +16,9 @@ Base.iterate(ro::Union{IntervalOnes{N}, Type{IntervalOnes{N}}}, state = 1) where
 Simple algo is base case for composite algorithms with all intervals set to 1
 """
 const SimpleAlgo{T, S, O, id} = CompositeAlgorithm{T, <:IntervalOnes, S, O, <:Any, <:Any, <:Any, <:Any, id}
+@inline function SimpleAlgo(algo::Union{ProcessEntity, Type{<:ProcessEntity}, AbstractIdentifiableAlgo})
+    return LoopAlgorithm(CompositeAlgorithm, (IdentifiableAlgo(algo),), (), (), IntervalOnes{1})
+end
 SimpleAlgo(args...) = CompositeAlgorithm(args...)
 
-@inline intervals(sa::SA) where SA <: SimpleAlgo = ntuple(_ -> 1, length(sa))
+@inline intervals(sa::SA) where SA <: SimpleAlgo = ntuple(_ -> Interval(1), length(sa))

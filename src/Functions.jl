@@ -814,15 +814,22 @@ function _setfield_debug_message(
     )
 end
 
+function _static_tuple_index(values::Tuple, needle)
+    for i in eachindex(values)
+        values[i] == needle && return i
+    end
+    return nothing
+end
+
 @inline setfield(s::S, name::Symbol, val::V) where {S,V} = @inline setfield(s, Val(name), val)
 @inline @generated function setfield(s::S, name::Val{FieldName}, val::V) where {S,V, FieldName}
     fieldnames = Base.fieldnames(S)
-    field_match = findfirst(==(FieldName), fieldnames)
+    field_match = _static_tuple_index(fieldnames, FieldName)
     if isnothing(field_match)
         error("Field $(FieldName) not found in struct $(S)\nfieldnames are: $(fieldnames)\nlooking for field of type $(V)")
     end
     parameters = S.parameters
-    parameter_match = findfirst(==(fieldtype(S, FieldName)), tuple(parameters...))
+    parameter_match = _static_tuple_index(tuple(parameters...), fieldtype(S, FieldName))
     type_expr = :($S)
     if !isempty(parameters) && !isnothing(parameter_match) && !(S <: NamedTuple)
         parameters = (parameters[1:(parameter_match - 1)]..., val, parameters[(parameter_match + 1):end]...)

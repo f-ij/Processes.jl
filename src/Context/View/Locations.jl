@@ -101,6 +101,24 @@ get_varlocations(scv::SubContextView) = @inline get_varlocations(typeof(scv))
 @inline get_all_locations(scv::SubContextView) = @inline get_all_locations(typeof(scv))
 @inline get_all_locations(sctv::Type{SCT}) where {SCT<:SubContextView} = _generated_all_locations(SCT)
 
+function _compute_location(::Type{SCT}, name::Symbol) where {SCT<:SubContextView}
+    subcontext_name = algo_to_subcontext_names(SCT, name)
+
+    injected = get_injected_locations(SCT)
+    hasproperty(injected, subcontext_name) && return getproperty(injected, subcontext_name), subcontext_name
+
+    local_locations = get_local_locations(SCT)
+    hasproperty(local_locations, subcontext_name) && return getproperty(local_locations, subcontext_name), subcontext_name
+
+    routed = get_routed_locations(SCT)
+    hasproperty(routed, subcontext_name) && return getproperty(routed, subcontext_name), subcontext_name
+
+    shared = get_shared_locations(SCT)
+    hasproperty(shared, subcontext_name) && return getproperty(shared, subcontext_name), subcontext_name
+
+    return nothing, subcontext_name
+end
+
 ###########################################
 ########### Getting Properties  ###########
 ###########################################
@@ -131,25 +149,19 @@ end
 #     return @inline getproperty(sct, varlocation)
 # end
 
-const getprop_expr = Ref(Expr(:block))
 @inline @generated function Base.getproperty(sct::SCV, vl::Union{VarLocation{:subcontext}, VarLocation{:local}}) where SCV <: SubContextView
-    # target_subcontext = get_subcontextname(vl)
-    # target_variable = get_originalname(vl)
-    # numvars = length(target_variable)
-    # varsymbols = ntuple(i -> Symbol("var", i), numvars)
-    # fexpr = funcexpr(vl, varsymbols...)
+    target_subcontext = get_subcontextname(vl)
+    target_variable = get_originalname(vl)
+    if isnothing(getfunc(vl)) && target_variable isa Symbol
+        return quote
+            return @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(target_variable)))
+        end
+    end
 
     assign_exprs, varsymbols = getvar_expressions_and_varnames(vl)
     fexpr = funcexpr(vl, varsymbols...)
-
-    global getprop_expr[] = quote
-        # var = @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(target_variable)))
-        $(assign_exprs...)
-        return $(fexpr)
-    end
     
     return  quote
-        # var = @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(target_variable)))
         $(assign_exprs...)
         return $(fexpr)
     end
@@ -164,23 +176,21 @@ end
 end
 
 @inline @generated function Base.haskey(scv::SCV, v::Val{name}) where {name} where SCV <: SubContextView
-    locations = @inline get_all_locations(scv)
-    has_key = hasproperty(locations, name)
+    location, subcontext_name = _compute_location(SCV, name)
+    has_key = !isnothing(location)
     return :( $has_key )
 end
 
 @inline @generated function Base.getproperty(sct::SubContextView{CType, SubKey}, v::Val{key}) where {CType, SubKey, key}    
 
-    locations = get_all_locations(sct)
-    #Map the algo name to the subcontext location using aliases
-    subcontextname = algo_to_subcontext_names(sct, key)
-    if haskey(locations, subcontextname)
-        target_location = getproperty(locations, subcontextname)
+    target_location, subcontextname = _compute_location(sct, key)
+    if !isnothing(target_location)
         return quote 
             $(LineNumberNode(@__LINE__, @__FILE__))
             @inline getproperty(sct, $target_location) 
         end
     else
+        locations = get_all_locations(sct)
         available = keys(locations)
         return quote
             if $(QuoteNode(subcontextname)) == $(QuoteNode(key))

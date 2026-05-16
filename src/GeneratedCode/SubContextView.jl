@@ -14,22 +14,17 @@ function _subcontext_view_mergetuple_expr(SCV::Type, Args::Type)
     @nospecialize SCV Args
     SubKey = SCV.parameters[2]
     algo_varnames = fieldnames(Args)
-    # These are the names in the subcontext after applying aliases
-    subcontext_varnames = ntuple(i -> algo_to_subcontext_names(SCV, algo_varnames[i]), length(algo_varnames))
 
-    locations = get_all_locations(SCV)
     merge_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
 
-    for (var_idx, subcontext_varname) in enumerate(subcontext_varnames)
+    for (var_idx, algo_varname) in enumerate(algo_varnames)
+        target_location, subcontext_varname = _compute_location(SCV, algo_varname)
         # First look if varname is in locations
-        if hasproperty(locations, subcontext_varname) # If the local variable exists
-
-            target_location = getproperty(locations, subcontext_varname)
-
+        if !isnothing(target_location) # If the local variable exists
             target_subcontext = get_subcontextname(target_location)
             targetname = get_originalname(target_location)
             if targetname isa Tuple
-                error("Algorithm returned a variable: $(algo_varnames[var_idx]) which it tries to merge into $(targetname) in subcontext $(target_subcontext) \n Merging into multiple variables is not supported at this moment, but might be supported in the future through inverse transforms.")
+                error("Algorithm returned a variable: $(algo_varname) which it tries to merge into $(targetname) in subcontext $(target_subcontext) \n Merging into multiple variables is not supported at this moment, but might be supported in the future through inverse transforms.")
             end
 
             exprs = get!(merge_expressions_by_subcontext, target_subcontext, Expr[])
@@ -38,14 +33,14 @@ function _subcontext_view_mergetuple_expr(SCV::Type, Args::Type)
             # Which will be used to construct subcontext = (; targetname = getproperty(args, this_algo_varname), ...)
             push!(
                 exprs,
-                Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(algo_varnames[var_idx]))))),
+                Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(algo_varname))))),
             )
 
         else # New variable so add it to this subcontext
             exprs = get!(merge_expressions_by_subcontext, SubKey, Expr[])
             push!(
                 exprs,
-                Expr(:(=), subcontext_varname, :(getproperty(args, $(QuoteNode(algo_varnames[var_idx]))))),
+                Expr(:(=), subcontext_varname, :(getproperty(args, $(QuoteNode(algo_varname))))),
             )
         end
     end

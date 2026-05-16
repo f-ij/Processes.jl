@@ -34,7 +34,7 @@ run!(p::Process; kwargs...) = run(p; kwargs...)
 """
 Wait for a process to finish
 """
-@inline Base.wait(p::Process) = if !isnothing(p.task) wait(p.task) else nothing end
+@inline Base.wait(@nospecialize(p::Process)) = if !isnothing(p.task) wait(p.task) else nothing end
 
 
 """
@@ -172,7 +172,7 @@ end
 """
 Fetch the return value of a process
 """
-@inline Base.fetch(p::Process) = if !isnothing(p.task) fetch(p.task) else p.lastresult end
+@inline Base.fetch(@nospecialize(p::Process)) = if !isnothing(p.task) fetch(p.task) else p.lastresult end
 
 """
 Quit all processes in the process list

@@ -40,6 +40,7 @@ module Processes
 
     include("RoutingInterface/RoutingInterface.jl")
     include("Context/Context.jl")
+    include("Reports/Reports.jl")
 
     include("Lifetime.jl")
     include("InputInterface/InputInterface.jl")
@@ -52,6 +53,7 @@ module Processes
     include("Listeners.jl")
 
     include("Process.jl")
+    include("ProcessPrecompile.jl")
     include("InlineProcess.jl")
     include("InlineProcessShowing.jl")
 
