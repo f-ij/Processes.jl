@@ -63,6 +63,11 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
     @test Processes.context(partial)[LifecycleInitA].z == 4
     @test Processes.context(partial)[LifecycleInitB].y === b_ref
 
+    resolved_la = resolve(la)
+    resolved_target = first(Processes.getalgos(resolved_la))
+    initialized_by_matcher = init(resolved_la, Init(resolved_target; x = 7))
+    @test Processes.context(initialized_by_matcher)[LifecycleInitA].x[] == 7
+
     runtime_algo = @CompositeAlgorithm begin
         @state seed = 1
         @input temp::AbstractFloat

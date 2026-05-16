@@ -21,6 +21,9 @@ to the resolved namespace symbol.
 @inline get_target_name(ov::Union{Init, Override}) = get_target(ov)
 @inline _is_resolved_input(::Union{Init{Name}, Override{Name}}) where {Name} = Name isa Symbol
 
+@inline _resolve_input_target_key(reg::NameSpaceRegistry, target) = static_findkey(reg, target)
+@inline _resolve_input_target_key(reg::NameSpaceRegistry, matcher::AbstractMatcher) = getkey(get_by_matcher(reg, matcher))
+
 """
 If Overrides and inputs target a LoopAlgorithm, duplicate them for all contained algorithms
     Maybe this is not used anymore after the fusing system
@@ -43,7 +46,7 @@ end
         return resolve(reg, duplicated_ovs...)
     end
 
-    key = static_findkey(reg, target)
+    key = _resolve_input_target_key(reg, target)
     if isnothing(key)
         error("Target algorithm $(target) not found in registry: $reg \n Cannot resolve lifecycle target.")
     end
