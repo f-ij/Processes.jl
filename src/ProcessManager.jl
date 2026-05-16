@@ -1,6 +1,6 @@
 export ProcessManager, WorkerSlot
 export FlushPolicy, FlushAtEnd, NoFlush, FlushEvery
-export dispatch!, poll!, drain!, run!, resetworker!, reinitworker!, slots, workers, copyworker
+export dispatch!, poll!, drain!, run!, resetworker!, reinitworker!, partialinitworker!, slots, workers, copyworker
 
 """
 Policy trait controlling when a `ProcessManager` invokes a recipe `flush!` callback.
@@ -97,6 +97,23 @@ function reinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...; kwargs.
 end
 
 """
+    partialinitworker!(slot, inputs_overrides...)
+
+Rebuild only the targeted parts of a `Process` worker context through
+`partialinit` and return the slot.
+"""
+function partialinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...)
+    algo = _with_lifecycle(
+        getalgo(slot.worker),
+        context(slot.worker),
+        getstoredinits(getalgo(slot.worker)),
+        getstoredoverrides(getalgo(slot.worker)),
+    )
+    context(slot.worker, context(partialinit(algo, inputs_overrides...)))
+    return slot
+end
+
+"""
     ProcessManager(recipe; nworkers = Threads.nthreads(), workers = nothing,
                    config = nothing, state = nothing, flush_policy = FlushAtEnd(),
                    throw = true, poll_interval = 0.0,
@@ -108,6 +125,13 @@ Flexible worker orchestrator.
 Recipes may be named tuples containing callbacks, or concrete objects that
 overload the callback functions below. The default worker protocol supports
 `Process` workers.
+
+For each job, the manager moves through fixed lifecycle steps: assign a free
+slot, call `prepare!`, call `start!`, poll for completion, finalize, consume,
+release, and eventually flush. Attach behavior to these steps with recipe
+callbacks. For example, `prepare!` may mutate or reinitialize a worker context,
+and `start!` may call `run(slot.worker; kwargs...)` to pass loop-level runtime
+inputs.
 
 When `workers` is omitted, the recipe must define `makeworker`. The manager calls
 `makeworker` once to create a template worker, then copies that template for the
@@ -351,6 +375,11 @@ close!(recipe, slot, manager) = _call_optional_recipe_field(recipe, Val(:close!)
 onerror!(recipe, slot, err, manager) = _call_optional_recipe_field(recipe, Val(:onerror!), slot, err, manager)
 
 function _start_worker!(worker::Process)
+    run(worker)
+    return worker
+end
+
+function _start_worker!(worker)
     run(worker)
     return worker
 end

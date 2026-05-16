@@ -164,18 +164,27 @@ close(slot.worker)
 process returns a context. That makes `consume!` the right place to read final
 worker context values.
 
+If a job needs to affect both persistent context and loop-level runtime inputs,
+use two different steps: prepare the context in `prepare!`, then pass runtime
+inputs from `start!`.
+
 ### Recipe Callbacks
 
 A recipe can be a named tuple or an object with methods for these callbacks.
 Callbacks can accept fewer trailing arguments if they do not need all of them.
+The recipe object is stored as a concrete field of the manager, so anonymous
+functions in a named tuple are part of the manager type.
 
 - `initstate(config, manager)`: build `manager.state` from user configuration.
 - `makeworker(idx, manager)`: create worker `idx` when `workers` is not passed.
 - `makecontext(idx, manager, template)`: for manager-owned `Process` workers,
   build the context for slot `idx` from the template worker.
 - `prepare!(slot, job, manager)`: write one job into a worker before it starts.
+  This is the usual place to mutate context, call `reinitworker!`, or call
+  `partialinitworker!`.
 - `start!(slot, job, manager)`: custom worker start. Defaults to `run(worker)`
-  for `Process` workers.
+  for `Process` workers. Use this hook when the job supplies loop-level runtime
+  `@input` values, for example `run(slot.worker; temperature = job.temperature)`.
 - `isdone(slot, manager)`: custom completion check. Defaults to
   `isdone(worker)` for `Process` workers.
 - `finalize!(slot, job, manager)`: custom finish step. Defaults to
@@ -208,8 +217,8 @@ prepare! = (slot, job, manager) -> begin
 end
 ```
 
-Use `reinitworker!` when you want to rebuild through the normal process init
-path:
+Use `reinitworker!` when the job should rebuild context through the normal
+process init path:
 
 ```julia
 prepare! = (slot, job, manager) -> reinitworker!(
@@ -218,10 +227,28 @@ prepare! = (slot, job, manager) -> reinitworker!(
 )
 ```
 
-Direct mutation is usually faster. `reinitworker!` is useful when the context
-shape, inputs, or initialized state must be rebuilt. Do not create a new
-`Process` inside `prepare!` unless you intentionally want to give up worker
-context reuse.
+Use `partialinitworker!` when only one target needs to be rebuilt:
+
+```julia
+prepare! = (slot, job, manager) -> partialinitworker!(
+    slot,
+    Init(MyAlgo; x = job.x),
+)
+```
+
+Use `start!` for loop-level runtime `@input` values:
+
+```julia
+start! = (slot, job, manager) -> run(slot.worker; temperature = job.temperature)
+```
+
+You can use both for the same job. The manager calls `prepare!` first, then
+`start!`.
+
+Direct mutation is usually faster. `reinitworker!` and `partialinitworker!` are
+useful when the context shape, inputs, or initialized state must be rebuilt. Do
+not create a new `Process` inside a callback unless you intentionally want to
+give up worker context reuse.
 
 ### Result Collection
 
@@ -305,6 +332,7 @@ Processes.drain!
 Processes.run!
 Processes.resetworker!
 Processes.reinitworker!
+Processes.partialinitworker!
 ```
 
 ## Manager-Owned Worker Example
