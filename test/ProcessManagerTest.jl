@@ -357,7 +357,7 @@ end
             slot,
             Init(ManagerRuntimeJobStep; base = job.base),
         ),
-        beforerun! = (slot, job, manager) -> begin
+        runarguments = (slot, job, manager) -> begin
             push!(before_jobs, job.base)
             (; delta = job.delta)
         end,
@@ -374,10 +374,10 @@ end
     @test before_jobs == [10, 20]
 end
 
-@testset "ProcessManager rejects non-keyword beforerun! results" begin
+@testset "ProcessManager rejects non-keyword runarguments results" begin
     worker = Process(ManagerProcessAccumulator(); repeats = 1)
     recipe = (;
-        beforerun! = (slot, job, manager) -> job,
+        runarguments = (slot, job, manager) -> job,
     )
     manager = ProcessManager(recipe; workers = [worker], flush_policy = NoFlush(), throw = false)
 

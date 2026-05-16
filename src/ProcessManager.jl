@@ -138,11 +138,11 @@ overload the callback functions below. The default worker protocol supports
 `Process` workers.
 
 For each job, the manager moves through fixed lifecycle steps: assign a free
-slot, call `prepare!`, call `beforerun!`, implicitly run the worker, poll for
+slot, call `prepare!`, call `runarguments`, implicitly run the worker, poll for
 completion, finalize, consume, release, and eventually flush. Attach behavior to
 these steps with recipe callbacks. For example, `prepare!` may mutate or
-reinitialize a worker context, and `beforerun!` may return keyword arguments for
-`run(slot.worker; kwargs...)`.
+reinitialize a worker context, and `runarguments` may return keyword arguments
+for `run(slot.worker; kwargs...)`.
 
 When `workers` is omitted, the recipe must define `makeworker`. The manager calls
 `makeworker` once to create a template worker, then copies that template for the
@@ -513,27 +513,27 @@ end
     prepare!(recipe, slot, job, manager)
 
 Optional dispatch-step callback. This is where jobs usually mutate or
-reinitialize worker-local context before `beforerun!` and the implicit worker
+reinitialize worker-local context before `runarguments` and the implicit worker
 run.
 """
 prepare!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:prepare!), slot, job, manager)
 
 """
-    beforerun!(recipe, slot, job, manager)
+    runarguments(recipe, slot, job, manager)
 
-Optional dispatch-step callback called immediately before the manager launches
-the worker. The callback may run arbitrary manager-side code and should return a
-`NamedTuple` of keyword arguments for `run(slot.worker; kwargs...)`. Missing
-callbacks, or callbacks returning `nothing`, mean no runtime keyword arguments.
+Optional dispatch-step callback that returns runtime keyword arguments for the
+implicit worker launch. The callback may also run arbitrary manager-side code
+before launch. Return a `NamedTuple` for `run(slot.worker; kwargs...)`, or return
+`nothing` for no runtime keyword arguments.
 """
-beforerun!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:beforerun!), slot, job, manager)
+runarguments(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:runarguments), slot, job, manager)
 
 """
     start!(recipe, slot, job, manager)
 
 Advanced dispatch-step callback that replaces the implicit launch completely.
 Use this for custom workers or nonstandard scheduling. Missing callbacks use
-`beforerun!` and then call `run(slot.worker; kwargs...)`.
+`runarguments` and then call `run(slot.worker; kwargs...)`.
 """
 start!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:start!), slot, job, manager)
 
@@ -627,14 +627,14 @@ _start_worker!(worker) = _start_worker!(worker, (;))
 """
     _run_kwargs(manager, slot, job)
 
-Run recipe `beforerun!` and normalize its return value to keyword arguments for
+Run recipe `runarguments` and normalize its return value to keyword arguments for
 the implicit worker launch.
 """
 function _run_kwargs(manager::ProcessManager, slot::WorkerSlot, job)
-    result = beforerun!(manager.recipe, slot, job, manager)
+    result = runarguments(manager.recipe, slot, job, manager)
     (_is_no_recipe_callback(result) || isnothing(result)) && return (;)
     result isa NamedTuple && return result
-    throw(ArgumentError("Recipe callback `beforerun!` must return a NamedTuple of keyword arguments or `nothing`, got $(typeof(result))."))
+    throw(ArgumentError("Recipe callback `runarguments` must return a NamedTuple of keyword arguments or `nothing`, got $(typeof(result))."))
 end
 
 """
@@ -673,7 +673,7 @@ end
     _start_slot!(manager, slot, job)
 
 Start one assigned slot. Recipe `start!` is an advanced full override; otherwise
-the manager runs `beforerun!` and launches the worker with the returned keyword
+the manager runs `runarguments` and launches the worker with the returned keyword
 arguments.
 """
 function _start_slot!(manager::ProcessManager, slot::WorkerSlot, job)
@@ -901,8 +901,8 @@ Schedule `job` on the next available worker slot, waiting for a slot to become
 free when all workers are active.
 
 The dispatch order is fixed: assign `slot.job`, clear old result/error state,
-call recipe `prepare!`, call recipe `beforerun!`, implicitly run the worker, then
-mark the slot active. Recipe `start!` replaces the `beforerun!` and implicit run
+call recipe `prepare!`, call recipe `runarguments`, implicitly run the worker,
+then mark the slot active. Recipe `start!` replaces the `runarguments` and implicit run
 steps when present.
 """
 function dispatch!(manager::ProcessManager, job)

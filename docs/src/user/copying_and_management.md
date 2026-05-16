@@ -78,8 +78,8 @@ A manager run has four parts:
    per-slot contexts while keeping the same algorithm.
 2. Dispatch assigns one job to one free slot. The manager stores the job in
    `slot.job`, clears the previous `slot.result` and `slot.error`, runs
-   `prepare!`, runs `beforerun!`, then launches the worker. Use `prepare!` for
-   persistent worker context changes. Use `beforerun!` for runtime `@input`
+   `prepare!`, calls `runarguments`, then launches the worker. Use `prepare!` for
+   persistent worker context changes. Use `runarguments` for runtime `@input`
    values by returning a named tuple, which is passed to
    `run(slot.worker; kwargs...)`.
 3. Completion is detected by polling. When a slot finishes, the manager runs
@@ -177,9 +177,9 @@ For each job, the manager uses this order:
 1. Wait for a free slot.
 2. Store the job in `slot.job`.
 3. Call `prepare!(slot, job, manager)`.
-4. Call `beforerun!(slot, job, manager)`.
+4. Call `runarguments(slot, job, manager)`.
 5. Call `run(slot.worker; kwargs...)`, where `kwargs` is the named tuple returned
-   by `beforerun!`.
+   by `runarguments`.
 6. Poll active workers until one finishes.
 7. Call `finalize!(slot, job, manager)`, or `wait(slot.worker); close(slot.worker)`
    if no `finalize!` callback exists.
@@ -205,7 +205,7 @@ worker context values.
 
 If a job needs to affect both persistent context and loop-level runtime inputs,
 use two different steps: prepare the context in `prepare!`, then pass runtime
-inputs from `beforerun!`.
+inputs from `runarguments`.
 
 ### Recipe Callbacks
 
@@ -221,12 +221,13 @@ functions in a named tuple are part of the manager type.
 - `prepare!(slot, job, manager)`: write one job into a worker before it starts.
   This is the usual place to mutate context, call `reinitworker!`, or call
   `partialinitworker!`.
-- `beforerun!(slot, job, manager)`: run arbitrary manager-side code immediately
-  before launch and return a named tuple of runtime keyword arguments. For
-  example, `(; temperature = job.temperature)` becomes
+- `runarguments(slot, job, manager)`: return a named tuple of runtime keyword
+  arguments for the implicit `run(...)` call. This callback may also run
+  arbitrary manager-side code before launch. For example,
+  `(; temperature = job.temperature)` becomes
   `run(slot.worker; temperature = job.temperature)`.
 - `start!(slot, job, manager)`: advanced custom worker start. If this callback
-  exists, it replaces `beforerun!` and the implicit `run(...)` call.
+  exists, it replaces `runarguments` and the implicit `run(...)` call.
 - `isdone(slot, manager)`: custom completion check. Defaults to
   `isdone(worker)` for `Process` workers.
 - `finalize!(slot, job, manager)`: custom finish step. Defaults to
@@ -278,14 +279,14 @@ prepare! = (slot, job, manager) -> partialinitworker!(
 )
 ```
 
-Use `beforerun!` for loop-level runtime `@input` values:
+Use `runarguments` for loop-level runtime `@input` values:
 
 ```julia
-beforerun! = (slot, job, manager) -> (; temperature = job.temperature)
+runarguments = (slot, job, manager) -> (; temperature = job.temperature)
 ```
 
 You can use both for the same job. The manager calls `prepare!` first, then
-`beforerun!`, then `run(slot.worker; temperature = job.temperature)`.
+`runarguments`, then `run(slot.worker; temperature = job.temperature)`.
 
 Direct mutation is usually faster. `reinitworker!` and `partialinitworker!` are
 useful when the context shape, inputs, or initialized state must be rebuilt. Do
@@ -372,7 +373,7 @@ Processes.slots
 Processes.workers
 Processes.copyworker
 Processes.prepare!
-Processes.beforerun!
+Processes.runarguments
 Processes.start!
 Processes.dispatch!
 Processes.poll!
