@@ -1,6 +1,6 @@
 #=
 Mirrors
-  struct CompositeAlgorithm{T, Intervals, NSR, O, id, CustomName} <: LoopAlgorithm
+  struct CompositeAlgorithm{T, Intervals, NSR, O, id, CustomName} <: AbstractLoopAlgorithm
     funcs::T
     inc::Base.RefValue{Int} # To track the intervals
     registry::NSR

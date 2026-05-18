@@ -10,6 +10,48 @@ function Processes.step!(::PackFib, context)
     return (;)
 end
 
+struct NewPackSource <: Processes.ProcessAlgorithm end
+struct NewPackTarget <: Processes.ProcessAlgorithm end
+
+Processes.init(::NewPackSource, context) = (; value = 0)
+
+function Processes.step!(::NewPackSource, context)
+    return (; value = context.value + 1)
+end
+
+function Processes.init(::NewPackTarget, context)
+    log = Int[]
+    processsizehint!(log, context)
+    return (; log)
+end
+
+function Processes.step!(::NewPackTarget, context)
+    push!(context.log, context.input)
+    return (;)
+end
+
+@testset "NewPackage runs as a ProcessAlgorithm" begin
+    comp = CompositeAlgorithm(
+        NewPackSource,
+        NewPackTarget,
+        (1, 2),
+        Route(NewPackSource => NewPackTarget, :value => :input),
+    )
+    pkg = NewPackage(comp, "NewPack")
+
+    @test pkg isa ProcessAlgorithm
+    @test !(pkg isa Processes.AbstractIdentifiableAlgo)
+    @test Processes.intervals(pkg) == Processes.intervals(comp)
+
+    p = Process(pkg; repeats = 6)
+    run(p)
+    wait(p)
+    ctx = fetch(p)
+
+    @test ctx[pkg].value == 6
+    @test ctx[pkg].log == [2, 4, 6]
+end
+
 function Processes.init(::PackFib, context)
     fiblist = Int[0, 1]
     processsizehint!(fiblist, context)

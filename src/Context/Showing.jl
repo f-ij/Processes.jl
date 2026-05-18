@@ -20,20 +20,6 @@ function _format_inputs_tuple(t::Tuple)
     return "Inputs: " * join(items, ", ")
 end
 
-function _sharedvars_display(sharedvars_types)
-    sharedvars_types === Tuple{} && return String[]
-    items = String[]
-    for sv in sharedvars_types
-        from = get_fromname(sv)
-        varnames = subvarcontextnames(sv)
-        aliases = localnames(sv)
-        for (varname, alias) in zip(varnames, aliases)
-            push!(items, string(alias, "@", from, ".", varname))
-        end
-    end
-    return items
-end
-
 @inline function _context_display_columns(io::IO)
     _, cols = displaysize(io)
     return cols > 0 ? cols : 80
@@ -103,22 +89,6 @@ end
 function _subcontext_var_lines(sc::SubContext; io::IO = stdout)
     lines = String[]
     show_ctx = IOContext(io, :limit => get(io, :limit, false), :color => get(io, :color, false))
-    shared_types = getsharedcontext_types(typeof(sc))
-    shared_names = shared_types === Tuple{} ? Symbol[] : filter(!isnothing, contextname.(shared_types))
-    if !isempty(shared_names)
-        # Emit styling only when the *caller IO* supports it; otherwise keep plain text.
-        if get(io, :color, false)
-            buf = IOBuffer()
-            # `printstyled` consults `:color` on the IO it is writing to, so wrap the buffer
-            # in an IOContext that explicitly enables color/styling.
-            cio = IOContext(buf, :color => true)
-            printstyled(cio, "shared:"; bold = true)
-            print(cio, " ", join(shared_names, ", "))
-            push!(lines, String(take!(buf)))
-        else
-            push!(lines, "shared: " * join(shared_names, ", "))
-        end
-    end
     data = getdata(sc)
     data_names = propertynames(data)
     if isempty(data_names)
@@ -132,10 +102,6 @@ function _subcontext_var_lines(sc::SubContext; io::IO = stdout)
                 push!(lines, string(name, " = ", sprint(summary, val; context = show_ctx)))
             end
         end
-    end
-    sharedvars_items = _sharedvars_display(getsharedvars_types(typeof(sc)))
-    for item in sharedvars_items
-        push!(lines, ":" * item)
     end
     return lines
 end

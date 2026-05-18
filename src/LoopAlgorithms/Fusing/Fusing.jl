@@ -4,7 +4,7 @@ include("ContextExt.jl")
 
 function flatten_comp_funcs(funcs, _intervals)
     flat_funcs, flat_intervals = flat_tree_property_recursion(funcs, _intervals) do el, trait
-        if !iscomposite(el)
+        if !iscomposite(el) || !isempty(getoptions(el))
             return nothing, nothing
         end
         newels = getalgos(el)
@@ -24,9 +24,9 @@ function flatten(comp::CompositeAlgorithm)
     flatten_comp_funcs((comp,), (1,))
 end
 
-function flatten_loopalgorithms(la::LoopAlgorithm)
+function flatten_loopalgorithms(la::ALA) where {ALA<:AbstractLoopAlgorithm}
     flat_funcs, flat_intervals = flat_tree_property_recursion((la,), (1,)) do el, trait
-        if !(el isa LoopAlgorithm)
+        if !(el isa AbstractLoopAlgorithm)
             return nothing, nothing
         end
         newels = getalgos(el)
@@ -37,7 +37,7 @@ function flatten_loopalgorithms(la::LoopAlgorithm)
 end
 
 
-function fuse(cla::LoopAlgorithm, name_prefix = "")
+function fuse(cla::ALA, name_prefix = "") where {ALA<:AbstractLoopAlgorithm}
     if isfused(cla)
         return cla
     end

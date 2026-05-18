@@ -144,7 +144,10 @@ end
 
         resolved = resolve(algo)
 
-        @test resolved isa CompositeAlgorithm
+        @test resolved isa Processes.LoopAlgorithm
+        @test Processes.getplan(resolved) isa CompositeAlgorithm
+        @test isempty(Processes.getoptions(algo, Processes.Route))
+        @test !isempty(Processes.getoptions(Processes.getplan(resolved), Processes.Route))
         @test intervals(resolved) == (
             Processes.Interval(1),
             Processes.Interval(10),
@@ -155,9 +158,8 @@ end
         @test length(Processes.getstates(resolved)) == 1
         @test Processes.getkey(first(Processes.getstates(resolved))) == :_state
 
-        opts = Processes.getoptions(resolved)
         sharedcontexts, sharedvars = Processes._resolve_options(resolved)
-        @test opts == Processes.merge_nested_namedtuples(sharedvars, sharedcontexts)
+        @test !isempty(sharedvars)
 
         init_ctx = Processes.initcontext(resolved; lifetime = Repeat(10))
         @test init_ctx[:_state].seed == 3
@@ -219,6 +221,64 @@ end
         @test occursin("_composite_dsl_owner", expanded_str)
     end
 
+    @testset "@route statements are top-level plan routes" begin
+        @info "Composite DSL: @route statements are top-level plan routes"
+        algo = @CompositeAlgorithm begin
+            @state seed = 2
+            @alias source = DSLSourceAlgo
+            @alias sink = DSLSinkAlgo
+            produced, passthrough = source(seed = seed)
+            sink()
+            @route source.produced => sink.value
+        end
+
+        @test algo isa Processes.LoopAlgorithm
+        plan = Processes.getplan(algo)
+        @test length(Processes.getoptions(plan, Processes.Route)) == 2
+        @test length(getfield(plan, :global_options)) == 1
+        @test length(getfield(plan, :wiring)[1]) == 1
+        @test isempty(getfield(plan, :wiring)[2])
+
+        resolved = resolve(algo)
+        @test isempty(Processes.getoptions(resolved, Processes.Route))
+        @test length(getfield(Processes.getplan(resolved), :global_options)) == 1
+        step_wiring = getfield(Processes.getplan(resolved), :step_wiring)
+        sink_routes = @inferred Processes.routing_sharedvars(step_wiring[2])
+        @test step_wiring[2] isa Processes.StepRouting
+        @test length(sink_routes) == 1
+        @test Processes.localnames(only(sink_routes)) == (:value,)
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[:sink].seen == 2
+        @test length(typeof(ctx[:sink]).parameters) == 2
+    end
+
+    @testset "Local routes occlude top-level @route aliases" begin
+        @info "Composite DSL: Local routes occlude top-level @route aliases"
+        algo = @CompositeAlgorithm begin
+            @state seed = 7
+            @alias source = DSLSourceAlgo
+            @alias sink = DSLSinkAlgo
+            produced, passthrough = source(seed = seed)
+            sink(value = passthrough)
+            @route source.produced => sink.value
+        end
+
+        resolved = resolve(algo)
+        step_wiring = getfield(Processes.getplan(resolved), :step_wiring)
+        sink_routes = @inferred Processes.routing_sharedvars(step_wiring[2])
+        @test length(sink_routes) == 1
+        @test Processes.subvarcontextnames(only(sink_routes)) == (:passthrough,)
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[:sink].seen == 7
+        @test length(typeof(ctx[:sink]).parameters) == 2
+    end
+
     @testset "Transform routes use explicit @transform syntax" begin
         @info "Composite DSL: Transform routes use explicit @transform syntax"
         one_var_transform = @CompositeAlgorithm begin
@@ -229,7 +289,7 @@ end
         end
 
         resolved_one_var = resolve(one_var_transform)
-        one_var_opts = Processes.getoptions(resolved_one_var)
+        _, one_var_opts = Processes._resolve_options(resolved_one_var)
         one_var_routes = one_var_opts[:DSLSinkAlgo_1]
         @test length(one_var_routes) == 1
         @test Processes.gettransform(first(one_var_routes)) !== nothing
@@ -248,7 +308,7 @@ end
         end
 
         resolved_two_var = resolve(two_var_transform)
-        two_var_opts = Processes.getoptions(resolved_two_var)
+        _, two_var_opts = Processes._resolve_options(resolved_two_var)
         two_var_routes = two_var_opts[:DSLValueAlgo_1]
         @test length(two_var_routes) == 1
         @test Processes.gettransform(first(two_var_routes)) !== nothing
@@ -298,7 +358,8 @@ end
         end
 
         resolved_routine = resolve(routine)
-        @test resolved_routine isa Routine
+        @test resolved_routine isa Processes.LoopAlgorithm
+        @test Processes.getplan(resolved_routine) isa Routine
         @test repeats(resolved_routine) == (3,)
     end
 
@@ -315,7 +376,8 @@ end
         end
 
         resolved_outer = resolve(outer)
-        @test resolved_outer isa CompositeAlgorithm
+        @test resolved_outer isa Processes.LoopAlgorithm
+        @test Processes.getplan(resolved_outer) isa CompositeAlgorithm
     end
 
     @testset "FuncWrapper positional args accept @context property routes" begin
@@ -334,7 +396,8 @@ end
         resolved = resolve(algo)
         wrapper = Processes.getalgo(resolved, 2)
         wrapper_key = Processes.getkey(wrapper)
-        routes = Processes.getoptions(resolved)[wrapper_key]
+        _, sharedvars = Processes._resolve_options(resolved)
+        routes = sharedvars[wrapper_key]
         @test length(routes) == 1
         @test occursin("c1.plus_capture.captured", sprint(show, wrapper))
 
@@ -381,7 +444,8 @@ end
         resolved = resolve(algo)
         wrapper = Processes.getalgo(resolved, 1)
         wrapper_key = Processes.getkey(wrapper)
-        routes = Processes.getoptions(resolved)[wrapper_key]
+        _, sharedvars = Processes._resolve_options(resolved)
+        routes = sharedvars[wrapper_key]
         @test length(routes) == 1
         @test Processes.gettransform(first(routes)) !== nothing
         @test occursin("@transform", sprint(show, wrapper))
@@ -409,7 +473,8 @@ end
         result_algo = Processes.getalgo(resolved, 2)
         @test Processes.getalgo(writer) isa Processes.ContextWrite
 
-        routes = Processes.getoptions(resolved)[writer_key]
+        _, sharedvars = Processes._resolve_options(resolved)
+        routes = sharedvars[writer_key]
         @test length(routes) == 1
 
         p = Process(resolved, repeat = 1)
@@ -512,7 +577,8 @@ end
         resolved = resolve(algo)
         sink = Processes.getalgo(resolved, 1)
         sink_key = Processes.getkey(sink)
-        routes = Processes.getoptions(resolved)[sink_key]
+        _, sharedvars = Processes._resolve_options(resolved)
+        routes = sharedvars[sink_key]
         @test length(routes) == 1
 
         p = Process(resolved, repeat = 1)
@@ -533,7 +599,8 @@ end
         resolved = resolve(algo)
         sink = Processes.getalgo(resolved, 1)
         sink_key = Processes.getkey(sink)
-        routes = Processes.getoptions(resolved)[sink_key]
+        _, sharedvars = Processes._resolve_options(resolved)
+        routes = sharedvars[sink_key]
         @test length(routes) == 1
 
         p = Process(resolved, repeat = 1)

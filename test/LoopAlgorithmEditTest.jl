@@ -48,6 +48,19 @@ using Processes
     @test length(getoptions(with_option)) == length(getoptions(outer)) + 1
     @test only(getoptions(with_option, Share)) isa Share
 
+    left = IdentifiableAlgo(EditAlgoA(), :left)
+    right = IdentifiableAlgo(EditAlgoB(), :right)
+    local_route = Processes.LocalPlanOption(right, Route(left => right, :value))
+    locally_wired = CompositeAlgorithm(left, right, (1, 1), local_route)
+    @test isempty(getfield(locally_wired, :global_options))
+    @test isempty(getfield(locally_wired, :wiring)[1])
+    @test length(getfield(locally_wired, :wiring)[2]) == 1
+
+    renamed_local = rename(locally_wired, :right => :renamed_right)
+    @test isempty(getfield(renamed_local, :global_options))
+    @test isempty(getfield(renamed_local, :wiring)[1])
+    @test length(getfield(renamed_local, :wiring)[2]) == 1
+
     resolved = resolve(outer)
     @test_throws Exception insert(resolved, 1, EditAlgoA, 1)
     @test_throws Exception rename(resolved, :left => :nope)

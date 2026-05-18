@@ -22,14 +22,15 @@ end
 
 abstract type AbstractMatcher{A} end
 getmatchers(m::AbstractMatcher{A}) where {A} = A
-
 struct SimpleId{id} <: AbstractMatcher{id} end
 SimpleId() = SimpleId{uuid4()}()
 SimpleId(id) = SimpleId{id}()
+Base.:(==)(::SimpleId{id1}, ::SimpleId{id2}) where {id1, id2} = id1 == id2
 
 struct ObjectIDMatcher{id} <: AbstractMatcher{id} end
 ObjectIDMatcher(id::UInt64) = ObjectIDMatcher{id}()
 ObjectIDMatcher(obj) = ObjectIDMatcher(objectid(obj))
+Base.:(==)(::ObjectIDMatcher{id1}, ::ObjectIDMatcher{id2}) where {id1, id2} = id1 == id2
 
 struct MatchAny{A} <: AbstractMatcher{A} end
 MatchAny(matchers...) = MatchAny(tuple(matchers...))

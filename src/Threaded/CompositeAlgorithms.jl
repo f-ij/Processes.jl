@@ -7,7 +7,7 @@ layers.
 The constructor API mirrors [`CompositeAlgorithm`](@ref): pass child algorithms, then an
 interval tuple, then any states and options.
 """
-struct ThreadedCompositeAlgorithm{T, Intervals, S, O, R, id} <: LoopAlgorithm
+struct ThreadedCompositeAlgorithm{T, Intervals, S, O, R, id} <: AbstractLoopAlgorithm
     funcs::T
     states::S
     options::O

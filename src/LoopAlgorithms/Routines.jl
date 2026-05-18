@@ -1,17 +1,20 @@
 export Routine, RoutinePlan
 
 """
-Struct to create routines
+Execution plan that repeats child algorithms.
+
+`Routine` is the repeated counterpart to `CompositeAlgorithm`: it keeps child
+algorithms, repeat metadata, resume counters, raw local route/share wiring,
+top-level raw route/share options, and resolved per-child `step_wiring`. The
+runtime registry, root states, context, inputs, and overrides are carried by the
+concrete `LoopAlgorithm` wrapper.
 """
-struct Routine{T, Repeats, S, MV, O, R, id, C, Inits, Overrides} <: LoopAlgorithm
+struct Routine{T, Repeats, MV, W, G, SW, id} <: AbstractLoopAlgorithm
     funcs::T     
-    states::S
-    options::O
     resume_idxs::MV
-    reg::R
-    context::C
-    inits::Inits
-    overrides::Overrides
+    wiring::W
+    global_options::G
+    step_wiring::SW
 end
 
 const RoutinePlan = Routine
@@ -20,32 +23,38 @@ function Routine(args...)
     parse_la_input(Routine, args...)
 end
 
+"""
+Construct a routine execution plan, wrapping it only when root runtime data exists.
+
+`LocalPlanOption` route/share metadata is stored in per-child plan wiring; plain
+route/share options are stored as top-level plan routes. Root states and other
+non-plan options remain on the `LoopAlgorithm` wrapper.
+"""
 function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple, repeats; id = nothing) where F
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
-    return Routine{typeof(funcs), repeats, typeof(states), typeof(resume_idxs), typeof(options), Nothing, id, Nothing, Tuple{}, Tuple{}}(funcs, states, options, resume_idxs, nothing, nothing, (), ())
+    plan_options = _loop_plan_wiring(funcs, options)
+    global_options = _global_plan_options(options)
+    step_wiring = ntuple(_ -> StepRouting(), length(funcs))
+    plan = Routine{typeof(funcs), repeats, typeof(resume_idxs), typeof(plan_options), typeof(global_options), typeof(step_wiring), id}(funcs, resume_idxs, plan_options, global_options, step_wiring)
+    root_options = _root_loop_options(options)
+    return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end
 
 function newfuncs(r::Routine, funcs)
     setfield(r, :funcs, funcs)
 end
 
-function setoptions(r::Routine{T, Repeats, S, MV, O, R, id}, options) where {T, Repeats, S, MV, O, R, id}
-    Routine{T, Repeats, S, MV, typeof(options), R, id, typeof(getstoredcontext(r)), typeof(getstoredinits(r)), typeof(getstoredoverrides(r))}(getalgos(r), getstates(r), options, get_resume_idxs(r), getregistry(r), getstoredcontext(r), getstoredinits(r), getstoredoverrides(r))
-end
-
-@inline getregistry(r::Routine) = getfield(r, :reg)
-@inline _attach_registry(r::Routine, registry::NameSpaceRegistry) = setfield(r, :reg, registry)
-@inline isresolved(r::Routine) = !isnothing(getregistry(r))
-
-function _with_lifecycle(r::Routine{T, Repeats, S, MV, O, R, id}, context::C, inits::I, overrides::Ov) where {T, Repeats, S, MV, O, R, id, C, I, Ov}
-    Routine{T, Repeats, S, MV, O, R, id, C, I, Ov}(getalgos(r), getstates(r), getoptions(r), get_resume_idxs(r), getregistry(r), context, inits, overrides)
+function setoptions(r::Routine, options)
+    r = setfield(r, :wiring, _loop_plan_wiring(getalgos(r), options))
+    r = setfield(r, :global_options, _global_plan_options(options))
+    return setfield(r, :step_wiring, ntuple(_ -> StepRouting(), length(getalgos(r))))
 end
 
 @inline getalgos(r::Routine) = getfield(r, :funcs)
 @inline getalgo(r::Routine, idx) = getfield(r, :funcs)[idx]
-@inline getoptions(r::Routine) = getfield(r, :options)
+@inline getoptions(r::Routine) = _plan_options(getfield(r, :global_options), getfield(r, :wiring))
 @inline subalgorithms(r::Routine) = getfield(r, :funcs)
-@inline getstates(r::Routine) = getfield(r, :states)
+@inline getstates(r::Routine) = ()
 
 
 
@@ -58,7 +67,7 @@ resumable(r::Routine) = true
 subalgotypes(r::Routine{FT}) where FT = FT.parameters
 subalgotypes(::Type{R}) where {FT, R<:Routine{FT}} = FT.parameters
 algotypes(r::Union{Routine{FT}, Type{R}}) where {FT, R<:Routine{FT}} = tuple(FT.parameters...)
-statetypes(r::Union{Routine{FT, R, S}, Type{<:Routine{FT, R, S}}}) where {FT, R, S} = S.parameters
+statetypes(r::Union{Routine, Type{<:Routine}}) = ()
 
 # getnames(r::Routine{T, R, NT, N}) where {T, R, NT, N} = N
 Base.length(r::Routine) = length(getfield(r, :funcs))
@@ -77,7 +86,7 @@ end
 
 multipliers(r::Routine) = repeats(r)
 multipliers(rT::Type{R}) where {R<:Routine} = repeats(rT)
-getid(r::Union{Routine{T,R,S,MV,O,Reg,id},Type{<:Routine{T,R,S,MV,O,Reg,id}}}) where {T,R,S,MV,O,Reg,id} = id
+getid(r::Union{Routine{T,R,MV,W,G,SW,id},Type{<:Routine{T,R,MV,W,G,SW,id}}}) where {T,R,MV,W,G,SW,id} = id
 
 @inline repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}) where {F,R} = R
 repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, idx::Int) where {F,R} = R[idx]

@@ -1,1 +1,1 @@
-@inline isresolved(::LoopAlgorithm) = false
+@inline isresolved(::LA) where {LA<:AbstractLoopAlgorithm} = false

@@ -44,7 +44,7 @@ Processes.init(::RuntimeInputState, context) = (;)
 
 Base.merge(a::RuntimeInputState, b::RuntimeInputState) = RuntimeInputState((a.specs..., b.specs...))
 
-function runtimeinputs(la::LA) where {LA<:LoopAlgorithm}
+function runtimeinputs(la::LA) where {LA<:AbstractLoopAlgorithm}
     opts = getoptions(la)
     inputs = filter_by_type(RuntimeInputs, opts)
     if !isempty(inputs)
@@ -72,7 +72,7 @@ function _runtime_input_defaults(specs::Tuple)
     return (; pairs...)
 end
 
-function _validate_runtime_inputs(la::LA, inputs::I) where {LA<:LoopAlgorithm, I<:NamedTuple}
+function _validate_runtime_inputs(la::LA, inputs::I) where {LA<:AbstractLoopAlgorithm, I<:NamedTuple}
     specs = runtimeinputs(la).specs
     if isempty(specs)
         isempty(inputs) || error("Runtime inputs were passed, but this LoopAlgorithm declares no @input values.")
@@ -114,22 +114,17 @@ function _strip_runtime_inputs(context::C) where {C<:ProcessContext}
     return ProcessContext(stripped, getregistry(context))
 end
 
-@inline getstoredinits(la::LA) where {LA<:LoopAlgorithm} = hasfield(LA, :inits) ? getfield(la, :inits) : ()
-@inline getstoredoverrides(la::LA) where {LA<:LoopAlgorithm} = hasfield(LA, :overrides) ? getfield(la, :overrides) : ()
-@inline getstoredcontext(la::LA) where {LA<:LoopAlgorithm} = hasfield(LA, :context) ? getfield(la, :context) : nothing
-@inline context(la::LA) where {LA<:LoopAlgorithm} = getstoredcontext(la)
-@inline _without_lifecycle(la::LA) where {LA<:LoopAlgorithm} = _with_lifecycle(la, nothing, (), ())
+@inline getstoredinits(la::LA) where {LA<:AbstractLoopAlgorithm} = hasfield(LA, :inits) ? getfield(la, :inits) : ()
+@inline getstoredoverrides(la::LA) where {LA<:AbstractLoopAlgorithm} = hasfield(LA, :overrides) ? getfield(la, :overrides) : ()
+@inline getstoredcontext(la::LA) where {LA<:AbstractLoopAlgorithm} = hasfield(LA, :context) ? getfield(la, :context) : nothing
+@inline context(la::LA) where {LA<:AbstractLoopAlgorithm} = getstoredcontext(la)
+@inline _without_lifecycle(la::LA) where {LA<:AbstractLoopAlgorithm} = _with_lifecycle(la, nothing, (), ())
 
 @inline _merge_specs_by_target(base::B, ::Tuple{}) where {B<:Tuple} = base
 @inline _merge_specs_by_target(::Tuple{}, updates::Tuple{}) = ()
 @inline _merge_specs_by_target(::Tuple{}, updates::Tuple{T}) where {T} = updates
 
 @inline _resolve_lifecycle_specs(reg::R) where {R<:NameSpaceRegistry} = ()
-
-@inline _resolve_lifecycle_specs(
-    reg::R,
-    specs::Vararg{Union{Init, Override},N},
-) where {R<:NameSpaceRegistry,N} = resolve(reg, specs...)
 
 function _merge_specs_by_target(base::B, updates::U) where {B<:Tuple, U<:Tuple}
     merged = collect(Any, base)
@@ -147,13 +142,13 @@ function _merge_specs_by_target(base::B, updates::U) where {B<:Tuple, U<:Tuple}
     return Tuple(merged)
 end
 
-function _split_init_override(specs...)
+function _split_init_override(specs)
     inits = filter_by_type(Input, specs)
     overrides = filter_by_type(Override, specs)
     return inits, overrides
 end
 
-@inline function _resolve_lifecycle_specs(reg::R, specs::Vararg{Any,N}) where {R<:NameSpaceRegistry,N}
+@inline function _resolve_lifecycle_specs(reg::R, specs) where {R<:NameSpaceRegistry}
     resolved = ()
     for spec in specs
         if spec isa Union{Init, Override}
@@ -165,20 +160,17 @@ end
     return resolved
 end
 
-@inline _resolve_lifecycle_specs(la::LA, specs::Vararg{Any,N}) where {LA<:LoopAlgorithm,N} =
-    _resolve_lifecycle_specs(getregistry(resolve(la)), specs...)
+@inline _resolve_lifecycle_specs(la::LA, specs) where {LA<:AbstractLoopAlgorithm} =
+    _resolve_lifecycle_specs(getregistry(resolve(la)), specs)
 
-@inline function _init_context_for(la::LA, inits::I, overrides::O, lifetime::LT) where {LA<:LoopAlgorithm, I<:Tuple, O<:Tuple, LT}
-    sharedcontexts, sharedvars = _resolve_options(la)
+@inline function _init_context_for(la::LA, inits::I, overrides::O, lifetime::LT) where {LA<:AbstractLoopAlgorithm, I<:Tuple, O<:Tuple, LT}
     empty_context = _build_process_context(
-        getregistry(la),
-        sharedcontexts,
-        sharedvars;
+        getregistry(la);
         globals = (; algo = la, lifetime),
     )
-    input_context = isempty(inits) ? empty_context : merge_into_subcontexts(empty_context, construct_context_merge_tuples(inits...))
+    input_context = isempty(inits) ? empty_context : merge_into_subcontexts(empty_context, construct_context_merge_tuples(inits))
     prepared = init(la, input_context)
-    return isempty(overrides) ? prepared : merge_into_subcontexts(prepared, construct_context_merge_tuples(overrides...))
+    return isempty(overrides) ? prepared : merge_into_subcontexts(prepared, construct_context_merge_tuples(overrides))
 end
 
 """
@@ -187,10 +179,10 @@ end
 Fully initialize `la`, replaying stored init/override specs and letting passed
 specs override stored specs per target.
 """
-@inline function init(la::LA, specs::Union{Init, Override}...; lifetime = Indefinite()) where {LA<:LoopAlgorithm}
+@inline function init(la::LA, specs::Union{Init, Override}...; lifetime = Indefinite()) where {LA<:AbstractLoopAlgorithm}
     resolved = _without_lifecycle(resolve(la))
-    new_specs = _resolve_lifecycle_specs(getregistry(resolved), specs...)
-    new_inits, new_overrides = _split_init_override(new_specs...)
+    new_specs = _resolve_lifecycle_specs(getregistry(resolved), specs)
+    new_inits, new_overrides = _split_init_override(new_specs)
     inits = _merge_specs_by_target(getstoredinits(la), new_inits)
     overrides = _merge_specs_by_target(getstoredoverrides(la), new_overrides)
     context = _init_context_for(resolved, inits, overrides, lifetime)
@@ -202,11 +194,11 @@ end
 
 Re-initialize only the targets named by the passed specs.
 """
-function partialinit(la::LA, specs::Union{Init, Override}...) where {LA<:LoopAlgorithm}
+function partialinit(la::LA, specs::Union{Init, Override}...) where {LA<:AbstractLoopAlgorithm}
     context = getstoredcontext(la)
     isnothing(context) && error("partialinit requires an initialized LoopAlgorithm.")
-    resolved_specs = _resolve_lifecycle_specs(la, specs...)
-    inits, overrides = _split_init_override(resolved_specs...)
+    resolved_specs = _resolve_lifecycle_specs(la, specs)
+    inits, overrides = _split_init_override(resolved_specs)
     new_context = context
     for input in inits
         key = get_target_name(input)
@@ -223,7 +215,7 @@ Run an initialized loop algorithm with per-run runtime inputs. The inputs are
 validated, merged into a transient `:_input` context for the loop call, and
 removed before the returned loop algorithm stores its next persistent context.
 """
-function Base.run(la::LA; repeats = 1, lifetime = nothing, kwargs...) where {LA<:LoopAlgorithm}
+function Base.run(la::LA; repeats = 1, lifetime = nothing, kwargs...) where {LA<:AbstractLoopAlgorithm}
     initialized = isnothing(getstoredcontext(la)) ? init(la) : la
     lt = isnothing(lifetime) ? normalize_process_lifetime(initialized, repeats) : normalize_process_lifetime(initialized, lifetime)
     inputs = _validate_runtime_inputs(initialized, (; kwargs...))

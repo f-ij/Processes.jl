@@ -6,10 +6,54 @@
     @inline merge(contextview, retval) # Merge into view
 end
 
+@inline function step!(sa::IdentifiableAlgo{F}, context::C, ::Stable, routing::StepRouting) where {F, C <: AbstractContext}
+    contextview = @inline view(
+        context,
+        sa;
+        sharedcontexts = routing_sharedcontexts(routing),
+        sharedvars = routing_sharedvars(routing),
+    )
+    retval = @inline step!(getalgo(sa), contextview)
+    @inline merge(contextview, retval)
+end
+
+@inline function step!(sa::IdentifiableAlgo{F}, context::C, ::Stable, routing::StepRouting) where {F<:AbstractLoopAlgorithm, C <: AbstractContext}
+    contextview = @inline view(
+        context,
+        sa;
+        sharedcontexts = routing_sharedcontexts(routing),
+        sharedvars = routing_sharedvars(routing),
+    )
+    retval = @inline step!(getalgo(sa), contextview, Stable(), routing_childwiring(routing))
+    @inline merge(contextview, retval)
+end
+
 @inline function step!(sa::IdentifiableAlgo{F}, context::C, ::Unstable) where {F, C <: AbstractContext}
     contextview = @inline view(context, sa)
     retval = @inline step!(getalgo(sa), contextview)
     @inline unstablemerge(contextview, retval) # Merge into view
+end
+
+@inline function step!(sa::IdentifiableAlgo{F}, context::C, ::Unstable, routing::StepRouting) where {F, C <: AbstractContext}
+    contextview = @inline view(
+        context,
+        sa;
+        sharedcontexts = routing_sharedcontexts(routing),
+        sharedvars = routing_sharedvars(routing),
+    )
+    retval = @inline step!(getalgo(sa), contextview)
+    @inline unstablemerge(contextview, retval)
+end
+
+@inline function step!(sa::IdentifiableAlgo{F}, context::C, ::Unstable, routing::StepRouting) where {F<:AbstractLoopAlgorithm, C <: AbstractContext}
+    contextview = @inline view(
+        context,
+        sa;
+        sharedcontexts = routing_sharedcontexts(routing),
+        sharedvars = routing_sharedvars(routing),
+    )
+    retval = @inline step!(getalgo(sa), contextview, Unstable(), routing_childwiring(routing))
+    @inline unstablemerge(contextview, retval)
 end
 
 @inline _profile_step_algo(sa::AbstractIdentifiableAlgo) = getalgo(sa)

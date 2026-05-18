@@ -3,6 +3,8 @@ export getglobals
 ########## Properties ###########
 #################################
 varaliases(scv::Union{SubContextView{CType, SubKey, T, NT, Aliases}, Type{<:SubContextView{CType, SubKey, T, NT, Aliases}}}) where {CType, SubKey, T, NT, Aliases} = Aliases
+view_sharedcontexts(scv::Union{SubContextView{CType, SubKey, T, NT, Aliases, SharedContexts}, Type{<:SubContextView{CType, SubKey, T, NT, Aliases, SharedContexts}}}) where {CType, SubKey, T, NT, Aliases, SharedContexts} = SharedContexts
+view_sharedvars(scv::Union{SubContextView{CType, SubKey, T, NT, Aliases, SharedContexts, SharedVars}, Type{<:SubContextView{CType, SubKey, T, NT, Aliases, SharedContexts, SharedVars}}}) where {CType, SubKey, T, NT, Aliases, SharedContexts, SharedVars} = SharedVars
 
 @inline this_instance(scv::SubContextView) = getfield(scv, :instance)
 
@@ -33,16 +35,31 @@ end
 ####### CREATING VIEWS ##########
 #################################
 
+@inline @generated function _routing_tuple_from_type(::Type{T}) where {T<:Tuple}
+    return Expr(:tuple, (:( $(T.parameters[i])() ) for i in eachindex(T.parameters))...)
+end
+
+@inline function Base.view(pc::PC, instance::SA, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I}
+    key = @inline getkey(instance)
+    return SubContextView{typeof(pc), key, typeof(instance), typeof(inject)}(pc, instance; inject)
+end
+
+@inline function Base.view(pc::PC, instance::SA, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I, SC<:Tuple, SV<:Tuple}
+    key = @inline getkey(instance)
+    typed_sharedcontexts = @inline _routing_tuple_from_type(SC)
+    typed_sharedvars = @inline _routing_tuple_from_type(SV)
+    return SubContextView{typeof(pc), key, typeof(instance), typeof(inject), varaliases(instance), typed_sharedcontexts, typed_sharedvars}(pc, instance, inject)
+end
+
 """
 Get a subcontext view for a specific subcontext
 """
-@inline function Base.view(pc::ProcessContext, instance::SA; inject = (;)) where SA <: AbstractIdentifiableAlgo
-    key = @inline getkey(instance)
+@inline function Base.view(pc::ProcessContext, instance::SA; inject = (;), sharedcontexts = (), sharedvars = ()) where SA <: AbstractIdentifiableAlgo
     # TODO: no key should always be nothing
     # if key == Symbol() || isnothing(key)
     #     key = getkey(getregistry(pc)[instance])
     # end
-    SubContextView{typeof(pc), key, typeof(instance), typeof(inject)}(pc, instance; inject)
+    return @inline view(pc, instance, inject, sharedcontexts, sharedvars)
 end
 
 @inline function Base.view(pc::ProcessContext{D}, instance::AbstractIdentifiableAlgo{T, nothing}, inject = (;)) where {D, T}

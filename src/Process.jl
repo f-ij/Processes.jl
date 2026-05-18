@@ -87,16 +87,16 @@ function Process(func::Func, inputs_overrides::Vararg{Any,N}; context::C = nothi
     return _finish_process_constructor(algo, context, lifetime, timeout)
 end
 
-@inline function _finish_process_constructor(algo::A, ::Nothing, lifetime::LT, timeout) where {A<:LoopAlgorithm, LT}
+@inline function _finish_process_constructor(algo::A, ::Nothing, lifetime::LT, timeout) where {A<:AbstractLoopAlgorithm, LT}
     prepared_context = getstoredcontext(algo)
     return _finish_process_constructor_with_context(algo, prepared_context, lifetime, timeout)
 end
 
-@inline function _finish_process_constructor(algo::A, context::C, lifetime::LT, timeout) where {A<:LoopAlgorithm, C, LT}
+@inline function _finish_process_constructor(algo::A, context::C, lifetime::LT, timeout) where {A<:AbstractLoopAlgorithm, C, LT}
     return _finish_process_constructor_with_context(algo, context, lifetime, timeout)
 end
 
-function _finish_process_constructor_with_context(algo::A, prepared_context::PC, lifetime::LT, timeout) where {A<:LoopAlgorithm, PC, LT}
+function _finish_process_constructor_with_context(algo::A, prepared_context::PC, lifetime::LT, timeout) where {A<:AbstractLoopAlgorithm, PC, LT}
     prepared_context = merge_into_globals(prepared_context, (; lifetime,))
     algo = _with_lifecycle(algo, prepared_context, getstoredinits(algo), getstoredoverrides(algo))
 
@@ -111,16 +111,16 @@ function _finish_process_constructor_with_context(algo::A, prepared_context::PC,
     return p
 end
 
-@inline function _process_constructor_algo(algo::LA, ::Nothing, inputs_overrides::Tuple{}, lifetime::LT) where {LA<:LoopAlgorithm, LT}
+@inline function _process_constructor_algo(algo::LA, ::Nothing, inputs_overrides::Tuple{}, lifetime::LT) where {LA<:AbstractLoopAlgorithm, LT}
     isnothing(getstoredcontext(algo)) || return algo
     return init(algo; lifetime)
 end
 
-@inline function _process_constructor_algo(algo::LA, ::Nothing, inputs_overrides::IO, lifetime::LT) where {LA<:LoopAlgorithm, IO<:Tuple, LT}
+@inline function _process_constructor_algo(algo::LA, ::Nothing, inputs_overrides::IO, lifetime::LT) where {LA<:AbstractLoopAlgorithm, IO<:Tuple, LT}
     return init(algo, inputs_overrides...; lifetime)
 end
 
-@inline function _process_constructor_algo(algo::LA, context::C, inputs_overrides::IO, lifetime::LT) where {LA<:LoopAlgorithm, C, IO<:Tuple, LT}
+@inline function _process_constructor_algo(algo::LA, context::C, inputs_overrides::IO, lifetime::LT) where {LA<:AbstractLoopAlgorithm, C, IO<:Tuple, LT}
     isempty(inputs_overrides) || error("Pass either an initialized `context` or init/override specs to `Process`, not both.")
     isnothing(getstoredcontext(algo)) || return algo
     return _with_lifecycle(resolve(algo), nothing, getstoredinits(algo), getstoredoverrides(algo))

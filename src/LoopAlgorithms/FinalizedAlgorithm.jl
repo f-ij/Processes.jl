@@ -18,7 +18,7 @@ Root-only loop-algorithm wrapper that post-processes the cleaned final context.
 process. When nested inside another loop algorithm constructor, the parser warns
 and strips the wrapper so inner context semantics stay ordinary.
 """
-struct FinalizedAlgorithm{LA<:LoopAlgorithm, F} <: LoopAlgorithm
+struct FinalizedAlgorithm{LA<:AbstractLoopAlgorithm, F} <: AbstractLoopAlgorithm
     inner::LA
     final::F
 end
@@ -34,19 +34,19 @@ The wrapper is root-only: pass the returned `FinalizedAlgorithm` directly to a
 constructor, the parser warns and drops the final wrapper because nested loop
 algorithms do not own the process-level result.
 """
-function finalstep(la::LoopAlgorithm, final)
+function finalstep(la::LA, final) where {LA<:AbstractLoopAlgorithm}
     return FinalizedAlgorithm{typeof(la), typeof(final)}(la, final)
 end
 
 """
-    finalstep(::Type{<:LoopAlgorithm}, final)
+    finalstep(::Type{<:AbstractLoopAlgorithm}, final)
 
 Reject type-level loop algorithms for finalization.
 
 `finalstep` needs an instantiated loop algorithm so the final wrapper can
 preserve the concrete algorithm value and forward all loop operations to it.
 """
-function finalstep(::Type{LA}, final) where {LA<:LoopAlgorithm}
+function finalstep(::Type{LA}, final) where {LA<:AbstractLoopAlgorithm}
     error("`finalstep` requires an instantiated LoopAlgorithm, not a LoopAlgorithm type.")
 end
 
@@ -78,6 +78,8 @@ end
 @inline Base.eachindex(fa::FinalizedAlgorithm) = eachindex(inneralgorithm(fa))
 @inline reset!(fa::FinalizedAlgorithm) = reset!(inneralgorithm(fa))
 @inline step!(fa::FinalizedAlgorithm, context::C, typestable::S = Stable()) where {C<:AbstractContext, S} = step!(inneralgorithm(fa), context, typestable)
+@inline step!(fa::FinalizedAlgorithm, context::C, typestable::S, step_wiring::SW) where {C<:AbstractContext, S, SW<:Tuple} =
+    step!(inneralgorithm(fa), context, typestable, step_wiring)
 @inline cleanup(fa::FinalizedAlgorithm, context) = cleanup(inneralgorithm(fa), context)
 
 @inline multipliers(fa::FinalizedAlgorithm) = multipliers(inneralgorithm(fa))
@@ -86,7 +88,7 @@ end
 @inline interval(fa::FinalizedAlgorithm, idx) = interval(inneralgorithm(fa), idx)
 @inline repeats(fa::FinalizedAlgorithm) = repeats(inneralgorithm(fa))
 @inline repeats(fa::FinalizedAlgorithm, idx::Int) = repeats(inneralgorithm(fa), idx)
-@inline repeats(fa::FinalizedAlgorithm, idx::Val) = repeats(inneralgorithm(fa), idx)
+@inline repeats(fa::FinalizedAlgorithm, idx::Val{I}) where {I} = repeats(inneralgorithm(fa), idx)
 
 @inline functypes(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}} = functypes(LA)
 @inline functypes(fa::FinalizedAlgorithm) = functypes(inneralgorithm(fa))

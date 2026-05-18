@@ -1,7 +1,7 @@
 export inspect, InspectionReport
 
 """
-    inspect(la::LoopAlgorithm; globals = (;), inputs = (;), steps = true)
+    inspect(la::AbstractLoopAlgorithm; globals = (;), inputs = (;), steps = true)
 
 Build a displayable structural report for a loop algorithm.
 
@@ -15,7 +15,7 @@ Runtime-input metadata is intentionally reported only when it is declared on the
 loop algorithm. The current implementation leaves that section empty because the
 LoopAlgorithm-level `@input` feature is not built yet.
 """
-function inspect(la::LoopAlgorithm; globals = (;), inputs = (;), steps::Bool = true)
+function inspect(la::LA; globals = (;), inputs = (;), steps::Bool = true) where {LA<:AbstractLoopAlgorithm}
     resolved, resolve_error = _inspection_resolve(la)
     if isnothing(resolved)
         return InspectionReport(
@@ -121,7 +121,7 @@ function _inspection_kind(obj)
         return :state
     elseif inner isa ProcessAlgorithm
         return :algorithm
-    elseif inner isa LoopAlgorithm
+    elseif inner isa AbstractLoopAlgorithm
         return :loopalgorithm
     else
         return :object
@@ -168,13 +168,13 @@ function _inspection_filter_entries(entries::Vector{InspectionEntry}, kind::Symb
     return InspectionEntry[entry for entry in entries if entry.kind == kind]
 end
 
-function _inspection_registry_entries(la::LoopAlgorithm)
+function _inspection_registry_entries(la::LA) where {LA<:AbstractLoopAlgorithm}
     reg = getregistry(la)
     isnothing(reg) && return InspectionEntry[]
     return _inspection_entries(all_algos(reg))
 end
 
-function _inspection_resolved_sharing(la::LoopAlgorithm)
+function _inspection_resolved_sharing(la::LA) where {LA<:AbstractLoopAlgorithm}
     sharedcontexts, sharedvars = _resolve_options(la)
     shares = InspectionShare[]
     routes = InspectionRoute[]
@@ -203,7 +203,7 @@ end
 _inspection_tuple(value::Tuple) = value
 _inspection_tuple(value) = (value,)
 
-function _inspection_runtime_inputs(la::LoopAlgorithm)
+function _inspection_runtime_inputs(la::LA) where {LA<:AbstractLoopAlgorithm}
     if isdefined(@__MODULE__, :runtime_inputs)
         runtime_inputs_func = getfield(@__MODULE__, :runtime_inputs)
         if hasmethod(runtime_inputs_func, Tuple{typeof(la)})
@@ -217,7 +217,7 @@ function _inspection_runtime_inputs(inputs)
     return InspectionRuntimeInput[]
 end
 
-function _inspection_execution_plan(la::LoopAlgorithm)
+function _inspection_execution_plan(la::LA) where {LA<:AbstractLoopAlgorithm}
     return InspectionExecutionNode(_inspection_loop_label(la), _inspection_execution_children(la))
 end
 
@@ -239,7 +239,7 @@ function _inspection_execution_children(la::Routine)
     ]
 end
 
-function _inspection_execution_children(la::LoopAlgorithm)
+function _inspection_execution_children(la::LA) where {LA<:AbstractLoopAlgorithm}
     funcs = getalgos(la)
     return InspectionExecutionNode[
         _inspection_execution_node(func, "step")
@@ -248,13 +248,13 @@ function _inspection_execution_children(la::LoopAlgorithm)
 end
 
 function _inspection_execution_node(obj, schedule::String)
-    if obj isa AbstractIdentifiableAlgo && getalgo(obj) isa LoopAlgorithm
+    if obj isa AbstractIdentifiableAlgo && getalgo(obj) isa AbstractLoopAlgorithm
         inner = getalgo(obj)
         return InspectionExecutionNode(
             string(_inspection_entry_label(obj), " (", schedule, ")"),
             _inspection_execution_children(inner),
         )
-    elseif obj isa LoopAlgorithm
+    elseif obj isa AbstractLoopAlgorithm
         return InspectionExecutionNode(
             string(_inspection_loop_label(obj), " (", schedule, ")"),
             _inspection_execution_children(obj),
@@ -280,7 +280,7 @@ function _inspection_loop_label(la::Routine)
     return "Routine"
 end
 
-function _inspection_loop_label(la::LoopAlgorithm)
+function _inspection_loop_label(la::LA) where {LA<:AbstractLoopAlgorithm}
     return sprint(summary, la)
 end
 

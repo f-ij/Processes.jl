@@ -195,9 +195,15 @@ Full-context shares:
 - `Algo(@all(source))`
 - `Algo(@all(alias...))`
 
-`@all(...)` lowers to a normal `Share(raw_source, raw_target)` option. The DSL
-does not manufacture `IdentifiableAlgo` wrappers for either endpoint; keyed
-matching is left to the normal runtime registration logic.
+`@all(...)` lowers to a statement-local `Share(raw_source, raw_target)` option.
+The DSL does not manufacture unnecessary `IdentifiableAlgo` wrappers for the
+source endpoint; keyed matching is left to normal runtime registration logic.
+
+Top-level plan routes can be written as route statements:
+- `@route source.produced => sink.value`
+
+Known `@alias` names and `@context` references are accepted in those endpoint
+positions. Normal call inputs still create statement-local wiring.
 
 Scheduling:
 - `x = @interval n Algo(...)`

@@ -17,7 +17,7 @@ end
 """
 Make a context from an algo and empty context
 """
-function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where {F <: LoopAlgorithm}
+function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
     input_context = merge_into_globals(c, (;algo, lifetime))
 
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"
@@ -29,11 +29,11 @@ function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where 
     return prepared_context
 end
 
-function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{Input, Override}...; lifetime = Indefinite()) where {F <: LoopAlgorithm}
+function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{Input, Override}...; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
     input_context = merge_into_globals(c, (;algo, lifetime))
-    resolved = _resolve_lifecycle_specs(getregistry(input_context), overrides_and_inputs...)
-    inputs, overrides = _split_init_override(resolved...)
-    input_context = merge(input_context, inputs...)
+    resolved = _resolve_lifecycle_specs(getregistry(input_context), overrides_and_inputs)
+    inputs, overrides = _split_init_override(resolved)
+    input_context = merge_resolved_inputs(input_context, inputs)
 
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"
     @DebugMode "Overrides are $overrides"
@@ -41,7 +41,7 @@ function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), override
     prepared_context = init(algo, input_context)
     @DebugMode "Prepared in initcontext context is $prepared_context"
 
-    overridden_context = merge(prepared_context, overrides...)
+    overridden_context = merge_resolved_inputs(prepared_context, overrides)
 
     return overridden_context
 end

@@ -1,4 +1,4 @@
-unwrap_cla(cla::LoopAlgorithm) = getalgos(cla)
+unwrap_cla(cla::LA) where {LA<:AbstractLoopAlgorithm} = getalgos(cla)
 unwrap_cla(x) = x
 
 # Empty tuple

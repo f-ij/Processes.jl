@@ -39,16 +39,16 @@ end
         for i in 1:numvars], assign_symbols
 end
 
-struct SubContextView{CType, SubName, T, NT, VarAliases} <: AbstractContext
+struct SubContextView{CType, SubName, T, NT, VarAliases, SharedContexts, SharedVars} <: AbstractContext
     context::CType
     instance::T # ScopedInstance for which the view is created
     injected::NT
 
     function SubContextView{CType, SubName, T, NT}(context::CType, instance::T; inject::NT = (;)) where {CType, SubName, T, NT}
-        new{CType, SubName, T, typeof(inject), varaliases(instance)}(context, instance, inject)
+        new{CType, SubName, T, typeof(inject), varaliases(instance), (), ()}(context, instance, inject)
     end
 
-    function SubContextView{CType, SubName, T, NT, VarAliases}(context::CType, instance::T, inject::NT = (;)) where {CType, SubName, T, NT, VarAliases}
-        new{CType, SubName, T, typeof(inject), varaliases(instance)}(context, instance, inject)
+    function SubContextView{CType, SubName, T, NT, VarAliases, SharedContexts, SharedVars}(context::CType, instance::T, inject::NT = (;)) where {CType, SubName, T, NT, VarAliases, SharedContexts, SharedVars}
+        new{CType, SubName, T, typeof(inject), varaliases(instance), SharedContexts, SharedVars}(context, instance, inject)
     end
 end

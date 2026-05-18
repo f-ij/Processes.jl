@@ -48,6 +48,36 @@ function _dsl_maybe_guard_metadata_expr(expr, include_condition)
     end
 end
 
+"""Parse `@route source.field => target.field` as a top-level plan route."""
+function _dsl_build_global_route_statement(stmt, alias_map, context_map; include_condition = nothing)
+    stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@route") || return nothing
+    length(stmt.args) >= 3 || error("@route expects `source.field => target.field`.")
+    route_expr = stmt.args[3]
+    route_expr isa Expr && route_expr.head == :call && route_expr.args[1] == :(=>) && length(route_expr.args) == 3 ||
+        error("@route expects `source.field => target.field`.")
+
+    source = _dsl_parse_owned_route_expr(alias_map, context_map, route_expr.args[2])
+    target = _dsl_parse_owned_route_expr(alias_map, context_map, route_expr.args[3])
+    isnothing(source) && error("@route source must be an owned field reference like `source.value` or `c1.inner.value`.")
+    isnothing(target) && error("@route target must be an owned field reference like `sink.value`.")
+
+    transform = nothing
+    for arg in stmt.args[4:end]
+        if arg isa Expr && arg.head == :(=) && arg.args[1] == :transform
+            transform = arg.args[2]
+        else
+            error("Unsupported @route argument `$arg`. Use `@route source.x => target.y` or `@route source.x => target.y transform = f`.")
+        end
+    end
+
+    route = if isnothing(transform)
+        :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source))))
+    else
+        :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); transform = $(esc(transform))))
+    end
+    return _dsl_maybe_guard_metadata_expr(:(push!(_dsl_options, $route)), include_condition)
+end
+
 """
 Emit the share/route owner expression matching the eventual constructor entry.
 
@@ -207,6 +237,9 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
         error("@finally is root-only and must appear as a top-level DSL statement.")
     end
 
+    global_route = _dsl_build_global_route_statement(stmt, alias_map, context_map; include_condition)
+    isnothing(global_route) || return global_route
+
     outputs = ()
     rhs = stmt
     if stmt isa Expr && stmt.head == :(.=)
@@ -233,7 +266,11 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             local _dsl_output = $(QuoteNode(output))
             local _dsl_owner = $(esc(owned_route.owner))
             if haskey(_dsl_state_owners, _dsl_output)
-                push!(_dsl_options, Route(_dsl_owner => _dsl_state_owners[_dsl_output], _dsl_output => _dsl_output))
+                Processes._composite_dsl_push_local_option!(
+                    _dsl_options,
+                    _dsl_owner,
+                    Processes.Route(_dsl_owner => _dsl_state_owners[_dsl_output], _dsl_output => _dsl_output),
+                )
                 _dsl_producers[_dsl_output] = _dsl_state_owners[_dsl_output]
             else
                 _dsl_producers[_dsl_output] = _dsl_owner
@@ -254,7 +291,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
         inputs_expr = _dsl_inputs_expr(parsed.inputs)
         metadata_expr = quote
             $(map(parsed.shares) do share_source
-                :(push!(_dsl_options, Processes.Share($(share_source), _dsl_owner)))
+                :(Processes._composite_dsl_push_local_option!(_dsl_options, _dsl_owner, Processes.Share($(share_source), _dsl_owner)))
             end...)
             Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
             Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
@@ -314,7 +351,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     if parsed.kind == :keyword_call
         metadata_expr = quote
             $(map(parsed.shares) do share_source
-                :(push!(_dsl_options, Processes.Share($(share_source), _dsl_owner)))
+                :(Processes._composite_dsl_push_local_option!(_dsl_options, _dsl_owner, Processes.Share($(share_source), _dsl_owner)))
             end...)
             Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
             Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)

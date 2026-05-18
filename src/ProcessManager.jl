@@ -265,7 +265,7 @@ end
 
 Return whether `recipe` defines a non-`nothing` callback field named `name`.
 """
-_has_recipe_callback(recipe, name::Val) = !_is_no_recipe_callback(_recipe_field(recipe, name))
+_has_recipe_callback(recipe, name::Val{Name}) where {Name} = !_is_no_recipe_callback(_recipe_field(recipe, name))
 
 """
     _worker_context(recipe, idx, manager, template)
@@ -450,7 +450,7 @@ end
 
 Call a required recipe callback and throw a clear error when it is absent.
 """
-function _call_recipe_field(recipe, name::Val, args...)
+function _call_recipe_field(recipe, name::Val{Name}, args...) where {Name}
     callback = _recipe_field(recipe, name)
     _is_no_recipe_callback(callback) && throw(ArgumentError("Recipe does not define callback `$(_valname(name))`."))
     return _call_with_supported_arity(callback, args...)
@@ -462,7 +462,7 @@ end
 Call an optional recipe callback. Missing callbacks return
 `NoRecipeCallback()`, which callers use to select default behavior.
 """
-function _call_optional_recipe_field(recipe, name::Val, args...)
+function _call_optional_recipe_field(recipe, name::Val{Name}, args...) where {Name}
     callback = _recipe_field(recipe, name)
     _is_no_recipe_callback(callback) && return NoRecipeCallback()
     return _call_with_supported_arity(callback, args...)

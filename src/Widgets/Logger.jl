@@ -11,7 +11,7 @@ function Processes.init(::Logger{T}, context::C) where {T, C}
     processsizehint!(log, context)
     return (;log)
 end
-function pushderef!(vec::V, val::Val) where {V<:AbstractVector, Val}
+function pushderef!(vec::V, val::TVal) where {V<:AbstractVector, TVal}
     if val isa Ref
         push!(vec, val[])
     else

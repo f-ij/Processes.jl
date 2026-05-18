@@ -5,14 +5,14 @@ export copyinputs, copyoverrides, copyprocess
 
 Return the stored `Init` specs for an initialized process or loop algorithm.
 """
-@inline copyinputs(la::LoopAlgorithm) = getstoredinits(la)
+@inline copyinputs(la::ALA) where {ALA<:AbstractLoopAlgorithm} = getstoredinits(la)
 
 """
     copyoverrides(process_or_la)
 
 Return the stored `Override` specs for an initialized process or loop algorithm.
 """
-@inline copyoverrides(la::LoopAlgorithm) = getstoredoverrides(la)
+@inline copyoverrides(la::ALA) where {ALA<:AbstractLoopAlgorithm} = getstoredoverrides(la)
 @inline copyinputs(p::Process) = copyinputs(getalgo(p))
 @inline copyoverrides(p::Process) = copyoverrides(getalgo(p))
 
@@ -27,5 +27,5 @@ function copyprocess(p::Process, specs...; lifetime = Processes.lifetime(p), tim
     return Process(algo; lifetime, timeout)
 end
 
-copyprocess(la::LoopAlgorithm, specs...; lifetime = Indefinite(), timeout = 1.0, context = nothing, kwargs...) =
+copyprocess(la::ALA, specs...; lifetime = Indefinite(), timeout = 1.0, context = nothing, kwargs...) where {ALA<:AbstractLoopAlgorithm} =
     Process(isnothing(context) ? init(la, specs...) : _with_lifecycle(resolve(la), context, copyinputs(la), copyoverrides(la)); lifetime, timeout)

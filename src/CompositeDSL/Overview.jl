@@ -104,6 +104,16 @@ using raw entities:
 - `Route(raw_source => raw_target, ...)`
 - `Share(raw_source, raw_target)`
 
+The DSL may wrap those route/share objects in internal location metadata after
+parsing so the option is attached to the statement-local plan node instead of
+the top-level plan route bucket. To define a top-level plan route/share in the
+DSL, write it as an explicit route statement:
+
+- `@route source.x => sink.y`
+
+Known `@alias` names and `@context` references are rewritten to their keyed
+endpoint in those positions.
+
 There is one deliberate exception: if the DSL already knows the final stable key
 for an endpoint at expansion time, it should prefer the keyed owner expression
 over the raw value. In practice this means:

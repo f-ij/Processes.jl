@@ -2,55 +2,15 @@ struct ThreadedIndex{idx} end
 struct ThreadedLayer{Idxs} end
 
 """
-Return threaded execution layers from the resolved shared-variable dependencies stored on
-the concrete `ProcessContext` subtype.
+Return threaded execution layers.
+
+Threaded composites are deferred for the plan-wrapper route model, so
+`SubContext` no longer carries route/share metadata for dependency sorting.
+Until threaded plan wiring is implemented, children are emitted in one layer.
 """
 @generated function _threaded_layers(::TCA, ::C) where {TCA<:ThreadedCompositeAlgorithm, C<:ProcessContext}
     n = numalgos(TCA)
-
-    child_names = ntuple(i -> getkey(getalgotype(TCA, i)), n)
-    parents = [Int[] for _ in 1:n]
-
-    for idx in 1:n
-        child_name = child_names[idx]
-        child_name isa Symbol || continue
-
-        subcontext_t = subcontext_type(C, child_name)
-        for sharedvar_t in getsharedvars_types(subcontext_t)
-            parent_name = get_fromname(sharedvar_t)
-            parent_name isa Symbol || continue
-
-            parent_idx = findfirst(==(parent_name), child_names)
-            if !isnothing(parent_idx) && parent_idx != idx && !(parent_idx in parents[idx])
-                push!(parents[idx], parent_idx)
-            end
-        end
-    end
-
-    remaining = collect(1:n)
-    done = Int[]
-    layers = Any[]
-
-    while !isempty(remaining)
-        layer = Int[]
-        for idx in remaining
-            if all(parent -> parent in done, parents[idx])
-                push!(layer, idx)
-            end
-        end
-
-        if isempty(layer)
-            layer_exprs = [:(ThreadedLayer{$(Expr(:tuple, i))}()) for i in 1:n]
-            return Expr(:tuple, layer_exprs...)
-        end
-
-        push!(layers, Tuple(layer))
-        append!(done, layer)
-        filter!(idx -> !(idx in layer), remaining)
-    end
-
-    layer_exprs = [:(ThreadedLayer{$(Expr(:tuple, layer...))}()) for layer in layers]
-    return Expr(:tuple, layer_exprs...)
+    return :(($(Expr(:curly, :ThreadedLayer, Expr(:tuple, ntuple(identity, n)...)))(),))
 end
 
 @inline function _threaded_should_run(tca::ThreadedCompositeAlgorithm, this_inc::Int, idx::Int)

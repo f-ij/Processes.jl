@@ -19,10 +19,10 @@ end
 """
 Shared subcontexts => VarLocations
 """
-function get_shared_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, SubKey}} where {CType, SubKey}
-    _subcontext_type = subcontext_type(SCT)
+@inline _view_shared_types(shared) = shared isa Tuple ? shared : (shared,)
 
-    shared_context_names = getsharedcontext_names(_subcontext_type)
+function get_shared_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, SubKey}} where {CType, SubKey}
+    shared_context_names = contextname.(_view_shared_types(view_sharedcontexts(SCT)))
 
     sharedvars = named_flat_collect_broadcast(shared_context_names) do name
         shared_subcontext_type = subcontext_type(CType, name)
@@ -34,11 +34,10 @@ function get_shared_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, 
 end
 
 """
-Routes stored in the subcontext => VarLocations
+Routes supplied to the view => VarLocations.
 """
 function get_routed_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, SubKey}} where {CType, SubKey}
-    _subcontext_type = subcontext_type(SCT)
-    sharedvars = getsharedvars_types(_subcontext_type)
+    sharedvars = _view_shared_types(view_sharedvars(SCT))
 
     routedvars = named_flat_collect_broadcast(sharedvars) do sv
         fromname = get_fromname(sv)

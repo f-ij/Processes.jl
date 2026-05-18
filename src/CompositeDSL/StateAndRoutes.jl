@@ -48,26 +48,32 @@ end
 """Emit keyword values for direct-call DSL syntax."""
 _dsl_keyword_value_expr(value) = value isa Symbol ? QuoteNode(value) : esc(value)
 
-"""Turn parsed DSL input specs into concrete `Route` objects."""
+"""Store a DSL-emitted plan option at the statement-local owner."""
+function _composite_dsl_push_local_option!(options::Vector{Any}, owner, option)
+    push!(options, LocalPlanOption(owner, option))
+    return options
+end
+
+"""Turn parsed DSL input specs into statement-local `Route` options."""
 function _composite_dsl_add_routes!(options::Vector{Any}, producers::Dict{Symbol, Any}, external_inputs::Vector{Pair{Symbol, Symbol}}, target, inputs::Tuple)
     for input in inputs
         if input.kind == :simple
             source = input.source
             destination = input.destination
             if haskey(producers, source)
-                push!(options, Route(producers[source] => target, source => destination))
+                _composite_dsl_push_local_option!(options, target, Route(producers[source] => target, source => destination))
             else
                 ext_mapping = source => source
                 ext_mapping in external_inputs || push!(external_inputs, ext_mapping)
             end
         elseif input.kind == :context_simple
-            push!(options, Route(input.owner => target, input.source => input.destination))
+            _composite_dsl_push_local_option!(options, target, Route(input.owner => target, input.source => input.destination))
         elseif input.kind == :simple_transform
             source = input.source
             haskey(producers, source) || error("Transform routes currently require a previously produced symbol or an owned field reference. Missing producer for `$source`.")
-            push!(options, Route(producers[source] => target, source => input.destination; transform = input.transform))
+            _composite_dsl_push_local_option!(options, target, Route(producers[source] => target, source => input.destination; transform = input.transform))
         elseif input.kind == :context_transform
-            push!(options, Route(input.owner => target, input.source => input.destination; transform = input.transform))
+            _composite_dsl_push_local_option!(options, target, Route(input.owner => target, input.source => input.destination; transform = input.transform))
         else
             error("Unsupported DSL input kind `$(input.kind)`.")
         end
@@ -102,7 +108,7 @@ owner and add a writeback route instead of rebinding the symbol.
 function _composite_dsl_bind_outputs!(options::Vector{Any}, producers::Dict{Symbol, Any}, state_owners::Dict{Symbol, Any}, target, outputs::Tuple{Vararg{Symbol}})
     for output in outputs
         if haskey(state_owners, output)
-            push!(options, Route(state_owners[output] => target, output => output))
+            _composite_dsl_push_local_option!(options, target, Route(state_owners[output] => target, output => output))
             producers[output] = state_owners[output]
         else
             producers[output] = target
@@ -119,14 +125,14 @@ emitted route/share ownership metadata, because those keyed endpoints can later
 be renamed during composition.
 """
 function _composite_dsl_owner(entity, name::Symbol)
-    if entity isa LoopAlgorithm
+    if entity isa AbstractLoopAlgorithm
         return entity
     end
     return IdentifiableAlgo(entity, name)
 end
 
 function _composite_dsl_entry(entity, name::Symbol)
-    if name == Symbol() || entity isa LoopAlgorithm
+    if name == Symbol() || entity isa AbstractLoopAlgorithm
         return entity
     end
     return name => entity
@@ -138,7 +144,7 @@ function _dsl_known_owner_expr(entity_expr, name::Symbol)
 end
 
 function _composite_dsl_write_owner(entity, name::Symbol)
-    if entity isa LoopAlgorithm
+    if entity isa AbstractLoopAlgorithm
         return getproperty(entity, :_state)
     end
     return IdentifiableAlgo(entity, name)

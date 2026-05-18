@@ -17,15 +17,15 @@ struct KeyLocation{Path} end
 end
 
 @inline subalgo(::Any) = nothing
-@inline subalgo(la::LoopAlgorithm) = la
-@inline subalgo(::Type{LA}) where {LA<:LoopAlgorithm} = LA
-@inline subalgo(sa::AbstractIdentifiableAlgo{F}) where {F} = F <: LoopAlgorithm ? getalgo(sa) : nothing
-@inline subalgo(::Type{<:AbstractIdentifiableAlgo{F}}) where {F} = F <: LoopAlgorithm ? F : nothing
+@inline subalgo(la::LA) where {LA<:AbstractLoopAlgorithm} = la
+@inline subalgo(::Type{LA}) where {LA<:AbstractLoopAlgorithm} = LA
+@inline subalgo(sa::AbstractIdentifiableAlgo{F}) where {F} = F <: AbstractLoopAlgorithm ? getalgo(sa) : nothing
+@inline subalgo(::Type{<:AbstractIdentifiableAlgo{F}}) where {F} = F <: AbstractLoopAlgorithm ? F : nothing
 
-@inline childnodes(la::LoopAlgorithm) = tuple(getalgos(la)..., getstates(la)...)
-@inline childnodes(::Type{LA}) where {LA<:LoopAlgorithm} = tuple(algotypes(LA)..., statetypes(LA)...)
+@inline childnodes(la::LA) where {LA<:AbstractLoopAlgorithm} = tuple(getalgos(la)..., getstates(la)...)
+@inline childnodes(::Type{LA}) where {LA<:AbstractLoopAlgorithm} = tuple(algotypes(LA)..., statetypes(LA)...)
 
-function Base.keys(la::Union{LoopAlgorithm, Type{<:LoopAlgorithm}})
+function _loopalgorithm_keys(la)
     names = Symbol[]
     for child in childnodes(la)
         key = trykey(child)
@@ -38,7 +38,15 @@ function Base.keys(la::Union{LoopAlgorithm, Type{<:LoopAlgorithm}})
     return tuple(names...)
 end
 
-function _findkey(la::Union{LoopAlgorithm, Type{<:LoopAlgorithm}}, key::Symbol, prefix::Tuple = ())
+function Base.keys(la::LA) where {LA<:AbstractLoopAlgorithm}
+    return _loopalgorithm_keys(la)
+end
+
+function Base.keys(la::Type{<:AbstractLoopAlgorithm})
+    return _loopalgorithm_keys(la)
+end
+
+function _findkey_loopalgorithm(la, key::Symbol, prefix::Tuple = ())
     for (idx, child) in pairs(childnodes(la))
         child_key = trykey(child)
         if child_key == key && child_key != Symbol()
@@ -55,8 +63,18 @@ function _findkey(la::Union{LoopAlgorithm, Type{<:LoopAlgorithm}}, key::Symbol, 
     return nothing
 end
 
-@inline findkey(la::Union{LoopAlgorithm, Type{<:LoopAlgorithm}}, key::Symbol) = _findkey(la, key)
-@inline Base.haskey(la::Union{LoopAlgorithm, Type{<:LoopAlgorithm}}, key::Symbol) = !isnothing(findkey(la, key))
+function _findkey(la::LA, key::Symbol, prefix::Tuple = ()) where {LA<:AbstractLoopAlgorithm}
+    return _findkey_loopalgorithm(la, key, prefix)
+end
+
+function _findkey(la::Type{<:AbstractLoopAlgorithm}, key::Symbol, prefix::Tuple = ())
+    return _findkey_loopalgorithm(la, key, prefix)
+end
+
+@inline findkey(la::LA, key::Symbol) where {LA<:AbstractLoopAlgorithm} = _findkey(la, key)
+@inline findkey(la::Type{<:AbstractLoopAlgorithm}, key::Symbol) = _findkey(la, key)
+@inline Base.haskey(la::LA, key::Symbol) where {LA<:AbstractLoopAlgorithm} = !isnothing(findkey(la, key))
+@inline Base.haskey(la::Type{<:AbstractLoopAlgorithm}, key::Symbol) = !isnothing(findkey(la, key))
 
 function _getindex_keylocation(current, path::Tuple)
     child = childnodes(current)[first(path)]
@@ -67,4 +85,4 @@ function _getindex_keylocation(current, path::Tuple)
     return _getindex_keylocation(nested, Base.tail(path))
 end
 
-@inline Base.getindex(cla::LoopAlgorithm, location::KeyLocation) = _getindex_keylocation(cla, keypath(location))
+@inline Base.getindex(cla::LA, location::KeyLocation) where {LA<:AbstractLoopAlgorithm} = _getindex_keylocation(cla, keypath(location))

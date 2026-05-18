@@ -250,9 +250,9 @@ The source may be a plain algorithm/type name or a previously declared DSL
 alias.
 
 Important: this helper must return the raw source entity. It must not wrap the
-source in `IdentifiableAlgo`, because `@all(...)` is just syntax for a normal
-`Share(raw_source, raw_target)` option. Runtime registration/matching is
-responsible for comparing that raw source against any keyed identity later.
+source in `IdentifiableAlgo`, because the statement builder adds the share as a
+local plan option and runtime registration/matching is responsible for comparing
+that raw source against any keyed identity later.
 """
 function _dsl_parse_all_share_arg(alias_map, arg)
     arg isa Expr && arg.head == :macrocall && arg.args[1] == Symbol("@all") || error("Invalid share syntax `$arg`.")

@@ -65,8 +65,13 @@ LoopAlgorithm(  func1, func2, func3, ...,
                 tuple(interval1, interval2, interval3, ...),
                 processstate1, processstate2, ..., 
                 options1, option2, ...)
+
+Plain `Route` and `Share` options are stored on the top-level plan as global
+routing metadata. DSL expansion can pass `LocalPlanOption` values when a
+route/share belongs to a specific child plan node. Non-routing options stay on
+the `LoopAlgorithm` runtime wrapper.
 """
-function parse_la_input(laType::Type{LA}, args...) where {LA<:LoopAlgorithm}
+function parse_la_input(laType::Type{LA}, args...) where {LA<:AbstractLoopAlgorithm}
     collected_options = tuple()
 
     ######### ALGORITHMS #########
@@ -93,9 +98,10 @@ function parse_la_input(laType::Type{LA}, args...) where {LA<:LoopAlgorithm}
     end
     @assert !isempty(processalgos) "At least one ProcessAlgorithm must be provided, but got: $(args)"
 
-    # Collect options from all LoopAlgorithms
+    # Nested plans keep their local route/share metadata. Resolved wrappers may
+    # still carry already-materialized options, so preserve those when composed.
     for algo in processalgos
-        if algo isa LoopAlgorithm
+        if algo isa LoopAlgorithm && isresolved(algo)
             collected_options = (unique(collected_options)..., update_option_keys(algo)...)
         end
     end
@@ -180,7 +186,9 @@ end
 Add all algos and states in one or more loop algorithms to a shared registry with
 their corresponding multipliers/intervals.
 """
-function setup_registry(las::LoopAlgorithm...)
+setup_registry(las...) = _setup_registry(las)
+
+function _setup_registry(las::LAS) where {LAS<:Tuple}
     registry = NameSpaceRegistry()
     for la in las
         # First add states with multiplier 1

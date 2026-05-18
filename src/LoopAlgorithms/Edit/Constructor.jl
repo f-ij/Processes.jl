@@ -2,7 +2,7 @@ export insert, addalgo, addstate, addoption, rename, changeinterval, changeinter
 
 import Base: rename
 
-@inline function _ensure_unresolved_for_edit(la::LoopAlgorithm)
+@inline function _ensure_unresolved_for_edit(la::LA) where {LA<:AbstractLoopAlgorithm}
     isresolved(la) && error("LoopAlgorithm edit tools currently require an unresolved loop algorithm. Edit the unresolved algorithm first, then call resolve again.")
     return la
 end
@@ -10,18 +10,44 @@ end
 @inline _stored_schedule_spec(::CompositeAlgorithm{T, Spec}) where {T, Spec} = Spec
 @inline _stored_schedule_spec(::Routine{T, Repeats}) where {T, Repeats} = Repeats
 @inline _stored_schedule_spec(::ThreadedCompositeAlgorithm{T, Spec}) where {T, Spec} = Spec
+@inline _stored_schedule_spec(la::LoopAlgorithm) = _stored_schedule_spec(getplan(la))
 
 @inline _constructor_type(::CompositeAlgorithm) = CompositeAlgorithm
 @inline _constructor_type(::Routine) = Routine
 @inline _constructor_type(::ThreadedCompositeAlgorithm) = ThreadedCompositeAlgorithm
+@inline _constructor_type(la::LoopAlgorithm) = _constructor_type(getplan(la))
+
+function _local_constructor_options(funcs::Tuple, wiring::Tuple)
+    options = ()
+    for i in eachindex(wiring)
+        owner = funcs[i]
+        for option in wiring[i]
+            options = (options..., LocalPlanOption(owner, option))
+        end
+    end
+    return options
+end
+
+"""
+Return the option tuple needed to rebuild a loop algorithm without changing route scope.
+
+Plan nodes store local route/share wiring in child-aligned buckets. Constructor
+rebuilds need those buckets rehydrated as `LocalPlanOption` values; otherwise an
+edit such as `rename` or `addalgo` would flatten local routes into top-level
+routes and change execution semantics.
+"""
+@inline _stored_constructor_options(la::LA) where {LA<:AbstractLoopAlgorithm} = getoptions(la)
+@inline _stored_constructor_options(la::Union{CompositeAlgorithm, Routine}) =
+    (getfield(la, :global_options)..., _local_constructor_options(getalgos(la), getfield(la, :wiring))...)
+@inline _stored_constructor_options(la::LoopAlgorithm) = (_stored_constructor_options(getplan(la))..., getoptions(la)...)
 
 @inline function _rebuild_loopalgorithm(
-    la::LoopAlgorithm;
+    la::LA;
     funcs = getalgos(la),
     states = getstates(la),
-    options = getoptions(la),
+    options = _stored_constructor_options(la),
     schedule_spec = _stored_schedule_spec(la),
-)
+) where {LA<:AbstractLoopAlgorithm}
     LoopAlgorithm(_constructor_type(la), funcs, states, options, schedule_spec; id = getid(la))
 end
 
@@ -43,10 +69,12 @@ end
 
 @inline _default_schedule_entry(::Routine) = 1
 @inline _default_schedule_entry(::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}) = Interval(1)
+@inline _default_schedule_entry(la::LoopAlgorithm) = _default_schedule_entry(getplan(la))
 
 @inline _normalize_schedule_entry(::Routine, spec) = spec
 @inline _normalize_schedule_entry(::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}, spec::Interval) = spec
 @inline _normalize_schedule_entry(::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}, spec::Real) = Interval(round(Int, spec))
+@inline _normalize_schedule_entry(la::LoopAlgorithm, spec) = _normalize_schedule_entry(getplan(la), spec)
 
 @inline function _schedule_entries(la::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm})
     ntuple(i -> interval(la, i), length(getalgos(la)))
@@ -55,14 +83,20 @@ end
 @inline function _schedule_entries(la::Routine)
     ntuple(i -> repeats(la, i), length(getalgos(la)))
 end
+@inline _schedule_entries(la::LoopAlgorithm) = _schedule_entries(getplan(la))
 
 @inline _collapse_schedule_spec(::Routine, entries::Tuple) = entries
 @inline function _collapse_schedule_spec(::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}, entries::Tuple)
     return all(==(Interval(1)), entries) ? IntervalOnes{length(entries)} : entries
 end
+@inline _collapse_schedule_spec(la::LoopAlgorithm, entries::Tuple) = _collapse_schedule_spec(getplan(la), entries)
 
 @inline _rename_item(item, replacements::Tuple{Vararg{Pair}}) = replacecontextkeys(item, collect(replacements))
 @inline _rename_item(item, replacement::Pair) = replacecontextkeys(item, replacement)
+@inline _rename_item(item::LocalPlanOption, replacements::Tuple{Vararg{Pair}}) =
+    LocalPlanOption(_rename_item(getfield(item, :owner), replacements), _rename_item(getfield(item, :option), replacements))
+@inline _rename_item(item::LocalPlanOption, replacements) =
+    LocalPlanOption(_rename_item(getfield(item, :owner), replacements), _rename_item(getfield(item, :option), replacements))
 
 @inline function _rename_item(s::Share, replacements)
     Share(
@@ -86,15 +120,15 @@ end
 @inline _rename_item(r::Route, replacements) = _rename_route(r, replacements)
 @inline _rename_item(r::Route, replacements::Tuple{Vararg{Pair}}) = _rename_route(r, replacements)
 
-function rename(la::LoopAlgorithm, replacements::Pair...)
+function rename(la::LA, replacements::Pair...) where {LA<:AbstractLoopAlgorithm}
     _ensure_unresolved_for_edit(la)
     funcs = map(x -> _rename_item(x, replacements), getalgos(la))
     states = map(x -> _rename_item(x, replacements), getstates(la))
-    options = map(x -> _rename_item(x, replacements), getoptions(la))
+    options = map(x -> _rename_item(x, replacements), _stored_constructor_options(la))
     return _rebuild_loopalgorithm(la; funcs, states, options)
 end
 
-function insert(la::LoopAlgorithm, idx::Integer, algo, schedule_spec = _default_schedule_entry(la))
+function insert(la::LA, idx::Integer, algo, schedule_spec = _default_schedule_entry(la)) where {LA<:AbstractLoopAlgorithm}
     _ensure_unresolved_for_edit(la)
     newfuncs = _tuple_insert(getalgos(la), idx, _edit_entity(algo))
     schedule_entries = _schedule_entries(la)
@@ -106,21 +140,21 @@ function insert(la::LoopAlgorithm, idx::Integer, algo, schedule_spec = _default_
     )
 end
 
-@inline addalgo(la::LoopAlgorithm, algo, schedule_spec = _default_schedule_entry(la)) = insert(la, length(getalgos(la)) + 1, algo, schedule_spec)
+@inline addalgo(la::LA, algo, schedule_spec = _default_schedule_entry(la)) where {LA<:AbstractLoopAlgorithm} = insert(la, length(getalgos(la)) + 1, algo, schedule_spec)
 
-function addstate(la::LoopAlgorithm, state)
+function addstate(la::LA, state) where {LA<:AbstractLoopAlgorithm}
     _ensure_unresolved_for_edit(la)
     newstates = (getstates(la)..., _edit_entity(state))
     return _rebuild_loopalgorithm(la; states = newstates)
 end
 
-function addoption(la::LoopAlgorithm, option)
+function addoption(la::LA, option) where {LA<:AbstractLoopAlgorithm}
     _ensure_unresolved_for_edit(la)
-    newoptions = (getoptions(la)..., option)
+    newoptions = (_stored_constructor_options(la)..., option)
     return _rebuild_loopalgorithm(la; options = newoptions)
 end
 
-function changeintervals(la::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}, newintervals)
+function changeintervals(la::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm, LoopAlgorithm{<:CompositeAlgorithm}}, newintervals)
     _ensure_unresolved_for_edit(la)
     interval_entries = Tuple(newintervals)
     @assert length(interval_entries) == length(getalgos(la)) "Expected $(length(getalgos(la))) intervals, but got $(length(interval_entries))"
@@ -131,7 +165,7 @@ function changeintervals(la::Union{CompositeAlgorithm, ThreadedCompositeAlgorith
     )
 end
 
-function changeinterval(la::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}, idx::Integer, newinterval)
+function changeinterval(la::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm, LoopAlgorithm{<:CompositeAlgorithm}}, idx::Integer, newinterval)
     _ensure_unresolved_for_edit(la)
     normalized = _normalize_schedule_entry(la, newinterval)
     interval_entries = _tuple_replace(_schedule_entries(la), idx, normalized)

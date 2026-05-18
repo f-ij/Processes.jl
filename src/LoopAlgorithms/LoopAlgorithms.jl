@@ -1,6 +1,7 @@
 include("Utils.jl")
 include("Interval.jl")
 include("GetFirst.jl")
+include("PlanOptions.jl")
 include("CompositeAlgorithms.jl")
 include("SimpleAlgo.jl")
 include("Routines.jl")
@@ -27,8 +28,8 @@ include("Showing.jl")
 
 
 
-# function match_cla(claT1::Type{<:LoopAlgorithm}, checkobj)
-#     if !(checkobj <: LoopAlgorithm)
+# function match_cla(claT1::Type{<:AbstractLoopAlgorithm}, checkobj)
+#     if !(checkobj <: AbstractLoopAlgorithm)
 #         return false
 #     end
 #     return getid(claT1) == getid(checkobj)
@@ -41,7 +42,7 @@ This keeps existing wrapper surfaces like `IdentifiableAlgo(loopalgo, :name)`
 and routed references from `@context` consistent without introducing any custom
 DSL runtime machinery.
 """
-@inline function match_by(la::LoopAlgorithm)
+@inline function match_by(la::LA) where {LA<:AbstractLoopAlgorithm}
     if isbits(la)
         return la
     end
@@ -49,4 +50,4 @@ DSL runtime machinery.
 end
 
 """Loop algorithm types match by their type."""
-@inline match_by(t::Type{<:LoopAlgorithm}) = t
+@inline match_by(t::Type{<:AbstractLoopAlgorithm}) = t

@@ -53,14 +53,16 @@ end
     unresolved = SimpleAlgo(TypeInputAccumulator)
     @test_throws ArgumentError Processes.resolve_process_inputs_overrides(
         unresolved,
-        Input(TypeInputAccumulator, :start => 4),
+        (Input(TypeInputAccumulator, :start => 4),),
     )
 
     resolved = resolve(unresolved)
+    specs = (Input(TypeInputAccumulator, :start => 4),)
     named_inputs, named_overrides = Processes.resolve_process_inputs_overrides(
         resolved,
-        Input(TypeInputAccumulator, :start => 4),
+        specs,
     )
     @test length(named_inputs) == 1
     @test isempty(named_overrides)
+    @test @inferred(Processes.resolve_process_inputs_overrides(resolved, specs)) == (named_inputs, named_overrides)
 end

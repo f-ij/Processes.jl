@@ -16,6 +16,9 @@ using Processes
     )
 
     @test length(Processes.getoptions(algo, Processes.Route)) == 1
+    @test algo isa Processes.CompositeAlgorithm
+    @test Processes.getplan(algo) isa Processes.CompositeAlgorithm
+    @test length(Processes.getoptions(Processes.getplan(algo), Processes.Route)) == 1
 
     resolved = Processes.resolve(algo)
     registry = Processes.getregistry(resolved)
@@ -24,16 +27,17 @@ using Processes
     target_name = Processes.static_findkey(registry, PrepTarget)
     other_name = Processes.static_findkey(registry, PrepOther)
 
-    @test resolved isa Processes.CompositeAlgorithm
+    @test resolved isa Processes.LoopAlgorithm
+    @test Processes.getplan(resolved) isa Processes.CompositeAlgorithm
     @test Processes.isresolved(resolved)
+    @test length(Processes.getoptions(Processes.getplan(resolved), Processes.Route)) == 1
+    @test length(getfield(Processes.getplan(resolved), :wiring)) == length(Processes.getalgos(resolved))
     @test !isnothing(source_name)
     @test !isnothing(target_name)
     @test !isnothing(other_name)
     @test isempty(Processes.getoptions(resolved, Processes.Route))
 
-    opts = Processes.getoptions(resolved)
     sharedcontexts, sharedvars = Processes._resolve_options(resolved)
-    @test opts == Processes.merge_nested_namedtuples(sharedvars, sharedcontexts)
     @test Processes.contextname(sharedcontexts[source_name]) == target_name
     @test Processes.contextname(sharedcontexts[target_name]) == source_name
 
@@ -41,15 +45,26 @@ using Processes
     @test length(sharedvars[other_name]) == 1
     @test Processes.get_fromname(only(sharedvars[other_name])) == source_name
 
+    initialized = Processes.init(algo)
+    reinitialized = Processes.init(initialized)
+    @test typeof(Processes.getplan(initialized)) === typeof(Processes.getplan(reinitialized))
+    @test Processes.getplan(initialized) === Processes.getplan(reinitialized)
+
     routine = Routine(algo, PrepOther, (2, 3))
     resolved_routine = Processes.resolve(routine)
     nested_comp = first(Processes.getalgos(resolved_routine))
 
-    @test resolved_routine isa Processes.Routine
+    @test resolved_routine isa Processes.LoopAlgorithm
+    @test Processes.getplan(resolved_routine) isa Processes.Routine
     @test Processes.isresolved(resolved_routine)
     @test nested_comp isa Processes.CompositeAlgorithm
-    @test Processes.all_keys(Processes.getregistry(nested_comp)) == Processes.all_keys(Processes.getregistry(resolved_routine))
     @test all(Processes.getkey.(Processes.getalgos(nested_comp)) .!= Ref(Symbol()))
+    routine_wiring = getfield(Processes.getplan(resolved_routine), :step_wiring)
+    nested_wiring = @inferred Processes.routing_childwiring(routine_wiring[1])
+    @test length(routine_wiring) == length(Processes.getalgos(resolved_routine))
+    @test length(nested_wiring) == length(Processes.getalgos(nested_comp))
+    @test length(Processes.routing_sharedcontexts(nested_wiring[2])) == 1
+    @test length(Processes.routing_sharedvars(nested_wiring[3])) == 1
 
     threaded = ThreadedCompositeAlgorithm(PrepSource, PrepTarget, (1, 1))
     @test threaded isa Processes.ThreadedCompositeAlgorithm
