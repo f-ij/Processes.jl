@@ -10,7 +10,8 @@
 end
 
 @inline function _newpackage_child_view(context::SubContextView{CType, SubKey}, func::AbstractIdentifiableAlgo, injected::I, aliases::Aliases) where {CType<:ProcessContext, SubKey, I, Aliases}
-    return SubContextView{CType, SubKey, typeof(func), typeof(injected), Aliases, (), ()}(getcontext(context), func, injected)
+    child_view = SubContextView{CType, SubKey, typeof(func), typeof(injected)}(getcontext(context), func; inject = injected)
+    return @inline withaliases(child_view, aliases)
 end
 
 @inline function _newpackage_child_multiplier(pkg::NewPackage, child)

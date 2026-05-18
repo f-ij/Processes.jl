@@ -1,4 +1,4 @@
-export getglobals
+export getglobals, withaliases
 #################################
 ########## Properties ###########
 #################################
@@ -37,6 +37,27 @@ end
 
 @inline @generated function _routing_tuple_from_type(::Type{T}) where {T<:Tuple}
     return Expr(:tuple, (:( $(T.parameters[i])() ) for i in eachindex(T.parameters))...)
+end
+
+@inline _alias_from_type(::Type{Alias}) where {Alias} = Alias()
+
+"""
+Return `scv` with its view-local alias type replaced by `alias`.
+
+The alias value is reconstructed from the concrete alias type instead of using
+the runtime object. This keeps alias dispatch tied to type information and lets
+view property lookup specialize on the alias mapping.
+"""
+@inline function withaliases(
+    scv::SubContextView{CType, SubKey, T, NT, OldAliases, SharedContexts, SharedVars},
+    ::Type{Alias},
+) where {CType, SubKey, T, NT, OldAliases, SharedContexts, SharedVars, Alias}
+    typed_alias = @inline _alias_from_type(Alias)
+    return SubContextView{CType, SubKey, T, NT, typeof(typed_alias), SharedContexts, SharedVars}(getcontext(scv), this_instance(scv), getinjected(scv))
+end
+
+@inline function withaliases(scv::SubContextView, alias::Alias) where {Alias}
+    return @inline withaliases(scv, Alias)
 end
 
 @inline function Base.view(pc::PC, instance::SA, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I}

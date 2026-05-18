@@ -32,3 +32,20 @@ using Processes
     @test context(p)[:SymbolInitAlgo_1].value == 13
     @test isempty(context(p)[:SymbolOtherAlgo_1])
 end
+
+@testset "SubContextView aliases can be replaced from alias type" begin
+    struct ViewAliasAlgo <: ProcessAlgorithm end
+
+    Processes.init(::ViewAliasAlgo, context) = (; foo = 1)
+    Processes.step!(::ViewAliasAlgo, context) = (;)
+
+    resolved = resolve(CompositeAlgorithm(:view_alias => ViewAliasAlgo(), (1,)))
+    ctx = initcontext(resolved; lifetime = Repeat(1))
+    scv = view(ctx, resolved[:view_alias])
+    alias = Processes.VarAliases(foo = :bar)
+    aliased = Processes.withaliases(scv, alias)
+
+    @test Processes.varaliases(aliased) === typeof(alias)
+    @test Processes.algo_to_subcontext_names(aliased, :bar) == :foo
+    @test aliased.bar == 1
+end
