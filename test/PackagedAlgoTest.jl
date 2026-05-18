@@ -42,6 +42,9 @@ end
     @test pkg isa ProcessAlgorithm
     @test !(pkg isa Processes.AbstractIdentifiableAlgo)
     @test Processes.intervals(pkg) == Processes.intervals(comp)
+    @test Processes.getalgos(pkg) == Processes.getalgos(comp)
+    @test length(Processes.getaliases(pkg)) == length(Processes.getalgos(pkg))
+    @test Processes.algo_to_subcontext_names(Processes.getalias(pkg, 2), :input) == :value
 
     p = Process(pkg; repeats = 6)
     run(p)

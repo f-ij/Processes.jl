@@ -49,6 +49,6 @@ struct SubContextView{CType, SubName, T, NT, VarAliases, SharedContexts, SharedV
     end
 
     function SubContextView{CType, SubName, T, NT, VarAliases, SharedContexts, SharedVars}(context::CType, instance::T, inject::NT = (;)) where {CType, SubName, T, NT, VarAliases, SharedContexts, SharedVars}
-        new{CType, SubName, T, typeof(inject), varaliases(instance), SharedContexts, SharedVars}(context, instance, inject)
+        new{CType, SubName, T, typeof(inject), VarAliases, SharedContexts, SharedVars}(context, instance, inject)
     end
 end
