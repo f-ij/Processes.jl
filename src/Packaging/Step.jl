@@ -1,6 +1,6 @@
 # function init(pack::PackagedAlgo, context::C) where C <: AbstractContext
 #     all_entities = get_processentities(pack)
-#     context = @inline unrollreplace(context, all_entities...) do context, entity
+#     context = @inline unrollreplace(context, all_entities) do context, entity
 #         init(entity, context)
 #     end
 # end
@@ -8,7 +8,7 @@
 
 function init(pack::PackagedAlgo, context::C) where C <: AbstractContext
     all_entities = get_processentities(pack)
-    context = @inline unrollreplace(context, all_entities...) do context, entity
+    context = @inline unrollreplace(context, all_entities) do context, entity
         init(entity, context)
     end
     viewed = @inline view(context, pack)
@@ -34,7 +34,7 @@ Base.@constprop :aggressive @inline function step!(ca::PackagedAlgo{T, Is}, cont
     return @inline unrollreplace_withcallback(context, context -> begin
             @inline inc!(ca)
             context
-        end , algos_and_intervals... ) do context, (func, interval)
+        end , algos_and_intervals) do context, (func, interval)
 
         if @inline divides(this_inc, interval)
             context = @inline step!(func, context, typestable)
@@ -46,7 +46,7 @@ end
 
 function cleanup(pa::PackagedAlgo, context::C) where C <: AbstractContext
     all_algos = @inline getalgos(pa)
-    context = unrollreplace(context, all_algos...) do context, algo
+    context = unrollreplace(context, all_algos) do context, algo
         @inline cleanup(algo, context)
     end
     return context

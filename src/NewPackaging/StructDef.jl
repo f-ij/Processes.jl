@@ -10,9 +10,8 @@ inside the package subcontext.
 states that seed the package subcontext, and `aliases` is a child-aligned tuple
 of `VarAliases` objects used when creating each child view.
 """
-struct NewPackage{Funcs, States, Intervals, Aliases, CustomName} <: ProcessAlgorithm
+struct NewPackage{Funcs, States, Intervals, Aliases} <: ProcessAlgorithm
     funcs::Funcs
     states::States
-    aliases::Aliases
     inc::Base.RefValue{Int}
 end

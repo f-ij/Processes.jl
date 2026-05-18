@@ -4,16 +4,16 @@ we can unroll the recursion with this function
 
 f requires two arguments: the value to be replaced, and the next argument from the list
 """
-# @inline function unrollreplace(f::F, to_replace::C, args...) where {F, C}
+# @inline function unrollreplace_splat(f::F, to_replace::C, args...) where {F, C}
 #     if isempty(args)
 #         return to_replace
 #     end
 #     first_arg = gethead(args)
 #     to_replace = @inline f(to_replace, first_arg)
-#     return @inline unrollreplace(f, to_replace, gettail(args)...)
+#     return @inline unrollreplace_splat(f, to_replace, gettail(args)...)
 # end
 
-# @inline @generated function unrollreplace(f::F, to_replace::C, args...) where {F, C}
+# @inline @generated function unrollreplace_splat(f::F, to_replace::C, args...) where {F, C}
 #     num_args = length(args)
 #     replaceblocks = Expr(:block, (Expr(:(=), :to_replace, Expr(:call, :f, :to_replace, Expr(:call, :getindex, :args, i)) ) for i in 1:num_args)...)
 #     quote
@@ -23,7 +23,8 @@ f requires two arguments: the value to be replaced, and the next argument from t
 #     end
 # end
 
-@inline @generated function unrollreplace(f::F, to_replace::C, args::Vararg{Any,N}) where {F,C,N}
+@inline @generated function unrollreplace(f::F, to_replace::C, args::T) where {F,C,T<:Tuple}
+    N = fieldcount(T)
     block = Expr(:block, :(r = to_replace))
     for i in 1:N
         push!(block.args, :(r = f(r, getfield(args, $i))))
@@ -32,7 +33,8 @@ f requires two arguments: the value to be replaced, and the next argument from t
     return block
 end
 
-@inline @generated function unrollreplace_withcallback(f::F, to_replace::C, callback::CB, args::Vararg{Any,N}) where {F,C,CB,N}
+@inline @generated function unrollreplace_withcallback(f::F, to_replace::C, callback::CB, args::T) where {F,C,CB,T<:Tuple}
+    N = fieldcount(T)
     block = Expr(:block, :(r = to_replace))
     for i in 1:N
         push!(block.args, :(r = f(r, getfield(args, $i))))
@@ -41,10 +43,93 @@ end
     return block
 end
 
-@inline @generated function unrollreplace_withargs(f::F, to_replace::C, as::Vararg{Any,N}; args) where {F,C,N}
+"""
+    unrollreplace_withargs(f, to_replace, as::Tuple; args = nothing, zip = nothing, zips = nothing)
+
+Tuple-argument variant of `unrollreplace` with extra arguments passed to `f`.
+For each item in `as`, the generated call order is:
+
+```julia
+f(acc, as[i])
+f(acc, as[i], args...)
+f(acc, as[i], args..., zip[i])
+f(acc, as[i], args..., zips[1][i], zips[2][i], ...)
+```
+
+Use `zip` for one tuple whose length matches `as`. Use `zips` for a tuple of
+such tuples. `zip` and `zips` are mutually exclusive.
+"""
+@inline @generated function unrollreplace_withargs(f::F, to_replace::C, as::T; args::AS = nothing, zip::Z = nothing, zips::ZS = nothing) where {F,C,T<:Tuple, AS, Z, ZS}
+    N = fieldcount(T)
+    has_args = !(AS <: Nothing)
+    has_zip = !(Z <: Nothing)
+    has_zips = !(ZS <: Nothing)
+
+    if has_zip && has_zips
+        return :(throw(ArgumentError("unrollreplace_withargs accepts either `zip` or `zips`, not both.")))
+    end
+    if has_zip
+        Z <: Tuple || return :(throw(ArgumentError("`zip` must be a tuple.")))
+        fieldcount(Z) == N || return :(throw(ArgumentError("`zip` must have the same length as `as`.")))
+    end
+    if has_zips
+        ZS <: Tuple || return :(throw(ArgumentError("`zips` must be a tuple of tuples.")))
+        for j in 1:fieldcount(ZS)
+            ZT = fieldtype(ZS, j)
+            ZT <: Tuple || return :(throw(ArgumentError("`zips` must contain only tuples.")))
+            fieldcount(ZT) == N || return :(throw(ArgumentError("each tuple in `zips` must have the same length as `as`.")))
+        end
+    end
+
     block = Expr(:block, :(r = to_replace))
     for i in 1:N
-        push!(block.args, :(r = f(r, args... , getfield(as, $i))))
+        call_args = Any[:r, :(getfield(as, $i))]
+        has_args && push!(call_args, :(args...))
+        has_zip && push!(call_args, :(getfield(zip, $i)))
+        if has_zips
+            for j in 1:fieldcount(ZS)
+                push!(call_args, :(getfield(getfield(zips, $j), $i)))
+            end
+        end
+        push!(block.args, :(r = $(Expr(:call, :f, call_args...))))
+    end
+    push!(block.args, :r)
+    return block
+end
+
+# @inline @generated function unrollreplace_with_zippedargs(f::F, to_replace::C, as::T, args::AS) where {F,C,T<:Tuple, AS}
+#     N = fieldcount(T)
+#     block = Expr(:block, :(r = to_replace))
+#     for i in 1:N
+#         push!(block.args, :(r = f(r, gefield(args, $i)... , getfield(as, $i))))
+#     end
+#     push!(block.args, :r)
+#     return block
+# end
+
+
+@inline @generated function unrollreplace_splat(f::F, to_replace::C, args::Vararg{Any,N}) where {F,C,N}
+    block = Expr(:block, :(r = to_replace))
+    for i in 1:N
+        push!(block.args, :(r = f(r, getfield(args, $i))))
+    end
+    push!(block.args, :r)
+    return block
+end
+
+@inline @generated function unrollreplace_splat_withcallback(f::F, to_replace::C, callback::CB, args::Vararg{Any,N}) where {F,C,CB,N}
+    block = Expr(:block, :(r = to_replace))
+    for i in 1:N
+        push!(block.args, :(r = f(r, getfield(args, $i))))
+    end
+    push!(block.args, :(callback(r)))
+    return block
+end
+
+@inline @generated function unrollreplace_splat_withargs(f::F, to_replace::C, as::Vararg{Any,N}; args) where {F,C,N}
+    block = Expr(:block, :(r = to_replace))
+    for i in 1:N
+        push!(block.args, :(r = f(r, getfield(as, $i), args...)))
     end
     push!(block.args, :r)
     return block
@@ -76,7 +161,7 @@ For a function that will return a viariable number of outputs
     that is broadcasted over a variable number of inputs,
     recursively splat the outputs in a tuple
 """
-@inline function named_flat_collect_broadcast(f::F, elements::Tuple) where F
+@inline function named_flat_collect_broadcast(f::F, elements::T) where {F, T <:Tuple}
     if isempty(elements)
         return (;)
     end
@@ -84,7 +169,7 @@ For a function that will return a viariable number of outputs
     result = (;result..., _named_flat_collect_broadcast(f, gettail(elements))...)
 end
 
-@inline function _named_flat_collect_broadcast(f::F, elements::Tuple) where F
+@inline function _named_flat_collect_broadcast(f::F, elements::T) where {F, T <:Tuple}
     if isempty(elements)
         return (;)
     end

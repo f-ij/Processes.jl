@@ -39,7 +39,7 @@ Construct a namedtuple of (;target_namespace => SharedVars{origin_namespace, var
     # @show routes
     # return map(route -> to_sharedvar(reg, route), routes)
     named_routes = (;)
-    named_routes = unrollreplace(named_routes, routes...) do named_routes, route
+    named_routes = unrollreplace(named_routes, routes) do named_routes, route
         this_one = resolve_options(reg, route)
         name = first(keys(this_one))
         merged = (get(named_routes, name, tuple())..., this_one[1][1])

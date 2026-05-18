@@ -9,7 +9,7 @@ plan instead of being baked into child `IdentifiableAlgo` wrappers.
 function NewPackage(funcs::Funcs, intervals::Intervals; states::States = (), aliases::Aliases = ntuple(_ -> VarAliases(), length(funcs)), name = Symbol()) where {Funcs<:Tuple, Intervals<:Tuple, States<:Tuple, Aliases<:Tuple}
     length(funcs) == length(intervals) || error("NewPackage needs one interval per child algorithm, got $(length(funcs)) funcs and $(length(intervals)) intervals.")
     length(funcs) == length(aliases) || error("NewPackage needs one alias bucket per child algorithm, got $(length(funcs)) funcs and $(length(aliases)) alias buckets.")
-    return NewPackage{Funcs, States, intervals, Aliases, Symbol(name)}(funcs, states, aliases, Ref(1))
+    return NewPackage{Funcs, States, intervals, aliases, Symbol(name)}(funcs, states, Ref(1))
 end
 
 """

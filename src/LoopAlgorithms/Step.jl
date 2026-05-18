@@ -18,7 +18,7 @@ Running a composite algorithm allows for static unrolling and inlining of all su
 #     this_inc = inc(ca)
 #     algos_and_intervals = @inline algo_and_interval_iterator(ca)
 #
-#     context = @inline unrollreplace(context, algos_and_intervals...) do context, (func, interval)
+#     context = @inline unrollreplace(context, algos_and_intervals) do context, (func, interval)
 #         if @inline divides(this_inc, interval)
 #             context = @inline step!(func, context, S())
 #         end

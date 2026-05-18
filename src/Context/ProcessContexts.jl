@@ -90,7 +90,7 @@ Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), sub
         LineNumberNode(@__LINE__, @__FILE__)
         separated = separate_nested_namedtuples(args)
         # @show separated
-        pc = unrollreplace(merge_into_subcontexts, pc, separated...)
+        pc = unrollreplace(merge_into_subcontexts, pc, separated)
         # new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
         # @inline setfield(pc, :subcontexts, new_subcontexts)
         # setfield!(pc, :subcontexts, new_subcontexts)

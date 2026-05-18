@@ -6,7 +6,7 @@ function init(algos::LA, inputcontext::ProcessContext) where {LA<:AbstractLoopAl
     registry = @inline getregistry(inputcontext)
     named_algos = @inline all_algos(registry)
 
-    context = @inline unrollreplace(inputcontext, named_algos...) do context, named_algo # Recursively replace context
+    context = @inline unrollreplace(inputcontext, named_algos) do context, named_algo # Recursively replace context
         init(named_algo, context)
     end
 
@@ -17,7 +17,7 @@ function cleanup(algos::LA, context) where {LA<:AbstractLoopAlgorithm}
     registry = getregistry(context)
     named_algos = all_algos(registry)
 
-    context = unrollreplace(context, named_algos...) do context, named_algo # Recursively replace context
+    context = unrollreplace(context, named_algos) do context, named_algo # Recursively replace context
         @inline cleanup(named_algo, context)
     end
     

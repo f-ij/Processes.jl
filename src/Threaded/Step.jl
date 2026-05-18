@@ -81,7 +81,7 @@ Base.@constprop :aggressive function _threaded_run_layer(base_context::C, tca::T
         (getfield(children, i), getfield(futures, i))
     end
 
-    merged_children = unrollreplace((;), child_futures...) do merged, child_future
+    merged_children = unrollreplace((;), child_futures) do merged, child_future
         child, future = child_future
         @inline _threaded_merge_child_payload(merged, future, C, TCA, child)
     end
@@ -99,12 +99,12 @@ Base.@constprop :aggressive function step!(tca::ThreadedCompositeAlgorithm, cont
     layers = @inline _threaded_layers(tca, context)
 
     if s isa Unstable
-        current = @inline unrollreplace(context, layers...) do current, layer
+        current = @inline unrollreplace(context, layers) do current, layer
         @inline _threaded_run_layer(current, tca, layer, this_inc, s)
         end
     else
 
-        current = @inline unrollreplace(context, layers...) do current, layer
+        current = @inline unrollreplace(context, layers) do current, layer
             @inline _threaded_run_layer(current, tca, layer, this_inc, s)::C
         end
     end

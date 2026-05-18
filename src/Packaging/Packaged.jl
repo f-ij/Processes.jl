@@ -43,7 +43,7 @@ function PackagedAlgo(comp::CompositeAlgorithm, name="")
     stateintervals = ntuple(i -> 1, length(states))
 
     subs_and_intervals = zip((states..., subpackages...), (stateintervals..., flatintervals...))
-    registry = unrollreplace(SimpleRegistry(), subs_and_intervals...) do reg, sub_interval
+    registry = unrollreplace(SimpleRegistry(), (subs_and_intervals...,)) do reg, sub_interval
         reg, _ = add(reg, first(sub_interval), 1/getinterval(last(sub_interval)))
         return reg
     end

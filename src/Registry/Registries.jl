@@ -148,7 +148,7 @@ end
 Add multiple objects to the registry with the same multiplier
 """
 function addall(reg::NSR, objs::O, mults::M) where {NSR<:NameSpaceRegistry,O<:Tuple,M<:Tuple}
-    reg = unrollreplace(reg, zip(objs, mults)...) do r, obj_mult
+    reg = unrollreplace(reg, (zip(objs, mults)...,)) do r, obj_mult
         obj, mult = obj_mult
         newreg, _ = add(r, obj, mult)
         return newreg
