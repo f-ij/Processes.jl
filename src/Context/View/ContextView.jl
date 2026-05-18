@@ -60,6 +60,20 @@ end
     return @inline withaliases(scv, Alias)
 end
 
+@inline function withaliases(
+    scv::SubContextView{CType, SubKey, OldT, OldNT, OldAliases, SharedContexts, SharedVars},
+    instance::T,
+    injected::NT,
+    ::Type{Alias},
+) where {CType, SubKey, OldT, OldNT, OldAliases, SharedContexts, SharedVars, T, NT, Alias}
+    typed_alias = @inline _alias_from_type(Alias)
+    return SubContextView{CType, SubKey, T, NT, typeof(typed_alias), SharedContexts, SharedVars}(getcontext(scv), instance, injected)
+end
+
+@inline function withaliases(scv::SubContextView, instance, injected, alias::Alias) where {Alias}
+    return @inline withaliases(scv, instance, injected, Alias)
+end
+
 @inline function Base.view(pc::PC, instance::SA, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I}
     key = @inline getkey(instance)
     return SubContextView{typeof(pc), key, typeof(instance), typeof(inject)}(pc, instance; inject)

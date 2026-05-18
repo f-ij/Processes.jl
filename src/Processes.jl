@@ -79,7 +79,6 @@ module Processes
     include("Threaded/Threaded.jl")
     include("LoopAlgorithms/Edit/Edit.jl")
     include("Packaging/Packaging.jl")
-    include("NewPackaging/NewPackaging.jl")
     include("Loops.jl")
     include("Trackers/Trackers.jl")
     include("TotalInc.jl")

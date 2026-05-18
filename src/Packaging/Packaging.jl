@@ -1,8 +1,8 @@
-export PackagedAlgo, package, getalgos, getalgo, getname, getregistry, getmultiplier
+export Package, SubPackage, package, getalgos, getalgo, getname, getregistry, getmultiplier
 
-include("Utils.jl")
+include("StructDef.jl")
 include("SubPackage.jl")
-include("Packaged.jl")
-include("Showing.jl")
+include("Utils.jl")
+include("Constructor.jl")
+include("Interface.jl")
 include("Step.jl")
-include("GeneratedStep.jl")

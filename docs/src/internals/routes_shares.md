@@ -58,7 +58,7 @@ If route/share endpoints are not present in the registry, resolution throws expl
 
 ## 5. Relation to Packaging
 
-During `PackagedAlgo(comp)`, routes are translated into `VarAliases` for internal subpackages (`src/Packaging/Packaged.jl`, `src/Packaging/Utils.jl`).
+During `Package(comp)`, routes are translated into `VarAliases` for internal subpackages (`src/Packaging/Constructor.jl`, `src/Packaging/Utils.jl`).
 
 ## 6. Current Limitation: No Usage-Site-Specific Routes
 

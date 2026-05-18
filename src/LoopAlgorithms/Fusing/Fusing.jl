@@ -2,9 +2,9 @@ export fuse, isfused
 
 include("ContextExt.jl")
 
-function flatten_comp_funcs(funcs, _intervals)
+function flatten_comp_funcs(funcs, _intervals, stop_at_options = true)
     flat_funcs, flat_intervals = flat_tree_property_recursion(funcs, _intervals) do el, trait
-        if !iscomposite(el) || !isempty(getoptions(el))
+        if !iscomposite(el) || (stop_at_options && !isempty(getoptions(el)))
             return nothing, nothing
         end
         newels = getalgos(el)
@@ -18,10 +18,15 @@ function flatten_comp_funcs(funcs, _intervals)
 end
 
 """
-Deconstruct a CompositeAlgorithm into its functions and intervals
+Deconstruct a `CompositeAlgorithm` into its leaf child algorithms and intervals.
+
+This is the public "old flatten" behavior: route/share options do not make the
+composite opaque here. Constructor parsing uses `flatten_comp_funcs` instead so
+nested composites with local plan metadata are not flattened accidentally.
 """
 function flatten(comp::CompositeAlgorithm)
-    flatten_comp_funcs((comp,), (1,))
+    # `false` keeps the old public flatten behavior: options do not stop descent.
+    return flatten_comp_funcs((comp,), (1,), false)
 end
 
 function flatten_loopalgorithms(la::ALA) where {ALA<:AbstractLoopAlgorithm}

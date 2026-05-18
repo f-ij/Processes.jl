@@ -42,7 +42,7 @@ end
 @inline varaliases(sa::Union{AbstractIdentifiableAlgo{F,Id,Aliases},Type{<:AbstractIdentifiableAlgo{F,Id,Aliases}}}) where {F,Id,Aliases} = Aliases
 
 # """
-# Update the keys in the PackagedAlgo's registry to match those in the provided registry, based on the algorithms contained in the PackagedAlgo. This is necessary to ensure that when the PackagedAlgo is used within a Process, it can correctly match its internal algorithms to those in the Process's registry for input/output mapping and overrides.
+# Update the keys in the Package's registry to match those in the provided registry, based on the algorithms contained in the Package. This is necessary to ensure that when the Package is used within a Process, it can correctly match its internal algorithms to those in the Process's registry for input/output mapping and overrides.
 # """
 # function update_keys(ca::AbstractIdentifiableAlgo, reg)
 #     return reg[ca]

@@ -22,7 +22,7 @@ end
 function Processes.init(::NewPackTarget, context)
     log = Int[]
     processsizehint!(log, context)
-    return (; log)
+    return (; log, expected_calls = Processes.num_calls(context))
 end
 
 function Processes.step!(::NewPackTarget, context)
@@ -30,21 +30,27 @@ function Processes.step!(::NewPackTarget, context)
     return (;)
 end
 
-@testset "NewPackage runs as a ProcessAlgorithm" begin
+@testset "Package runs as a ProcessAlgorithm" begin
     comp = CompositeAlgorithm(
         NewPackSource,
         NewPackTarget,
         (1, 2),
         Route(NewPackSource => NewPackTarget, :value => :input),
     )
-    pkg = NewPackage(comp, "NewPack")
+    pkg = Package(comp, "NewPack")
 
     @test pkg isa ProcessAlgorithm
     @test !(pkg isa Processes.AbstractIdentifiableAlgo)
+    @test Processes.getname(pkg) == :NewPack
     @test Processes.intervals(pkg) == Processes.intervals(comp)
-    @test all(child -> child isa NewSubPackage, Processes.getalgos(pkg))
+    @test all(child -> child isa SubPackage, Processes.getalgos(pkg))
+    @test all(child -> !haskey(child), Processes.getalgos(pkg))
     @test map(child -> Processes.getalgo(child), Processes.getalgos(pkg)) == map(Processes.getalgo, Processes.getalgos(comp))
     @test Processes.algo_to_subcontext_names(Processes.getvaraliases(Processes.getalgo(pkg, 2)), :input) == :value
+    reg = Processes.NameSpaceRegistry()
+    reg, registered_pkg = Processes.add(reg, pkg, 1.0)
+    @test Processes.getkey(registered_pkg) == :NewPack_1
+    @test Processes.algoname(registered_pkg) == :NewPack
 
     p = Process(pkg; repeats = 6)
     run(p)
@@ -53,7 +59,35 @@ end
 
     @test ctx[pkg].value == 6
     @test ctx[pkg].log == [2, 4, 6]
+    @test ctx[pkg].expected_calls == 3
     @test Processes.inc(pkg) == 1
+
+    nested_pkg = Package(comp)
+    outer = CompositeAlgorithm(nested_pkg, (2,))
+    nested_process = Process(outer; repeats = 8)
+    run(nested_process)
+    wait(nested_process)
+    nested_ctx = fetch(nested_process)
+
+    @test nested_ctx[nested_pkg].log == [2, 4]
+    @test nested_ctx[nested_pkg].expected_calls == 2
+
+    repeated = Package((NewPackTarget, NewPackTarget), (2, 3))
+    repeated_process = Process(repeated; repeats = 12)
+    run(repeated_process)
+    wait(repeated_process)
+    repeated_ctx = fetch(repeated_process)
+
+    @test repeated_ctx[repeated].expected_calls == 10
+
+    unique_pkg = Processes.Unique(Package(comp, "UniquePack"))
+    unique_process = Process(unique_pkg; repeats = 6)
+    run(unique_process)
+    wait(unique_process)
+    unique_ctx = fetch(unique_process)
+
+    @test unique_ctx[unique_pkg].log == [2, 4, 6]
+    @test unique_ctx[unique_pkg].expected_calls == 3
 end
 
 function Processes.init(::PackFib, context)
@@ -74,11 +108,11 @@ function Processes.init(::PackLuc, context)
     return (;luclist)
 end
 
-@testset "PackagedAlgo runs and benchmarks" begin
+@testset "Package runs and benchmarks" begin
     n = 1_000
     @show n
     fibluc = CompositeAlgorithm( PackFib, PackLuc , (1, 1))
-    pack = PackagedAlgo(fibluc, "FLPack")
+    pack = Package(fibluc, "FLPack")
 
     @test !haskey(pack)
     @test !Processes.hasautokey(pack)
@@ -99,6 +133,16 @@ end
 
     @test length(ctx[pack].fiblist) == n + 2
     @test length(ctx[pack].luclist) == n + 2
+
+    routed_fibluc = CompositeAlgorithm(
+        PackFib,
+        PackLuc,
+        (1, 1),
+        Route(PackFib => PackLuc, :fiblist => :source_fib),
+    )
+    routed_pack = Package(routed_fibluc, "RoutedFLPack")
+    routed_aliases = Processes.getvaraliases(Processes.getalgo(routed_pack, 2))
+    @test Processes.algo_to_subcontext_names(routed_aliases, :source_fib) == :fiblist
 
     bench = benchmark(pack, n, 1)
     @test bench > 0

@@ -47,10 +47,11 @@ end
 #     ph.repeats[algo]
 # end
 
-function getmultiplier(sct::SubContextView, subpackage::SubPackage)
+function getmultiplier(sct::SubContextView{CType, SubKey}, subpackage::SubPackage) where {CType, SubKey}
     registry = getregistry(sct)
-    package = registry[subpackage]
-    package_multiplier = static_get_multiplier(registry, package)
+    registered = registry[SubKey]
+    package = getalgo(registered)
+    package_multiplier = static_get_multiplier(registry, registered)
     sub_multiplier = getmultiplier(package, subpackage)
     return package_multiplier * sub_multiplier
 end

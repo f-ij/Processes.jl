@@ -51,6 +51,16 @@ end
     @test flat_funcs == Processes.getalgos(ffluc)
     @test flat_intervals == Processes.intervals(ffluc)
 
+    routed = CompositeAlgorithm(
+        Fib,
+        Luc,
+        (1, 2),
+        Route(Fib => Luc, :fiblist => :source_fib),
+    )
+    routed_flat_funcs, routed_flat_intervals = Processes.flatten(routed)
+    @test routed_flat_funcs == Processes.getalgos(routed)
+    @test routed_flat_intervals == Processes.intervals(routed)
+
     inner = @Routine begin
         @alias dynamics = Fib()
         dynamics()
