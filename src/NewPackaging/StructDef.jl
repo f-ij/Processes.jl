@@ -1,16 +1,16 @@
 """
-ProcessAlgorithm package that owns its child execution locally.
+ProcessAlgorithm package with explicitly scoped child algorithms.
 
-`NewPackage` is intentionally not an `AbstractIdentifiableAlgo` and does not
-register its children as subpackages. The outer process sees one normal
-`ProcessAlgorithm`; package init/step then orchestrate the enclosed algorithms
-inside the package subcontext.
+`NewPackage` is registered as one root process algorithm. Its children are
+`NewSubPackage` wrappers that carry package-local identity and aliases, so the
+children can resolve views and call multipliers through the containing package
+without being root registry entries themselves.
 
-`funcs` are the only executable children. `states` are init-only process
-states that seed the package subcontext, and `aliases` is a child-aligned tuple
-of `VarAliases` objects used when creating each child view.
+`funcs` contains only stepped children. `states` are initialized before those
+children and seed the shared package subcontext. `Intervals` and `ID` are type
+parameters so schedule and package-child matching stay compile-time visible.
 """
-struct NewPackage{Funcs, States, Intervals, Aliases} <: ProcessAlgorithm
+struct NewPackage{Funcs, States, Intervals, ID} <: ProcessAlgorithm
     funcs::Funcs
     states::States
     inc::Base.RefValue{Int}

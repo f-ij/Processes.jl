@@ -1,15 +1,15 @@
 """
 Build a package from prepared child algorithms.
 
-`funcs` are the stepped algorithms. `states` are initialized once before those
-children and are not stepped. `aliases` must be a tuple with one `VarAliases`
-entry per child, so package-local route aliases are carried by the package
-plan instead of being baked into child `IdentifiableAlgo` wrappers.
+Child algorithms are converted to `NewSubPackage` wrappers. Package-local
+aliases belong to those wrappers, while `NewPackage` itself only carries the
+schedule, init-only states, and call counter.
 """
-function NewPackage(funcs::Funcs, intervals::Intervals; states::States = (), aliases::Aliases = ntuple(_ -> VarAliases(), length(funcs)), name = Symbol()) where {Funcs<:Tuple, Intervals<:Tuple, States<:Tuple, Aliases<:Tuple}
+function NewPackage(funcs::Funcs, intervals::Intervals; states::States = (), aliases = ntuple(_ -> VarAliases(), length(funcs)), name = Symbol(), id = TreeMatcher()) where {Funcs<:Tuple, Intervals<:Tuple, States<:Tuple}
     length(funcs) == length(intervals) || error("NewPackage needs one interval per child algorithm, got $(length(funcs)) funcs and $(length(intervals)) intervals.")
     length(funcs) == length(aliases) || error("NewPackage needs one alias bucket per child algorithm, got $(length(funcs)) funcs and $(length(aliases)) alias buckets.")
-    return NewPackage{Funcs, States, intervals, aliases, Symbol(name)}(funcs, states, Ref(1))
+    children = newpackage_children(funcs, aliases, id)
+    return NewPackage{typeof(children), States, intervals, id}(children, states, Ref(1))
 end
 
 """
@@ -30,13 +30,17 @@ function NewPackage(comp::CompositeAlgorithm, name = Symbol())
 end
 
 function NewPackage(comp::CompositeAlgorithm, states::States, name = Symbol()) where {States<:Tuple}
-    funcs = getalgos(comp)
+    identifiable_funcs = getalgos(comp)
     package_intervals = intervals(comp)
     routes = typefilter(Route, getoptions(comp))
-    aliases = newpackage_aliases(funcs, setup_registry(comp), routes)
+    aliases = newpackage_aliases(identifiable_funcs, setup_registry(comp), routes)
     package_states = (states..., getstates(comp)...)
     customname = name == Symbol() || name == "" ? Symbol() : Symbol(name)
-    return NewPackage(funcs, package_intervals; states = package_states, aliases, name = customname)
+    return NewPackage(identifiable_funcs, package_intervals; states = package_states, aliases, name = customname)
+end
+
+function newpackage_children(funcs::Funcs, aliases::Aliases, id) where {Funcs<:Tuple, Aliases<:Tuple}
+    return ntuple(i -> NewSubPackage(getfield(funcs, i), id, getfield(aliases, i)), length(funcs))
 end
 
 @inline varalias_pairs(::VarAliases{StoA, AtoS}) where {StoA, AtoS} = pairs(StoA)

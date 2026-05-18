@@ -1,16 +1,12 @@
-@inline _newpackage_return_tuple(ret::NamedTuple) = ret
-@inline _newpackage_return_tuple(::Nothing) = (;)
-@inline _newpackage_inner(func) = func
-@inline _newpackage_inner(func::AbstractIdentifiableAlgo) = getalgo(func)
 @inline _newpackage_context_seed(context) = (;)
 @inline _newpackage_context_seed(context::SubContextView) = filter_nt((; context...), :_instance)
 
-@inline function _newpackage_child_view(context::C, func, injected::I, aliases) where {C<:AbstractContext, I}
+@inline function _newpackage_child_view(context::C, func, injected::I) where {C<:AbstractContext, I}
     return inject(context, injected)
 end
 
-@inline function _newpackage_child_view(context::SubContextView{CType, SubKey}, func::AbstractIdentifiableAlgo, injected::I, aliases::Aliases) where {CType<:ProcessContext, SubKey, I, Aliases}
-    return SubContextView{CType, SubKey, typeof(func), typeof(injected), Aliases, (), ()}(getcontext(context), func, injected)
+@inline function _newpackage_child_view(context::SubContextView{CType, SubKey}, func::NewSubPackage, injected::I) where {CType<:ProcessContext, SubKey, I}
+    return SubContextView{CType, SubKey, typeof(func), typeof(injected), getvaraliases(func), (), ()}(getcontext(context), func, injected)
 end
 
 @inline function _newpackage_child_multiplier(pkg::NewPackage, child)
@@ -30,83 +26,44 @@ end
 @inline function init(pkg::NewPackage, context::C) where {C<:AbstractContext}
     acc = _newpackage_context_seed(context)
     state_acc = _newpackage_init_states(pkg, context, acc, getstates(pkg))
-    return _newpackage_init_children(pkg, context, state_acc, getalgos(pkg), getaliases(pkg))
+    return _newpackage_init_children(pkg, context, state_acc, getalgos(pkg))
 end
 
-@inline function step!(pkg::NewPackage{F, S, I, A}, context::C) where {F, S, I, A, C<:AbstractContext}
+@inline function step!(pkg::NewPackage{F, S, I, ID}, context::C) where {F, S, I, ID, C<:AbstractContext}
     this_inc = inc(pkg)
-    intervals = intervals(pkg)
     acc = (;)
-    ret = unrollreplace_withargs(acc, getalgos(pkg); args = (this_inc,), zip = intervals) do acc, func, this_inc, interval
-        
+    ret = @inline unrollreplace_withargs(acc, getalgos(pkg); args = (context, this_inc), zip = intervals(pkg)) do acc, func, context, this_inc, interval
+        if @inline divides(this_inc, interval)
+            view = @inline _newpackage_child_view(context, func, acc)
+            step_ret = @inline step!(getalgo(func), view)
+            isnothing(step_ret) && return acc
+            return @inline merge(acc, step_ret)
+        end
+        return acc
+    end
+    @inline inc!(pkg)
+    return ret
+end
+
+@inline function _newpackage_init_states(pkg::NewPackage, context::C, acc::Acc, states::States) where {C<:AbstractContext, Acc<:NamedTuple, States<:Tuple}
+    if isempty(states)
+        return acc
     end
 
+    state = getfield(states, 1)
+    ret = init(state, inject(context, acc))
+    next_acc = isnothing(ret) ? acc : merge(acc, ret)
+    return _newpackage_init_states(pkg, context, next_acc, Base.tail(states))
 end
 
-# @inline function _newpackage_init_states(pkg::NewPackage, context::C, acc::Acc, states::States) where {C<:AbstractContext, Acc<:NamedTuple, States<:Tuple}
-#     if isempty(states)
-#         return acc
-#     end
+@inline function _newpackage_init_children(pkg::NewPackage, context::C, acc::Acc, funcs::Funcs) where {C<:AbstractContext, Acc<:NamedTuple, Funcs<:Tuple}
+    if isempty(funcs)
+        return acc
+    end
 
-#     state = getfield(states, 1)
-#     ret = init(state, inject(context, acc))
-#     next_acc = merge(acc, _newpackage_return_tuple(ret))
-#     return _newpackage_init_states(pkg, context, next_acc, Base.tail(states))
-# end
-
-# @inline function _newpackage_init_children(pkg::NewPackage, context::C, acc::Acc, funcs::Funcs, aliases::Aliases) where {C<:AbstractContext, Acc<:NamedTuple, Funcs<:Tuple, Aliases<:Tuple}
-#     if isempty(funcs)
-#         return acc
-#     end
-
-#     func = getfield(funcs, 1)
-#     alias = getfield(aliases, 1)
-#     view = _newpackage_child_view(context, func, acc, alias)
-#     ret = init(_newpackage_inner(func), view)
-#     next_acc = merge(acc, _newpackage_return_tuple(ret))
-#     return _newpackage_init_children(pkg, context, next_acc, Base.tail(funcs), Base.tail(aliases))
-# end
-
-# Base.@constprop :aggressive @inline function step!(pkg::NewPackage, context::C, typestable::S = Stable()) where {C<:AbstractContext, S}
-#     this_inc = inc(pkg)
-#     acc = (;)
-#     ret = _newpackage_step_children(pkg, context, acc, getalgos(pkg), intervals(pkg), getaliases(pkg), this_inc)
-#     inc!(pkg)
-#     return ret
-# end
-
-# @inline function _newpackage_step_children(pkg::NewPackage, context::C, acc::Acc, funcs::Funcs, intervals::Intervals, aliases::Aliases, this_inc) where {C<:AbstractContext, Acc<:NamedTuple, Funcs<:Tuple, Intervals<:Tuple, Aliases<:Tuple}
-#     if isempty(funcs)
-#         return acc
-#     end
-
-#     func = getfield(funcs, 1)
-#     interval = getfield(intervals, 1)
-#     alias = getfield(aliases, 1)
-#     next_acc = if divides(this_inc, interval)
-#         view = _newpackage_child_view(context, func, acc, alias)
-#         ret = step!(_newpackage_inner(func), view)
-#         merge(acc, _newpackage_return_tuple(ret))
-#     else
-#         acc
-#     end
-#     return _newpackage_step_children(pkg, context, next_acc, Base.tail(funcs), Base.tail(intervals), Base.tail(aliases), this_inc)
-# end
-
-# @inline function cleanup(pkg::NewPackage, context::C) where {C<:AbstractContext}
-#     acc = (;)
-#     return _newpackage_cleanup_children(pkg, context, acc, getalgos(pkg), getaliases(pkg))
-# end
-
-# @inline function _newpackage_cleanup_children(pkg::NewPackage, context::C, acc::Acc, funcs::Funcs, aliases::Aliases) where {C<:AbstractContext, Acc<:NamedTuple, Funcs<:Tuple, Aliases<:Tuple}
-#     if isempty(funcs)
-#         return acc
-#     end
-
-#     func = getfield(funcs, 1)
-#     alias = getfield(aliases, 1)
-#     view = _newpackage_child_view(context, func, acc, alias)
-#     ret = cleanup(_newpackage_inner(func), view)
-#     next_acc = merge(acc, _newpackage_return_tuple(ret))
-#     return _newpackage_cleanup_children(pkg, context, next_acc, Base.tail(funcs), Base.tail(aliases))
-# end
+    func = getfield(funcs, 1)
+    view = _newpackage_child_view(context, func, acc)
+    ret = init(getalgo(func), view)
+    next_acc = isnothing(ret) ? acc : merge(acc, ret)
+    return _newpackage_init_children(pkg, context, next_acc, Base.tail(funcs))
+end
