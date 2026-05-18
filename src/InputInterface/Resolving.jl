@@ -24,10 +24,7 @@ to the resolved namespace symbol.
 @inline _resolve_input_target_key(reg::NameSpaceRegistry, target) = static_findkey(reg, target)
 @inline _resolve_input_target_key(reg::NameSpaceRegistry, matcher::AbstractMatcher) = getkey(get_by_matcher(reg, matcher))
 
-"""
-If Overrides and inputs target a LoopAlgorithm, duplicate them for all contained algorithms
-    Maybe this is not used anymore after the fusing system
-"""
+"""Resolve one lifecycle input/override against the loop algorithm registry."""
 @inline function resolve(cla::LA, ov::OI) where {LA<:AbstractLoopAlgorithm, OI<:Union{Override, Input}}
     return resolve(getregistry(cla), ov)
 end

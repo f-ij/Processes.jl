@@ -78,15 +78,23 @@ This enables coupling patterns like:
 
 - algorithm B reading and damping algorithm A's `velocity`, then returning updated `velocity`.
 
-## Current Limitation: Routes Are Instance-Bound
+## Plan-Local Routes
 
-Routes are currently resolved per final process context, not per usage site inside a parent `CompositeAlgorithm` or `Routine`.
+Routes belong to the plan node where they are declared. In the DSL, a route
+statement inside a composite/routine is attached to that local child step, so
+the same algorithm type can be reused elsewhere with different local wiring.
 
-Practical effect:
+Example:
 
-- Reusing the same algorithm or composite instance in multiple parents/phases implies the same routing structure for that reused instance.
-- The same reused component cannot currently have different local route configurations in different parts of a `Routine`.
+```julia
+@CompositeAlgorithm begin
+    c1 = @CompositeAlgorithm begin
+        inner = Source()
+    end
+    sink = Sink()
+    @route c1.inner.value => sink.value
+end
+```
 
-If you need different routing in different parents/phases, create distinct instances, typically with [`Unique(...)`](@ref value_semantics_user), and route those separately.
-
-This is a current limitation of the routing model and may be relaxed in a future release.
+If a local route and a broader route expose the same target alias, the local
+route takes precedence for that child step.

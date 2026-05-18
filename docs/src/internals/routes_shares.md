@@ -1,12 +1,14 @@
 # [Routes and Shares Internals](@id routes_shares_internals)
 
-`Route` and `Share` are user options, resolved once during `ProcessContext(la)` construction.
+`Route` and `Share` are plan options. Resolution happens when a plan is wrapped
+and resolved as a concrete `LoopAlgorithm`.
 
 Relevant files:
 
 - Definitions: `src/RoutingInterface/RouteDef.jl`, `src/RoutingInterface/ShareDef.jl`
 - Resolution backend: `src/RoutingInterface/Resolving.jl`, `src/RoutingInterface/Backend.jl`, `src/RoutingInterface/Sharing.jl`
-- Context integration: `src/Context/Init.jl`
+- Plan integration: `src/LoopAlgorithms/PlanOptions.jl`, `src/LoopAlgorithms/Preparation/Constructor.jl`
+- View integration: `src/Context/View/StructDef.jl`, `src/Context/View/Locations.jl`
 
 ## 1. Route Resolution
 
@@ -39,7 +41,7 @@ Transform details:
 - `a -> b`
 - and also `b -> a` when non-directional.
 
-This metadata is attached to target `SubContext.sharedcontexts`.
+This metadata is attached to the target child's `StepRouting`.
 
 ## 3. How Views See Them
 
@@ -52,6 +54,10 @@ Both become `VarLocation{:subcontext}` entries, so reads and writes are directed
 
 That means returning a routed/shared variable from `step!` can update remote state, not only local state.
 
+The view constructor reconstructs resolved route/share tuples from their
+concrete tuple types. The runtime routing value selects the type-specialized
+view, but the view does not depend on const-propagating route/share values.
+
 ## 4. Errors and Validation
 
 If route/share endpoints are not present in the registry, resolution throws explicit errors listing available keys (see `to_sharedvar` and `to_sharedcontext`).
@@ -60,10 +66,16 @@ If route/share endpoints are not present in the registry, resolution throws expl
 
 During `Package(comp)`, routes are translated into `VarAliases` for internal subpackages (`src/Packaging/Constructor.jl`, `src/Packaging/Utils.jl`).
 
-## 6. Current Limitation: No Usage-Site-Specific Routes
+## 6. Plan-Local Wiring
 
-Route resolution is performed once from the final registry during `ProcessContext(la)` construction, and the resolved `SharedVars` are stored in the target `SubContext` type.
+Plain `Route`/`Share` options are stored on the plan node that contains them.
+DSL-local route/share statements become child-aligned local wiring, so the
+resolved `StepRouting` passed to a child is specific to that child location.
 
-This means routes are currently bound to registry/context identity, not to a specific parent call site. Reusing the same algorithm or composite instance in multiple parts of a larger composition therefore reuses the same routing shape.
+Nested plan routes remain local to the nested plan. A route/share assigned to a
+nested plan child itself is rejected because nested plan nodes do not have their
+own root context key; attach that route/share to a concrete child inside the
+nested plan instead.
 
-Supporting different routes for the same reused component in different parents/phases would require a more usage-site-sensitive model, such as path-specific identities or caller-dependent views. That is not currently implemented.
+If both top-level and local routes expose the same target alias, local routes
+take precedence for that child step.

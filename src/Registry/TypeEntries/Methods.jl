@@ -209,6 +209,26 @@ end
 
 @inline Base.haskey(te::Union{RTE, Type{<:RTE}}, key::Symbol) where RTE <: RegistryTypeEntry = !isnothing(findkey(te, key))
 
+@inline _registry_findall_type(::Type{E}) where {E} = E
+@inline _registry_findall_type(::Type{<:AbstractIdentifiableAlgo{F}}) where {F} = F
+@inline _registry_findall_matches(::Type{E}, ::Type{T}) where {E, T} = _registry_findall_type(E) <: T
+
+@inline _registry_findall_type_entries(::Type{T}, ::Tuple{}) where {T} = ()
+@inline function _registry_findall_type_entries(::Type{T}, entries::Tuple) where {T}
+    head = first(entries)
+    tail_matches = _registry_findall_type_entries(T, Base.tail(entries))
+    return _registry_findall_matches(typeof(head), T) ? (head, tail_matches...) : tail_matches
+end
+
+"""
+Return all registered entries whose algorithm type is a subtype of `T`.
+
+Entries are returned as they are stored in the registry, usually identifiable
+wrappers. For identifiable entries, matching uses the wrapped algorithm type.
+"""
+@inline Base.findall(::Type{T}, te::RegistryTypeEntry) where {T} =
+    _registry_findall_type_entries(T, getentries(te))
+
 ###################################
 ########## REBUILDING #############
 ###################################

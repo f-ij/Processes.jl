@@ -30,7 +30,8 @@ algo = @CompositeAlgorithm begin
 end
 
 resolved = resolve(algo)
-@assert resolved isa CompositeAlgorithm
+@assert resolved isa Processes.LoopAlgorithm
+@assert Processes.getplan(resolved) isa CompositeAlgorithm
 @assert intervals(resolved) == (1, 10, 1, 1)
 @assert Processes.getkey(Processes.getalgo(resolved, 1)) == :source
 @assert length(Processes.getstates(resolved)) == 1
@@ -89,7 +90,8 @@ repeated = @CompositeAlgorithm begin
 end
 
 resolved_repeated = resolve(repeated)
-@assert resolved_repeated isa CompositeAlgorithm
+@assert resolved_repeated isa Processes.LoopAlgorithm
+@assert Processes.getplan(resolved_repeated) isa CompositeAlgorithm
 @assert Processes.getalgo(resolved_repeated, 1) isa Processes.AbstractIdentifiableAlgo
 @assert Processes.getalgo(Processes.getalgo(resolved_repeated, 1)) isa Routine
 @assert repeats(Processes.getalgo(Processes.getalgo(resolved_repeated, 1))) == (3,)
@@ -100,7 +102,8 @@ routine = @Routine begin
 end
 
 resolved_routine = resolve(routine)
-@assert resolved_routine isa Routine
+@assert resolved_routine isa Processes.LoopAlgorithm
+@assert Processes.getplan(resolved_routine) isa Routine
 @assert repeats(resolved_routine) == (3,)
 
 p = Process(resolved, 10)

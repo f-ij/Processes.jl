@@ -1,10 +1,10 @@
 """
 Package-local executable child for `Package`.
 
-`SubPackage` is identifiable, but it is not meant to become a root registry
-entry. It carries only the wrapped algorithm and package-local aliases. The
-child deliberately has no context key: package child state lives in the package
-subcontext, whose key is carried by the parent `SubContextView`.
+`SubPackage` is not a root-identifiable registry entry. It carries only the
+wrapped algorithm and package-local aliases. The child deliberately has no
+context key: package child state lives in the package subcontext, whose key is
+carried by the parent `SubContextView`.
 """
 struct SubPackage{F, Aliases} <: ProcessAlgorithm
     func::F

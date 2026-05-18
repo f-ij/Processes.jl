@@ -29,6 +29,10 @@ function flatten(comp::CompositeAlgorithm)
     return flatten_comp_funcs((comp,), (1,), false)
 end
 
+function flatten(comp::LoopAlgorithm{<:CompositeAlgorithm})
+    return flatten(getplan(comp))
+end
+
 function flatten_loopalgorithms(la::ALA) where {ALA<:AbstractLoopAlgorithm}
     flat_funcs, flat_intervals = flat_tree_property_recursion((la,), (1,)) do el, trait
         if !(el isa AbstractLoopAlgorithm)

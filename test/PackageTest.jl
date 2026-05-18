@@ -108,6 +108,21 @@ function Processes.init(::PackLuc, context)
     return (;luclist)
 end
 
+@testset "Registry findall by algorithm type" begin
+    fib1 = Processes.Unique(PackFib)
+    fib2 = Processes.Unique(PackFib)
+    comp = resolve(CompositeAlgorithm(fib1, fib2, PackLuc, (1, 1, 1)))
+    reg = Processes.getregistry(comp)
+
+    fib_matches = findall(PackFib, reg)
+    luc_matches = findall(PackLuc, reg)
+
+    @test length(fib_matches) == 2
+    @test all(match -> Processes.getalgo(match) isa PackFib, fib_matches)
+    @test length(luc_matches) == 1
+    @test Processes.getalgo(only(luc_matches)) isa PackLuc
+end
+
 @testset "Package runs and benchmarks" begin
     n = 1_000
     @show n

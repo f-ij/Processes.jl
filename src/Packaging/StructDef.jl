@@ -2,9 +2,9 @@
 ProcessAlgorithm package with explicitly scoped child algorithms.
 
 `Package` is registered as one root process algorithm. Its children are
-`SubPackage` wrappers that carry package-local identity and aliases, so the
-children can resolve views and call multipliers through the containing package
-without being root registry entries themselves.
+`SubPackage` wrappers that carry package-local aliases. They deliberately do
+not carry their own root identity; package child views and multipliers are
+derived from the containing package view and package-local registry.
 
 `funcs` contains only stepped children. `states` are initialized before those
 children and seed the shared package subcontext. `registry` is package-local:

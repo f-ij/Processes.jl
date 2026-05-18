@@ -1,4 +1,4 @@
-function benchmark(func::Union{ProcessAlgorithm, LoopAlgorithm}, rt, trials = 100; loopfunction = nothing, progress = false, print_outer = false) 
+function benchmark(func::Union{ProcessAlgorithm, AbstractLoopAlgorithm}, rt, trials = 100; loopfunction = nothing, progress = false, print_outer = false)
     p = Process(func; repeats = rt)
     runtimes = []
     outer_times = []

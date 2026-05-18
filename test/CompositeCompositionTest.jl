@@ -34,6 +34,7 @@ end
 
     routine = Processes.Routine( Fib, Fib(), fibluc , (10, 20, 30))
     @test Processes.repeats(routine) == (10, 20, 30)
+    @test Processes.lifetime(Process(resolve(routine))) == Repeat(1)
 
     ffluc = CompositeAlgorithm( fibluc, fdup_inst, Fib, ldup , (10, 5, 2, 1))
     @test Processes.intervals(ffluc) == (
@@ -60,6 +61,13 @@ end
     routed_flat_funcs, routed_flat_intervals = Processes.flatten(routed)
     @test routed_flat_funcs == Processes.getalgos(routed)
     @test routed_flat_intervals == Processes.intervals(routed)
+
+    resolved_flat_funcs, resolved_flat_intervals = Processes.flatten(resolve(routed))
+    unwrap_identifiable(x) = x isa Processes.AbstractIdentifiableAlgo ? Processes.getalgo(x) : x
+    unwrapped_resolved = map(unwrap_identifiable, resolved_flat_funcs)
+    unwrapped_routed = map(unwrap_identifiable, Processes.getalgos(routed))
+    @test unwrapped_resolved == unwrapped_routed
+    @test resolved_flat_intervals == Processes.intervals(routed)
 
     inner = @Routine begin
         @alias dynamics = Fib()

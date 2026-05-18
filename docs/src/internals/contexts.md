@@ -22,13 +22,16 @@ Access patterns (`src/Context/ProcessContexts.jl`):
 
 ## 2. `SubContext`
 
-`SubContext{Name,Data,SharedContexts,SharedVars}` stores (`src/Context/StructDefs.jl`):
+`SubContext{Name,Data}` stores (`src/Context/StructDefs.jl`):
 
 - `data::NamedTuple`: local variables owned by that entity.
-- `sharedcontexts`: whole-context sharing metadata (`Share`).
-- `sharedvars`: variable routes metadata (`Route`).
 
 Initialization builds empty `SubContext`s for every registry key, then fills them by `init`.
+
+Route/share metadata is deliberately not stored on `SubContext`. Plan routing is
+resolved into step-local `StepRouting` values and attached to `SubContextView`
+types while a child runs. This keeps persistent context shape independent from
+execution-plan wiring.
 
 ## 3. `SubContextView`
 
@@ -39,12 +42,13 @@ A view carries:
 - the full context,
 - the current identifiable instance,
 - optionally injected locals.
+- route/share metadata for the current step, as type parameters.
 
 Property access is generated through `VarLocation`s (`src/Context/View/Locations.jl`):
 
 - local vars,
-- shared-context vars,
-- routed vars,
+- shared-context vars from the current step routing,
+- routed vars from the current step routing,
 - injected vars.
 
 Name precedence for reads is determined by `NamedTuple` merge order. Later

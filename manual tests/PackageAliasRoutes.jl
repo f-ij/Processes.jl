@@ -22,7 +22,7 @@ FLMixed = CompositeAlgorithm( (Fib, Luc, FLMixer), (1,1,1),
 
 
 
-Pack = ps.PackagedAlgo(FLMixed, "FLMixerPack")
+Pack = ps.Package(FLMixed, "FLMixerPack")
 p = Process(Pack, lifetime = 100000)
 start(p)
 

@@ -3,8 +3,10 @@
 @inline normalize_process_algo(func::F) where {F} = SimpleAlgo(func)
 
 @inline normalize_process_lifetime(func, lifetime::Integer) = Repeat(lifetime)
+@inline _is_routine_plan(func) = func isa Routine || func isa Type{<:Routine}
+@inline _is_routine_plan(func::LoopAlgorithm) = _is_routine_plan(getplan(func))
 @inline function normalize_process_lifetime(@nospecialize(func), ::Nothing)
-    if func isa Routine || func isa Type{<:Routine}
+    if _is_routine_plan(func)
         return Repeat(1)
     else
         return Indefinite()

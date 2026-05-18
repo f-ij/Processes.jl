@@ -212,6 +212,17 @@ end
 end
 
 """
+Return all registered entries whose algorithm type is a subtype of `T`.
+
+The result preserves registry entries, so algorithms are usually returned as
+their keyed `IdentifiableAlgo` wrappers. For wrappers, matching uses the wrapped
+algorithm type rather than the wrapper type.
+"""
+@inline function Base.findall(::Type{T}, reg::NameSpaceRegistry) where {T}
+    return flat_collect_broadcast(entry -> findall(T, entry), getentries(reg))
+end
+
+"""
 Get entries for an obj
 """
 function get_type_entries(reg::NameSpaceRegistry, obj)
