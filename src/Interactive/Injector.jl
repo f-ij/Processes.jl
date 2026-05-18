@@ -58,6 +58,8 @@ function Processes.init(inj::ContextInjector, context::ProcessContext)
     return replace(context, NamedTuple{(context_injector_key,)}((_context_injector_state(inj),)))
 end
 
+@inline Processes.cleanup(::ContextInjector, context::ProcessContext) = context
+
 @inline Processes.step!(inj::ContextInjector, context::C) where {C<:ProcessContext} =
     Processes.step!(inj, context, Stable())
 

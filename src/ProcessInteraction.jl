@@ -36,11 +36,23 @@ Wait for a process to finish
 """
 @inline Base.wait(@nospecialize(p::Process)) = if !isnothing(p.task) wait(p.task) else nothing end
 
+function _cleanup_paused_process!(p::Process, fetched_result)
+    # A paused task already stored its live runtime context when the loop exited.
+    # `close` turns that paused lifecycle into a final one, so cleanup must run
+    # here because the loop will not re-enter `after_while`.
+    cleanup_context = fetched_result isa AbstractContext ? fetched_result : context(p)
+    cleaned_context = @inline _loop_cleanup_context(getalgo(p), cleanup_context)
+    context(p, cleaned_context)
+    p.lastresult = @inline _loop_final_result(getalgo(p), cleaned_context)
+    return p.lastresult
+end
+
 
 """
 Close a process, stopping it from running
 """
 function Base.close(p::Process)
+    was_paused = ispaused(p)
     @atomic p.paused = false
     @atomic p.shouldrun = false
 
@@ -51,6 +63,8 @@ function Base.close(p::Process)
             fetched_result = fetch(p)
             p.lastresult = fetched_result
         end
+
+        was_paused && _cleanup_paused_process!(p, fetched_result)
     catch(err)
         println("Process with error closed:")
         Base.showerror(stderr, err)
@@ -59,7 +73,7 @@ function Base.close(p::Process)
 
     end
 
-    if fetched_result isa AbstractContext
+    if !was_paused && fetched_result isa AbstractContext
         context(p, fetched_result)
     end
     p.task = nothing 

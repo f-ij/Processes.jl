@@ -53,6 +53,7 @@ end
 
     @test ctx[pkg].value == 6
     @test ctx[pkg].log == [2, 4, 6]
+    @test Processes.inc(pkg) == 1
 end
 
 function Processes.init(::PackFib, context)

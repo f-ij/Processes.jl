@@ -34,3 +34,63 @@ using Processes
     capped_context = fetch(capped_process)
     @test capped_context[LifetimeCounter].count == 5
 end
+
+@testset "Condition lifetimes run cleanup on natural completion" begin
+    struct LifetimeCleanupCounter <: ProcessAlgorithm end
+
+    function Processes.init(::LifetimeCleanupCounter, context)
+        return (; count = 0, cleaned = false)
+    end
+
+    function Processes.step!(::LifetimeCleanupCounter, context)
+        return (; count = context.count + 1)
+    end
+
+    function Processes.cleanup(::LifetimeCleanupCounter, context)
+        return (; cleaned = true)
+    end
+
+    p = Process(
+        LifetimeCleanupCounter;
+        lifetime = Processes.Until(x -> x >= 2, Var(LifetimeCleanupCounter, :count)),
+    )
+    run(p)
+    ctx = fetch(p)
+
+    @test ctx[LifetimeCleanupCounter].count == 2
+    @test ctx[LifetimeCleanupCounter].cleaned
+    @test context(p)[LifetimeCleanupCounter].cleaned
+end
+
+@testset "Indefinite close cleans up and pause preserves live context" begin
+    struct LifetimeIndefiniteCleanupCounter <: ProcessAlgorithm end
+
+    function Processes.init(::LifetimeIndefiniteCleanupCounter, context)
+        return (; count = 0, cleaned = false)
+    end
+
+    function Processes.step!(::LifetimeIndefiniteCleanupCounter, context)
+        sleep(0.001)
+        return (; count = context.count + 1)
+    end
+
+    function Processes.cleanup(::LifetimeIndefiniteCleanupCounter, context)
+        return (; cleaned = true)
+    end
+
+    closed = Process(LifetimeIndefiniteCleanupCounter; lifetime = Processes.Indefinite())
+    run(closed)
+    sleep(0.02)
+    close(closed)
+    @test context(closed)[LifetimeIndefiniteCleanupCounter].cleaned
+
+    paused = Process(LifetimeIndefiniteCleanupCounter; lifetime = Processes.Indefinite())
+    run(paused)
+    sleep(0.02)
+    pause(paused)
+    wait(paused)
+    @test !context(paused)[LifetimeIndefiniteCleanupCounter].cleaned
+
+    close(paused)
+    @test context(paused)[LifetimeIndefiniteCleanupCounter].cleaned
+end

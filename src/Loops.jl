@@ -15,9 +15,6 @@ end
     if p isa Process && ispaused(p)
         _store_runtime_context!(p, context)
         return context
-    elseif !shouldrun(p) || lifetime(p) isa Indefinite # If user interrupted, or lifetime is indefinite
-        Processes.context(p, context)
-        return context
     else
         cleaned_context = @inline _loop_cleanup_context(func, context)
         Processes.context(p, cleaned_context)
@@ -73,11 +70,7 @@ Run a single function in a loop indefinitely
         end
     end
 
-    if @inline shouldrun(process)
-        return runtime_context
-    else
-        return @inline after_while(process, func, runtime_context)
-    end
+    return @inline after_while(process, func, runtime_context)
 end
 
 """

@@ -85,7 +85,9 @@ end
 
 @inline function cleanup(pkg::NewPackage, context::C) where {C<:AbstractContext}
     acc = (;)
-    return _newpackage_cleanup_children(pkg, context, acc, getalgos(pkg), getaliases(pkg))
+    ret = _newpackage_cleanup_children(pkg, context, acc, getalgos(pkg), getaliases(pkg))
+    getinc(pkg)[] = 1
+    return ret
 end
 
 @inline function _newpackage_cleanup_children(pkg::NewPackage, context::C, acc::Acc, funcs::Funcs, aliases::Aliases) where {C<:AbstractContext, Acc<:NamedTuple, Funcs<:Tuple, Aliases<:Tuple}
