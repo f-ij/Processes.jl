@@ -12,11 +12,19 @@ end
 
 struct NewPackSource <: Processes.ProcessAlgorithm end
 struct NewPackTarget <: Processes.ProcessAlgorithm end
+struct NewPackOuterSource <: Processes.ProcessAlgorithm end
+struct NewPackNeedsRoute <: Processes.ProcessAlgorithm end
+struct NewPackCounter <: Processes.ProcessAlgorithm end
 
 Processes.init(::NewPackSource, context) = (; value = 0)
+Processes.init(::NewPackOuterSource, context) = (; delta = 0)
 
 function Processes.step!(::NewPackSource, context)
     return (; value = context.value + 1)
+end
+
+function Processes.step!(::NewPackOuterSource, context)
+    return (; delta = context.delta + 1)
 end
 
 function Processes.init(::NewPackTarget, context)
@@ -25,10 +33,16 @@ function Processes.init(::NewPackTarget, context)
     return (; log, expected_calls = Processes.num_calls(context))
 end
 
+Processes.init(::NewPackCounter, context) = (; expected_calls = Processes.num_calls(context))
+Processes.step!(::NewPackCounter, context) = (;)
+
 function Processes.step!(::NewPackTarget, context)
     push!(context.log, context.input)
     return (;)
 end
+
+Processes.init(::NewPackNeedsRoute, context) = (; seen = 0)
+Processes.step!(::NewPackNeedsRoute, context) = (; seen = context.delta)
 
 @testset "Package runs as a ProcessAlgorithm" begin
     comp = CompositeAlgorithm(
@@ -72,7 +86,7 @@ end
     @test nested_ctx[nested_pkg].log == [2, 4]
     @test nested_ctx[nested_pkg].expected_calls == 2
 
-    repeated = Package((NewPackTarget, NewPackTarget), (2, 3))
+    repeated = Package((NewPackCounter, NewPackCounter), (2, 3))
     repeated_process = Process(repeated; repeats = 12)
     run(repeated_process)
     wait(repeated_process)
@@ -88,6 +102,20 @@ end
 
     @test unique_ctx[unique_pkg].log == [2, 4, 6]
     @test unique_ctx[unique_pkg].expected_calls == 3
+
+    routed_into_package = Package((NewPackNeedsRoute,), (1,))
+    outer_routed = CompositeAlgorithm(
+        NewPackOuterSource,
+        routed_into_package,
+        (1, 1),
+        Route(NewPackOuterSource => routed_into_package, :delta),
+    )
+    routed_process = Process(outer_routed; repeats = 4)
+    run(routed_process)
+    wait(routed_process)
+    routed_ctx = fetch(routed_process)
+
+    @test routed_ctx[routed_into_package].seen == 4
 end
 
 function Processes.init(::PackFib, context)

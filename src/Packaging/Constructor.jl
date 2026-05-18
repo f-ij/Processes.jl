@@ -8,10 +8,11 @@ schedule, init-only states, and call counter.
 function Package(funcs::Funcs, intervals::Intervals; states::States = (), aliases = ntuple(_ -> VarAliases(), length(funcs)), name = Symbol()) where {Funcs<:Tuple, Intervals<:Tuple, States<:Tuple}
     length(funcs) == length(intervals) || error("Package needs one interval per child algorithm, got $(length(funcs)) funcs and $(length(intervals)) intervals.")
     length(funcs) == length(aliases) || error("Package needs one alias bucket per child algorithm, got $(length(funcs)) funcs and $(length(aliases)) alias buckets.")
+    normalized_intervals = map(interval -> interval isa Interval ? interval : Interval(interval), intervals)
     children = package_children(funcs, aliases)
-    registry = package_registry(children, intervals)
+    registry = package_registry(children, normalized_intervals)
     customname = name == Symbol() || name == "" ? Symbol() : Symbol(name)
-    return Package{typeof(children), States, intervals, customname, typeof(registry)}(children, states, Ref(1), registry)
+    return Package{typeof(children), States, normalized_intervals, customname, typeof(registry)}(children, states, Ref(1), registry)
 end
 
 package(args...; kwargs...) = Package(args...; kwargs...)
