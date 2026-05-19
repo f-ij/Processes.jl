@@ -1,5 +1,12 @@
 export RuntimeInput, RuntimeInputState, RuntimeInputs, partialinit
 
+"""
+Lightweight process handle used by `run(::LoopAlgorithm; ...)`.
+
+Direct loop-algorithm runs need the same loop counter, timing, and lifetime
+interface as a normal `Process`, but they should not allocate or store an
+interactive task handle. `LoopRunProcess` is that minimal runtime object.
+"""
 mutable struct LoopRunProcess{LT} <: AbstractProcess
     loopidx::UInt
     tickidx::UInt
@@ -18,6 +25,12 @@ LoopRunProcess(lifetime::LT) where {LT} = LoopRunProcess{LT}(UInt(1), UInt(1), l
 @inline set_endtime!(p::LoopRunProcess) = (p.endtime = time_ns())
 @inline context(::LoopRunProcess, ::Any) = nothing
 
+"""
+Runtime input declaration produced by DSL `@input`.
+
+`Name`, `T`, and `Required` live in the type so validation specializes on the
+declared input contract. `default` is stored only for optional inputs.
+"""
 struct RuntimeInput{Name, T, Required, Default}
     default::Default
 end
@@ -25,12 +38,25 @@ end
 RuntimeInput(name::Symbol, ::Type{T}; required::Bool = true, default = nothing) where {T} =
     RuntimeInput{name, T, required, typeof(default)}(default)
 
+"""
+Loop option carrying all runtime input declarations for a composed algorithm.
+
+The DSL stores this as an option so `run(...; kwargs...)` can validate keyword
+arguments without inspecting the generated step code.
+"""
 struct RuntimeInputs{Specs} <: AbstractOption
     specs::Specs
 end
 
 RuntimeInputs(specs::Tuple = ()) = RuntimeInputs{typeof(specs)}(specs)
 
+"""
+Registry-visible marker state for runtime input names.
+
+Runtime inputs are not persistent state. This marker exists so the composition
+registry can route DSL references such as `temperature` to the runtime input
+owner while initialization still produces an empty persistent subcontext.
+"""
 struct RuntimeInputState{Specs} <: ProcessState
     specs::Specs
 end
@@ -44,6 +70,13 @@ Processes.init(::RuntimeInputState, context) = (;)
 
 Base.merge(a::RuntimeInputState, b::RuntimeInputState) = RuntimeInputState((a.specs..., b.specs...))
 
+"""
+Return the runtime input declaration bundle attached to `la`.
+
+Runtime input declarations may be stored either as explicit `RuntimeInputs`
+options or as `RuntimeInputState` process states. The latter is used by the DSL
+so inputs can participate in routing through the registry.
+"""
 function runtimeinputs(la::LA) where {LA<:AbstractLoopAlgorithm}
     opts = getoptions(la)
     inputs = filter_by_type(RuntimeInputs, opts)
@@ -64,14 +97,26 @@ end
 @inline _runtime_input_type(::RuntimeInput{Name, T}) where {Name, T} = T
 @inline _runtime_input_required(::RuntimeInput{Name, T, Required}) where {Name, T, Required} = Required
 
+"""
+Build default keyword values for optional runtime inputs.
+
+Required inputs are intentionally omitted here so validation can report a
+missing input instead of silently supplying `nothing`.
+"""
 function _runtime_input_defaults(specs::Tuple)
-    pairs = Pair{Symbol, Any}[]
+    pairs = Pair{Symbol, Any}[] 
     for spec in specs
         _runtime_input_required(spec) || push!(pairs, _runtime_input_name(spec) => spec.default)
     end
     return (; pairs...)
 end
 
+"""
+Validate one run's keyword arguments against `la`'s runtime input declarations.
+
+This rejects unknown names, checks required inputs, validates typed inputs with
+`isa`, and merges optional defaults into the returned `NamedTuple`.
+"""
 function _validate_runtime_inputs(la::LA, inputs::I) where {LA<:AbstractLoopAlgorithm, I<:NamedTuple}
     specs = runtimeinputs(la).specs
     if isempty(specs)
@@ -98,34 +143,79 @@ function _validate_runtime_inputs(la::LA, inputs::I) where {LA<:AbstractLoopAlgo
     return merge(_runtime_input_defaults(specs), inputs)
 end
 
+"""
+Merge runtime inputs into a transient context field for one loop execution.
+
+The empty `NamedTuple` method preserves the original context object and type.
+Non-empty inputs are stored in `ProcessContext._input`, not in persistent
+subcontexts, so finished contexts can be stripped back to their original shape.
+"""
 @inline _merge_runtime_inputs(context, ::NamedTuple{()}) = context
 @inline _merge_runtime_inputs(context, inputs::I) where {I<:NamedTuple} =
-    merge_into_subcontexts(context, (; _input = inputs))
+    ProcessContext(get_subcontexts(context), getregistry(context), getglobals(context), inputs)
 
 @inline _strip_runtime_inputs(context) = context
 
+"""
+Remove runtime-only data from a finished context.
+
+This is the single-context fallback used by direct runs or callers that do not
+have an original persistent context to restore from. It removes loop handles
+from `_runtime`, clears `_input`, and drops the legacy `:_input` subcontext if a
+context was created before the runtime/input field split.
+"""
 function _strip_runtime_inputs(context::C) where {C<:ProcessContext}
+    runtime = getglobals(context)
+    stripped_runtime = haskey(runtime, :process) ? deletekeys(runtime, :process) : runtime
+    stripped_runtime = haskey(stripped_runtime, :lifetime) ? deletekeys(stripped_runtime, :lifetime) : stripped_runtime
     subcontexts = get_subcontexts(context)
-    globals = getglobals(context)
-    haskey(subcontexts, :_input) || haskey(globals, :process) || return context
-    stripped = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
-    stripped_globals = haskey(globals, :process) ? deletekeys(globals, :process) : globals
-    stripped = (; stripped..., globals = stripped_globals)
-    return ProcessContext(stripped, getregistry(context))
+    persistent_subcontexts = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
+    return ProcessContext(persistent_subcontexts, getregistry(context), stripped_runtime, (;))
 end
 
+"""
+    _strip_runtime_inputs(runtime_context, stored_context)
+
+Keep the updated persistent subcontexts from `runtime_context`, but restore the
+runtime and input fields from `stored_context`.
+"""
+@inline _strip_runtime_inputs(runtime_context, stored_context) = _strip_runtime_inputs(runtime_context)
+
+@inline function _strip_runtime_inputs(runtime_context::C, stored_context::S) where {C<:ProcessContext, S<:ProcessContext}
+    subcontexts = get_subcontexts(runtime_context)
+    persistent_subcontexts = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
+    return ProcessContext(
+        persistent_subcontexts,
+        getregistry(runtime_context),
+        getglobals(stored_context),
+        getruntimeinput(stored_context),
+    )
+end
+
+# Lifecycle accessors keep `LoopAlgorithm`, plain plan nodes, and wrappers on a
+# shared path. Plain plans report no stored lifecycle data.
 @inline getstoredinits(la::LA) where {LA<:AbstractLoopAlgorithm} = hasfield(LA, :inits) ? getfield(la, :inits) : ()
 @inline getstoredoverrides(la::LA) where {LA<:AbstractLoopAlgorithm} = hasfield(LA, :overrides) ? getfield(la, :overrides) : ()
 @inline getstoredcontext(la::LA) where {LA<:AbstractLoopAlgorithm} = hasfield(LA, :context) ? getfield(la, :context) : nothing
 @inline context(la::LA) where {LA<:AbstractLoopAlgorithm} = getstoredcontext(la)
 @inline _without_lifecycle(la::LA) where {LA<:AbstractLoopAlgorithm} = _with_lifecycle(la, nothing, (), ())
 
+# Merge newly passed `Init`/`Override` specs over previously stored specs by
+# target. This lets `init(initialized, Init(Target; ...))` replay the old
+# lifecycle while replacing only the named target.
 @inline _merge_specs_by_target(base::B, ::Tuple{}) where {B<:Tuple} = base
 @inline _merge_specs_by_target(::Tuple{}, updates::Tuple{}) = ()
 @inline _merge_specs_by_target(::Tuple{}, updates::Tuple{T}) where {T} = updates
 
 @inline _resolve_lifecycle_specs(reg::R) where {R<:NameSpaceRegistry} = ()
 
+"""
+Merge two tuples of resolved lifecycle specs by target key.
+
+When a target appears in both tuples, its named values are merged and the newer
+values win. The result remains a tuple so callers can specialize on the concrete
+set of lifecycle specs.
+"""
 function _merge_specs_by_target(base::B, updates::U) where {B<:Tuple, U<:Tuple}
     merged = collect(Any, base)
     for update in updates
@@ -142,12 +232,24 @@ function _merge_specs_by_target(base::B, updates::U) where {B<:Tuple, U<:Tuple}
     return Tuple(merged)
 end
 
+"""
+Split resolved lifecycle specs into initialization and override phases.
+
+`Init` values must be available during `init(...)`; `Override` values are
+applied afterwards to force persistent context fields.
+"""
 function _split_init_override(specs)
     inits = filter_by_type(Input, specs)
     overrides = filter_by_type(Override, specs)
     return inits, overrides
 end
 
+"""
+Resolve `Init` and `Override` targets through a concrete registry.
+
+The returned specs carry symbol targets, so later context merging does not need
+to perform matcher lookup again.
+"""
 @inline function _resolve_lifecycle_specs(reg::R, specs) where {R<:NameSpaceRegistry}
     resolved = ()
     for spec in specs
@@ -163,6 +265,13 @@ end
 @inline _resolve_lifecycle_specs(la::LA, specs) where {LA<:AbstractLoopAlgorithm} =
     _resolve_lifecycle_specs(getregistry(resolve(la)), specs)
 
+"""
+Build the persistent context for an initialized loop algorithm.
+
+The initialization context includes `algo` and `lifetime` in `_runtime` because
+init methods such as `processsizehint!` need them. Runtime `process` and
+per-run `_input` values are intentionally absent here.
+"""
 @inline function _init_context_for(la::LA, inits::I, overrides::O, lifetime::LT) where {LA<:AbstractLoopAlgorithm, I<:Tuple, O<:Tuple, LT}
     empty_context = _build_process_context(
         getregistry(la);
@@ -212,16 +321,16 @@ end
     run(la::LoopAlgorithm; kwargs...)
 
 Run an initialized loop algorithm with per-run runtime inputs. The inputs are
-validated, merged into a transient `:_input` context for the loop call, and
-removed before the returned loop algorithm stores its next persistent context.
+validated, merged into the transient `ProcessContext._input` field for the loop
+call, and removed before the returned loop algorithm stores its next persistent
+context.
 """
 function Base.run(la::LA; repeats = 1, lifetime = nothing, kwargs...) where {LA<:AbstractLoopAlgorithm}
     initialized = isnothing(getstoredcontext(la)) ? init(la) : la
     lt = isnothing(lifetime) ? normalize_process_lifetime(initialized, repeats) : normalize_process_lifetime(initialized, lifetime)
     inputs = _validate_runtime_inputs(initialized, (; kwargs...))
     process = LoopRunProcess(lt)
-    runtime_context = merge_into_globals(getstoredcontext(initialized), (; process, lifetime = lt))
-    result = loop(process, initialized, runtime_context, lt, inputs)
+    result = loop(process, initialized, getstoredcontext(initialized), lt, inputs)
     stored = result isa AbstractContext ? result : getstoredcontext(initialized)
     stored = _strip_runtime_inputs(stored)
     return _with_lifecycle(initialized, stored, getstoredinits(initialized), getstoredoverrides(initialized))

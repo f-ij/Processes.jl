@@ -10,7 +10,7 @@ comp = taskdata(p).func
 @code_warntype initcontext(comp, emptycontext)
 
 
-withglobals = Processes.merge_into_globals(emptycontext, (;lifetime = Processes.Indefinite(), algo = comp))
+withglobals = Processes._merge_into_globals(emptycontext, (;lifetime = Processes.Indefinite(), algo = comp))
 # @code_warntype initcontext(comp, emptycontext; lifetime = Processes.Indefinite())
 @code_warntype init(comp, withglobals)
 c1 = comp[1]

@@ -1,4 +1,33 @@
 """
+Generated expression form for a resolved `LoopAlgorithm`.
+
+Generated process loops receive the resolved wrapper at the root. Inline the
+stored plan directly so generated code does not call the old no-runtime
+`step!` entry point.
+"""
+function step!_expr(::Type{LA}, context::Type{C}, name::Symbol, stability::Symbol) where {Plan, LA<:LoopAlgorithm{Plan}, C<:AbstractContext}
+    plan_name = gensym(:plan)
+    return quote
+        local $plan_name = @inline getplan($name)
+        $(step!_expr(Plan, C, plan_name, stability))
+    end
+end
+
+"""
+Generated expression form for a finalized root loop algorithm.
+
+Finalization affects the result after cleanup, not the loop step itself, so the
+generated step expression delegates to the wrapped algorithm.
+"""
+function step!_expr(::Type{FA}, context::Type{C}, name::Symbol, stability::Symbol) where {LA, FA<:FinalizedAlgorithm{LA}, C<:AbstractContext}
+    inner_name = gensym(:inner)
+    return quote
+        local $inner_name = @inline inneralgorithm($name)
+        $(step!_expr(LA, C, inner_name, stability))
+    end
+end
+
+"""
 Generated expression form of the composite step! with a caller-provided name binding.
 """
 function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, stability::Symbol) where {CA<:CompositeAlgorithm, C<:AbstractContext}

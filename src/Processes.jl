@@ -30,6 +30,7 @@ module Processes
 
 
     include("AbstractProcesses.jl")
+    include("Lifetime.jl")
     include("ProcessEntities/ProcessEntities.jl")
 
 
@@ -42,7 +43,6 @@ module Processes
     include("Context/Context.jl")
     include("Reports/Reports.jl")
 
-    include("Lifetime.jl")
     include("InputInterface/InputInterface.jl")
     include("Init.jl")
     include("ConstructorCommon.jl")

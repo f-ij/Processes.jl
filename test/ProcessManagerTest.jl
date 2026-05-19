@@ -134,6 +134,38 @@ end
     @test active[] == 0
 end
 
+@testset "ProcessManager tracks active slots without slot scans" begin
+    recipe = (;
+        makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
+        start! = (slot, job, manager) -> (slot.worker.done = false),
+        isdone = (slot, manager) -> slot.worker.done,
+        finalize! = (slot, job, manager) -> (slot.worker.done = false),
+    )
+
+    manager = ProcessManager(recipe; nworkers = 3, flush_policy = NoFlush())
+    first_slot = dispatch!(manager, 1)
+    second_slot = dispatch!(manager, 2)
+    @test manager.active_count == 2
+    @test manager.free_hint == 3
+
+    first_slot.worker.done = true
+    poll!(manager)
+    @test manager.active_count == 1
+    @test manager.free_hint == first_slot.idx
+
+    reused_slot = dispatch!(manager, 3)
+    @test reused_slot === first_slot
+    @test manager.active_count == 2
+
+    for slot in slots(manager)
+        slot.worker.done = true
+    end
+    drain!(manager)
+    @test manager.active_count == 0
+    @test !any(slot.active for slot in slots(manager))
+    @test second_slot.runs == 1
+end
+
 @testset "FlushAtEnd syncs worker-local buffers after drain" begin
     external = Int[]
     flush_count = Ref(0)
@@ -305,6 +337,33 @@ end
     run!(reset_manager, 4:5)
 
     @test reset_calls[] == 2
+end
+
+@testset "Process workers can run inline to avoid task churn" begin
+    worker = Process(ManagerProcessAccumulator(); repeats = 1)
+    external = Int[]
+    recipe = (;
+        prepare! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job
+            nothing
+        end,
+        start! = (slot, job, manager) -> runprocessinline!(slot.worker),
+        isdone = (slot, manager) -> true,
+        finalize! = (slot, job, manager) -> nothing,
+        consume! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            push!(external, only(local_context.buffer))
+            empty!(local_context.buffer)
+        end,
+    )
+
+    manager = ProcessManager(recipe; workers = (worker,), flush_policy = NoFlush(), job_type = Int, result_type = Nothing)
+    run!(manager, 1:3)
+
+    @test external == [1, 2, 3]
+    @test manager.active_count == 0
+    @test isnothing(worker.task)
 end
 
 @testset "reinitworker! rebuilds Process context through init pipeline" begin

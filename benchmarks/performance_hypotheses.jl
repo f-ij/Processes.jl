@@ -164,7 +164,7 @@ function stable_step_probe(algo)
         Processes.Input(BenchSource; scale = 0.001);
         repeats = 1,
     )
-    runtime_context = Processes.merge_into_globals(Processes.context(ip), (; process = ip))
+    runtime_context = Processes._merge_into_globals(Processes.context(ip), (; process = ip))
     graph = Processes.getalgo(Processes.taskdata(ip))
     boot_context = Processes.step!(graph, runtime_context, Processes.Unstable())
     return graph, boot_context
@@ -188,7 +188,7 @@ end
 function run_inline_generated(ip)
     Processes.reset!(ip)
     graph = Processes.getalgo(Processes.taskdata(ip))
-    runtime_context = Processes.merge_into_globals(Processes.context(ip), (; process = ip))
+    runtime_context = Processes._merge_into_globals(Processes.context(ip), (; process = ip))
     return Processes.loop(ip, graph, runtime_context, Processes.lifetime(ip), Processes.Generated())
 end
 

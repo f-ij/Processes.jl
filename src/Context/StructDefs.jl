@@ -5,12 +5,14 @@
 Previously args system
 This stores the context of a process
 """
-mutable struct ProcessContext{D,Reg} <: AbstractContext
+mutable struct ProcessContext{D,Reg,R,I} <: AbstractContext
 # struct ProcessContext{D,Reg} <: AbstractContext
     subcontexts::D
     registry::Reg
-    function ProcessContext{D,Reg}(subcontexts::D, registry::Reg) where {D,Reg}
-        new{D,Reg}(subcontexts, registry)
+    _runtime::R
+    _input::I
+    function ProcessContext{D,Reg,R,I}(subcontexts::D, registry::Reg, runtime::R, input::I) where {D,Reg,R,I}
+        new{D,Reg,R,I}(subcontexts, registry, runtime, input)
     end
 end
 

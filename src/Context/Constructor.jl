@@ -19,9 +19,7 @@ function _build_process_context(registry::R; globals::G = (;)) where {R<:NameSpa
 
     @DebugMode "Created subcontexts: $named_subcontexts"
 
-    # Add globals
-    named_subcontexts = (;named_subcontexts..., globals)
-    return ProcessContext(named_subcontexts, registry)
+    return ProcessContext(named_subcontexts, registry, globals, (;))
 end
 
 function ProcessContext(la::LA; globals::G = (;)) where {LA<:AbstractLoopAlgorithm, G}

@@ -30,7 +30,7 @@ c2 = run(pr);
 
 e_c = context(pr)
 e_c = Processes.makecontext(pr)
-e_c = Processes.merge_into_globals(e_c, (; process=pr))
+e_c = Processes._merge_into_globals(e_c, (; process=pr))
 
 lifetime = Processes.lifetime(pr)
 mockroutine = resolve(mockroutine)
@@ -39,7 +39,7 @@ Processes.loop(pr, mockroutine, e_c, lifetime)
 @code_warntype Processes.loop(pr, mockroutine, e_c, lifetime)
 @code_warntype run(pr)
 
-c = @benchmark Processes.loop($pr, $mockroutine, e_c, $lifetime, Processes.Generated()) setup = (e_c = Processes.merge_into_globals(Processes.makecontext(pr), (; process=pr)))
+c = @benchmark Processes.loop($pr, $mockroutine, e_c, $lifetime, Processes.Generated()) setup = (e_c = Processes._merge_into_globals(Processes.makecontext(pr), (; process=pr)))
 @benchmark run($pr)
     
 function testloop(rr::R, context::C) where {R, C}
@@ -59,7 +59,7 @@ e_c = Processes.makecontext(pr)
 cr = testloop(rr, e_c)
 
 
-# @benchmark testloop($rr, c) setup = (c = Processes.merge_into_globals(Processes.makecontext(pr), (; process=pr)))
+# @benchmark testloop($rr, c) setup = (c = Processes._merge_into_globals(Processes.makecontext(pr), (; process=pr)))
 @benchmark testloop($rr, c) setup = (c = Processes.makecontext(pr))
 
 @code_warntype testloop(rr, e_c)

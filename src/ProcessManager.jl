@@ -8,7 +8,7 @@
 
 export ProcessManager, WorkerSlot
 export FlushPolicy, FlushAtEnd, NoFlush, FlushEvery
-export dispatch!, poll!, drain!, run!, resetworker!, reinitworker!, partialinitworker!, slots, workers, copyworker
+export dispatch!, poll!, drain!, run!, resetworker!, reinitworker!, partialinitworker!, slots, workers, copyworker, runprocessinline!
 
 """
 Policy trait controlling when a `ProcessManager` invokes a recipe `flush!` callback.
@@ -125,6 +125,40 @@ function partialinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...)
 end
 
 """
+    runprocessinline!(worker; lifetime = nothing, kwargs...)
+
+Run a `Process` worker synchronously in the current task and store the resulting
+runtime context back on the worker. This avoids per-job `Task` allocation for
+manager recipes that do not need concurrent `Process` execution.
+"""
+function runprocessinline!(worker::P; lifetime = nothing, kwargs...) where {P<:Process}
+    @assert isidle(worker) "Process is already in use"
+    @atomic worker.shouldrun = true
+    @atomic worker.paused = false
+    worker.lastresult = nothing
+
+    if !isnothing(lifetime)
+        lt = normalize_process_lifetime(getalgo(worker), lifetime)
+        context(worker, _merge_into_globals(context(worker), (; lifetime = lt)))
+    end
+
+    # Build the same runtime context as the asynchronous Process path, but call
+    # the loop directly so no scheduler task is created for short manager jobs.
+    algo = getalgo(worker)
+    inputs = _validate_runtime_inputs(algo, (; kwargs...))
+    base_context = _has_typed_runtime_context(worker) ? _typed_runtime_context(worker) : context(worker)
+    lt = _has_typed_runtime_context(worker) ? _context_lifetime(base_context) : get(getglobals(base_context), :lifetime, Indefinite())
+    result = loop(worker, algo, base_context, lt, inputs, Resuming{false}())
+
+    worker.lastresult = result
+    result isa AbstractContext && context(worker, _strip_runtime_inputs(result, base_context))
+    worker.task = nothing
+    worker.loopidx = 1
+    @atomic worker.shouldrun = false
+    return worker
+end
+
+"""
     ProcessManager(recipe; nworkers = Threads.nthreads(), workers = nothing,
                    config = nothing, state = nothing, flush_policy = FlushAtEnd(),
                    throw = true, poll_interval = 0.0,
@@ -169,9 +203,56 @@ mutable struct ProcessManager{Recipe, W, Config, State, Policy <: FlushPolicy}
     completions::Int            # Total completed worker runs.
     completions_since_flush::Int # Completed runs since the last flush.
     dispatched::Int             # Total jobs successfully started.
+    active_count::Int           # Number of slots currently marked active.
+    free_hint::Int              # Rotating slot index where the next free search starts.
     errors::Vector{Any}         # Errors recorded from slot lifecycle hooks.
     closed::Bool                # True after Base.close(manager).
     owns_workers::Bool          # True when workers were constructed by manager.
+end
+
+"""
+    ProcessManager(recipe, slots, config, state, flush_policy, throw,
+                   poll_interval, completions, completions_since_flush,
+                   dispatched, errors, closed, owns_workers)
+
+Compatibility constructor for the pre-active-count positional manager shape.
+It derives active-slot bookkeeping from the supplied slot states.
+"""
+function ProcessManager(
+    recipe::Recipe,
+    slots::W,
+    config::Config,
+    state::State,
+    flush_policy::Policy,
+    throw::Bool,
+    poll_interval::Float64,
+    completions::Integer,
+    completions_since_flush::Integer,
+    dispatched::Integer,
+    errors::Vector{Any},
+    closed::Bool,
+    owns_workers::Bool,
+) where {Recipe, W, Config, State, Policy<:FlushPolicy}
+    active_count = count(slot -> slot.active, slots)
+    free_idx = findfirst(slot -> !slot.active, slots)
+    free_hint = isnothing(free_idx) ? 1 : Int(free_idx)
+    return ProcessManager{Recipe, W, Config, State, Policy}(
+        recipe,
+        slots,
+        config,
+        state,
+        flush_policy,
+        throw,
+        poll_interval,
+        Int(completions),
+        Int(completions_since_flush),
+        Int(dispatched),
+        active_count,
+        free_hint,
+        errors,
+        closed,
+        owns_workers,
+    )
 end
 
 const _PROCESSMANAGER_PRECOMPILE_LOCK = ReentrantLock()
@@ -333,7 +414,7 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
     else
         state
     end
-    build_manager = ProcessManager(recipe, (), config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
+    build_manager = ProcessManager(recipe, (), config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, 0, 1, Any[], false, isnothing(workers))
 
     worker_values = if isnothing(workers)
         _owned_worker_values(recipe, nworkers, build_manager)
@@ -344,7 +425,7 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
     end
 
     slot_values = _slot_container(worker_values, job_type, scratch_type, result_type, error_type)
-    manager = ProcessManager(recipe, slot_values, config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, Any[], false, isnothing(workers))
+    manager = ProcessManager(recipe, slot_values, config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, 0, 1, Any[], false, isnothing(workers))
     schedule_processmanager_precompile!(manager)
     return manager
 end
@@ -705,6 +786,46 @@ function _finalize_slot_worker!(manager::ProcessManager, slot::WorkerSlot, job)
 end
 
 """
+    _next_slot_index(manager, idx)
+
+Return the following slot index, wrapping back to the first slot. The manager
+uses this to rotate free-slot searches instead of starting every search at
+slot 1.
+"""
+@inline function _next_slot_index(manager::M, idx::Integer) where {M<:ProcessManager}
+    slot_count = length(manager.slots)
+    return idx >= slot_count ? 1 : Int(idx) + 1
+end
+
+"""
+    _mark_slot_active!(manager, slot)
+
+Record that `slot` has entered the active lifecycle and advance the free-slot
+search hint past it.
+"""
+@inline function _mark_slot_active!(manager::M, slot::S) where {M<:ProcessManager, S<:WorkerSlot}
+    slot.active = true
+    manager.active_count += 1
+    manager.free_hint = _next_slot_index(manager, slot.idx)
+    return slot
+end
+
+"""
+    _mark_slot_free!(manager, slot)
+
+Record that `slot` has left the active lifecycle and make it the preferred
+starting point for the next free-slot search.
+"""
+@inline function _mark_slot_free!(manager::M, slot::S) where {M<:ProcessManager, S<:WorkerSlot}
+    if slot.active
+        slot.active = false
+        manager.active_count -= 1
+        manager.free_hint = slot.idx
+    end
+    return slot
+end
+
+"""
     _safe_close_slot!(manager, slot)
 
 Close a slot during manager cleanup or error recovery, recording close errors
@@ -760,7 +881,7 @@ function _finish_slot!(manager::ProcessManager, slot::WorkerSlot)
         _safe_close_slot!(manager, slot)
         _handle_slot_error!(manager, slot, err)
     finally
-        slot.active = false
+        _mark_slot_free!(manager, slot)
         slot.job = nothing
     end
     return slot
@@ -846,8 +967,13 @@ Return the index of the first inactive slot, or `nothing` when all slots are
 busy.
 """
 function _next_free_slot(manager::ProcessManager)
-    for idx in eachindex(manager.slots)
+    manager.active_count >= length(manager.slots) && return nothing
+
+    # Start from the last known free position and wrap once through the slots.
+    idx = manager.free_hint
+    for _ in eachindex(manager.slots)
         manager.slots[idx].active || return idx
+        idx = _next_slot_index(manager, idx)
     end
     return nothing
 end
@@ -858,10 +984,7 @@ end
 Return whether any slot currently has an assigned running job.
 """
 function _has_active_slots(manager::ProcessManager)
-    for slot in manager.slots
-        slot.active && return true
-    end
-    return false
+    return manager.active_count > 0
 end
 
 """
@@ -888,7 +1011,7 @@ function _wait_for_free_slot!(manager::ProcessManager)
         free_idx = _next_free_slot(manager)
         isnothing(free_idx) || return manager.slots[free_idx]
         poll!(manager)
-        if isnothing(_next_free_slot(manager))
+        if manager.active_count >= length(manager.slots)
             manager.poll_interval > 0 ? sleep(manager.poll_interval) : yield()
         end
     end
@@ -914,10 +1037,10 @@ function dispatch!(manager::ProcessManager, job)
     try
         prepare!(manager.recipe, slot, job, manager)
         _start_slot!(manager, slot, job)
-        slot.active = true
+        _mark_slot_active!(manager, slot)
         manager.dispatched += 1
     catch err
-        slot.active = false
+        _mark_slot_free!(manager, slot)
         slot.job = nothing
         _handle_slot_error!(manager, slot, err)
     end
@@ -968,9 +1091,11 @@ function Base.close(manager::ProcessManager)
     manager.closed && return true
     for slot in manager.slots
         (slot.active || manager.owns_workers) && _safe_close_slot!(manager, slot)
-        slot.active = false
+        _mark_slot_free!(manager, slot)
         slot.job = nothing
     end
+    manager.active_count = 0
+    manager.free_hint = 1
     manager.closed = true
     return true
 end

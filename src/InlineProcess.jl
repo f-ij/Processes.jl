@@ -88,16 +88,15 @@ end
 
     p.loopidx = 1
     runtime_inputs = _validate_runtime_inputs(algo, (;))
-    runtime_context = @inline merge_into_globals(context, (; process=p))
     inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
     lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
     if (isnothing(threaded) && isthreaded(p)) || threaded === true
-        return Threads.@spawn @inline loop(p, algo, runtime_context, lifetime, runtime_inputs)
+        return Threads.@spawn @inline loop(p, algo, context, lifetime, runtime_inputs)
     elseif (isnothing(threaded) && isasync(p)) || threaded === :async
-        return @async @inline loop(p, algo, runtime_context, lifetime, runtime_inputs)
+        return @async @inline loop(p, algo, context, lifetime, runtime_inputs)
     else 
-        return @inline @inline loop(p, algo, runtime_context, lifetime, runtime_inputs)
+        return @inline @inline loop(p, algo, context, lifetime, runtime_inputs)
     end
 end
 
@@ -111,13 +110,12 @@ end
     end
 
     p.loopidx = 1
-    runtime_context = @inline merge_into_globals(context, (; process=p))
     # loopdispatch = isnothing(repeat) ? lifetime(p) : _inline_process_lifetime(algo, repeat, nothing)
     inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
     lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
     # p.consumed = true
-    return @inline loop(p, algo, runtime_context, lifetime)
+    return @inline loop(p, algo, context, lifetime)
 end
 
 @inline function init_and_run(p::InlineProcess, inputs_overrides...)

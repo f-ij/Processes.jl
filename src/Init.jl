@@ -18,7 +18,7 @@ end
 Make a context from an algo and empty context
 """
 function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
-    input_context = merge_into_globals(c, (;algo, lifetime))
+    input_context = _merge_into_globals(c, (;algo, lifetime))
 
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"
     @DebugMode "Overrides are ()"
@@ -30,7 +30,7 @@ function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where 
 end
 
 function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{Input, Override}...; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
-    input_context = merge_into_globals(c, (;algo, lifetime))
+    input_context = _merge_into_globals(c, (;algo, lifetime))
     resolved = _resolve_lifecycle_specs(getregistry(input_context), overrides_and_inputs)
     inputs, overrides = _split_init_override(resolved)
     input_context = merge_resolved_inputs(input_context, inputs)

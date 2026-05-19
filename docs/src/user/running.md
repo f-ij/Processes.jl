@@ -33,9 +33,10 @@ run(p; temperature = 2.0, sweep = 10)
 ```
 
 The keywords are converted to a `NamedTuple`, validated against the algorithm's
-runtime input declarations, and merged into `:_input` only for that loop run.
-`Process` stores its current runtime context, so `context(p)` may include
-`:_input` after a run. This is what makes pause/resume a process-level facility.
+runtime input declarations, and merged into `ProcessContext._input` only for
+that loop run. Finished processes strip runtime-only fields before storing their
+persistent context. A paused process may keep its live runtime context
+internally so it can resume.
 
 Initialized loop algorithms can also be run directly:
 
@@ -103,6 +104,8 @@ count. For `Process`, use `repeats = 10_000` or `lifetime = Repeat(10_000)`.
 Unlike `Process`, `InlineProcess` stores a context that can be absorbed back
 into an algorithm, so runtime-only fields such as `:_input` and `process` are
 stripped after the loop.
+Like finished `Process` runs, this means the stored context is the persistent
+context shape rather than the transient loop context.
 
 If you need buffered external updates to context variables, see
 [Interactive Contexts](@ref interactive_user).

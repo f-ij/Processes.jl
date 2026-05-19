@@ -24,7 +24,7 @@ rebaking it into the algorithm.
 
 1. Resolve `Init`/`Override` specs through the registry.
 2. Merge passed specs over stored specs per target.
-3. Build a fresh persistent `ProcessContext` with `algo` and `lifetime` in globals.
+3. Build a fresh persistent `ProcessContext` with `algo` and `lifetime` in `_runtime`.
 4. Merge `Init` values into target subcontexts.
 5. Run `init(algo, input_context)`.
 6. Merge `Override` values after init.
@@ -42,7 +42,7 @@ the targeted subcontexts.
 `makeloop!`:
 
 - validates runtime keyword arguments against the loop algorithm's `@input` metadata,
-- injects `process` into globals,
+- passes the persistent context to `loop`,
 - passes runtime inputs as a positional `NamedTuple` to `loop`,
 - spawns the loop task.
 
@@ -58,9 +58,11 @@ loop:
 loop(process, algo, context, lifetime, inputs)
 ```
 
+The loop injects `process` and `lifetime` into the transient `_runtime` field.
 An empty input tuple is a no-op. A non-empty tuple is merged into the transient
-`:_input` subcontext. The bootstrap/first step may change the transient context
-type. After bootstrap, steady-state steps must preserve context type.
+`ProcessContext._input` field. The bootstrap/first step may change the
+transient context type. After bootstrap, steady-state steps must preserve
+context type.
 
 Repeat and indefinite loops are defined in `src/Loops.jl`; generated loops live
 in `src/GeneratedCode/GeneratedLoops.jl`.
@@ -71,7 +73,7 @@ High-level structure:
 2. one unstable/bootstrap step
 3. repeat/while body with stable step calls
 4. tick/index increments
-5. `after_while(process, algo, context)`
+5. `after_while(process, algo, context, stored_context)`
 
 Step bodies are produced by `step!_expr` (`src/LoopAlgorithms/GeneratedStep.jl` and `src/Identifiable/Step.jl`) so composite/routine structures can be unrolled and specialized to concrete algorithm/context types.
 
@@ -79,14 +81,17 @@ Step bodies are produced by `step!_expr` (`src/LoopAlgorithms/GeneratedStep.jl` 
 
 `after_while` (`src/Loops.jl`) does:
 
-- paused process: store the suspended runtime context, including `:_input`, and return it.
-- interrupted or indefinite: store the current runtime context and return it.
-- natural finite completion: store `cleanup(func, context)` into process context, then return the loop result.
+- paused process: store the suspended runtime context as a side effect, but compute the task result from the stripped persistent context shape.
+- interrupted or indefinite: strip runtime-only fields before computing the task result.
+- natural finite completion: store `cleanup(func, context)` stripped back to persistent context shape, then compute the task result.
 
-For `Process`, the process owns the current runtime context, so `after_while`
-stores that context as-is. `InlineProcess` and direct `run(la::LoopAlgorithm)`
-store contexts that may be absorbed back into an algorithm; those paths strip
-runtime-only fields such as `:_input` and `process`.
+Finished `Process`, `InlineProcess`, and direct `run(la::LoopAlgorithm)` paths
+store contexts that may be absorbed back into an algorithm, so runtime-only
+fields such as `_input`, `process`, and `lifetime` are stripped. A paused
+`Process` may still keep the live runtime context internally so it can resume.
+For ordinary algorithms the task result is the stripped context. For
+`FinalizedAlgorithm`, the final function projects a result from that stripped
+context, so `fetch(process)` still returns the `@finally` value.
 
 Paused processes resume through the normal `loop` path with a `Resuming{true}`
 entry trait. Fresh runs use `Resuming{false}`. This keeps the bootstrap decision

@@ -70,8 +70,8 @@ run(p; temperature = 2.0)
 ```
 
 They are validated once before the loop starts and are visible during the run
-through the transient `:_input` context. They are not stored in the initialized
-loop algorithm or process context after the run.
+through the transient `ProcessContext._input` field. They are not stored in the
+initialized loop algorithm or finished process context after the run.
 
 Forms:
 

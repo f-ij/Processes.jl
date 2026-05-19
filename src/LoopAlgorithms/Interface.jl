@@ -125,4 +125,8 @@ end
 @inline reset!(la::LoopAlgorithm) = reset!(getplan(la))
 @inline inc!(la::LoopAlgorithm) = inc!(getplan(la))
 @inline step!(la::LoopAlgorithm, context::C, typestable::S = Stable()) where {C<:AbstractContext, S} =
-    step!(getplan(la), context, typestable, _plan_step_wiring(getplan(la)))
+    error("LoopAlgorithm step! requires explicit process and lifetime. Call step!(la, context, step_wiring, process, lifetime, stability).")
+@inline step!(la::LoopAlgorithm, context::C, step_wiring::SW, typestable::S = Stable()) where {C<:AbstractContext, SW<:Tuple, S} =
+    error("LoopAlgorithm step! requires explicit process and lifetime. Call step!(la, context, step_wiring, process, lifetime, stability).")
+@inline step!(la::LoopAlgorithm, context::C, step_wiring::SW, process::P, lifetime::LT, typestable::S = Stable()) where {C<:AbstractContext, SW<:Tuple, P<:AbstractProcess, LT<:Lifetime, S} =
+    step!(getplan(la), context, step_wiring, process, lifetime, typestable)

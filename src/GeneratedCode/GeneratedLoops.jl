@@ -11,6 +11,7 @@ Generated process loop that inlines the step! expression when available.
         # After this we're not allowed to
 
         @inline before_while(process)
+        stored_context = context
         $(algo_name) = algo
         $(first_step_expr)
         @inline inc!(process)
@@ -27,7 +28,7 @@ Generated process loop that inlines the step! expression when available.
                 break
             end
         end
-        return @inline after_while(process, algo, context)
+        return @inline after_while(process, algo, context, stored_context)
     end
     
 end
@@ -96,6 +97,7 @@ Generated process loop that inlines the step! expression when available.
     return quote
         # println("Running generated process loop indefinitely from thread $(Threads.threadid())")
         @inline before_while(process)
+        stored_context = context
         while true
             $(step_expr)
             @inline inc!(process)
@@ -104,6 +106,6 @@ Generated process loop that inlines the step! expression when available.
                 break
             end
         end
-        return @inline after_while(process, func, context)
+        return @inline after_while(process, func, context, stored_context)
     end
 end

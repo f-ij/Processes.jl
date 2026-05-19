@@ -16,7 +16,7 @@ function Base.run(p::Process, lifetime = nothing, inputs_and_overrides...; kwarg
 
     if !isnothing(lifetime)
         lt = normalize_process_lifetime(getalgo(p), lifetime)
-        context(p, merge_into_globals(context(p), (; lifetime = lt)))
+        context(p, _merge_into_globals(context(p), (; lifetime = lt)))
     end
 
     makeloop!(p, (; kwargs...))

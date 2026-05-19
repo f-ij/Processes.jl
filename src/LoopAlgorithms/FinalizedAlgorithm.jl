@@ -77,9 +77,12 @@ end
 @inline Base.length(fa::FinalizedAlgorithm) = length(inneralgorithm(fa))
 @inline Base.eachindex(fa::FinalizedAlgorithm) = eachindex(inneralgorithm(fa))
 @inline reset!(fa::FinalizedAlgorithm) = reset!(inneralgorithm(fa))
-@inline step!(fa::FinalizedAlgorithm, context::C, typestable::S = Stable()) where {C<:AbstractContext, S} = step!(inneralgorithm(fa), context, typestable)
-@inline step!(fa::FinalizedAlgorithm, context::C, typestable::S, step_wiring::SW) where {C<:AbstractContext, S, SW<:Tuple} =
-    step!(inneralgorithm(fa), context, typestable, step_wiring)
+@inline step!(fa::FinalizedAlgorithm, context::C, typestable::S = Stable()) where {C<:AbstractContext, S} =
+    error("FinalizedAlgorithm step! requires explicit step wiring, process, and lifetime. Call step!(fa, context, step_wiring, process, lifetime, stability).")
+@inline step!(fa::FinalizedAlgorithm, context::C, step_wiring::SW, typestable::S = Stable()) where {C<:AbstractContext, SW<:Tuple, S} =
+    error("FinalizedAlgorithm step! requires explicit process and lifetime. Call step!(fa, context, step_wiring, process, lifetime, stability).")
+@inline step!(fa::FinalizedAlgorithm, context::C, step_wiring::SW, process::P, lifetime::LT, typestable::S = Stable()) where {C<:AbstractContext, SW<:Tuple, P<:AbstractProcess, LT<:Lifetime, S} =
+    step!(inneralgorithm(fa), context, step_wiring, process, lifetime, typestable)
 @inline cleanup(fa::FinalizedAlgorithm, context) = cleanup(inneralgorithm(fa), context)
 
 @inline multipliers(fa::FinalizedAlgorithm) = multipliers(inneralgorithm(fa))

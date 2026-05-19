@@ -8,11 +8,40 @@ Running a composite algorithm allows for static unrolling and inlining of all su
 @inline _plan_step_wiring(la::LoopAlgorithm) = _plan_step_wiring(getplan(la))
 @inline _plan_step_wiring(fa::FinalizedAlgorithm) = _plan_step_wiring(inneralgorithm(fa))
 
-@inline _empty_step_routing_type(::Type{StepRouting{Tuple{}, Tuple{}, Tuple{}}}) = true
-@inline _empty_step_routing_type(::Type{<:StepRouting}) = false
+"""
+Run `algo` with optional step wiring supplied before the stability marker.
 
-@inline step!(child::LA, context::C, typestable::S, routing::StepRouting) where {LA<:AbstractLoopAlgorithm, C<:AbstractContext, S} =
-    @inline step!(child, context, typestable, routing_childwiring(routing))
+An empty wiring tuple means there is no routing work to apply, so this method
+falls back to the normal stability-only `step!` path. Non-empty wiring requires
+a concrete routed method for the algorithm type.
+"""
+@inline function step!(algo::A, context::C, step_wiring::SW, typestable::S = Stable()) where {A, C<:AbstractContext, SW<:Tuple, S}
+    if isempty(step_wiring)
+        return @inline step!(algo, context, typestable)
+    end
+    error("No routed step! method for $(typeof(algo)) with wiring type $(typeof(step_wiring)).")
+end
+
+"""
+Run `algo` with loop runtime supplied explicitly.
+
+Plain algorithms with empty wiring do not need the loop runtime, so this method
+falls back to the normal stability-only `step!` path. Loop algorithms specialize
+this signature to pass `process` and `lifetime` through nested plans without
+storing them in the `ProcessContext`.
+"""
+@inline function step!(algo::A, context::C, step_wiring::SW, process::P, lifetime::LT, typestable::S = Stable()) where {A, C<:AbstractContext, SW<:Tuple, P<:AbstractProcess, LT<:Lifetime, S}
+    if isempty(step_wiring)
+        return @inline step!(algo, context, typestable)
+    end
+    error("No routed step! method for $(typeof(algo)) with wiring type $(typeof(step_wiring)).")
+end
+
+@inline step!(child::LA, context::C, routing::StepRouting, typestable::S = Stable()) where {LA<:AbstractLoopAlgorithm, C<:AbstractContext, S} =
+    error("Nested loop algorithm step! requires explicit process and lifetime. Call step!(child, context, routing, process, lifetime, stability).")
+
+@inline step!(child::LA, context::C, routing::StepRouting, process::P, lifetime::LT, typestable::S = Stable()) where {LA<:AbstractLoopAlgorithm, C<:AbstractContext, P<:AbstractProcess, LT<:Lifetime, S} =
+    @inline step!(child, context, routing_childwiring(routing), process, lifetime, typestable)
 
 # Base.@constprop :aggressive @inline function step!(ca::CompositeAlgorithm{T, Is}, context::C, typestable::S = Stable()) where {T,Is,C<:AbstractContext, S}
 #     this_inc = inc(ca)
@@ -29,113 +58,91 @@ Running a composite algorithm allows for static unrolling and inlining of all su
 # end
 
 Base.@constprop :aggressive @inline function step!(ca::CompositeAlgorithm, context::C, typestable::S = Stable()) where {C<:AbstractContext, S}
-    return @inline step!(ca, context, typestable, getfield(ca, :step_wiring))
+    error("CompositeAlgorithm step! requires explicit step wiring, process, and lifetime. Call step!(ca, context, step_wiring, process, lifetime, stability).")
 end
 
-Base.@constprop :aggressive @inline @generated function step!(ca::CompositeAlgorithm{T, Is, W, G, SW}, context::C, typestable::S, step_wiring::StepWiring) where {T, Is, W, G, SW, C<:AbstractContext, S, StepWiring<:Tuple}
-    intervals = Is 
-    exprs = Any[]
-    this_inc = gensym(:this_inc)
+"""
+Reject direct composite stepping without explicit loop runtime.
 
-    push!(exprs, :($this_inc = @inline inc(ca)))
-
-    for i in 1:length(T.parameters)
-        algo_name = gensym(:algo)
-        interval = intervals[i]
-        routing_type = StepWiring.parameters[i]
-        step_expr = _empty_step_routing_type(routing_type) ?
-            :(context = @inline step!($algo_name, context, typestable)) :
-            :(context = @inline step!($algo_name, context, typestable, getfield(step_wiring, $i)))
-
-        push!(exprs, :(local $algo_name = @inline getalgo(ca, $i)))
-
-        if T.parameters[i] <: ContextInjector
-            if interval isa Interval{1}
-                push!(exprs, quote
-                    if !(@inline context_injector_buffer_isempty(context))
-                        $step_expr
-                    end
-                end)
-            else
-                push!(exprs, quote
-                    if !(@inline context_injector_buffer_isempty(context)) && @inline divides($this_inc, $interval)
-                        $step_expr
-                    end
-                end)
-            end
-        elseif interval isa Interval{1}
-            push!(exprs, step_expr)
-        else
-            push!(exprs, quote
-                if @inline divides($this_inc, $interval)
-                    $step_expr
-                end
-            end)
-        end
-    end
-
-    push!(exprs, :(@inline inc!(ca)))
-    push!(exprs, :(context))
-
-    return Expr(:block, exprs...)
+Loop plans must not recover transient runtime from the context. Callers need to
+pass `process` and `lifetime` explicitly.
+"""
+Base.@constprop :aggressive @inline function step!(ca::CompositeAlgorithm{T, Is, W, G, SW}, context::C, step_wiring::StepWiring, typestable::S = Stable()) where {T, Is, W, G, SW, C<:AbstractContext, StepWiring<:Tuple, S}
+    error("CompositeAlgorithm step! requires explicit process and lifetime. Call step!(ca, context, step_wiring, process, lifetime, stability).")
 end
 
 """
 Routines unroll their subroutines and execute them in order.
 """
 Base.@constprop :aggressive @inline function step!(r::Routine, context::C, typestable::S = Stable()) where {C<:AbstractContext, S}
-    return @inline step!(r, context, typestable, getfield(r, :step_wiring))
+    error("Routine step! requires explicit step wiring, process, and lifetime. Call step!(r, context, step_wiring, process, lifetime, stability).")
 end
 
-Base.@constprop :aggressive @inline @generated function step!(r::Routine{T, Repeats, MV, W, G, SW}, context::C, typestable::S, step_wiring::StepWiring) where {T, Repeats, MV, W, G, SW, C<:AbstractContext, S, StepWiring<:Tuple}
-    exprs = Any[]
-    globals = gensym(:globals)
-    process = gensym(:process)
-    lifetime = gensym(:lifetime)
+"""
+Step each scheduled child of a composite plan with explicit loop runtime.
 
-    push!(exprs, :($globals = @inline getglobals(context)))
-    push!(exprs, :($process = $globals.process))
-    push!(exprs, :($lifetime = $globals.lifetime))
+The `process` and `lifetime` values are forwarded so nested loop algorithms can
+run without storing those transient values in the context.
+"""
+Base.@constprop :aggressive @inline function step!(ca::CompositeAlgorithm{T, Is, W, G, SW}, context::C, step_wiring::StepWiring, process::P, lifetime::LT, typestable::S = Stable()) where {T, Is, W, G, SW, C<:AbstractContext, StepWiring<:Tuple, P<:AbstractProcess, LT<:Lifetime, S}
+    this_inc = @inline inc(ca)
 
-    for i in 1:length(T.parameters)
-        func = gensym(:func)
-        start_idx = gensym(:start_idx)
-        this_repeat = Repeats[i]
-        routing_type = StepWiring.parameters[i]
-        unstable_step = _empty_step_routing_type(routing_type) ?
-            :(context = @inline step!($func, context, Unstable())) :
-            :(context = @inline step!($func, context, Unstable(), getfield(step_wiring, $i)))
-        stable_step = _empty_step_routing_type(routing_type) ?
-            :(context = @inline step!($func, context, typestable)) :
-            :(context = @inline step!($func, context, typestable, getfield(step_wiring, $i)))
-
-        push!(exprs, quote
-            local $func = @inline getalgo(r, $i)
-            local $start_idx = @inline get_resume_point(r, $i)
-            if $start_idx <= $this_repeat
-                $unstable_step
-                @inline tick!($process)
-
-                for lidx in ($start_idx + 1):$this_repeat
-                    if @inline breakcondition($lifetime, $process, context)
-                        @inline set_resume_point!(r, $i, lidx)
-                        return context
-                    end
-                    $stable_step
-                    @inline tick!($process)
-                end
-            end
-        end)
+    context = @inline unrollreplace_withargs(
+        context,
+        getalgos(ca);
+        args = (this_inc, process, lifetime, typestable),
+        zips = (intervals(ca), step_wiring),
+    ) do context, algo, this_inc, process, lifetime, typestable, interval, wiring
+        if @inline divides(this_inc, interval)
+            return @inline step!(algo, context, wiring, process, lifetime, typestable)
+        end
+        return context
     end
 
-    push!(exprs, :context)
-    return Expr(:block, exprs...)
+    @inline inc!(ca)
+    return context
 end
 
-@inline function resume_step!(a::A, context::C, typestable::S = Stable()) where {A, C<:AbstractContext, S}
-    @inline step!(a, context, typestable)
+"""
+Step each child routine in sequence using runtime stored in the context.
+
+Loop plans must not recover transient runtime from the context. Callers need to
+pass `process` and `lifetime` explicitly.
+"""
+Base.@constprop :aggressive @inline function step!(r::Routine{T, Repeats, MV, W, G, SW}, context::C, step_wiring::StepWiring, typestable::S = Stable()) where {T, Repeats, MV, W, G, SW, C<:AbstractContext, StepWiring<:Tuple, S}
+    error("Routine step! requires explicit process and lifetime. Call step!(r, context, step_wiring, process, lifetime, stability).")
 end
 
-@inline function resume_step!(r::Routine, context::C, typestable::S = Stable()) where {C<:AbstractContext, S}
-    @inline step!(r, context, typestable)
+"""
+Step each child routine in sequence with explicit loop runtime.
+
+Each child is run once as `Unstable()` at its resume point, then repeated on the
+stable path until its declared repeat count is reached or the lifetime stops.
+"""
+Base.@constprop :aggressive @inline function step!(r::Routine{T, Repeats, MV, W, G, SW}, context::C, step_wiring::StepWiring, process::P, lifetime::LT, typestable::S = Stable()) where {T, Repeats, MV, W, G, SW, C<:AbstractContext, StepWiring<:Tuple, P<:AbstractProcess, LT<:Lifetime, S}
+    child_idxs = ntuple(identity, Val(length(getalgos(r))))
+
+    return @inline unrollreplace_withargs(
+        context,
+        getalgos(r);
+        args = (r, process, lifetime, typestable),
+        zips = (child_idxs, repeats(r), step_wiring),
+    ) do context, func, r, process, lifetime, typestable, idx, this_repeat, wiring
+        start_idx = @inline get_resume_point(r, idx)
+        if start_idx <= this_repeat
+            context = @inline step!(func, context, wiring, process, lifetime, Unstable())
+            @inline tick!(process)
+
+            for lidx in (start_idx + 1):this_repeat
+                if @inline breakcondition(lifetime, process, context)
+                    @inline set_resume_point!(r, idx, lidx)
+                    return context
+                end
+                context = @inline step!(func, context, wiring, process, lifetime, typestable)
+                @inline tick!(process)
+            end
+        end
+        return context
+    end
 end
+

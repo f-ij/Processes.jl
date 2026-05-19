@@ -331,11 +331,10 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         composite_inline = InlineProcess(composite; repeats = 2)
         run(composite_inline)
         run_nogen(composite_inline)
-        generated_context = merge_into_globals(context(composite_inline), (; process = composite_inline))
         loop(
             composite_inline,
             getalgo(composite_inline),
-            generated_context,
+            context(composite_inline),
             lifetime(composite_inline),
             Generated(),
         )

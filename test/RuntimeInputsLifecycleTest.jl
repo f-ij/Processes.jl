@@ -92,8 +92,8 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
         run(process; temp = 2.0, scale = 3)
         wait(process)
         @test Processes.context(process)[:FuncWrapper_1].value == 9.0
-        @test haskey(Processes.get_subcontexts(Processes.context(process)), :_input)
-        @test haskey(Processes.getglobals(Processes.context(process)), :process)
+        @test !haskey(Processes.get_subcontexts(Processes.context(process)), :_input)
+        @test !haskey(Processes.getglobals(Processes.context(process)), :process)
         close(process)
     end
 
@@ -131,5 +131,5 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
 
     @test context(process)[PauseRuntimeInputConsumer].total > paused_total
     close(process)
-    @test haskey(Processes.get_subcontexts(context(process)), :_input)
+    @test !haskey(Processes.get_subcontexts(context(process)), :_input)
 end

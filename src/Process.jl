@@ -97,7 +97,7 @@ end
 end
 
 function _finish_process_constructor_with_context(algo::A, prepared_context::PC, lifetime::LT, timeout) where {A<:AbstractLoopAlgorithm, PC, LT}
-    prepared_context = merge_into_globals(prepared_context, (; lifetime,))
+    prepared_context = _merge_into_globals(prepared_context, (; lifetime,))
     algo = _with_lifecycle(algo, prepared_context, getstoredinits(algo), getstoredoverrides(algo))
 
     # p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
@@ -152,7 +152,7 @@ end
 @inline _context_lifetime(context) = getproperty(getglobals(context), :lifetime)
 
 function getcontext(p::Process)
-    return merge_into_globals(context(p), (;process = p))
+    return _merge_into_globals(context(p), (;process = p))
 end
 
 getcontext(p::Process, context) = getcontext(p)[context]
@@ -259,8 +259,7 @@ function _makeloop!(p::Process, inputs::NamedTuple, lt, base_context; threaded =
 
     func = getalgo(p)
     inputs = _validate_runtime_inputs(func, inputs)
-    runtime_context = merge_into_globals(base_context, (;process = p))
-    return _makeloop_prepared!(p, func, runtime_context, lt, inputs; threaded, loopfunc)
+    return _makeloop_prepared!(p, func, base_context, lt, inputs; threaded, loopfunc)
 end
 
 function _makeloop_prepared!(p::P, func::F, runtime_context::C, lt::LT, inputs::I; threaded::Bool = true, loopfunc::LF = loop, resume::R = Resuming{false}()) where {P<:Process, F, C, LT, I<:NamedTuple, LF, R<:Resuming}
