@@ -52,14 +52,22 @@ using Processes
     right = IdentifiableAlgo(EditAlgoB(), :right)
     local_route = Processes.LocalPlanOption(right, Route(left => right, :value))
     locally_wired = CompositeAlgorithm(left, right, (1, 1), local_route)
-    @test isempty(getfield(locally_wired, :global_options))
-    @test isempty(getfield(locally_wired, :wiring)[1])
-    @test length(getfield(locally_wired, :wiring)[2]) == 1
+    @test isempty(getfield(locally_wired, :plan_wiring))
+    @test isempty(getfield(locally_wired, :local_wiring)[1])
+    @test length(getfield(locally_wired, :local_wiring)[2]) == 1
 
     renamed_local = rename(locally_wired, :right => :renamed_right)
-    @test isempty(getfield(renamed_local, :global_options))
-    @test isempty(getfield(renamed_local, :wiring)[1])
-    @test length(getfield(renamed_local, :wiring)[2]) == 1
+    @test isempty(getfield(renamed_local, :plan_wiring))
+    @test isempty(getfield(renamed_local, :local_wiring)[1])
+    @test length(getfield(renamed_local, :local_wiring)[2]) == 1
+
+    nested = Routine(EditAlgoA, EditAlgoB, (1, 1))
+    object_target = EditAlgoC()
+    object_route = Processes.LocalPlanOption(object_target, Route(EditAlgoA() => object_target, :value))
+    nested_local = CompositeAlgorithm(nested, object_target, (1, 1), object_route)
+    @test isempty(getfield(nested_local, :plan_wiring))
+    @test isempty(getfield(nested_local, :local_wiring)[1])
+    @test length(getfield(nested_local, :local_wiring)[2]) == 1
 
     resolved = resolve(outer)
     @test_throws Exception insert(resolved, 1, EditAlgoA, 1)

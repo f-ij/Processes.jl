@@ -235,13 +235,13 @@ end
         @test algo isa Processes.LoopAlgorithm
         plan = Processes.getplan(algo)
         @test length(Processes.getoptions(plan, Processes.Route)) == 2
-        @test length(getfield(plan, :global_options)) == 1
-        @test length(getfield(plan, :wiring)[1]) == 1
-        @test isempty(getfield(plan, :wiring)[2])
+        @test length(getfield(plan, :plan_wiring)) == 1
+        @test length(getfield(plan, :local_wiring)[1]) == 1
+        @test isempty(getfield(plan, :local_wiring)[2])
 
         resolved = resolve(algo)
         @test isempty(Processes.getoptions(resolved, Processes.Route))
-        @test length(getfield(Processes.getplan(resolved), :global_options)) == 1
+        @test length(getfield(Processes.getplan(resolved), :plan_wiring)) == 1
         step_wiring = getfield(Processes.getplan(resolved), :step_wiring)
         sink_routes = @inferred Processes.routing_sharedvars(step_wiring[2])
         @test step_wiring[2] isa Processes.StepRouting

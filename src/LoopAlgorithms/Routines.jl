@@ -5,15 +5,15 @@ Execution plan that repeats child algorithms.
 
 `Routine` is the repeated counterpart to `CompositeAlgorithm`: it keeps child
 algorithms, repeat metadata, resume counters, raw local route/share wiring,
-top-level raw route/share options, and resolved per-child `step_wiring`. The
+plan-wide raw route/share wiring, and resolved per-child `step_wiring`. The
 runtime registry, root states, context, inputs, and overrides are carried by the
 concrete `LoopAlgorithm` wrapper.
 """
-struct Routine{T, Repeats, MV, W, G, SW, id} <: AbstractLoopAlgorithm
+struct Routine{T, Repeats, MV, LW, PW, SW, id} <: AbstractLoopAlgorithm
     funcs::T     
     resume_idxs::MV
-    wiring::W
-    global_options::G
+    local_wiring::LW
+    plan_wiring::PW
     step_wiring::SW
 end
 
@@ -27,15 +27,15 @@ end
 Construct a routine execution plan, wrapping it only when root runtime data exists.
 
 `LocalPlanOption` route/share metadata is stored in per-child plan wiring; plain
-route/share options are stored as top-level plan routes. Root states and other
+route/share wiring is stored on the plan. Root states and other
 non-plan options remain on the `LoopAlgorithm` wrapper.
 """
 function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple, repeats; id = nothing) where F
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
-    plan_options = _loop_plan_wiring(funcs, options)
-    global_options = _global_plan_options(options)
+    local_wiring = _local_plan_wiring(funcs, options)
+    plan_wiring = _plan_wiring(options)
     step_wiring = ntuple(_ -> StepRouting(), length(funcs))
-    plan = Routine{typeof(funcs), repeats, typeof(resume_idxs), typeof(plan_options), typeof(global_options), typeof(step_wiring), id}(funcs, resume_idxs, plan_options, global_options, step_wiring)
+    plan = Routine{typeof(funcs), repeats, typeof(resume_idxs), typeof(local_wiring), typeof(plan_wiring), typeof(step_wiring), id}(funcs, resume_idxs, local_wiring, plan_wiring, step_wiring)
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end
@@ -45,14 +45,14 @@ function newfuncs(r::Routine, funcs)
 end
 
 function setoptions(r::Routine, options)
-    r = setfield(r, :wiring, _loop_plan_wiring(getalgos(r), options))
-    r = setfield(r, :global_options, _global_plan_options(options))
+    r = setfield(r, :local_wiring, _local_plan_wiring(getalgos(r), options))
+    r = setfield(r, :plan_wiring, _plan_wiring(options))
     return setfield(r, :step_wiring, ntuple(_ -> StepRouting(), length(getalgos(r))))
 end
 
 @inline getalgos(r::Routine) = getfield(r, :funcs)
 @inline getalgo(r::Routine, idx) = getfield(r, :funcs)[idx]
-@inline getoptions(r::Routine) = _plan_options(getfield(r, :global_options), getfield(r, :wiring))
+@inline getoptions(r::Routine) = _all_plan_wiring(getfield(r, :plan_wiring), getfield(r, :local_wiring))
 @inline subalgorithms(r::Routine) = getfield(r, :funcs)
 @inline getstates(r::Routine) = ()
 
@@ -86,7 +86,7 @@ end
 
 multipliers(r::Routine) = repeats(r)
 multipliers(rT::Type{R}) where {R<:Routine} = repeats(rT)
-getid(r::Union{Routine{T,R,MV,W,G,SW,id},Type{<:Routine{T,R,MV,W,G,SW,id}}}) where {T,R,MV,W,G,SW,id} = id
+getid(r::Union{Routine{T,R,MV,LW,PW,SW,id},Type{<:Routine{T,R,MV,LW,PW,SW,id}}}) where {T,R,MV,LW,PW,SW,id} = id
 
 @inline repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}) where {F,R} = R
 repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, idx::Int) where {F,R} = R[idx]

@@ -31,7 +31,7 @@ using Processes
     @test Processes.getplan(resolved) isa Processes.CompositeAlgorithm
     @test Processes.isresolved(resolved)
     @test length(Processes.getoptions(Processes.getplan(resolved), Processes.Route)) == 1
-    @test length(getfield(Processes.getplan(resolved), :wiring)) == length(Processes.getalgos(resolved))
+    @test length(getfield(Processes.getplan(resolved), :local_wiring)) == length(Processes.getalgos(resolved))
     @test !isnothing(source_name)
     @test !isnothing(target_name)
     @test !isnothing(other_name)

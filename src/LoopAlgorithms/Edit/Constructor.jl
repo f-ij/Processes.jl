@@ -17,11 +17,11 @@ end
 @inline _constructor_type(::ThreadedCompositeAlgorithm) = ThreadedCompositeAlgorithm
 @inline _constructor_type(la::LoopAlgorithm) = _constructor_type(getplan(la))
 
-function _local_constructor_options(funcs::Tuple, wiring::Tuple)
+function _local_constructor_options(funcs::Tuple, local_wiring::Tuple)
     options = ()
-    for i in eachindex(wiring)
+    for i in eachindex(local_wiring)
         owner = funcs[i]
-        for option in wiring[i]
+        for option in local_wiring[i]
             options = (options..., LocalPlanOption(owner, option))
         end
     end
@@ -38,7 +38,7 @@ routes and change execution semantics.
 """
 @inline _stored_constructor_options(la::LA) where {LA<:AbstractLoopAlgorithm} = getoptions(la)
 @inline _stored_constructor_options(la::Union{CompositeAlgorithm, Routine}) =
-    (getfield(la, :global_options)..., _local_constructor_options(getalgos(la), getfield(la, :wiring))...)
+    (getfield(la, :plan_wiring)..., _local_constructor_options(getalgos(la), getfield(la, :local_wiring))...)
 @inline _stored_constructor_options(la::LoopAlgorithm) = (_stored_constructor_options(getplan(la))..., getoptions(la)...)
 
 @inline function _rebuild_loopalgorithm(

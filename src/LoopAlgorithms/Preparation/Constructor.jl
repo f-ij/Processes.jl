@@ -103,8 +103,8 @@ function resolve_step_wiring(la::Union{CompositeAlgorithm, Routine}, registry::N
     la = rebuild_loopalgorithm_funcs(la, funcs)
 
     funcs = getalgos(la)
-    global_options = getfield(la, :global_options)
-    local_wiring = getfield(la, :wiring)
+    plan_wiring = getfield(la, :plan_wiring)
+    local_wiring = getfield(la, :local_wiring)
     step_wiring = ntuple(length(funcs)) do i
         child = funcs[i]
         child_wiring = child isa AbstractLoopAlgorithm ? _plan_step_wiring(child) :
@@ -116,20 +116,20 @@ function resolve_step_wiring(la::Union{CompositeAlgorithm, Routine}, registry::N
         end
         target_key = getkey(registry[child])
 
-        global_sharedcontexts = get(resolve_options(registry, typefilter(Share, global_options)...), target_key, ())
+        plan_sharedcontexts = get(resolve_options(registry, typefilter(Share, plan_wiring)...), target_key, ())
         local_sharedcontexts = get(resolve_options(registry, typefilter(Share, local_wiring[i])...), target_key, ())
-        global_sharedcontexts = global_sharedcontexts isa Tuple ? global_sharedcontexts : (global_sharedcontexts,)
+        plan_sharedcontexts = plan_sharedcontexts isa Tuple ? plan_sharedcontexts : (plan_sharedcontexts,)
         local_sharedcontexts = local_sharedcontexts isa Tuple ? local_sharedcontexts : (local_sharedcontexts,)
 
-        global_sharedvars = get(resolve_options(registry, typefilter(Route, global_options)...), target_key, ())
+        plan_sharedvars = get(resolve_options(registry, typefilter(Route, plan_wiring)...), target_key, ())
         local_sharedvars = get(resolve_options(registry, typefilter(Route, local_wiring[i])...), target_key, ())
         local_aliases = mapreduce(localnames, (a, b) -> (a..., b...), local_sharedvars; init = ())
         sharedvars = (
-            filter(sv -> !any(alias -> alias in local_aliases, localnames(sv)), global_sharedvars)...,
+            filter(sv -> !any(alias -> alias in local_aliases, localnames(sv)), plan_sharedvars)...,
             local_sharedvars...,
         )
 
-        StepRouting((global_sharedcontexts..., local_sharedcontexts...), sharedvars, child_wiring)
+        StepRouting((plan_sharedcontexts..., local_sharedcontexts...), sharedvars, child_wiring)
     end
     return setfield(la, :step_wiring, step_wiring)
 end

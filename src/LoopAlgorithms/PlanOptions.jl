@@ -12,12 +12,12 @@
     return (option, tail...)
 end
 
-@inline function _global_plan_options(options::Options) where {Options<:Tuple}
+@inline function _plan_wiring(options::Options) where {Options<:Tuple}
     if isempty(options)
         return ()
     end
 
-    tail = _global_plan_options(Base.tail(options))
+    tail = _plan_wiring(Base.tail(options))
     option = getfield(options, 1)
     Option = fieldtype(Options, 1)
     if Option <: Union{Route, Share}
@@ -83,7 +83,7 @@ end
 
 @inline _local_options_for_child(idx, funcs, option, tail::Tail) where {Tail<:Tuple} = tail
 
-@inline @generated function _loop_plan_wiring(funcs::Funcs, options::Options) where {Funcs<:Tuple, Options<:Tuple}
+@inline @generated function _local_plan_wiring(funcs::Funcs, options::Options) where {Funcs<:Tuple, Options<:Tuple}
     runtime_checks = Any[]
     for option_idx in 1:fieldcount(Options)
         option_type = fieldtype(Options, option_idx)
@@ -116,9 +116,9 @@ end
     end
 end
 
-@inline function _plan_options(global_options::GlobalOptions, wiring::Wiring) where {GlobalOptions<:Tuple, Wiring<:Tuple}
-    if isempty(wiring)
-        return global_options
+@inline function _all_plan_wiring(plan_wiring::PlanWiring, local_wiring::LocalWiring) where {PlanWiring<:Tuple, LocalWiring<:Tuple}
+    if isempty(local_wiring)
+        return plan_wiring
     end
-    return (global_options..., getfield(wiring, 1)..., _plan_options((), Base.tail(wiring))...)
+    return (plan_wiring..., getfield(local_wiring, 1)..., _all_plan_wiring((), Base.tail(local_wiring))...)
 end
