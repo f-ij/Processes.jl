@@ -35,7 +35,8 @@ end
 ####### CREATING VIEWS ##########
 #################################
 
-@inline @generated function _routing_tuple_from_type(::Type{T}) where {T<:Tuple}
+"""Rebuild a tuple of resolved wiring values from its tuple type."""
+@inline @generated function wiring_from_tuple_type(::Type{T}) where {T<:Tuple}
     return Expr(:tuple, (:( $(T.parameters[i])() ) for i in eachindex(T.parameters))...)
 end
 
@@ -81,8 +82,8 @@ end
 
 @inline function Base.view(pc::PC, instance::SA, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I, SC<:Tuple, SV<:Tuple}
     key = @inline getkey(instance)
-    typed_sharedcontexts = @inline _routing_tuple_from_type(SC)
-    typed_sharedvars = @inline _routing_tuple_from_type(SV)
+    typed_sharedcontexts = @inline wiring_from_tuple_type(SC)
+    typed_sharedvars = @inline wiring_from_tuple_type(SV)
     return SubContextView{typeof(pc), key, typeof(instance), typeof(inject), varaliases(instance), typed_sharedcontexts, typed_sharedvars}(pc, instance, inject)
 end
 
