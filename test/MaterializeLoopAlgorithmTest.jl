@@ -30,6 +30,8 @@ using Processes
     @test resolved isa Processes.LoopAlgorithm
     @test Processes.getplan(resolved) isa Processes.CompositeAlgorithm
     @test Processes.isresolved(resolved)
+    @test all(child -> !(child isa Processes.AbstractIdentifiableAlgo), Processes.getalgos(resolved))
+    @test all(entry -> entry isa Processes.AbstractIdentifiableAlgo, Processes.all_algos(registry))
     @test length(Processes.getoptions(Processes.getplan(resolved), Processes.Route)) == 1
     @test length(Processes.child_wiring(Processes.getwiring(Processes.getplan(resolved)))) == length(Processes.getalgos(resolved))
     @test !isnothing(source_name)
@@ -58,7 +60,9 @@ using Processes
     @test Processes.getplan(resolved_routine) isa Processes.Routine
     @test Processes.isresolved(resolved_routine)
     @test nested_comp isa Processes.CompositeAlgorithm
-    @test all(Processes.getkey.(Processes.getalgos(nested_comp)) .!= Ref(Symbol()))
+    @test all(child -> !(child isa Processes.AbstractIdentifiableAlgo), Processes.getalgos(resolved_routine))
+    @test all(child -> !(child isa Processes.AbstractIdentifiableAlgo), Processes.getalgos(nested_comp))
+    @test all(Processes.plan_child_namespace(nested_comp, i) != Symbol() for i in eachindex(Processes.getalgos(nested_comp)))
     routine_wiring = Processes.getwiring(Processes.getplan(resolved_routine))
     nested_plan_wiring = getfield(Processes.child_wiring(routine_wiring), 1)
     nested_wiring = Processes.child_wiring(nested_plan_wiring)
@@ -107,4 +111,11 @@ using Processes
     @test Processes.get_fromname(only(sharedvars1[other_name])) == source_name
     @test isempty(sharedcontexts2)
     @test isempty(sharedvars2)
+
+    unique_comp = Processes.resolve(CompositeAlgorithm(Unique(PrepSource()), Unique(PrepSource()), (1, 1)))
+    unique_keys = (Processes.plan_child_namespace(unique_comp, 1), Processes.plan_child_namespace(unique_comp, 2))
+    @test unique_keys[1] != unique_keys[2]
+    @test all(child -> child isa PrepSource, Processes.getalgos(unique_comp))
+    @test all(child -> !(child isa Processes.AbstractIdentifiableAlgo), Processes.getalgos(unique_comp))
+    @test length(Processes.findall(PrepSource, Processes.getregistry(unique_comp))) == 2
 end

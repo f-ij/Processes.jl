@@ -87,6 +87,23 @@ end
     return SubContextView{typeof(pc), key, typeof(instance), typeof(inject), varaliases(instance), typed_sharedcontexts, typed_sharedvars}(pc, instance, inject)
 end
 
+@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, A<:ProcessAlgorithm, Name, I}
+    aliases = VarAliases()
+    return SubContextView{typeof(pc), Name, typeof(instance), typeof(inject), typeof(aliases), (), ()}(pc, instance, inject)
+end
+
+@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, A<:ProcessAlgorithm, Name, I, SC<:Tuple, SV<:Tuple}
+    aliases = VarAliases()
+    typed_sharedcontexts = @inline wiring_from_tuple_type(SC)
+    typed_sharedvars = @inline wiring_from_tuple_type(SV)
+    return SubContextView{typeof(pc), Name, typeof(instance), typeof(inject), typeof(aliases), typed_sharedcontexts, typed_sharedvars}(pc, instance, inject)
+end
+
+"""Get a subcontext view for a raw child algorithm and explicit namespace."""
+@inline function Base.view(pc::ProcessContext, instance::A, namespace::Namespace; inject = (;), sharedcontexts = (), sharedvars = ()) where {A<:ProcessAlgorithm}
+    return @inline view(pc, instance, namespace, inject, sharedcontexts, sharedvars)
+end
+
 """
 Get a subcontext view for a specific subcontext
 """

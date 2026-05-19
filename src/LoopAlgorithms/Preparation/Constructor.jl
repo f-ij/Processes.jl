@@ -34,43 +34,56 @@ end
     multipliers = ntuple(i -> 1, length(states))
     registry = addall(registry, states, multipliers)
 
-    registry, keyed_plan = add_algos_to_registry(registry, getplan(la), 1.0)
-    return registry, setfield(la, :plan, keyed_plan)
+    registry, named_plan = add_algos_to_registry(registry, getplan(la), 1.0)
+    return registry, setfield(la, :plan, named_plan)
 end
 
 @inline function add_algos_to_registry(registry::R, la::LA, multiplier) where {R<:NameSpaceRegistry, LA<:AbstractLoopAlgorithm}
     funcs = getalgos(la)
     algo_multipliers = multiplier .* multipliers(la)
-    registry, keyed_funcs = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
-    return registry, rebuild_loopalgorithm_funcs(la, keyed_funcs)
+    registry, raw_funcs, names = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
+    return registry, rebuild_loopalgorithm_funcs(la, TupleWithNames(names, raw_funcs))
 end
 
-@inline add_algo_tuple_to_registry(registry::R, ::Tuple{}, ::Tuple{}) where {R<:NameSpaceRegistry} = registry, ()
+@inline add_algo_tuple_to_registry(registry::R, ::Tuple{}, ::Tuple{}) where {R<:NameSpaceRegistry} = registry, (), ()
 
 @inline function add_algo_tuple_to_registry(registry::R, funcs::F, multipliers::M) where {R<:NameSpaceRegistry, F<:Tuple, M<:Tuple}
-    registry, keyed_head = add_algo_to_registry(registry, first(funcs), first(multipliers))
-    registry, keyed_tail = add_algo_tuple_to_registry(registry, Base.tail(funcs), Base.tail(multipliers))
-    return registry, (keyed_head, keyed_tail...)
+    registry, raw_head, name_head = add_algo_to_registry(registry, first(funcs), first(multipliers))
+    registry, raw_tail, name_tail = add_algo_tuple_to_registry(registry, Base.tail(funcs), Base.tail(multipliers))
+    return registry, (raw_head, raw_tail...), (name_head, name_tail...)
 end
 
 @inline function add_algo_to_registry(registry::R, algo::LA, multiplier) where {R<:NameSpaceRegistry, LA<:AbstractLoopAlgorithm}
     inner = algo isa LoopAlgorithm ? getplan(algo) : algo
-    return add_algos_to_registry(registry, inner, multiplier)
+    registry, plan = add_algos_to_registry(registry, inner, multiplier)
+    return registry, plan, Symbol()
+end
+
+@inline function add_algo_to_registry(registry::R, algo::IA, multiplier) where {F<:AbstractLoopAlgorithm, R<:NameSpaceRegistry, IA<:AbstractIdentifiableAlgo{F}}
+    registry, plan = add_algos_to_registry(registry, getalgo(algo), multiplier)
+    return registry, plan, Symbol()
 end
 
 @inline function add_algo_to_registry(registry::R, algo::A, multiplier) where {R<:NameSpaceRegistry, A}
-    return add(registry, algo, multiplier)
+    registry, keyed_algo = add(registry, algo, multiplier)
+    return registry, getalgo(keyed_algo), getkey(keyed_algo)
 end
 
-@inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:AbstractLoopAlgorithm, F<:Tuple}
+@inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:Union{CompositeAlgorithm, Routine}, F<:Tuple}
+    names = _plan_func_names(getfield(la, :funcs))
+    named_funcs = !isnothing(names) && length(names) == length(funcs) ? TupleWithNames(names, funcs) : funcs
+    return setfield(la, :funcs, named_funcs)
+end
+
+@inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:AbstractLoopAlgorithm, F}
     return setfield(la, :funcs, funcs)
 end
 
-@inline function rebuild_loopalgorithm_funcs(la::LoopAlgorithm, funcs::F) where {F<:Tuple}
+@inline function rebuild_loopalgorithm_funcs(la::LoopAlgorithm, funcs::F) where {F}
     return setfield(la, :plan, rebuild_loopalgorithm_funcs(getplan(la), funcs))
 end
 
-@inline function rebuild_loopalgorithm_funcs(fa::FA, funcs::F) where {FA<:FinalizedAlgorithm, F<:Tuple}
+@inline function rebuild_loopalgorithm_funcs(fa::FA, funcs::F) where {FA<:FinalizedAlgorithm, F}
     return finalstep(rebuild_loopalgorithm_funcs(inneralgorithm(fa), funcs), finalfunction(fa))
 end
 
@@ -112,9 +125,6 @@ function _resolve_plan_wiring_tree(la::LA, registry::NameSpaceRegistry, inherite
         child = getalgo(la, i)
         if child isa AbstractLoopAlgorithm
             return _resolve_plan_wiring_tree(child, registry, combined_global)
-        elseif child isa AbstractIdentifiableAlgo{<:AbstractLoopAlgorithm}
-            resolved_child = _resolve_plan_wiring_tree(getalgo(child), registry, combined_global)
-            return setfield(child, :func, resolved_child)
         end
         return child
     end
@@ -122,10 +132,10 @@ function _resolve_plan_wiring_tree(la::LA, registry::NameSpaceRegistry, inherite
 
     resolved_children = ntuple(length(funcs)) do i
         child = funcs[i]
-        if child isa AbstractLoopAlgorithm || child isa AbstractIdentifiableAlgo{<:AbstractLoopAlgorithm}
-            return child isa AbstractLoopAlgorithm ? getwiring(child) : getwiring(getalgo(child))
+        if child isa AbstractLoopAlgorithm
+            return getwiring(child)
         end
-        target = getkey(child)
+        target = plan_child_namespace(la, i)
         bucket = getfield(child_wiring(raw_wiring), i)
 
         # Concrete children receive a single resolved `Wiring`: inherited global

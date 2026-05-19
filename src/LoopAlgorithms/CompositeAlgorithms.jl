@@ -47,11 +47,18 @@ function setoptions(ca::CompositeAlgorithm, options)
     return setfield(ca, :wiring, wiring)
 end
 
-subalgorithms(ca::CompositeAlgorithm) = getfield(ca, :funcs)
-algotypes(ca::Union{CompositeAlgorithm{FT}, Type{<:CompositeAlgorithm{FT}}}) where FT = FT.parameters
+"""Return the tuple type that actually stores child algorithms."""
+@inline _child_tuple_type(::Type{T}) where {T<:Tuple} = T
+@inline _child_tuple_type(::Type{<:TupleWithNames{Names,T}}) where {Names,T<:Tuple} = T
+
+"""Return the child algorithm types stored by a plan function container type."""
+@inline _child_tuple_parameters(::Type{T}) where {T} = _child_tuple_type(T).parameters
+
+subalgorithms(ca::CompositeAlgorithm) = getalgos(ca)
+algotypes(ca::Union{CompositeAlgorithm{FT}, Type{<:CompositeAlgorithm{FT}}}) where FT = _child_tuple_parameters(FT)
 statetypes(ca::Union{CompositeAlgorithm, Type{<:CompositeAlgorithm}}) = ()
-subalgotypes(ca::CompositeAlgorithm{FT}) where FT = FT.parameters
-subalgotypes(::Type{CA}) where {FT, CA<:CompositeAlgorithm{FT}} = FT.parameters
+subalgotypes(ca::CompositeAlgorithm{FT}) where FT = _child_tuple_parameters(FT)
+subalgotypes(::Type{CA}) where {FT, CA<:CompositeAlgorithm{FT}} = _child_tuple_parameters(FT)
 @inline getstates(ca::CompositeAlgorithm) = ()
 
 
@@ -71,16 +78,16 @@ interval(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, id
 ###########################################
 ################ Type Info ###############
 ###########################################
-@inline functypes(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = tuple(T.parameters...)
-@inline getalgotype(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, idx) where {T,I} = T.parameters[idx]
-@inline numalgos(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = length(T.parameters)
+@inline functypes(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = tuple(_child_tuple_parameters(T)...)
+@inline getalgotype(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, idx) where {T,I} = _child_tuple_parameters(T)[idx]
+@inline numalgos(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = length(_child_tuple_parameters(T))
 
 
 @inline function intervals(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I}
     if I isa Tuple
         return I
     else 
-        return ntuple(_ -> 1, length(T.parameters))
+        return ntuple(_ -> 1, length(_child_tuple_parameters(T)))
     end
 end
 @inline intervals(ca::Union{CompositeAlgorithm, Type{<:CompositeAlgorithm}}, ::Val{Idx}) where Idx = @inline intervals(ca)[Idx]
@@ -111,10 +118,10 @@ id(ca::Union{CompositeAlgorithm{T,I,W,id}, Type{<:CompositeAlgorithm{T,I,W,id}}}
 
 
 # getnames(ca::CompositeAlgorithm{T, I, N}) where {T, I, N} = N
-Base.length(ca::CompositeAlgorithm) = length(getfield(ca, :funcs))
-Base.eachindex(ca::CompositeAlgorithm) = eachindex(getfield(ca, :funcs))
-getalgo(ca::CompositeAlgorithm, idx) = getfield(ca, :funcs)[idx]
-getalgos(ca::CompositeAlgorithm) = getfield(ca, :funcs)
+Base.length(ca::CompositeAlgorithm) = length(getalgos(ca))
+Base.eachindex(ca::CompositeAlgorithm) = eachindex(getalgos(ca))
+getalgo(ca::CompositeAlgorithm, idx) = getalgos(ca)[idx]
+getalgos(ca::CompositeAlgorithm) = _raw_plan_funcs(getfield(ca, :funcs))
 hasflag(ca::CompositeAlgorithm, flag) = flag in getfield(ca, :flags)
 track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
 """
@@ -133,11 +140,11 @@ function reset!(ca::CA) where CA <: CompositeAlgorithm
     reset!.(getalgos(ca))
 end
 
-num_funcs(ca::CompositeAlgorithm{FA}) where FA = fieldcount(FA)
+num_funcs(ca::CompositeAlgorithm{FA}) where FA = fieldcount(_child_tuple_type(FA))
 
 # TODO: WHAT IS THIS
-type_instances(ca::CompositeAlgorithm{FT}) where FT = getfield(ca, :funcs)
-get_funcs(ca::CompositeAlgorithm{FT}) where FT = FT.parameters 
+type_instances(ca::CompositeAlgorithm{FT}) where FT = getalgos(ca)
+get_funcs(ca::CompositeAlgorithm{FT}) where FT = _child_tuple_parameters(FT)
 
 # CompositeAlgorithm{FS, Intervals}() where {FS, Intervals} = CompositeAlgorithm{FS, Intervals}(call_all(FS)) 
 

@@ -16,10 +16,10 @@ Base.@constprop :aggressive @inline function _step!(ca::CA, context::C, wiring::
         context,
         @inline getalgos(ca);
         args = (this_inc, process, lifetime, typestable),
-        zips = (intervals(ca), child_wiring(wiring)),
-    ) do context, algo, this_inc, process, lifetime, typestable, interval, child_step_wiring
+        zips = (intervals(ca), child_wiring(wiring), plan_child_namespaces(ca)),
+    ) do context, algo, this_inc, process, lifetime, typestable, interval, child_step_wiring, namespace
         if @inline divides(this_inc, interval)
-            return @inline _step!(algo, context, child_step_wiring, process, lifetime, typestable)
+            return @inline _step!(algo, context, child_step_wiring, namespace, process, lifetime, typestable)
         end
         return context
     end
@@ -91,11 +91,11 @@ Base.@constprop :aggressive @inline function _step!(r::R, context::C, wiring::W,
         context,
         @inline getalgos(r);
         args = (r, process, lifetime, typestable),
-        zips = (child_idxs, repeats(r), child_wiring(wiring)),
-    ) do context, func, r, process, lifetime, typestable, idx, this_repeat, child_step_wiring
+        zips = (child_idxs, repeats(r), child_wiring(wiring), plan_child_namespaces(r)),
+    ) do context, func, r, process, lifetime, typestable, idx, this_repeat, child_step_wiring, namespace
         resume_point = @inline get_resume_point(r, idx)
         if resume_point <= this_repeat
-            context = @inline _step!(func, context, child_step_wiring, process, lifetime, Unstable())
+            context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, Unstable())
             @inline tick!(process)
 
             for lidx in (resume_point + 1):this_repeat
@@ -103,7 +103,7 @@ Base.@constprop :aggressive @inline function _step!(r::R, context::C, wiring::W,
                     @inline set_resume_point!(r, idx, lidx)
                     return context
                 end
-                context = @inline _step!(func, context, child_step_wiring, process, lifetime, typestable)
+                context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, typestable)
                 @inline tick!(process)
             end
         end

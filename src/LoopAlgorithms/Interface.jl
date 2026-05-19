@@ -62,6 +62,23 @@ Base.isempty(wiring::PlanWiring) =
 @inline resume_idxs(cla::LoopAlgorithm) = resume_idxs(getplan(cla))
 @inline set_resume_point!(cla::LoopAlgorithm, idx::Int, loopidx::Int) = set_resume_point!(getplan(cla), idx, loopidx)
 
+"""Return the namespace symbol stored for one child of a resolved plan."""
+@inline function plan_child_namespace(la::Union{CompositeAlgorithm, Routine}, idx::Int)
+    names = _plan_func_names(getfield(la, :funcs))
+    return isnothing(names) ? trykey(getalgo(la, idx)) : names[idx]
+end
+
+@inline plan_child_namespace(la::LoopAlgorithm, idx::Int) = plan_child_namespace(getplan(la), idx)
+
+"""Return child namespaces as `Namespace{Name}()` values for step-time zipping."""
+@inline function plan_child_namespaces(la::Union{CompositeAlgorithm, Routine})
+    funcs = getfield(la, :funcs)
+    if funcs isa TupleWithNames
+        return namespaces(funcs)
+    end
+    return ntuple(i -> Namespace{trykey(getalgo(la, i))}(), length(getalgos(la)))
+end
+
 get_shares(cla::LA) where {LA<:AbstractLoopAlgorithm} = @inline filter_by_type(Share, getoptions(cla))
 get_routes(cla::LA) where {LA<:AbstractLoopAlgorithm} = @inline filter_by_type(Route, getoptions(cla))
 

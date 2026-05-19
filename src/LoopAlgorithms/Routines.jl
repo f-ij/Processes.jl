@@ -44,11 +44,11 @@ function setoptions(r::Routine, options)
     return setfield(r, :wiring, wiring)
 end
 
-@inline getalgos(r::Routine) = getfield(r, :funcs)
-@inline getalgo(r::Routine, idx) = getfield(r, :funcs)[idx]
+@inline getalgos(r::Routine) = _raw_plan_funcs(getfield(r, :funcs))
+@inline getalgo(r::Routine, idx) = getalgos(r)[idx]
 @inline getwiring(r::Routine) = getfield(r, :wiring)
 @inline getoptions(r::Routine) = _all_plan_wiring(global_wiring(getwiring(r)), child_wiring(getwiring(r)))
-@inline subalgorithms(r::Routine) = getfield(r, :funcs)
+@inline subalgorithms(r::Routine) = getalgos(r)
 @inline getstates(r::Routine) = ()
 
 
@@ -59,13 +59,13 @@ resume_idx(r::Routine, idx) = getfield(r, :resume_idxs)[idx]
 resumable(r::Routine) = true
 
 # TODO: This is only used in treesctructure, try to deprecate
-subalgotypes(r::Routine{FT}) where FT = FT.parameters
-subalgotypes(::Type{R}) where {FT, R<:Routine{FT}} = FT.parameters
-algotypes(r::Union{Routine{FT}, Type{R}}) where {FT, R<:Routine{FT}} = tuple(FT.parameters...)
+subalgotypes(r::Routine{FT}) where FT = _child_tuple_parameters(FT)
+subalgotypes(::Type{R}) where {FT, R<:Routine{FT}} = _child_tuple_parameters(FT)
+algotypes(r::Union{Routine{FT}, Type{R}}) where {FT, R<:Routine{FT}} = tuple(_child_tuple_parameters(FT)...)
 statetypes(r::Union{Routine, Type{<:Routine}}) = ()
 
 # getnames(r::Routine{T, R, NT, N}) where {T, R, NT, N} = N
-Base.length(r::Routine) = length(getfield(r, :funcs))
+Base.length(r::Routine) = length(getalgos(r))
 
 function reset!(r::Routine)
     getfield(r, :resume_idxs) .= 1
@@ -75,9 +75,9 @@ end
 ################ Type Info ###############
 #############################################
 
-@inline functypes(r::Union{Routine{T,R}, Type{<:Routine{T,R}}}) where {T,R} = tuple(T.parameters...)
-@inline getalgotype(::Union{Routine{T,R}, Type{<:Routine{T,R}}}, idx) where {T,R} = T.parameters[idx]
-@inline numalgos(r::Union{Routine{T,R}, Type{<:Routine{T,R}}}) where {T,R} = length(T.parameters)
+@inline functypes(r::Union{Routine{T,R}, Type{<:Routine{T,R}}}) where {T,R} = tuple(_child_tuple_parameters(T)...)
+@inline getalgotype(::Union{Routine{T,R}, Type{<:Routine{T,R}}}, idx) where {T,R} = _child_tuple_parameters(T)[idx]
+@inline numalgos(r::Union{Routine{T,R}, Type{<:Routine{T,R}}}) where {T,R} = length(_child_tuple_parameters(T))
 
 multipliers(r::Routine) = repeats(r)
 multipliers(rT::Type{R}) where {R<:Routine} = repeats(rT)

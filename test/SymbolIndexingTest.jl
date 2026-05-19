@@ -15,7 +15,7 @@ using Processes
     resolved = resolve(CompositeAlgorithm(SymbolInitAlgo, SymbolOtherAlgo, (1, 1)))
     reg = getregistry(resolved)
 
-    @test reg[:SymbolInitAlgo_1] == resolved[:SymbolInitAlgo_1]
+    @test Processes.getalgo(reg[:SymbolInitAlgo_1]) == resolved[:SymbolInitAlgo_1]
     @test resolved[:SymbolInitAlgo_1] == resolved.SymbolInitAlgo_1
     @test Processes.getkey(reg[:SymbolOtherAlgo_1]) == :SymbolOtherAlgo_1
 

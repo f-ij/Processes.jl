@@ -86,6 +86,9 @@ end
 function _composite_algo_type_labels(types::Tuple)
     labels = String[]
     for t in types
+        if !(t isa Type)
+            continue
+        end
         if t <: IdentifiableAlgo
             algo_type = t.parameters[1]
             push!(labels, string(nameof(algo_type), "@", Processes.getkey(t)))
@@ -131,7 +134,7 @@ function Base.show(io::IO, caT::Type{<:CompositeAlgorithm})
         print(io, "CompositeAlgorithm")
         return
     end
-    labels = _composite_algo_type_labels(ft.parameters)
+    labels = _composite_algo_type_labels(_child_tuple_parameters(ft))
     print(io, "CompositeAlgorithm(", join(labels, ", "), ")")
 end
 
@@ -170,7 +173,7 @@ function Base.show(io::IO, rT::Type{<:Routine})
         print(io, "Routine")
         return
     end
-    labels = _composite_algo_type_labels(ft.parameters)
+    labels = _composite_algo_type_labels(_child_tuple_parameters(ft))
     print(io, "Routine(", join(labels, ", "), ")")
 end
 

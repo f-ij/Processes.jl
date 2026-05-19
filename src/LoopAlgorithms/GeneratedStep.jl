@@ -27,6 +27,22 @@ function step!_expr(::Type{FA}, context::Type{C}, name::Symbol, stability::Symbo
     end
 end
 
+"""Return the type-level namespace name for a child in a generated plan."""
+function _generated_child_namespace(::Type{LA}, idx::Int) where {FT, LA<:Union{CompositeAlgorithm{FT}, Routine{FT}}}
+    names = _plan_func_names_type(FT)
+    return isnothing(names) ? trykey(getalgotype(LA, idx)) : names[idx]
+end
+
+"""Generated child expression for nested loop plans; parent namespaces are ignored."""
+function step!_expr(::Type{LA}, context::Type{C}, name::Symbol, ::Symbol, stability::Symbol) where {LA<:AbstractLoopAlgorithm, C<:AbstractContext}
+    return step!_expr(LA, context, name, stability)
+end
+
+"""Generated child expression for unresolved identifiable wrappers."""
+function step!_expr(::Type{IA}, context::Type{C}, name::Symbol, ::Symbol, stability::Symbol) where {IA<:IdentifiableAlgo, C<:AbstractContext}
+    return step!_expr(IA, context, name, stability)
+end
+
 """
 Generated expression form of the composite step! with a caller-provided name binding.
 """
@@ -50,9 +66,10 @@ function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, stability::Sym
         push!(exprs, :(local $local_name = @inline getalgo($name, $i)))
         # fti = ft.parameters[i]
         this_functype = getalgotype(ca, i)
+        namespace = _generated_child_namespace(ca, i)
         if interval == 1
             # Generated block: the child algorithm's `step!` body (always executed).
-            push!(exprs, step!_expr(this_functype, C, local_name, stability))
+            push!(exprs, step!_expr(this_functype, C, local_name, namespace, stability))
         else
             # Generated block:
             #   if this_inc % interval == 0
@@ -61,7 +78,7 @@ function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, stability::Sym
             push!(exprs, quote
                 # Only run this child every `interval` composite steps.
                 if $this_inc % $(interval) == 0
-                    $(step!_expr(this_functype, C, local_name, stability))
+                    $(step!_expr(this_functype, C, local_name, namespace, stability))
                 end
             end)
         end
@@ -88,6 +105,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability:
         this_repeat = func_repeats[i]
         local_name = gensym(:algo)
         this_functype = getalgotype(routine, i)
+        namespace = _generated_child_namespace(routine, i)
         
 
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
@@ -99,7 +117,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability:
         push!(exprs, quote
             if resume_idx($name, $i) <= $this_repeat
                 # One unstable step allowed
-                $(step!_expr(this_functype, C, local_name, :unstable))
+                $(step!_expr(this_functype, C, local_name, namespace, :unstable))
                 
                 # Assumes process is defined in the top level
                 @inline tick!(process) # Tick counter
@@ -113,7 +131,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability:
                     # Pause/stop check: if the process is not running, record which child we were on.
 
                     # Inline the child's `step!` body, specialized to the child's algorithm type and the context type.
-                    $(step!_expr(this_functype, C, local_name, stability))
+                    $(step!_expr(this_functype, C, local_name, namespace, stability))
                     
                     # Assumes process is defined in the top level
                     @inline tick!(process) # Tick counter
@@ -141,4 +159,24 @@ function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, ::Symbol) where {T, 
     #   context = step!(funcname, context)
     # This is the non-generated fallback that just dispatches to an existing runtime `step!`.
     return :(context = @inline step!($funcname, context))
+end
+
+"""
+Generated expression form for raw resolved plan children.
+"""
+function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, namespace::Symbol, stability::Symbol) where {T<:ProcessAlgorithm, C<:AbstractContext}
+    namespace_expr = :(Namespace{$(QuoteNode(namespace))}())
+    returnexp = if stability === :stable
+        :(context = @inline merge(contextview, returnvals))
+    elseif stability === :unstable
+        :(context = @inline unstablemerge(contextview, returnvals))
+    else
+        error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
+    end
+
+    return quote
+        local contextview = @inline view(context, $funcname, $namespace_expr)
+        local returnvals = @inline step!($funcname, contextview)
+        $(returnexp)
+    end
 end

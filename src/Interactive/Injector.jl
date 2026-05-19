@@ -71,6 +71,10 @@ end
 @inline Processes.step!(inj::ContextInjector, context::C, ::Unstable) where {C<:ProcessContext} =
     _step_context_injector(inj, context)
 
+"""Step the injector on the full process context even inside raw resolved plans."""
+@inline Processes._step!(inj::ContextInjector, context::C, ::Wiring, ::Namespace, process::P, lifetime::LT, stability::S = Stable()) where {C<:ProcessContext, P<:AbstractProcess, LT<:Lifetime, S<:Stability} =
+    Processes.step!(inj, context, stability)
+
 @inline function _step_context_injector(::ContextInjector, context::C) where {C<:ProcessContext}
     updates = _context_injector_buffer(context)
     isempty(updates) && return context

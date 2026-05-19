@@ -419,7 +419,7 @@ function analyse_inits(la::ALA; globals = (;), inputs = (;)) where {ALA<:Abstrac
         analyse_init(state, analyser)
     end
 
-    for algo in flat_funcs(mocked)
+    for algo in all_algos(getregistry(mocked))
         analyse_init(algo, analyser)
     end
 
@@ -436,12 +436,12 @@ function analyse_steps(la::ALA; globals = (;), inputs = (;), init = true) where 
             analyse_init(state, analyser)
         end
 
-        for algo in flat_funcs(mocked)
+        for algo in all_algos(getregistry(mocked))
             analyse_init(algo, analyser)
         end
     end
 
-    for algo in flat_funcs(mocked)
+    for algo in all_algos(getregistry(mocked))
         analyse_step(algo, analyser)
     end
 

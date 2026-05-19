@@ -140,10 +140,10 @@ end
     @test Processes.repeats(skipped_routine) == (3,)
 
     named_outer = resolve(CompositeAlgorithm(:fib => IfWrapped(Fib, true), Luc, (1, 1)))
-    @test Processes.getkey(Processes.getalgo(named_outer, 1)) == :fib
+    @test Processes.plan_child_namespace(named_outer, 1) == :fib
 
     named_inner = resolve(CompositeAlgorithm(IfWrapped(:fib => Fib, true), Luc, (1, 1)))
-    @test Processes.getkey(Processes.getalgo(named_inner, 1)) == :fib
+    @test Processes.plan_child_namespace(named_inner, 1) == :fib
 
     @test_throws AssertionError CompositeAlgorithm(IfWrapped(Fib, false), (1,))
 end

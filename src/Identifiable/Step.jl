@@ -27,6 +27,42 @@ The public extension point remains `step!(algo, context)` on the wrapped
     end
 end
 
+"""Forward namespace-aware stepping through nested loop plans."""
+@inline function _step!(algo::LA, context::C, wiring::W, ::Namespace, process::P, lifetime::LT, stability::S = Stable()) where {LA <: AbstractLoopAlgorithm, C <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+    return @inline _step!(algo, context, wiring, process, lifetime, stability)
+end
+
+"""
+Internal loop-runtime step for a raw child algorithm with an explicit namespace.
+
+Resolved loop plans carry raw `ProcessAlgorithm` children and a parallel
+`Namespace{Name}` tuple. This method rebuilds the same view the old
+`IdentifiableAlgo` hot path used, but takes the context key from the namespace
+type instead of from a wrapper value.
+"""
+@inline function _step!(algo::A, context::C, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {A <: ProcessAlgorithm, C <: AbstractContext, W <: Wiring, Name, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+    contextview = nothing
+    if !isempty(wiring)
+        contextview = @inline view(
+            context,
+            algo,
+            namespace;
+            sharedcontexts = (@inline shares(wiring)),
+            sharedvars = (@inline routes(wiring))
+        )
+    else
+        contextview = @inline view(context, algo, namespace)
+    end
+
+    retval = @inline step!(algo, contextview)
+
+    if S <: Unstable
+        return @inline unstablemerge(contextview, retval)
+    else
+        return @inline merge(contextview, retval)
+    end
+end
+
 """
 Terminate the loop-runtime step chain at a plain process algorithm.
 

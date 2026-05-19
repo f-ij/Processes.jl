@@ -154,7 +154,7 @@ end
             Processes.Interval(1),
             Processes.Interval(1),
         )
-        @test Processes.getkey(Processes.getalgo(resolved, 1)) == :source
+        @test Processes.plan_child_namespace(resolved, 1) == :source
         @test length(Processes.getstates(resolved)) == 1
         @test Processes.getkey(first(Processes.getstates(resolved))) == :_state
 
@@ -397,7 +397,7 @@ end
 
         resolved = resolve(algo)
         wrapper = Processes.getalgo(resolved, 2)
-        wrapper_key = Processes.getkey(wrapper)
+        wrapper_key = Processes.plan_child_namespace(resolved, 2)
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[wrapper_key]
         @test length(routes) == 1
@@ -424,7 +424,7 @@ end
 
         resolved = resolve(algo)
         wrapper = Processes.getalgo(resolved, 2)
-        wrapper_key = Processes.getkey(wrapper)
+        wrapper_key = Processes.plan_child_namespace(resolved, 2)
         @test occursin("@transform", sprint(show, wrapper))
         @test occursin("c1.plus_capture.captured", sprint(show, wrapper))
 
@@ -445,7 +445,7 @@ end
 
         resolved = resolve(algo)
         wrapper = Processes.getalgo(resolved, 1)
-        wrapper_key = Processes.getkey(wrapper)
+        wrapper_key = Processes.plan_child_namespace(resolved, 1)
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[wrapper_key]
         @test length(routes) == 1
@@ -471,9 +471,9 @@ end
 
         resolved = resolve(algo)
         writer = Processes.getalgo(resolved, 1)
-        writer_key = Processes.getkey(writer)
-        result_algo = Processes.getalgo(resolved, 2)
-        @test Processes.getalgo(writer) isa Processes.ContextWrite
+        writer_key = Processes.plan_child_namespace(resolved, 1)
+        result_key = Processes.plan_child_namespace(resolved, 2)
+        @test writer isa Processes.ContextWrite
 
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[writer_key]
@@ -483,7 +483,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].clamping_beta === 3.0
-        @test ctx[Processes.getkey(result_algo)].result === 3.0
+        @test ctx[result_key].result === 3.0
     end
 
     @testset "State buffer indexes can be assigned directly" begin
@@ -501,7 +501,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].somebuffer == [2, 4, 5]
-        @test ctx[Processes.getkey(Processes.getalgo(resolved, 3))].result == [2, 4, 5]
+        @test ctx[Processes.plan_child_namespace(resolved, 3)].result == [2, 4, 5]
     end
 
     @testset "State buffers support broadcast assignment syntax" begin
@@ -520,7 +520,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].somebuffer == [1, 7, 8]
-        @test ctx[Processes.getkey(Processes.getalgo(resolved, 3))].result == [1, 7, 8]
+        @test ctx[Processes.plan_child_namespace(resolved, 3)].result == [1, 7, 8]
     end
 
     @testset "Owned state fields can be assigned from ref values" begin
@@ -565,7 +565,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[Processes.getkey(wrapper)].result == 4
+        @test ctx[Processes.plan_child_namespace(resolved, 2)].result == 4
     end
 
     @testset "Alias field routes work before later output bindings" begin
@@ -578,7 +578,7 @@ end
 
         resolved = resolve(algo)
         sink = Processes.getalgo(resolved, 1)
-        sink_key = Processes.getkey(sink)
+        sink_key = Processes.plan_child_namespace(resolved, 1)
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[sink_key]
         @test length(routes) == 1
@@ -600,7 +600,7 @@ end
 
         resolved = resolve(algo)
         sink = Processes.getalgo(resolved, 1)
-        sink_key = Processes.getkey(sink)
+        sink_key = Processes.plan_child_namespace(resolved, 1)
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[sink_key]
         @test length(routes) == 1
@@ -623,7 +623,7 @@ end
 
         resolved = resolve(algo)
         sink = Processes.getalgo(resolved, 1)
-        sink_key = Processes.getkey(sink)
+        sink_key = Processes.plan_child_namespace(resolved, 1)
 
         p = Process(resolved, repeat = 1)
         Processes.run(p)
@@ -721,7 +721,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         wrapper = Processes.getalgo(resolved, 2)
-        @test ctx[Processes.getkey(wrapper)].result == 4
+        @test ctx[Processes.plan_child_namespace(resolved, 2)].result == 4
     end
 
     @testset "@include_if rejects state and alias declarations" begin
