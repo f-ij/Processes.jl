@@ -13,6 +13,7 @@ using Processes
     include("PackageTest.jl")
     include("RouteWalkerTest.jl")
     include("ShareContextTest.jl")
+    include("RoutingWiringTest.jl")
     include("MaterializeLoopAlgorithmTest.jl")
     include("LoopAlgorithmEditTest.jl")
     include("SymbolIndexingTest.jl")

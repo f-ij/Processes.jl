@@ -1,23 +1,55 @@
-
 ################################################
 ##################  ROUTES  ####################
 ################################################
 
 """
-User-facing route from one subcontext to another
+Return the type-level endpoint identity used by route and share wiring.
+
+Symbols are already resolved context names. Other endpoints are normalized to a
+matcher type so unresolved wiring can be matched through the registry later.
 """
-struct Route{F,T, FT, varnames, aliases, Fmatch, Tmatch} <: AbstractOption
-    from::F # From algo
-    to::T   # To algo
-    # varnames::NTuple{N, Symbol}
-    # aliases::NTuple{N, Symbol}
-    # transform::FT
+function _wiring_endpoint_match(endpoint)
+    endpoint isa Symbol && return endpoint
+
+    # Raw endpoint references should not leak value identity into resolved
+    # wiring. Store the matcher type in the route/share type and keep the
+    # original endpoint only in the value field until registry resolution.
+    matcher = match_by(endpoint)
+    matcher isa AbstractMatcher && return typeof(matcher)
+    matcher isa Type && return typeof(TypeMatcher(matcher))
+    return typeof(ValMatcher(matcher))
 end
 
-function Route(from_to::Pair, originalname_or_aliaspairs::Union{Symbol, Pair{Symbol, Symbol}, Pair{NTuple{N, Symbol}, Symbol}}...; transform = nothing) where N
+"""Store the original endpoint only while wiring is unresolved."""
+_wiring_endpoint_ref(endpoint) = endpoint isa Symbol ? nothing : endpoint
+
+"""
+Route one or more variables from one subcontext to another.
+
+The first two type parameters are either unresolved endpoint identities or resolved
+context-name symbols. Resolved routes have `Nothing` endpoint fields, allowing
+`typeof(route)()` to reconstruct the same compile-time route value.
+"""
+struct Route{Fmatch, Tmatch, FT, varnames, aliases, F, T} <: AbstractWiring
+    from::F
+    to::T
+end
+
+"""
+Construct route wiring from endpoint references and variable mappings.
+
+Endpoint symbols are treated as already-resolved context names. Algorithm and
+state references are kept in the value fields until registry resolution.
+"""
+function Route(
+    from_to::Pair,
+    originalname_or_aliaspairs::Union{Symbol, Pair{Symbol, Symbol}, Pair{NTuple{N, Symbol}, Symbol}}...;
+    transform = nothing,
+) where {N}
     from, to = from_to
-    @assert (from isa ProcessEntity) || from <: ProcessEntity "Origin of a Route must be a ProcessAlgorithm or ProcessState. Got: $from"
-    @assert (to isa ProcessEntity) || to <: ProcessEntity "Target of a Route must be a ProcessAlgorithm or ProcessState. Got: $to"
+    _assert_route_endpoint(from, "Origin")
+    _assert_route_endpoint(to, "Target")
+
     completed_pairs = ntuple(length(originalname_or_aliaspairs)) do i
         item = originalname_or_aliaspairs[i]
         item isa Symbol ? item => item : item
@@ -25,18 +57,64 @@ function Route(from_to::Pair, originalname_or_aliaspairs::Union{Symbol, Pair{Sym
     varnames = first.(completed_pairs)
     aliases = last.(completed_pairs)
 
-    Fmatch = match_by(from)
-    Tmatch = match_by(to)
-
     @assert !isnothing(transform) ? (length(originalname_or_aliaspairs) == 1) : true "Transform-based routes must have exactly one variable mapping, but got $(originalname_or_aliaspairs)"
-    # @show typeof(from), typeof(to), Fmatch, Tmatch, transform Fmatch Tmatch
-    Route{typeof(from), typeof(to), transform, varnames, aliases, Fmatch, Tmatch}(from, to)
+
+    from_ref = _wiring_endpoint_ref(from)
+    to_ref = _wiring_endpoint_ref(to)
+    return Route{
+        _wiring_endpoint_match(from),
+        _wiring_endpoint_match(to),
+        transform,
+        varnames,
+        aliases,
+        typeof(from_ref),
+        typeof(to_ref),
+    }(from_ref, to_ref)
 end
 
-# AI
-function update_keys(r::Route, reg::NameSpaceRegistry)
-    newfrom = update_keys(getfrom(r), reg)
-    newto = update_keys(getto(r), reg)
+"""Construct a resolved route from its type parameters."""
+function Route{Fmatch, Tmatch, FT, varnames, aliases, Nothing, Nothing}() where {Fmatch, Tmatch, FT, varnames, aliases}
+    _assert_resolved_endpoint(Fmatch, "Route origin")
+    _assert_resolved_endpoint(Tmatch, "Route target")
+    return Route{Fmatch, Tmatch, FT, varnames, aliases, Nothing, Nothing}(nothing, nothing)
+end
+
+"""Validate route endpoints accepted by user-facing constructors."""
+function _assert_route_endpoint(endpoint, role::String)
+    endpoint isa Symbol && return nothing
+    endpoint isa ProcessEntity && return nothing
+    endpoint isa Type && endpoint <: ProcessEntity && return nothing
+    endpoint isa AbstractIdentifiableAlgo && return nothing
+    error("$role of a Route must be a Symbol, ProcessAlgorithm, ProcessState, or identifiable wrapper. Got: $endpoint")
+end
+
+"""Require resolved wiring endpoints to be context-name symbols."""
+function _assert_resolved_endpoint(endpoint, role::String)
+    endpoint isa Symbol && return nothing
+    error("$role endpoint must be resolved to a Symbol, got $endpoint.")
+end
+
+"""
+Resolve route endpoints against a registry and return target-keyed route wiring.
+
+The returned route carries only context-name symbols in its type parameters and
+stores no endpoint references.
+"""
+function resolve_wiring(reg::NameSpaceRegistry, r::R) where {R<:Route}
+    fromname = _resolve_wiring_endpoint(reg, from_match_by(r), getfrom(r), "origin")
+    toname = _resolve_wiring_endpoint(reg, to_match_by(r), getto(r), "target")
+
+    # Resolved routes are pure type data: endpoint refs are dropped so
+    # `typeof(route)()` reconstructs the same route without runtime lookup.
+    resolved = Route{fromname, toname, gettransform(r), getvarnames(r), getaliases(r), Nothing, Nothing}()
+    return toname => resolved
+end
+
+"""Update unresolved endpoint references against a parent registry."""
+function update_keys(r::R, reg::NameSpaceRegistry) where {R<:Route}
+    isresolved(r) && return r
+    newfrom = _update_wiring_endpoint(getfrom(r), from_match_by(r), reg)
+    newto = _update_wiring_endpoint(getto(r), to_match_by(r), reg)
     varnames = getvarnames(r)
     aliases = getaliases(r)
     mappings = ntuple(i -> varnames[i] == aliases[i] ? varnames[i] : (varnames[i] => aliases[i]), length(varnames))
@@ -52,28 +130,3 @@ end
         return summary(x)
     end
 end
-
-# function Base.show(io::IO, r::Route)
-#     print(io, "Route(", _route_endpoint_label(getfrom(r)), " -> ", _route_endpoint_label(getto(r)))
-
-#     vns = getvarnames(r)
-#     als = getaliases(r)
-#     if !isempty(vns)
-#         print(io, "; ")
-#         for i in eachindex(vns)
-#             print(io, vns[i])
-#             if als[i] != vns[i]
-#                 print(io, "=>", als[i])
-#             end
-#             if i < length(vns)
-#                 print(io, ", ")
-#             end
-#         end
-#     end
-
-#     t = getransform(r)
-#     if !isnothing(t)
-#         print(io, "; transform=", summary(t))
-#     end
-#     print(io, ")")
-# end

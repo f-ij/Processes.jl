@@ -175,7 +175,7 @@ function parse_la_input(laType::Type{LA}, args...) where {LA<:AbstractLoopAlgori
     options = tuple()
     if !isempty(args)
         options = tuple(args[1:end]...)
-        @assert all(x -> x isa AbstractOption || x isa Type{<:AbstractOption}, options) "All arguments after the ProcessStates must be options, but got: $(options)"
+        @assert all(x -> x isa Union{AbstractOption, AbstractWiring} || x isa Type{<:Union{AbstractOption, AbstractWiring}}, options) "All arguments after the ProcessStates must be options or wiring, but got: $(options)"
     end
     options = tuple(collected_options..., options...)
     return LoopAlgorithm(laType, processalgos, pstates, options, intervals_or_repeats)

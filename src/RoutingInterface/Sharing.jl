@@ -2,35 +2,54 @@
 ##################  SHARES  ####################
 ################################################
 
-get_firstalgo(s::Share) = s.algo1
-get_secondalgo(s::Share) = s.algo2
-is_directional(s::Share) = s.directional
+"""Return the first unresolved share endpoint reference."""
+get_firstalgo(s::Share) = getfield(s, :a1)
 
+"""Return the second unresolved share endpoint reference."""
+get_secondalgo(s::Share) = getfield(s, :a2)
 
-function Share(algo1, algo2; directional::Bool=false)
-    Share{typeof(algo1), typeof(algo2)}(algo1, algo2, directional)
+"""Return the first share endpoint matcher identity or resolved name."""
+first_match_by(::Union{Share{from}, Type{<:Share{from}}}) where {from} = from
+
+"""Return the second share endpoint matcher identity or resolved name."""
+second_match_by(::Union{Share{from, to}, Type{<:Share{from, to}}}) where {from, to} = to
+
+"""Return whether the share is directional."""
+is_directional(::Union{Share{from, to, directional}, Type{<:Share{from, to, directional}}}) where {from, to, directional} = directional
+
+"""Return whether a share has already been resolved to context-name symbols."""
+isresolved(s::Union{Share{from, to}, Type{<:Share{from, to}}}) where {from, to} =
+    from isa Symbol && to isa Symbol
+
+"""Return the source context name for a resolved share."""
+contextname(::Union{Share{from}, Type{<:Share{from}}}) where {from} = from
+
+contextname(::Any) = nothing
+
+"""
+Resolve share wiring into target-keyed resolved share values.
+
+Bidirectional shares produce one resolved share for each direction.
+"""
+function resolve_wiring(reg::NameSpaceRegistry, s::S) where {S<:Share}
+    pairs = resolve_wiring_pairs(reg, s)
+    return (; pairs...)
 end
 
-function update_keys(s::Share, reg::NameSpaceRegistry)
-    newalgo1 = update_keys(get_firstalgo(s), reg)
-    newalgo2 = update_keys(get_secondalgo(s), reg)
-    Share(newalgo1, newalgo2; directional = is_directional(s))
+"""Resolve share wiring into target-keyed pairs for tuple-recursive grouping."""
+function resolve_wiring_pairs(reg::NameSpaceRegistry, s::S) where {S<:Share}
+    fromname = _resolve_wiring_endpoint(reg, first_match_by(s), get_firstalgo(s), "share origin")
+    toname = _resolve_wiring_endpoint(reg, second_match_by(s), get_secondalgo(s), "share target")
+    forward = Share{fromname, toname, is_directional(s), Nothing, Nothing}()
+    is_directional(s) && return (toname => forward,)
+    backward = Share{toname, fromname, is_directional(s), Nothing, Nothing}()
+    return (toname => forward, fromname => backward)
 end
 
-function to_sharedcontext(reg::NameSpaceRegistry, s::Share)
-    names = (static_findkey(reg, s.algo1), static_findkey(reg, s.algo2))
-    if any(isnothing, names)
-        available = all_keys(reg)
-        available_str = isempty(available) ? "<none>" : join(string.(available), ", ")
-        msg = "Share references algo(s) not found in registry.\n" *
-              "Requested: " * string(s.algo1) * " (type: " * string(typeof(s.algo1)) * "), " *
-              string(s.algo2) * " (type: " * string(typeof(s.algo2)) * ")\n" *
-              "Available names: " * available_str
-        error(msg)
-    end
-    nt = (; names[1] => SharedContext{ names[2] }())
-    if !s.directional
-        nt = (; nt..., names[2] => SharedContext{ names[1] }())
-    end
-    return nt
+"""Update unresolved share endpoints against a parent registry."""
+function update_keys(s::S, reg::NameSpaceRegistry) where {S<:Share}
+    isresolved(s) && return s
+    newfirst = _update_wiring_endpoint(get_firstalgo(s), first_match_by(s), reg)
+    newsecond = _update_wiring_endpoint(get_secondalgo(s), second_match_by(s), reg)
+    return Share(newfirst, newsecond; directional = is_directional(s))
 end

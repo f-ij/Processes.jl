@@ -2,6 +2,7 @@ abstract type SteppableAlgorithm end
 
 abstract type ProcessAlgorithm <: SteppableAlgorithm end
 abstract type AbstractOption end
+abstract type AbstractWiring end
 abstract type ProcessState <: AbstractOption end
 abstract type ParserOption end
 
@@ -40,7 +41,7 @@ struct LoopAlgorithm{Plan, S, O, R, C, Inits, Overrides, id} <: AbstractLoopAlgo
 end
 
 """
-Attach a route/share option to the local plan node that emitted it.
+Attach route/share wiring to the local plan node that emitted it.
 
 Plain `Route` and `Share` values are top-level plan routing metadata. The DSL
 uses this wrapper when a route/share belongs to a specific statement-local child
@@ -48,29 +49,43 @@ plan, including cases where the endpoint is nested or state-owned. Constructor
 parsing keeps the option with that local plan node while preserving the original
 option for normal route resolution.
 """
-struct LocalPlanOption{Owner, Option} <: AbstractOption
+struct LocalPlanOption{Owner, Option} <: AbstractWiring
     owner::Owner
     option::Option
 end
 
 """
-Resolved route/share wiring for one child step.
+Route and share sets passed through plan construction and execution.
 
-The concrete type parameters are the important part: `SharedContexts` and
-`SharedVars` are tuples of already-resolved backend routing objects, and
-`ChildWiring` is the nested per-child routing tuple for loop-algorithm children.
-`SubContextView` construction and nested plan stepping can therefore specialize
-on routing at compile time instead of resolving raw `Route`/`Share` options
-during every `step!`.
+`routes` and `shares` are kept in separate fields so generated view code can
+specialize on the route and share tuples without filtering mixed values.
 """
-struct StepRouting{SharedContexts, SharedVars, ChildWiring}
-    sharedcontexts::SharedContexts
-    sharedvars::SharedVars
-    childwiring::ChildWiring
+struct Wiring{Routes, Shares} <: AbstractWiring
+    routes::Routes
+    shares::Shares
 end
 
-StepRouting(sharedcontexts, sharedvars) = StepRouting(sharedcontexts, sharedvars, ())
-StepRouting() = StepRouting((), (), ())
+Wiring(routes::Routes, shares::Shares) where {Routes<:Tuple, Shares<:Tuple} = Wiring{Routes, Shares}(routes, shares)
+Wiring() = Wiring((), ())
+
+"""
+Plan-level wiring propagated through composite and routine execution.
+
+`global_wiring` records grouped plan-global wiring for inspection and
+propagation during resolution. After resolution, global wiring is already
+inlaid into the concrete child `Wiring` buckets. `child_wiring` is indexed by
+child position and contains the exact wiring value passed to that child:
+`Wiring` for concrete executable children and `PlanWiring` for nested loop
+plans.
+"""
+struct PlanWiring{GlobalWiring, ChildWiring} <: AbstractWiring
+    global_wiring::GlobalWiring
+    child_wiring::ChildWiring
+end
+
+PlanWiring(global_wiring::GlobalWiring, child_wiring::ChildWiring) where {GlobalWiring, ChildWiring<:Tuple} =
+    PlanWiring{GlobalWiring, ChildWiring}(global_wiring, child_wiring)
+PlanWiring() = PlanWiring(Wiring(), ())
 
 Base.iterate(la::ALA) where {ALA<:AbstractLoopAlgorithm} = iterate(getalgos(la))
 

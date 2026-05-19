@@ -1,59 +1,52 @@
-#=
-Resolving goes from Share and Route objects to SharedContext and SharedVars objects
-    i.e. from ***user-facing routing/sharing definitions to backend definitions***
-=#
-
 ################################################
 #################  RESOLVING  ##################
 ################################################
-@inline resolve(reg::NameSpaceRegistry, options...) = @inline resolve_options(reg, options...)
 
-function resolve_options(reg::NameSpaceRegistry)
+@inline resolve(reg::NameSpaceRegistry, wiring...) = @inline resolve_options(reg, wiring...)
+
+"""Resolve no wiring into an empty named tuple."""
+function resolve_options(reg::R) where {R<:NameSpaceRegistry}
     return (;)
 end
 
-"""
-From a collection of Share objects
-Construct a namedtuple of (;target_namespace => SharedContext{origin_namespace},...)
-Bi-directional shares are represented twice
-"""
-function resolve_options(reg::NameSpaceRegistry, shares::Share...)
-    if isempty(shares)
-        return (;)
-    end
-    # all_sharedcontexts = merge(to_sharedcontext.(Ref(reg), shares)...)
-    # return all_sharedcontexts
-    named_flat_collect_broadcast(shares) do s
-        to_sharedcontext(reg, s)
-    end
+"""Append one resolved wiring item to a target-keyed named tuple."""
+@inline function _append_resolved_wiring(grouped::NamedTuple, resolved::Pair)
+    name = first(resolved)
+    item = last(resolved)
+    return (; grouped..., name => (get(grouped, name, ())..., item))
+end
+
+"""Append resolved wiring pairs while preserving target-key groups."""
+@inline _append_resolved_wiring(grouped::NamedTuple, resolved::Tuple{}) = grouped
+@inline function _append_resolved_wiring(grouped::NamedTuple, resolved::Resolved) where {Resolved<:Tuple}
+    grouped = _append_resolved_wiring(grouped, first(resolved))
+    return _append_resolved_wiring(grouped, Base.tail(resolved))
 end
 
 """
-From a collection of Route objects
-Construct a namedtuple of (;target_namespace => SharedVars{origin_namespace, varnames, aliases},...)
+Resolve share wiring and group resolved shares by target context name.
 """
-@inline function resolve_options(reg::NameSpaceRegistry, routes::Route...)
-    if isempty(routes)
-        return (;)
-    end
-    # @show routes
-    # return map(route -> to_sharedvar(reg, route), routes)
-    named_routes = (;)
-    named_routes = unrollreplace(named_routes, routes) do named_routes, route
-        this_one = resolve_options(reg, route)
-        name = first(keys(this_one))
-        merged = (get(named_routes, name, tuple())..., this_one[1][1])
-        (;named_routes..., name => merged)
-    end
-    # named_routes = resolve_options.(Ref(reg), routes)
-    return named_routes
+function resolve_options(reg::R, shares::Share...) where {R<:NameSpaceRegistry}
+    return _resolve_share_options(reg, shares, (;))
+end
+
+"""Resolve share wiring with tuple recursion."""
+@inline _resolve_share_options(reg::NameSpaceRegistry, shares::Tuple{}, grouped::NamedTuple) = grouped
+@inline function _resolve_share_options(reg::R, shares::Shares, grouped::NamedTuple) where {R<:NameSpaceRegistry, Shares<:Tuple}
+    grouped = _append_resolved_wiring(grouped, resolve_wiring_pairs(reg, first(shares)))
+    return _resolve_share_options(reg, Base.tail(shares), grouped)
 end
 
 """
-Go from single route to SharedVar
-    Also gives the target subcontext name for the route as a namedtuple key
+Resolve route wiring and group resolved routes by target context name.
 """
-@inline function resolve_options(reg::NameSpaceRegistry, route::R) where R <: Route
-    tosubcontextname, sharedvar = to_sharedvar(reg, route)
-    return (;tosubcontextname => tuple(sharedvar))
+@inline function resolve_options(reg::R, routes::Route...) where {R<:NameSpaceRegistry}
+    return _resolve_route_options(reg, routes, (;))
+end
+
+"""Resolve route wiring with tuple recursion."""
+@inline _resolve_route_options(reg::NameSpaceRegistry, routes::Tuple{}, grouped::NamedTuple) = grouped
+@inline function _resolve_route_options(reg::R, routes::Routes, grouped::NamedTuple) where {R<:NameSpaceRegistry, Routes<:Tuple}
+    grouped = _append_resolved_wiring(grouped, resolve_wiring(reg, first(routes)))
+    return _resolve_route_options(reg, Base.tail(routes), grouped)
 end

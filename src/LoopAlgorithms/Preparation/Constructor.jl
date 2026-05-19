@@ -21,7 +21,7 @@ its inner loop is materialized.
 
     registry, keyed_la = setup_registry_and_keyed_algos(la)
     keyed_la = attach_registry_to_tree(keyed_la, registry)
-    keyed_la = resolve_step_wiring(keyed_la, registry)
+    keyed_la = resolve_plan_wiring(keyed_la, registry)
     return setoptions(keyed_la, _root_loop_options(_unresolved_options(la)))
 end
 
@@ -90,61 +90,115 @@ end
     return finalstep(attach_registry_to_tree(inneralgorithm(fa), registry), finalfunction(fa))
 end
 
-@inline resolve_step_wiring(la, ::NameSpaceRegistry) = la
+@inline resolve_plan_wiring(la, ::NameSpaceRegistry) = la
 
-@inline function resolve_step_wiring(la::LoopAlgorithm, registry::NameSpaceRegistry)
-    return setfield(la, :plan, resolve_step_wiring(getplan(la), registry))
+@inline function resolve_plan_wiring(la::LoopAlgorithm, registry::NameSpaceRegistry)
+    return setfield(la, :plan, _resolve_plan_wiring_tree(getplan(la), registry, (;)))
 end
 
-function resolve_step_wiring(la::Union{CompositeAlgorithm, Routine}, registry::NameSpaceRegistry)
-    funcs = map(getalgos(la)) do func
-        func isa AbstractLoopAlgorithm ? resolve_step_wiring(func, registry) : func
+"""Resolve a plan tree and inlay inherited global wiring into concrete children."""
+function _resolve_plan_wiring_tree(la::LA, registry::NameSpaceRegistry, inherited_global::NamedTuple) where {LA<:Union{CompositeAlgorithm, Routine}}
+    raw_wiring = getwiring(la)
+
+    # Global wiring is grouped by resolved target namespace once per plan node.
+    # Child buckets below receive the relevant global wiring already inlaid, so
+    # `step!` never has to merge plan-global and child-specific wiring.
+    own_global = _resolve_wiring_grouped(registry, global_wiring(raw_wiring))
+    combined_global = _merge_global_wiring(inherited_global, own_global)
+
+    # Resolve nested plans first. Their own `PlanWiring` then becomes the
+    # child-indexed value passed to that child during parent stepping.
+    funcs = ntuple(length(getalgos(la))) do i
+        child = getalgo(la, i)
+        if child isa AbstractLoopAlgorithm
+            return _resolve_plan_wiring_tree(child, registry, combined_global)
+        elseif child isa AbstractIdentifiableAlgo{<:AbstractLoopAlgorithm}
+            resolved_child = _resolve_plan_wiring_tree(getalgo(child), registry, combined_global)
+            return setfield(child, :func, resolved_child)
+        end
+        return child
     end
     la = rebuild_loopalgorithm_funcs(la, funcs)
 
-    funcs = getalgos(la)
-    plan_wiring = getfield(la, :plan_wiring)
-    local_wiring = getfield(la, :local_wiring)
-    step_wiring = ntuple(length(funcs)) do i
+    resolved_children = ntuple(length(funcs)) do i
         child = funcs[i]
-        child_wiring = child isa AbstractLoopAlgorithm ? _plan_step_wiring(child) :
-            child isa AbstractIdentifiableAlgo{<:AbstractLoopAlgorithm} ? _plan_step_wiring(getalgo(child)) :
-            ()
         if child isa AbstractLoopAlgorithm || child isa AbstractIdentifiableAlgo{<:AbstractLoopAlgorithm}
-            isempty(local_wiring[i]) || error("Local plan wiring $(local_wiring[i]) was assigned to nested plan child $(child), which has no root context key. Attach the route/share to a concrete child inside the nested plan.")
-            return StepRouting((), (), child_wiring)
+            return child isa AbstractLoopAlgorithm ? getwiring(child) : getwiring(getalgo(child))
         end
-        target_key = getkey(registry[child])
+        target = getkey(child)
+        bucket = getfield(child_wiring(raw_wiring), i)
 
-        plan_sharedcontexts = get(resolve_options(registry, typefilter(Share, plan_wiring)...), target_key, ())
-        local_sharedcontexts = get(resolve_options(registry, typefilter(Share, local_wiring[i])...), target_key, ())
-        plan_sharedcontexts = plan_sharedcontexts isa Tuple ? plan_sharedcontexts : (plan_sharedcontexts,)
-        local_sharedcontexts = local_sharedcontexts isa Tuple ? local_sharedcontexts : (local_sharedcontexts,)
-
-        plan_sharedvars = get(resolve_options(registry, typefilter(Route, plan_wiring)...), target_key, ())
-        local_sharedvars = get(resolve_options(registry, typefilter(Route, local_wiring[i])...), target_key, ())
-        local_aliases = mapreduce(localnames, (a, b) -> (a..., b...), local_sharedvars; init = ())
-        sharedvars = (
-            filter(sv -> !any(alias -> alias in local_aliases, localnames(sv)), plan_sharedvars)...,
-            local_sharedvars...,
-        )
-
-        StepRouting((plan_sharedcontexts..., local_sharedcontexts...), sharedvars, child_wiring)
+        # Concrete children receive a single resolved `Wiring`: inherited global
+        # wiring for their namespace, occluded by child-scoped routes.
+        target_global = get(combined_global, target, Wiring())
+        target_child = _resolve_child_wiring_bucket(registry, bucket, target)
+        resolved = merge_wiring(target_global, target_child)
+        return resolved
     end
-    return setfield(la, :step_wiring, step_wiring)
+
+    return setfield(la, :wiring, PlanWiring(combined_global, resolved_children))
 end
 
-@inline function resolve_step_wiring(fa::FA, registry::NameSpaceRegistry) where {FA<:FinalizedAlgorithm}
-    return finalstep(resolve_step_wiring(inneralgorithm(fa), registry), finalfunction(fa))
+@inline function resolve_plan_wiring(fa::FA, registry::NameSpaceRegistry) where {FA<:FinalizedAlgorithm}
+    return finalstep(resolve_plan_wiring(inneralgorithm(fa), registry), finalfunction(fa))
 end
 
+"""Append target-keyed `Wiring` groups for a tuple of namespace keys."""
+@inline _append_wiring_group_keys(grouped::NamedTuple, ::Tuple{}, route_groups::NamedTuple, share_groups::NamedTuple) = grouped
+@inline function _append_wiring_group_keys(grouped::NamedTuple, keys::Keys, route_groups::NamedTuple, share_groups::NamedTuple) where {Keys<:Tuple}
+    key = first(keys)
+    if key in propertynames(grouped)
+        return _append_wiring_group_keys(grouped, Base.tail(keys), route_groups, share_groups)
+    end
+    bucket = Wiring(get(route_groups, key, ()), get(share_groups, key, ()))
+    return _append_wiring_group_keys((; grouped..., key => bucket), Base.tail(keys), route_groups, share_groups)
+end
+
+"""Resolve a `Wiring` bucket and group it by target namespace."""
+function _resolve_wiring_grouped(registry::NameSpaceRegistry, wiring::Wiring)
+    share_groups = resolve_options(registry, shares(wiring)...)
+    route_groups = resolve_options(registry, routes(wiring)...)
+    grouped = _append_wiring_group_keys((;), propertynames(share_groups), route_groups, share_groups)
+    return _append_wiring_group_keys(grouped, propertynames(route_groups), route_groups, share_groups)
+end
+
+"""Return already grouped global wiring unchanged."""
+_resolve_wiring_grouped(::NameSpaceRegistry, grouped::NamedTuple) = grouped
+
+"""Append merged global wiring for a tuple of namespace keys."""
+@inline _append_merged_global_keys(merged::NamedTuple, ::Tuple{}, left::NamedTuple, right::NamedTuple) = merged
+@inline function _append_merged_global_keys(merged::NamedTuple, keys::Keys, left::NamedTuple, right::NamedTuple) where {Keys<:Tuple}
+    key = first(keys)
+    if key in propertynames(merged)
+        return _append_merged_global_keys(merged, Base.tail(keys), left, right)
+    end
+    bucket = merge_wiring(get(left, key, Wiring()), get(right, key, Wiring()))
+    return _append_merged_global_keys((; merged..., key => bucket), Base.tail(keys), left, right)
+end
+
+"""Merge grouped global wiring, with right-side route aliases occluding left."""
+function _merge_global_wiring(left::NamedTuple, right::NamedTuple)
+    merged = _append_merged_global_keys((;), propertynames(left), left, right)
+    return _append_merged_global_keys(merged, propertynames(right), left, right)
+end
+
+"""Resolve a child wiring bucket for one concrete target namespace."""
+function _resolve_child_wiring_bucket(registry::NameSpaceRegistry, bucket::Wiring, target::Symbol)
+    grouped = _resolve_wiring_grouped(registry, bucket)
+    return get(grouped, target, Wiring())
+end
+
+"""Collect unresolved options from nested child plan nodes."""
+@inline _plan_tree_child_options(::Tuple{}) = ()
+@inline function _plan_tree_child_options(children::Children) where {Children<:Tuple}
+    child = first(children)
+    head_options = child isa AbstractLoopAlgorithm ? _plan_tree_options(child) : ()
+    return (head_options..., _plan_tree_child_options(Base.tail(children))...)
+end
+
+"""Collect unresolved options stored throughout one plan tree."""
 function _plan_tree_options(la::LA) where {LA<:AbstractLoopAlgorithm}
-    nested = mapreduce(
-        child -> child isa AbstractLoopAlgorithm ? _plan_tree_options(child) : (),
-        (a, b) -> (a..., b...),
-        getalgos(la);
-        init = (),
-    )
+    nested = _plan_tree_child_options(getalgos(la))
     return (getoptions(la)..., nested...)
 end
 
@@ -154,16 +208,38 @@ end
 @inline _unresolved_options(la::LA) where {LA<:AbstractLoopAlgorithm} = _plan_tree_options(la)
 
 @inline function _resolve_options(la::LA) where {LA<:AbstractLoopAlgorithm}
-    options = _unresolved_options(la)
-    if length(options) >= 2 && options[end-1] isa NamedTuple && options[end] isa NamedTuple
-        return options[end-1], options[end]
+    resolved = resolve(la)
+    return _resolved_wiring_maps(getwiring(resolved))
+end
+
+"""Collect resolved share and route maps from plan wiring for inspection."""
+function _resolved_wiring_maps(wiring::PlanWiring)
+    share_map = (;)
+    route_map = (;)
+    for target in propertynames(global_wiring(wiring))
+        bucket = getproperty(global_wiring(wiring), target)
+        share_map = (; share_map..., target => _append_unique_wiring_values(get(share_map, target, ()), shares(bucket)))
+        route_map = (; route_map..., target => _append_unique_wiring_values(get(route_map, target, ()), routes(bucket)))
     end
-
-    registry = getregistry(resolve(la))
-    routes = typefilter(Route, options)
-    shares = typefilter(Share, options)
-
-    sharedcontexts = resolve_options(registry, shares...)
-    sharedvars = resolve_options(registry, routes...)
-    return sharedcontexts, sharedvars
+    for bucket in child_wiring(wiring)
+        if bucket isa PlanWiring
+            child_share_map, child_route_map = _resolved_wiring_maps(bucket)
+            for target in propertynames(child_share_map)
+                share_map = (; share_map..., target => _append_unique_wiring_values(get(share_map, target, ()), getproperty(child_share_map, target)))
+            end
+            for target in propertynames(child_route_map)
+                route_map = (; route_map..., target => _append_unique_wiring_values(get(route_map, target, ()), getproperty(child_route_map, target)))
+            end
+            continue
+        end
+        for route in routes(bucket)
+            target = to_match_by(route)
+            route_map = (; route_map..., target => _append_unique_wiring_values(get(route_map, target, ()), (route,)))
+        end
+        for share in shares(bucket)
+            target = second_match_by(share)
+            share_map = (; share_map..., target => _append_unique_wiring_values(get(share_map, target, ()), (share,)))
+        end
+    end
+    return share_map, route_map
 end

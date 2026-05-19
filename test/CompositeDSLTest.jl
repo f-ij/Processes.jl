@@ -235,16 +235,18 @@ end
         @test algo isa Processes.LoopAlgorithm
         plan = Processes.getplan(algo)
         @test length(Processes.getoptions(plan, Processes.Route)) == 2
-        @test length(getfield(plan, :plan_wiring)) == 1
-        @test length(getfield(plan, :local_wiring)[1]) == 1
-        @test isempty(getfield(plan, :local_wiring)[2])
+        plan_wiring = Processes.getwiring(plan)
+        @test length(Processes.routes(Processes.global_wiring(plan_wiring))) == 1
+        @test length(Processes.routes(Processes.child_wiring(plan_wiring)[1])) == 1
+        @test isempty(Processes.child_wiring(plan_wiring)[2])
 
         resolved = resolve(algo)
         @test isempty(Processes.getoptions(resolved, Processes.Route))
-        @test length(getfield(Processes.getplan(resolved), :plan_wiring)) == 1
-        step_wiring = getfield(Processes.getplan(resolved), :step_wiring)
-        sink_routes = @inferred Processes.routing_sharedvars(step_wiring[2])
-        @test step_wiring[2] isa Processes.StepRouting
+        resolved_wiring = Processes.getwiring(Processes.getplan(resolved))
+        @test length(propertynames(Processes.global_wiring(resolved_wiring))) == 1
+        step_wiring = Processes.child_wiring(resolved_wiring)
+        sink_routes = @inferred Processes.routes(step_wiring[2])
+        @test step_wiring[2] isa Processes.Wiring
         @test length(sink_routes) == 1
         @test Processes.localnames(only(sink_routes)) == (:value,)
 
@@ -267,8 +269,8 @@ end
         end
 
         resolved = resolve(algo)
-        step_wiring = getfield(Processes.getplan(resolved), :step_wiring)
-        sink_routes = @inferred Processes.routing_sharedvars(step_wiring[2])
+        step_wiring = Processes.child_wiring(Processes.getwiring(Processes.getplan(resolved)))
+        sink_routes = @inferred Processes.routes(step_wiring[2])
         @test length(sink_routes) == 1
         @test Processes.subvarcontextnames(only(sink_routes)) == (:passthrough,)
 

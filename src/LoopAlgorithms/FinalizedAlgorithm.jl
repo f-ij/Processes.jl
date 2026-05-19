@@ -57,6 +57,7 @@ end
 @inline getalgo(fa::FinalizedAlgorithm, idx) = getalgo(inneralgorithm(fa), idx)
 @inline getstates(fa::FinalizedAlgorithm) = getstates(inneralgorithm(fa))
 @inline getoptions(fa::FinalizedAlgorithm) = getoptions(inneralgorithm(fa))
+@inline getwiring(fa::FinalizedAlgorithm) = getwiring(inneralgorithm(fa))
 @inline getregistry(fa::FinalizedAlgorithm) = getregistry(inneralgorithm(fa))
 @inline isresolved(fa::FinalizedAlgorithm) = isresolved(inneralgorithm(fa))
 @inline getid(fa::FinalizedAlgorithm) = getid(inneralgorithm(fa))
@@ -79,9 +80,9 @@ end
 @inline reset!(fa::FinalizedAlgorithm) = reset!(inneralgorithm(fa))
 @inline step!(fa::FinalizedAlgorithm, context::C, typestable::S = Stable()) where {C<:AbstractContext, S} =
     error("FinalizedAlgorithm step! requires explicit step wiring, process, and lifetime. Call step!(fa, context, step_wiring, process, lifetime, stability).")
-@inline step!(fa::FinalizedAlgorithm, context::C, step_wiring::SW, typestable::S = Stable()) where {C<:AbstractContext, SW<:Tuple, S} =
+@inline step!(fa::FinalizedAlgorithm, context::C, step_wiring::PlanWiring, typestable::S = Stable()) where {C<:AbstractContext, S} =
     error("FinalizedAlgorithm step! requires explicit process and lifetime. Call step!(fa, context, step_wiring, process, lifetime, stability).")
-@inline step!(fa::FinalizedAlgorithm, context::C, step_wiring::SW, process::P, lifetime::LT, typestable::S = Stable()) where {C<:AbstractContext, SW<:Tuple, P<:AbstractProcess, LT<:Lifetime, S} =
+@inline step!(fa::FinalizedAlgorithm, context::C, step_wiring::PlanWiring, process::P, lifetime::LT, typestable::S = Stable()) where {C<:AbstractContext, P<:AbstractProcess, LT<:Lifetime, S} =
     step!(inneralgorithm(fa), context, step_wiring, process, lifetime, typestable)
 @inline cleanup(fa::FinalizedAlgorithm, context) = cleanup(inneralgorithm(fa), context)
 
