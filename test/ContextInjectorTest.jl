@@ -23,11 +23,11 @@ using Processes
     @test getkey(algo[:_injector]) == :_injector
     @test length(context._injector.buffer) == 1
 
-    context = Processes.step!(algo, context, Processes.Unstable())
+    context = Processes._step!(algo, context, Processes.Unstable())
     @test context.target.value == 1.0
     @test length(context._injector.buffer) == 1
 
-    context = Processes.step!(algo, context, Processes.Stable())
+    context = Processes._step!(algo, context, Processes.Stable())
     @test context.target.value == 2.0
     @test isempty(context._injector.buffer)
 
@@ -59,13 +59,13 @@ end
     @test ref[] == 1.0
     @test length(context._injector.buffer) == 1
 
-    context = Processes.step!(algo[:_injector], context, Processes.Stable())
+    context = Processes.step!(algo[:_injector], context)
     @test ref[] == 4.0
     @test isempty(context._injector.buffer)
 
     typed_ref = view(context, Var(InteractiveVarTargetForTest, :value); injector = :_injector)
     typed_ref[] = 5
-    context = Processes.step!(algo[:_injector], context, Processes.Stable())
+    context = Processes.step!(algo[:_injector], context)
     @test typed_ref[] == 5.0
 end
 
@@ -103,7 +103,7 @@ end
     push!(context._injector.buffer, Processes.BufferedContextUpdate(:missing_target, :value, 2.0))
     push!(context._injector.buffer, Processes.BufferedContextUpdate(:target, :missing_value, 3.0))
 
-    @test_throws Exception Processes.step!(algo[:_injector], context, Processes.Stable())
+    @test_throws Exception Processes.step!(algo[:_injector], context)
     @test context.target.value == 1.0
 end
 

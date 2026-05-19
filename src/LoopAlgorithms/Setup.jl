@@ -118,13 +118,12 @@ function parse_la_input(laType::Type{LA}, args...) where {LA<:AbstractLoopAlgori
             end
             args = args[2:end] # Remove the intervals from the arguments list for further processing
         elseif iscomposite(laType)
-            intervals_or_repeats = IntervalOnes{length(processalgos)}
-            intervals_or_repeats = ntuple(i -> round(Int, intervals_or_repeats[i]), length(processalgos))
+            intervals_or_repeats = ntuple(_ -> Interval(1), length(processalgos))
 
         end
 
     elseif iscomposite(laType)
-        intervals_or_repeats = IntervalOnes{length(processalgos)}
+        intervals_or_repeats = ntuple(_ -> Interval(1), length(processalgos))
     else
         error("For routines, please pass the number of repeats after all ProcessAlgorithms as a tuple, even if it's just one repeat, e.g. (10,). Got: $firstargs")
     end
@@ -133,9 +132,6 @@ function parse_la_input(laType::Type{LA}, args...) where {LA<:AbstractLoopAlgori
     if iscomposite(laType)
 
         processalgos, intervals_or_repeats = flatten_comp_funcs(processalgos, tuple(intervals_or_repeats...))
-        if all(x -> x == 1, intervals_or_repeats)
-            intervals_or_repeats = IntervalOnes{length(processalgos)}
-        end
     end
 
     ######### PROCESS STATES #########

@@ -40,8 +40,20 @@ using Processes
 
     route_a = Route{:a, :target, nothing, (:x,), (:value,), Nothing, Nothing}()
     route_b = Route{:b, :target, nothing, (:y,), (:value,), Nothing, Nothing}()
+    share_a = Share{:a, :target, true, Nothing, Nothing}()
     merged = Processes.merge_wiring(Processes.Wiring((route_a,), ()), Processes.Wiring((route_b,), ()))
     @test Processes.routes(merged) == (route_b,)
+
+    typed_wiring = Processes.Wiring{Tuple{typeof(route_a)}, Tuple{typeof(share_a)}}()
+    @test typed_wiring == Processes.Wiring((route_a,), (share_a,))
+    @test typeof(typed_wiring)() == typed_wiring
+
+    grouped_wiring = NamedTuple{(:target,), Tuple{typeof(typed_wiring)}}
+    typed_plan_wiring = Processes.PlanWiring{grouped_wiring, Tuple{typeof(typed_wiring)}}()
+    @test Processes.global_wiring(typed_plan_wiring).target == typed_wiring
+    @test Processes.child_wiring(typed_plan_wiring) == (typed_wiring,)
+    @test typeof(typed_plan_wiring)() == typed_plan_wiring
+    @test Processes.wiring_from_type(typeof(typed_plan_wiring)) == typed_plan_wiring
 
     plan = CompositeAlgorithm(
         WiringSource,

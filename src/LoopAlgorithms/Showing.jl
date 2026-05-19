@@ -43,28 +43,6 @@ function Base.show(io::IO, ca::CompositeAlgorithm)
     end
 end
 
-function Base.show(io::IO, sa::SimpleAlgo)
-    funcs = getalgos(sa)
-    if isempty(funcs)
-        print(io, "SimpleAlgo (empty)")
-        return
-    end
-    println(io, "SimpleAlgo")
-    limit = get(io, :limit, false)
-    for (idx, f) in enumerate(funcs)
-        func_str = repr(f; context = IOContext(io, :limit => limit))
-        lines = split(func_str, '\n')
-        print(io, "  | ", lines[1])
-        for line in Iterators.drop(lines, 1)
-            print(io, "\n  |   ", line)
-        end
-        if idx < length(funcs)
-            print(io, "\n")
-        end
-    end
-end
-
-
 function Base.show(io::IO, r::Routine)
     println(io, "Routine")
     funcs = getalgos(r)
@@ -155,42 +133,6 @@ function Base.show(io::IO, caT::Type{<:CompositeAlgorithm})
     end
     labels = _composite_algo_type_labels(ft.parameters)
     print(io, "CompositeAlgorithm(", join(labels, ", "), ")")
-end
-
-function Base.summary(io::IO, sa::SimpleAlgo)
-    funcs = getalgos(sa)
-    if isempty(funcs)
-        print(io, "SimpleAlgo (empty)")
-        return
-    end
-    println(io, "SimpleAlgo")
-    limit = get(io, :limit, false)
-    for (idx, f) in enumerate(funcs)
-        func_str = repr(f; context = IOContext(io, :limit => limit))
-        lines = split(func_str, '\n')
-        print(io, "  | ", lines[1])
-        for line in Iterators.drop(lines, 1)
-            print(io, "\n  |   ", line)
-        end
-        if idx < length(funcs)
-            print(io, "\n")
-        end
-    end
-end
-
-function Base.show(io::IO, saT::Type{<:SimpleAlgo})
-    dt = Base.unwrap_unionall(saT)
-    if length(dt.parameters) == 0
-        print(io, "SimpleAlgo")
-        return
-    end
-    ft = dt.parameters[1]
-    if ft isa TypeVar
-        print(io, "SimpleAlgo")
-        return
-    end
-    labels = _composite_algo_type_labels(ft.parameters)
-    print(io, "SimpleAlgo(", join(labels, ", "), ")")
 end
 
 function Base.summary(io::IO, r::Routine)

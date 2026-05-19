@@ -97,9 +97,9 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
         close(process)
     end
 
-    shape_result = run(init(SimpleAlgo(RuntimeShapeChanger(0))); lifetime = Repeat(0))
+    shape_result = run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(0))
     @test runtime_shape_context(Processes.context(shape_result)).added == 1
-    @test_throws Exception run(init(SimpleAlgo(RuntimeShapeChanger(0))); lifetime = Repeat(2))
+    @test_throws Exception run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(2))
 
     pause_algo = @CompositeAlgorithm begin
         @input delta::Int

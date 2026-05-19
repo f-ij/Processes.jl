@@ -50,7 +50,7 @@ end
 
     @test context(p)[TypeInputAccumulator].value == 6
 
-    unresolved = SimpleAlgo(TypeInputAccumulator)
+    unresolved = CompositeAlgorithm(TypeInputAccumulator)
     @test_throws ArgumentError Processes.resolve_process_inputs_overrides(
         unresolved,
         (Input(TypeInputAccumulator, :start => 4),),

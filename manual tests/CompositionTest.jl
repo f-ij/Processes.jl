@@ -6,7 +6,7 @@ const cf = Fdup
 Fdup2 = Unique(Fib)
 Ldup = Unique(Luc)
 
-Simple = SimpleAlgo(Fib)
+Simple = CompositeAlgorithm(Fib)
 pack = package(Simple)
 
 Simple = CompositeAlgorithm(Fib, Fib(), Ldup)

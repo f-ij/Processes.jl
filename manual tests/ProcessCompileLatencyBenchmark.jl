@@ -44,7 +44,7 @@ function one_trial()
     rows = Pair{String,Float64}[]
 
     algo = timed_stage!(rows, "algo construction") do
-        SimpleAlgo(CompileBenchStep)
+        CompositeAlgorithm(CompileBenchStep)
     end
 
     resolved_algo = timed_stage!(rows, "algo resolve") do

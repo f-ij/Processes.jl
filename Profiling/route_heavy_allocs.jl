@@ -17,22 +17,25 @@ end
 
 function route_heavy_after_bootstrap(algo::A, lifetime::LT) where {A<:Processes.AbstractLoopAlgorithm, LT}
     process, stored_context, runtime_context = route_heavy_runtime_context(algo, lifetime)
-    step_wiring = Processes._plan_step_wiring(algo)
-    runtime_context = Processes.step!(algo, runtime_context, step_wiring, Processes.Unstable())
+    step_wiring = Processes.getwiring(algo)
+    runtime_context = Processes._step!(algo, runtime_context, step_wiring, process, lifetime, Processes.Unstable())
     Processes.tick!(process)
     Processes.inc!(process)
     return process, stored_context, step_wiring, runtime_context
 end
 
-function route_heavy_stable_steps!(algo::A, context::C, step_wiring::SW, n::Int) where {A<:Processes.AbstractLoopAlgorithm, C<:Processes.AbstractContext, SW<:Tuple}
+function route_heavy_stable_steps!(algo::A, context::C, step_wiring::SW, n::Int) where {A<:Processes.AbstractLoopAlgorithm, C<:Processes.AbstractContext, SW<:Processes.PlanWiring}
     runtime_context = context
+    lifetime = Repeat(n)
+    process = Processes.LoopRunProcess(lifetime)
     for _ in 1:n
-        runtime_context = Processes.step!(algo, runtime_context, step_wiring, Processes.Stable())
+        runtime_context = Processes._step!(algo, runtime_context, step_wiring, process, lifetime, Processes.Stable())
     end
     return runtime_context
 end
 
-function allocation_per_call(label::AbstractString, runs::Int, f)
+"""Measure allocations for a repeated benchmark block written with Julia `do` syntax."""
+function allocation_per_call(f, label::AbstractString, runs::Int)
     GC.gc()
     bytes = @allocated begin
         local result
@@ -48,7 +51,7 @@ end
 function main()
     algo = route_heavy_prepared()
     lifetime = Repeat(ALLOC_STEPS)
-    step_wiring = Processes._plan_step_wiring(algo)
+    step_wiring = Processes.getwiring(algo)
     stored_context = Processes.getstoredcontext(algo)
 
     # Warm all measured paths before recording allocations.
@@ -75,12 +78,13 @@ function main()
     end
 
     allocation_per_call("bootstrap_step", ALLOC_RUNS) do
-        _, _, runtime = route_heavy_runtime_context(algo, lifetime)
-        Processes.step!(algo, runtime, step_wiring, Processes.Unstable())
+        p, _, runtime = route_heavy_runtime_context(algo, lifetime)
+        Processes._step!(algo, runtime, step_wiring, p, lifetime, Processes.Unstable())
     end
 
     allocation_per_call("stable_step", ALLOC_RUNS) do
-        Processes.step!(algo, boot_context, step_wiring, Processes.Stable())
+        p = Processes.LoopRunProcess(lifetime)
+        Processes._step!(algo, boot_context, step_wiring, p, lifetime, Processes.Stable())
     end
 
     allocation_per_call("stable_100_steps", ALLOC_RUNS) do

@@ -60,7 +60,7 @@ function _dsl_parse_loopalgorithm_macro_args(args, macro_name::Symbol)
     error("`@$macro_name` expects either `@$macro_name begin ... end` or `@$macro_name :print begin ... end`.")
 end
 
-"""Expand the body used inside `@repeat n begin ... end` into a `SimpleAlgo`."""
+"""Expand the body used inside `@repeat n begin ... end` into a `CompositeAlgorithm`."""
 function _dsl_expand_simplealgorithm_resolved(block)
     statements = block isa Expr && block.head == :block ? block.args : Any[block]
     collected = _dsl_collect_block(statements, :none, :repeat; allow_final = false)
@@ -71,7 +71,7 @@ function _dsl_expand_simplealgorithm_resolved(block)
     expanded = quote
         let
             # The inner repeated block is built exactly once as a plain
-            # `SimpleAlgo`, then wrapped by the outer `Routine`.
+            # `CompositeAlgorithm`, then wrapped by the outer `Routine`.
             local _dsl_algos = Any[]
             local _dsl_states = Any[]
             local _dsl_options = Any[]
@@ -85,7 +85,7 @@ function _dsl_expand_simplealgorithm_resolved(block)
             $(collected.step_exprs...)
 
             isempty(_dsl_algos) && error("`@repeat n begin ... end` requires at least one algorithm entry.")
-            local _dsl_algo = Processes.SimpleAlgo(_dsl_algos..., _dsl_states..., _dsl_options...)
+            local _dsl_algo = Processes.CompositeAlgorithm(_dsl_algos..., _dsl_states..., _dsl_options...)
             # Return the same resolved wrapper the outer builder expects from any
             # other DSL statement.
             local _dsl_inputs = Tuple((; kind = :simple, source = input.first, destination = input.second) for input in _dsl_external_inputs)

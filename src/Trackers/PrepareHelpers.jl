@@ -33,7 +33,7 @@
 #     PrepereHelper(pa, unique_algos, counts, u_multipliers, lifetime, 1)
 # end
 
-# function PrepereHelper(pa::SimpleAlgo, args)
+# function PrepereHelper(pa::CompositeAlgorithm, args)
 #     (;lifetime) = args
 #     ph = PrepereHelper(pa, (pa,), (1,), (1,), lifetime, 1)
 # end

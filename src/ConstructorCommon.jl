@@ -1,6 +1,6 @@
 @inline normalize_process_algo(func::F) where {F<:AbstractLoopAlgorithm} = func
 @inline normalize_process_algo(func::Type{F}) where {F<:AbstractLoopAlgorithm} = func
-@inline normalize_process_algo(func::F) where {F} = SimpleAlgo(func)
+@inline normalize_process_algo(func::F) where {F} = CompositeAlgorithm(func)
 
 @inline normalize_process_lifetime(func, lifetime::Integer) = Repeat(lifetime)
 @inline _is_routine_plan(func) = func isa Routine || func isa Type{<:Routine}

@@ -79,11 +79,11 @@ interval(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, id
 @inline function intervals(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I}
     if I isa Tuple
         return I
-    else
+    else 
         return ntuple(_ -> 1, length(T.parameters))
     end
 end
-@inline intervals(ca::Union{CompositeAlgorithm, Type{<:CompositeAlgorithm}}, ::Val{Idx}) where Idx = intervals(ca)[Idx]
+@inline intervals(ca::Union{CompositeAlgorithm, Type{<:CompositeAlgorithm}}, ::Val{Idx}) where Idx = @inline intervals(ca)[Idx]
 
 get_this_interval(args) = interval(getalgo(args.process), algoidx(args))
 

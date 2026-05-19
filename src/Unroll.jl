@@ -56,8 +56,8 @@ f(acc, as[i], args..., zip[i])
 f(acc, as[i], args..., zips[1][i], zips[2][i], ...)
 ```
 
-Use `zip` for one tuple whose length matches `as`. Use `zips` for a tuple of
-such tuples. `zip` and `zips` are mutually exclusive.
+Use `zip` for one tuple or vector whose length matches `as`. Use `zips` for a
+tuple of such tuple/vector zip inputs. `zip` and `zips` are mutually exclusive.
 """
 @inline @generated function unrollreplace_withargs(f::F, to_replace::C, as::T; args::AS = nothing, zip::Z = nothing, zips::ZS = nothing) where {F,C,T<:Tuple, AS, Z, ZS}
     N = fieldcount(T)
@@ -69,26 +69,49 @@ such tuples. `zip` and `zips` are mutually exclusive.
         return :(throw(ArgumentError("unrollreplace_withargs accepts either `zip` or `zips`, not both.")))
     end
     if has_zip
-        Z <: Tuple || return :(throw(ArgumentError("`zip` must be a tuple.")))
-        fieldcount(Z) == N || return :(throw(ArgumentError("`zip` must have the same length as `as`.")))
+        if Z <: Tuple
+            fieldcount(Z) == N || return :(throw(ArgumentError("`zip` must have the same length as `as`.")))
+        elseif !(Z <: AbstractVector)
+            return :(throw(ArgumentError("`zip` must be a tuple or AbstractVector.")))
+        end
     end
     if has_zips
-        ZS <: Tuple || return :(throw(ArgumentError("`zips` must be a tuple of tuples.")))
+        ZS <: Tuple || return :(throw(ArgumentError("`zips` must be a tuple of tuple/vector zip inputs.")))
         for j in 1:fieldcount(ZS)
             ZT = fieldtype(ZS, j)
-            ZT <: Tuple || return :(throw(ArgumentError("`zips` must contain only tuples.")))
-            fieldcount(ZT) == N || return :(throw(ArgumentError("each tuple in `zips` must have the same length as `as`.")))
+            if ZT <: Tuple
+                fieldcount(ZT) == N || return :(throw(ArgumentError("each tuple in `zips` must have the same length as `as`.")))
+            elseif !(ZT <: AbstractVector)
+                return :(throw(ArgumentError("`zips` must contain only tuples or AbstractVectors.")))
+            end
         end
     end
 
-    block = Expr(:block, :(r = to_replace))
+    block = Expr(:block)
+    # Tuple lengths are known from the type. Vector lengths are checked once
+    # before emitting the fully unrolled calls below.
+    if has_zip && Z <: AbstractVector
+        push!(block.args, :(length(zip) == $N || throw(ArgumentError("`zip` must have the same length as `as`."))))
+    end
+    if has_zips
+        for j in 1:fieldcount(ZS)
+            ZT = fieldtype(ZS, j)
+            if ZT <: AbstractVector
+                push!(block.args, :(length(getfield(zips, $j)) == $N || throw(ArgumentError("each vector in `zips` must have the same length as `as`."))))
+            end
+        end
+    end
+    push!(block.args, :(r = to_replace))
     for i in 1:N
         call_args = Any[:r, :(getfield(as, $i))]
         has_args && push!(call_args, :(args...))
-        has_zip && push!(call_args, :(getfield(zip, $i)))
+        if has_zip
+            push!(call_args, Z <: Tuple ? :(getfield(zip, $i)) : :(zip[$i]))
+        end
         if has_zips
             for j in 1:fieldcount(ZS)
-                push!(call_args, :(getfield(getfield(zips, $j), $i)))
+                ZT = fieldtype(ZS, j)
+                push!(call_args, ZT <: Tuple ? :(getfield(getfield(zips, $j), $i)) : :(getfield(zips, $j)[$i]))
             end
         end
         push!(block.args, :(r = $(Expr(:call, :f, call_args...))))

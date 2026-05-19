@@ -58,7 +58,7 @@ function Processes.step!(::ResolveBenchSharedReader, context)
 end
 
 function resolve_bench_simple()
-    return SimpleAlgo(ResolveBenchCounter)
+    return CompositeAlgorithm(ResolveBenchCounter)
 end
 
 function resolve_bench_routed()

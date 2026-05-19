@@ -174,7 +174,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         step!(_ProcessPrecompileManaged(), (; x = 2.0, total = managed_state.total, gain = 3.0))
         step!(_ProcessPrecompileManaged(), 2.0; _init = (; start = 1.0), gain = 3.0)
 
-        managed_algo = SimpleAlgo(_ProcessPrecompileManaged)
+        managed_algo = CompositeAlgorithm(_ProcessPrecompileManaged)
         managed_specs = (
             Input(_ProcessPrecompileManaged, :start => 1.0),
             Override(_ProcessPrecompileManaged, :x => 2.0, :gain => 3.0),

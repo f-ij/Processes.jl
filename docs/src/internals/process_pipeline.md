@@ -7,7 +7,7 @@ execution.
 
 `Process(func, inputs_overrides...; repeats, lifetime, timeout)` (`src/Process.jl`):
 
-1. Wrap bare `ProcessAlgorithm` as `SimpleAlgo`.
+1. Wrap bare `ProcessAlgorithm` as a one-child `CompositeAlgorithm`.
 2. Normalize stop behavior: `repeats = n` becomes `Repeat(n)`, `lifetime` accepts `Lifetime` objects, and `Routine` defaults to `Repeat(1)` when no lifetime is provided.
 3. Resolve the loop algorithm when needed.
 4. Run lifecycle `init(algo, specs...; lifetime)` unless an initialized context is already provided.

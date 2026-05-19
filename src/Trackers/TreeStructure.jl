@@ -86,8 +86,6 @@ end
 ##### NEW IMP
 _flattypes(a::Any) = (typeof(a),)
 _flattypes(ta::Type) = (ta,)
-_flattypes(simple::SimpleAlgo{S,NSR}) where {S,NSR} = (S,)
-_flattypes(simpleT::Type{<:SimpleAlgo{S,NSR}}) where {S,NSR} = (S,)
 @generated function _flattypes(caT::Type{<:CompositeAlgorithm{CA}}) where CA
     flat = (Iterators.Flatten(_flattypes.(CA.parameters))...,)
     return :(tuple($(flat)...))

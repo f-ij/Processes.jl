@@ -88,9 +88,7 @@ end
 @inline _schedule_entries(la::LoopAlgorithm) = _schedule_entries(getplan(la))
 
 @inline _collapse_schedule_spec(::Routine, entries::Tuple) = entries
-@inline function _collapse_schedule_spec(::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}, entries::Tuple)
-    return all(==(Interval(1)), entries) ? IntervalOnes{length(entries)} : entries
-end
+@inline _collapse_schedule_spec(::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}, entries::Tuple) = entries
 @inline _collapse_schedule_spec(la::LoopAlgorithm, entries::Tuple) = _collapse_schedule_spec(getplan(la), entries)
 
 @inline _rename_item(item, replacements::Tuple{Vararg{Pair}}) = replacecontextkeys(item, collect(replacements))

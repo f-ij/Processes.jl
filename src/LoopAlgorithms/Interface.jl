@@ -1,4 +1,4 @@
-export SimpleAlgo, CompositeAlgorithm, Routine
+export CompositeAlgorithm, Routine
 export step!, init, getmultiplier, getoptions, setoptions, get_shares, get_routes
 
 """
@@ -131,9 +131,24 @@ end
 @inline Base.eachindex(la::LoopAlgorithm) = eachindex(getplan(la))
 @inline reset!(la::LoopAlgorithm) = reset!(getplan(la))
 @inline inc!(la::LoopAlgorithm) = inc!(getplan(la))
-@inline step!(la::LoopAlgorithm, context::C, typestable::S = Stable()) where {C<:AbstractContext, S} =
-    error("LoopAlgorithm step! requires explicit process and lifetime. Call step!(la, context, step_wiring, process, lifetime, stability).")
-@inline step!(la::LoopAlgorithm, context::C, step_wiring::PlanWiring, typestable::S = Stable()) where {C<:AbstractContext, S} =
-    error("LoopAlgorithm step! requires explicit process and lifetime. Call step!(la, context, step_wiring, process, lifetime, stability).")
-@inline step!(la::LoopAlgorithm, context::C, step_wiring::PlanWiring, process::P, lifetime::LT, typestable::S = Stable()) where {C<:AbstractContext, P<:AbstractProcess, LT<:Lifetime, S} =
-    step!(getplan(la), context, step_wiring, process, lifetime, typestable)
+
+"""
+Internal loop-runtime step for a resolved loop algorithm.
+
+The expanded signature is deliberately `_step!` so external process algorithms
+only need to implement the public two-argument `step!(algo, context)`.
+"""
+@inline _step!(la::LA, context::C, step_wiring::W, process::P, lifetime::LT, typestable::S = Stable()) where {LA <: LoopAlgorithm, C <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability} =
+    _step!(getplan(la), context, step_wiring, process, lifetime, typestable)
+
+"""
+Internal single-step entrypoint for tests and manual loop-plan driving.
+
+This builds the minimal process handle needed by routines and interval logic,
+then enters the same `_step!` chain used by `run`.
+"""
+@inline function _step!(la::LA, context::C, typestable::S = Stable()) where {LA<:AbstractLoopAlgorithm, C<:AbstractContext, S<:Stability}
+    lifetime = get(getglobals(context), :lifetime, Indefinite())
+    process = LoopRunProcess(lifetime)
+    return @inline _step!(la, context, getwiring(la), process, lifetime, typestable)
+end
