@@ -83,6 +83,35 @@ end
     @test [slot.worker.idx for slot in slots(manager)] == 1:4
 end
 
+@testset "ProcessManager can make every owned worker independently" begin
+    make_count = Ref(0)
+    copy_count = Ref(0)
+    worker_data = [10, 20, 30, 40]
+    recipe = (;
+        makeworker = (idx, manager, initdata) -> begin
+            make_count[] += 1
+            ManagerFakeWorker(idx, Int[initdata], false)
+        end,
+        copyworker = (template, idx, manager) -> begin
+            copy_count[] += 1
+            ManagerFakeWorker(idx, Int[], false)
+        end,
+    )
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 4,
+        worker_init = MakeEachWorker(),
+        worker_init_data = worker_data,
+    )
+
+    @test make_count[] == 4
+    @test copy_count[] == 0
+    @test [slot.worker.idx for slot in slots(manager)] == 1:4
+    @test [only(slot.worker.buffer) for slot in slots(manager)] == worker_data
+    @test_throws ArgumentError ProcessManager(recipe; nworkers = 4, worker_init = MakeEachWorker(), worker_init_data = worker_data[1:3])
+end
+
 @testset "ProcessManager initializes owned state from config" begin
     recipe = (;
         initstate = config -> (; scale = config.scale, count = Ref(0)),
@@ -336,6 +365,35 @@ end
     @test allequal(typeof(Processes.context(slot.worker)) for slot in manager_slots)
     @test length(unique(objectid(Processes.context(slot.worker)) for slot in manager_slots)) == 3
     @test [ctx.value[] for ctx in contexts] == [1, 2, 3]
+end
+
+@testset "ProcessManager can uniquely init Process workers without deepcopy" begin
+    make_count = Ref(0)
+    worker_data = [3, 5, 8]
+    recipe = (;
+        makeworker = (idx, manager, initdata) -> begin
+            make_count[] += 1
+            Process(
+                ManagerProcessAccumulator,
+                Input(ManagerProcessAccumulator, :start => initdata);
+                repeats = 1,
+            )
+        end,
+    )
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 3,
+        worker_init = MakeEachWorker(),
+        worker_init_data = worker_data,
+        flush_policy = NoFlush(),
+    )
+    manager_slots = slots(manager)
+    contexts = map(slot -> manager_process_context(slot.worker), manager_slots)
+
+    @test make_count[] == 3
+    @test length(unique(objectid(Processes.context(slot.worker)) for slot in manager_slots)) == 3
+    @test [ctx.value[] for ctx in contexts] == worker_data
 end
 
 @testset "Process workers are transparent and reset is explicit" begin

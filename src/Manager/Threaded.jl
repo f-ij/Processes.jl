@@ -186,6 +186,22 @@ function _run_threaded_jobs!(
 end
 
 """
+    _merge_threaded_errors!(manager, errors_by_slot)
+
+Append slot-local threaded errors to the manager after the threaded barrier and
+return the last new error, or `nothing` if this run did not record one.
+"""
+function _merge_threaded_errors!(manager::M, errors_by_slot::Vector{Vector{Any}}) where {M<:ProcessManager}
+    last_error = nothing
+    for slot_errors in errors_by_slot
+        isempty(slot_errors) && continue
+        append!(manager.errors, slot_errors)
+        last_error = last(slot_errors)
+    end
+    return last_error
+end
+
+"""
     runthreaded!(manager, jobs, schedule = Dynamic())
 
 Run all `jobs` through the manager with one `Threads.@threads` iteration per
@@ -214,13 +230,9 @@ function runthreaded!(manager::M, jobs, schedule::S = Dynamic()) where {M<:Proce
     manager.completions_since_flush += completed_count
     manager.active_count = 0
     manager.free_hint = 1
-    for slot_errors in errors_by_slot
-        append!(manager.errors, slot_errors)
-    end
 
-    if manager.throw && !isempty(manager.errors)
-        throw(last(manager.errors))
-    end
+    threaded_error = _merge_threaded_errors!(manager, errors_by_slot)
+    manager.throw && !isnothing(threaded_error) && throw(threaded_error)
 
     _apply_flush_policy!(manager, manager.flush_policy; final = true)
     return manager
