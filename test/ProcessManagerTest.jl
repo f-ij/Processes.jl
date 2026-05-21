@@ -206,6 +206,45 @@ end
     @test flush_count[] == 3
 end
 
+@testset "ProcessManager threaded mode supports thread schedule traits" begin
+    external = Int[]
+    flush_count = Ref(0)
+    static_workers = Threads.maxthreadid()
+    manager = ProcessManager(
+        immediate_fake_recipe(external, flush_count);
+        nworkers = static_workers,
+        flush_policy = FlushAtEnd(),
+        job_type = Int,
+    )
+
+    static_jobs = 1:(3 * static_workers)
+    run!(manager, static_jobs, Static())
+
+    @test Static() isa ThreadsType
+    @test Dynamic() isa ThreadsType
+    @test Greedy() isa ThreadsType
+    @test sort(external) == collect(static_jobs)
+    @test flush_count[] == 1
+    @test manager.dispatched == length(static_jobs)
+    @test manager.completions == length(static_jobs)
+    @test manager.active_count == 0
+
+    greedy_external = Int[]
+    greedy_flush_count = Ref(0)
+    greedy_manager = ProcessManager(
+        immediate_fake_recipe(greedy_external, greedy_flush_count);
+        nworkers = 2,
+        flush_policy = FlushAtEnd(),
+        job_type = Int,
+    )
+
+    runthreaded!(greedy_manager, 1:5, Greedy())
+
+    @test sort(greedy_external) == collect(1:5)
+    @test greedy_flush_count[] == 1
+    @test greedy_manager.completions == 5
+end
+
 @testset "release! runs after consume!" begin
     events = Symbol[]
     recipe = (;
@@ -364,6 +403,33 @@ end
     @test external == [1, 2, 3]
     @test manager.active_count == 0
     @test isnothing(worker.task)
+end
+
+@testset "ProcessManager threaded mode runs Process workers inline" begin
+    template = Process(ManagerProcessAccumulator(); repeats = 1)
+    external = Int[]
+    recipe = (;
+        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
+        prepare! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job
+            nothing
+        end,
+        flush! = manager -> begin
+            for slot in slots(manager)
+                local_context = manager_process_context(slot.worker)
+                append!(external, local_context.buffer)
+                empty!(local_context.buffer)
+            end
+        end,
+    )
+
+    manager = ProcessManager(recipe; nworkers = 2, flush_policy = FlushAtEnd(), job_type = Int)
+    runthreaded!(manager, 1:4, Dynamic())
+
+    @test sort(external) == collect(1:4)
+    @test manager.completions == 4
+    @test all(isnothing(slot.worker.task) for slot in slots(manager))
 end
 
 @testset "reinitworker! rebuilds Process context through init pipeline" begin
