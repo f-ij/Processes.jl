@@ -68,7 +68,7 @@ module Processes
     include("ProcessStatus.jl")
     include("ProcessInteraction.jl")
     include("Copy.jl")
-    include("ProcessManager.jl")
+    include("Manager/Manager.jl")
     
     # include("ProcessStates/ProcessStates.jl")
     # include("ProcessAlgorithms.jl")

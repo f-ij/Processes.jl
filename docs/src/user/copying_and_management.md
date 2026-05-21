@@ -207,6 +207,47 @@ If a job needs to affect both persistent context and loop-level runtime inputs,
 use two different steps: prepare the context in `prepare!`, then pass runtime
 inputs from `runarguments`.
 
+### Chunked Inline Workers
+
+Use `InlineChunkWorker` when each worker should keep an `InlineProcess` on one
+task for several examples. `runchunks!` groups examples into vector chunks, and
+each chunk is dispatched as one manager job. Inside that chunk task, the recipe
+loads one example at a time into the inline process context and runs the inline
+process synchronously.
+
+```julia
+worker = InlineChunkWorker(InlineProcess(MyAlgo; repeats = 1))
+
+recipe = (;
+    resetexample! = (process, example, slot, manager) -> begin
+        ctx = context(process)[MyAlgo]
+        empty!(ctx.buffer)
+    end,
+
+    loadexample! = (process, example, slot, manager) -> begin
+        ctx = context(process)[MyAlgo]
+        ctx.x[] = example.x
+    end,
+
+    afterexample! = (process, example, result, slot, manager) -> begin
+        ctx = context(process)[MyAlgo]
+        push!(manager.state.outputs, ctx.y[])
+    end,
+)
+
+manager = ProcessManager(
+    recipe;
+    workers = (worker,),
+    job_type = Vector{eltype(dataset)},
+)
+
+runchunks!(manager, dataset; chunksize = 128)
+```
+
+`resetexample!` is optional. If it is omitted, context state carries from one
+example to the next inside a chunk. `loadexample!` is required. `beforechunk!`
+and `afterchunk!` are optional hooks around the whole chunk.
+
 ### Recipe Callbacks
 
 A recipe can be a named tuple or an object with methods for these callbacks.
@@ -239,6 +280,16 @@ functions in a named tuple are part of the manager type.
   destination.
 - `close!(slot, manager)`: custom worker close.
 - `onerror!(slot, err, manager)`: custom error handling.
+- `beforechunk!(process, chunk, slot, manager)`: optional chunk setup for
+  `InlineChunkWorker`.
+- `resetexample!(process, example, slot, manager)`: optional per-example reset
+  for `InlineChunkWorker`.
+- `loadexample!(process, example, slot, manager)`: required per-example context
+  load for `InlineChunkWorker`.
+- `afterexample!(process, example, result, slot, manager)`: optional
+  per-example consume hook for `InlineChunkWorker`.
+- `afterchunk!(process, chunk, slot, manager)`: optional chunk cleanup for
+  `InlineChunkWorker`.
 
 `config` is construction input. `state` is runtime data owned by the manager.
 Prefer putting runtime buffers, counters, parameters, and logs in `initstate`
@@ -372,9 +423,16 @@ Processes.FlushEvery
 Processes.slots
 Processes.workers
 Processes.copyworker
+Processes.InlineChunkWorker
+Processes.runchunks!
 Processes.prepare!
 Processes.runarguments
 Processes.start!
+Processes.beforechunk!
+Processes.resetexample!
+Processes.loadexample!
+Processes.afterexample!
+Processes.afterchunk!
 Processes.dispatch!
 Processes.poll!
 Processes.drain!

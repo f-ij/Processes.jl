@@ -522,6 +522,16 @@ end
     throw(MethodError(f, (a, b, c, d)))
 end
 
+@inline function _call_with_supported_arity(f, a, b, c, d, e)
+    applicable(f, a, b, c, d, e) && return f(a, b, c, d, e)
+    applicable(f, a, b, c, d) && return f(a, b, c, d)
+    applicable(f, a, b, c) && return f(a, b, c)
+    applicable(f, a, b) && return f(a, b)
+    applicable(f, a) && return f(a)
+    applicable(f) && return f()
+    throw(MethodError(f, (a, b, c, d, e)))
+end
+
 function _call_with_supported_arity(f, args...)
     throw(MethodError(f, args))
 end
