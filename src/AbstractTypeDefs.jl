@@ -6,6 +6,34 @@ abstract type AbstractWiring end
 abstract type ProcessState <: AbstractOption end
 abstract type ParserOption end
 
+export SpawnType, Static, Dynamic, Greedy
+
+"""
+Dispatch trait used by threaded manager runners and process loop spawning.
+"""
+abstract type SpawnType end
+
+"""
+    Static()
+
+Use static thread dispatch where a threaded loop supports it.
+"""
+struct Static <: SpawnType end
+
+"""
+    Dynamic()
+
+Use the default dynamic thread dispatch.
+"""
+struct Dynamic <: SpawnType end
+
+"""
+    Greedy()
+
+Use Julia's greedy thread dispatch where a threaded loop supports it.
+"""
+struct Greedy <: SpawnType end
+
 struct IfWrapped{A,C} <: ParserOption
     algo::A
     cond::C
