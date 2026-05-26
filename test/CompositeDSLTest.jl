@@ -590,6 +590,38 @@ end
         @test ctx[:dynamics].state == 11
     end
 
+    @testset "Alias names can route owned fields without output bindings" begin
+        @info "Composite DSL: Alias names can route owned fields without output bindings"
+        algo = @Routine begin
+            @alias dynamics = DSLHeldStateAlgo()
+            @alias model_state = dynamics.state
+            result = keyword_value_identity_dsl_test(value = model_state)
+            doubled = scaled_double_dsl_test(model_state)
+            transformed = keyword_value_identity_dsl_test(value = @transform(x -> x + 1, model_state))
+            seen = DSLValueAlgo(value = model_state)
+            dynamics()
+        end
+
+        resolved = resolve(algo)
+        function_key = Processes.getkey(Processes.getalgo(resolved, 1))
+        positional_key = Processes.getkey(Processes.getalgo(resolved, 2))
+        transform_key = Processes.getkey(Processes.getalgo(resolved, 3))
+        sink_key = Processes.getkey(Processes.getalgo(resolved, 4))
+        _, sharedvars = Processes._resolve_options(resolved)
+        @test length(sharedvars[function_key]) == 1
+        @test length(sharedvars[positional_key]) == 1
+        @test Processes.gettransform(first(sharedvars[transform_key])) !== nothing
+        @test length(sharedvars[sink_key]) == 1
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[function_key].result == 11
+        @test ctx[positional_key].doubled == 22
+        @test ctx[transform_key].transformed == 12
+        @test ctx[sink_key].result == 11
+    end
+
     @testset "ProcessAlgorithm direct-call positional args accept alias field routes" begin
         @info "Composite DSL: ProcessAlgorithm direct-call positional args accept alias field routes"
         algo = @Routine begin

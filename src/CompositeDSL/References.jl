@@ -97,6 +97,22 @@ function _dsl_parse_owned_route_expr(alias_map, context_map, ex)
     return _dsl_parse_alias_route_expr(alias_map, ex)
 end
 
+"""
+Extract a route from a symbol alias that names an owned field.
+
+This lets declarations like `@alias model = dynamics.model` behave like the
+field reference itself in later route positions, without requiring `model` to be
+returned by any preceding DSL statement.
+"""
+function _dsl_parse_symbol_alias_route_expr(alias_map::Dict{Symbol, Any}, context_map::Dict{Symbol, Any}, name::Symbol)
+    binding = _dsl_alias_binding(alias_map, name)
+    isnothing(binding) && return nothing
+
+    # Only aliases to owned-field expressions define routes here. Plain aliases
+    # such as `@alias dynamics = algo` still flow through the normal entry path.
+    return _dsl_parse_owned_route_expr(alias_map, context_map, binding.value)
+end
+
 """Strip line metadata from expressions before keeping them for user-facing display."""
 function _dsl_display_expr(ex)
     ex isa Expr || return ex
@@ -130,6 +146,10 @@ function _dsl_parse_explicit_transform_input(alias_map, context_map, ex, destina
 
     source_expr = parsed.source_expr
     if source_expr isa Symbol
+        owned_route = _dsl_parse_symbol_alias_route_expr(alias_map, context_map, source_expr)
+        if !isnothing(owned_route)
+            return (; kind = :context_transform, owner = owned_route.owner, source = owned_route.source, destination, transform_expr = parsed.transform_expr, display = parsed.display)
+        end
         return (; kind = :simple_transform, source = source_expr, destination, transform_expr = parsed.transform_expr, display = parsed.display)
     end
 
