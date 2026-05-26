@@ -388,7 +388,7 @@ function _dsl_parse_invocation(alias_map, context_map, ex, known_outputs::Set{Sy
             # entity so the outer block can treat it like any other statement.
             return (
                 kind = :resolved_expr,
-                resolved_expr = _dsl_expand_repeated_block(block, repeats_expr),
+                resolved_expr = _dsl_expand_repeated_block(block, repeats_expr, alias_map, context_map),
                 alias_name = Symbol(),
                 positional_specs = (),
                 routed_positional_inputs = (),

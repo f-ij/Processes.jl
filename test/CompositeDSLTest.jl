@@ -622,6 +622,33 @@ end
         @test ctx[sink_key].result == 11
     end
 
+    @testset "Nested repeat blocks inherit alias owned-field routes" begin
+        @info "Composite DSL: Nested repeat blocks inherit alias owned-field routes"
+        algo = @Routine begin
+            @alias dynamics = DSLHeldStateAlgo()
+            @repeat 2 begin
+                result = keyword_value_identity_dsl_test(value = dynamics.state)
+                doubled = scaled_double_dsl_test(dynamics.state)
+            end
+            dynamics()
+        end
+
+        resolved = resolve(algo)
+        nested = Processes.getalgo(resolved, 1)
+        nested_plan = Processes.getalgo(nested, 1)
+        function_key = Processes.getkey(Processes.getalgo(nested_plan, 1))
+        positional_key = Processes.getkey(Processes.getalgo(nested_plan, 2))
+        _, sharedvars = Processes._resolve_options(resolved)
+        @test length(sharedvars[function_key]) == 1
+        @test length(sharedvars[positional_key]) == 1
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[function_key].result == 11
+        @test ctx[positional_key].doubled == 22
+    end
+
     @testset "ProcessAlgorithm direct-call positional args accept alias field routes" begin
         @info "Composite DSL: ProcessAlgorithm direct-call positional args accept alias field routes"
         algo = @Routine begin

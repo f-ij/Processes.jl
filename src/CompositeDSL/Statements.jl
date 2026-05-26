@@ -475,9 +475,16 @@ Walk a DSL block once and collect the state declarations plus executable stateme
 This is shared by the top-level `@CompositeAlgorithm`/`@Routine` expansion and the
 inner `@repeat n begin ... end` block expansion so they stay in sync.
 """
-function _dsl_collect_block(statements, expected_schedule::Symbol, owner_name::Symbol; allow_final::Bool = false)
-    alias_map = Dict{Symbol, Any}()
-    context_map = Dict{Symbol, Any}()
+function _dsl_collect_block(
+    statements,
+    expected_schedule::Symbol,
+    owner_name::Symbol;
+    allow_final::Bool = false,
+    initial_alias_map::Dict{Symbol, Any} = Dict{Symbol, Any}(),
+    initial_context_map::Dict{Symbol, Any} = Dict{Symbol, Any}(),
+)
+    alias_map = copy(initial_alias_map)
+    context_map = copy(initial_context_map)
     known_outputs = Set{Symbol}()
     step_exprs = Any[]
     state_fields = Any[]
