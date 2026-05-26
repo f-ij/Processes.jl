@@ -119,10 +119,20 @@ context(slot::WorkerSlot) = context(slot.worker)
 
 Reset `slot.worker` by calling `reset!(slot.worker)` and return `slot`.
 
-For a `Process`, this resets run bookkeeping such as loop indices, tick counts,
-timing fields, pause/run flags, and nested algorithm counters. It does not
-rebuild or clear the process context. Values stored in context fields, arrays,
-buffers, and refs stay exactly as they were.
+For a `Process`, this performs these exact mutations:
+
+- `slot.worker.loopidx = 1`
+- `slot.worker.tickidx = 1`
+- `slot.worker.paused = false`
+- `slot.worker.shouldrun = true`
+- `slot.worker.starttime = nothing`
+- `slot.worker.endtime = nothing`
+- `reset!(getalgo(slot.worker))`
+
+It does not change `slot.worker.runtime_context`, `slot.worker.task`, or
+`slot.worker.lastresult`. It also does not rebuild or clear values stored in the
+process context. Context fields, arrays, buffers, and refs stay exactly as they
+were.
 
 Call this from `prepare!` after you have loaded the next job into an existing
 context and want the next run to start from the first repeat/step again. Use
@@ -139,9 +149,10 @@ pipeline, then return `slot`.
 
 This is different from `resetworker!`: it rebuilds context values by calling
 `init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))`
-and installs the resulting context on the process. Use it from `prepare!` when a
-job needs freshly initialized context state instead of reusing the previous
-context object.
+and then assigning the resulting context with
+`context(slot.worker, context(init(...)))`. Use it from `prepare!` when a job
+needs freshly initialized context state instead of reusing the previous context
+object.
 """
 function reinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...; kwargs...)
     context(slot.worker, context(init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))))
@@ -157,7 +168,9 @@ Reinitialize only the context targets named by `inputs_overrides`, then return
 This keeps the existing process context as the starting point and runs
 `partialinit` for the affected algorithm or state entries. Use it when one part
 of the context should be rebuilt through its `init` method while the rest of the
-context should keep its current values.
+context should keep its current values. Concretely, it builds a lifecycle-wrapped
+algorithm from the current process context, runs `partialinit(algo, inputs_overrides...)`,
+and assigns the returned context back to `slot.worker`.
 """
 function partialinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...)
     algo = _with_lifecycle(

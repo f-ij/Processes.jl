@@ -289,10 +289,20 @@ makeloop!(p::Process, lt::Lifetime; threaded = true, loopfunc::LF = loop) where 
 """
     reset!(process)
 
-Reset process run bookkeeping without rebuilding its context.
+Reset selected `Process` fields without rebuilding its context.
 
-This resets loop indices, tick counters, timing fields, pause/run flags, and
-nested algorithm counters. It does not clear or replace values stored in
+This performs these exact mutations:
+
+- `process.loopidx = 1`
+- `process.tickidx = 1`
+- `process.paused = false`
+- `process.shouldrun = true`
+- `process.starttime = nothing`
+- `process.endtime = nothing`
+- `reset!(getalgo(process))`
+
+It does not change `process.runtime_context`, `process.task`, or
+`process.lastresult`. It does not clear or replace values stored in
 `context(process)`.
 """
 function reset!(p::Process)

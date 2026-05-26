@@ -342,12 +342,14 @@ prepare! = (slot, job, manager) -> begin
 end
 ```
 
-`resetworker!` does not reset context values. It calls `reset!(slot.worker)`,
-which resets process run bookkeeping such as repeat counters, tick counters,
-pause/run flags, timing fields, and nested algorithm counters. Arrays, refs,
-and other values already stored in `context(slot.worker)` remain unchanged. In
-the example above, `ctx.x[]` keeps the value assigned from `job.x`, and
-`ctx.buffer` is cleared only because the recipe calls `empty!`.
+`resetworker!` does not reset context values. For a `Process`, it sets
+`loopidx = 1`, `tickidx = 1`, `paused = false`, `shouldrun = true`,
+`starttime = nothing`, and `endtime = nothing`, then calls
+`reset!(getalgo(slot.worker))`. It does not replace `runtime_context`,
+`task`, or `lastresult`. Arrays, refs, and other values already stored in
+`context(slot.worker)` remain unchanged. In the example above, `ctx.x[]` keeps
+the value assigned from `job.x`, and `ctx.buffer` is cleared only because the
+recipe calls `empty!`.
 
 Use `reinitworker!` when the job should replace the whole process context
 through the normal init path:
