@@ -7,6 +7,7 @@ struct DSLSinkAlgo <: Processes.ProcessAlgorithm end
 struct DSLValueAlgo <: Processes.ProcessAlgorithm end
 struct DSLNestedSourceAlgo <: Processes.ProcessAlgorithm end
 struct DSLHeldStateAlgo <: Processes.ProcessAlgorithm end
+struct DSLRepeatLifetimeCounter <: Processes.ProcessAlgorithm end
 
 function Processes.step!(::DSLSourceAlgo, context)
     return (; produced = 2, passthrough = context.seed)
@@ -34,6 +35,14 @@ end
 
 function Processes.step!(::DSLHeldStateAlgo, context)
     return (; state = context.state)
+end
+
+function Processes.init(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
+    return (; count = get(context, :count, 0))
+end
+
+function Processes.step!(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
+    return (; count = context.count + 1)
 end
 
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
@@ -363,6 +372,51 @@ end
         @test resolved_routine isa Processes.LoopAlgorithm
         @test Processes.getplan(resolved_routine) isa Routine
         @test repeats(resolved_routine) == (3,)
+    end
+
+    @testset "Routine repeat supports lifetime syntax with DSL selectors" begin
+        @info "Composite DSL: Routine repeat supports lifetime syntax with DSL selectors"
+        until_routine = @Routine begin
+            count = @repeat Until(x -> x >= 3, count) DSLRepeatLifetimeCounter
+        end
+
+        until_result = run(until_routine; repeats = 1)
+        @test Processes.context(until_result)[DSLRepeatLifetimeCounter].count == 3
+
+        until_ten_routine = @Routine begin
+            count = @repeat Until(x -> x >= 10, count) DSLRepeatLifetimeCounter
+        end
+
+        until_ten_result = run(until_ten_routine; repeats = 1)
+        @test Processes.context(until_ten_result)[DSLRepeatLifetimeCounter].count == 10
+
+        capped_routine = @Routine begin
+            count = @repeat RepeatOrUntil(x -> x >= 10, 4, count) DSLRepeatLifetimeCounter
+        end
+
+        capped_result = run(capped_routine; repeats = 1)
+        @test Processes.context(capped_result)[DSLRepeatLifetimeCounter].count == 4
+
+        repeat_routine = @Routine begin
+            count = @repeat Repeat(2) DSLRepeatLifetimeCounter
+        end
+
+        repeat_result = run(repeat_routine; repeats = 1)
+        @test Processes.context(repeat_result)[DSLRepeatLifetimeCounter].count == 2
+
+        atleast_routine = @Routine begin
+            count = @repeat AtLeast(x -> x >= 1, 4, count) DSLRepeatLifetimeCounter
+        end
+
+        atleast_result = run(atleast_routine; repeats = 1)
+        @test Processes.context(atleast_result)[DSLRepeatLifetimeCounter].count == 4
+
+        atleast_atmost_routine = @Routine begin
+            count = @repeat AtLeastAtMost(x -> x >= 10, 2, 5, count) DSLRepeatLifetimeCounter
+        end
+
+        atleast_atmost_result = run(atleast_atmost_routine; repeats = 1)
+        @test Processes.context(atleast_atmost_result)[DSLRepeatLifetimeCounter].count == 5
     end
 
     @testset "Nested DSL state writeback resolves through keyed _state" begin

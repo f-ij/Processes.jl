@@ -20,7 +20,7 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             local _dsl_algos = Any[]
             local _dsl_states = Any[]
             local _dsl_options = Any[]
-            local _dsl_specification = Int[]
+            local _dsl_specification = Any[]
             local _dsl_producers = Dict{Symbol, Any}()
             local _dsl_state_owners = Dict{Symbol, Any}()
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
@@ -91,7 +91,7 @@ function _dsl_expand_simplealgorithm_resolved(
             local _dsl_algos = Any[]
             local _dsl_states = Any[]
             local _dsl_options = Any[]
-            local _dsl_specification = Int[]
+            local _dsl_specification = Any[]
             local _dsl_producers = Dict{Symbol, Any}()
             local _dsl_state_owners = Dict{Symbol, Any}()
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
@@ -122,7 +122,9 @@ function _dsl_expand_repeated_block(
     expanded = quote
         let
             local _dsl_inner = $inner_expr
-            local _dsl_repeats = Int($(esc(repeats_expr)))
+            local _dsl_owner = nothing
+            local _dsl_outputs = ()
+            local _dsl_repeats = $(_dsl_repeat_schedule_expr(repeats_expr))
             local _dsl_algo = Processes.Routine(_dsl_inner.entity, (_dsl_repeats,))
             local _dsl_inputs = _dsl_inner.inputs
             Processes._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)

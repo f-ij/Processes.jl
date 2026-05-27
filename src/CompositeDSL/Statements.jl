@@ -11,6 +11,51 @@ function _dsl_customname(ex, alias_name::Symbol)
     return Symbol()
 end
 
+"""Return whether a schedule value is a lifetime constructor call supported by `@repeat`."""
+function _dsl_lifetime_constructor_name(ex::Ex) where {Ex}
+    if ex isa Symbol
+        return ex
+    elseif ex isa Expr && ex.head == :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
+        return ex.args[2].value
+    end
+    return nothing
+end
+
+"""Rewrite one DSL variable selector into a runtime `Var` selector expression."""
+function _dsl_repeat_lifetime_selector_expr(selector::S) where {S}
+    if selector isa Symbol
+        return :(Processes._composite_dsl_var_selector(_dsl_producers, _dsl_owner, _dsl_outputs, $(QuoteNode(selector))))
+    end
+    return esc(selector)
+end
+
+"""Lower a `@repeat` schedule value, resolving DSL variable selectors in lifetimes."""
+function _dsl_repeat_schedule_expr(schedule_value::SV) where {SV}
+    if schedule_value isa Expr && schedule_value.head == :call
+        constructor = _dsl_lifetime_constructor_name(schedule_value.args[1])
+        if constructor == :Repeat
+            length(schedule_value.args) == 2 || error("Repeat schedules must be written as `Repeat(n)`.")
+            return :(Processes.Repeat($(esc(schedule_value.args[2]))))
+        elseif constructor == :Indefinite
+            length(schedule_value.args) == 1 || error("Indefinite schedules must be written as `Indefinite()`.")
+            return :(Processes.Indefinite())
+        elseif constructor == :Until
+            length(schedule_value.args) == 3 || error("Until schedules must be written as `Until(condition, selector)`.")
+            return :(Processes.Until($(esc(schedule_value.args[2])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[3]))))
+        elseif constructor == :RepeatOrUntil
+            length(schedule_value.args) == 4 || error("RepeatOrUntil schedules must be written as `RepeatOrUntil(condition, n, selector)`.")
+            return :(Processes.RepeatOrUntil($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[4]))))
+        elseif constructor == :AtLeast
+            length(schedule_value.args) == 4 || error("AtLeast schedules must be written as `AtLeast(condition, n, selector)`.")
+            return :(Processes.AtLeast($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[4]))))
+        elseif constructor == :AtLeastAtMost
+            length(schedule_value.args) == 5 || error("AtLeastAtMost schedules must be written as `AtLeastAtMost(condition, min, max, selector)`.")
+            return :(Processes.AtLeastAtMost($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(esc(schedule_value.args[4])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[5]))))
+        end
+    end
+    return :(Int($(esc(schedule_value))))
+end
+
 """Validate schedule usage and turn it into the constructor specification entry."""
 function _dsl_schedule_expr(schedule_kind::Symbol, schedule_value, expected_schedule::Symbol, owner_name::Symbol)
     if schedule_kind == :default
@@ -19,7 +64,7 @@ function _dsl_schedule_expr(schedule_kind::Symbol, schedule_value, expected_sche
         got = schedule_kind == :every ? "@interval" : "@repeat"
         error("Use plain entries inside `@$(owner_name) ... begin ... end`, not `$got`.")
     elseif schedule_kind == expected_schedule
-        return esc(schedule_value)
+        return expected_schedule == :repeat ? _dsl_repeat_schedule_expr(schedule_value) : :(Int($(esc(schedule_value))))
     else
         expected = expected_schedule == :every ? "@interval" : "@repeat"
         got = schedule_kind == :every ? "@interval" : "@repeat"
@@ -205,7 +250,7 @@ function _dsl_build_owned_write_statement(lhs, rhs, alias_map, context_map, know
         local _dsl_resolved = Processes._resolve_composite_dsl_entity($(esc(spec_expr)), $inputs_expr, _dsl_outputs, Val{Symbol()}())
         local _dsl_owner = _dsl_resolved.entity
         push!(_dsl_algos, _dsl_resolved.entity)
-        push!(_dsl_specification, Int($schedule_expr))
+        push!(_dsl_specification, $schedule_expr)
         $(_dsl_maybe_guard_metadata_expr(quote
             Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
         end, include_condition))
@@ -313,7 +358,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
                 # Algorithms are appended to the constructor argument list and
                 # then wired into the routing tables.
                 push!(_dsl_algos, $algo_entry_expr)
-                push!(_dsl_specification, Int($schedule_expr))
+                push!(_dsl_specification, $schedule_expr)
                 $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
             end
         end
@@ -333,7 +378,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             local _dsl_resolved = $(parsed.resolved_expr)
             local _dsl_owner = $owner_expr
             push!(_dsl_algos, $algo_entry_expr)
-            push!(_dsl_specification, Int($schedule_expr))
+            push!(_dsl_specification, $schedule_expr)
             $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
         end
     end
@@ -368,7 +413,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             )
             local _dsl_owner = $share_target_expr
             push!(_dsl_algos, $algo_entry_expr)
-            push!(_dsl_specification, Int($schedule_expr))
+            push!(_dsl_specification, $schedule_expr)
             $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
         end
     end
@@ -394,7 +439,7 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
         )
         local _dsl_owner = $share_target_expr
         push!(_dsl_algos, $algo_entry_expr)
-        push!(_dsl_specification, Int($schedule_expr))
+        push!(_dsl_specification, $schedule_expr)
         $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
     end
 end

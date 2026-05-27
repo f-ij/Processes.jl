@@ -143,6 +143,25 @@ function _dsl_known_owner_expr(entity_expr, name::Symbol)
     return :(Processes._composite_dsl_owner($entity_expr, $(QuoteNode(name))))
 end
 
+"""Return the key-safe owner value used by `Var` selectors emitted from the DSL."""
+function _composite_dsl_var_owner(owner::O) where {O}
+    if owner isa AbstractIdentifiableAlgo && haskey(owner)
+        return getkey(owner)
+    end
+    return owner
+end
+
+"""Resolve a DSL variable name to the `Var` selector for its current producer."""
+function _composite_dsl_var_selector(producers::D, current_owner::O, current_outputs::CO, name::Symbol) where {D<:Dict{Symbol,Any},O,CO<:Tuple}
+    if name in current_outputs
+        isnothing(current_owner) && error("Cannot use current output `$name` as a lifetime selector here.")
+        return Var(_composite_dsl_var_owner(current_owner), name)
+    elseif haskey(producers, name)
+        return Var(_composite_dsl_var_owner(producers[name]), name)
+    end
+    error("Lifetime selector `$name` is not a known DSL variable at this point.")
+end
+
 function _composite_dsl_write_owner(entity, name::Symbol)
     if entity isa AbstractLoopAlgorithm
         return getproperty(entity, :_state)

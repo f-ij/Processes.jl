@@ -53,7 +53,45 @@ end
 
 
 
-getmultipliers_from_specification_num(::Type{R}, specification_num) where {R<:Routine} = Float64.(specification_num)
+"""Convert a routine repeat/lifetime schedule into registry multiplier weight."""
+@inline _routine_schedule_multiplier(spec::I) where {I<:Integer} = Float64(spec)
+@inline _routine_schedule_multiplier(spec::RL) where {RL<:RepeatLifetime} = Float64(repeats(spec))
+@inline _routine_schedule_multiplier(spec::IL) where {IL<:IndefiniteLifetime} = Inf
+
+"""Return the numeric loop bound used by a routine child schedule."""
+@inline routine_repeat_count(spec::I) where {I<:Integer} = spec
+@inline routine_repeat_count(spec::RL) where {RL<:RepeatLifetime} = repeats(spec)
+@inline routine_repeat_count(spec::IL) where {IL<:IndefiniteLifetime} = typemax(Int)
+
+"""Return whether a routine-local child schedule has stopped the current child."""
+@inline _routine_local_breakcondition(spec::I, process::P, context::C, lidx::LI) where {I<:Integer,P<:AbstractProcess,C,LI<:Integer} = false
+@inline _routine_local_breakcondition(spec::R, process::P, context::C, lidx::LI) where {R<:Repeat,P<:AbstractProcess,C,LI<:Integer} = false
+@inline _routine_local_breakcondition(spec::IL, process::P, context::C, lidx::LI) where {IL<:Indefinite,P<:AbstractProcess,C,LI<:Integer} = false
+@inline _routine_local_breakcondition(spec::U, process::P, context::C, lidx::LI) where {Vars,U<:Until{Vars},P<:AbstractProcess,C,LI<:Integer} =
+    spec.cond(getindex(context, Vars...))
+@inline _routine_local_breakcondition(spec::ROU, process::P, context::C, lidx::LI) where {Vars,ROU<:RepeatOrUntil{Vars},P<:AbstractProcess,C,LI<:Integer} =
+    spec.cond(getindex(context, Vars...))
+@inline _routine_local_breakcondition(spec::AL, process::P, context::C, lidx::LI) where {Vars,AL<:AtLeast{Vars},P<:AbstractProcess,C,LI<:Integer} =
+    lidx > spec.atleast && spec.cond(getindex(context, Vars...))
+@inline _routine_local_breakcondition(spec::AAM, process::P, context::C, lidx::LI) where {Vars,AAM<:AtLeastAtMost{Vars},P<:AbstractProcess,C,LI<:Integer} =
+    lidx > spec.atleast && spec.cond(getindex(context, Vars...))
+
+"""
+Return whether a routine child should stop.
+
+Routine-local lifetimes are checked before the top-level process lifetime so
+child completion does not get treated as a process interruption.
+"""
+@inline function routine_breakcondition(subroutine_lifetime::SL, lifetime::LT, process::P, context::C, lidx::LI) where {SL,LT<:Lifetime,P<:AbstractProcess,C,LI<:Integer}
+    if @inline _routine_local_breakcondition(subroutine_lifetime, process, context, lidx)
+        return true
+    end
+    return @inline breakcondition(lifetime, process, context)
+end
+
+"""Convert routine specification entries into registry multiplier weights."""
+getmultipliers_from_specification_num(::Type{R}, specification_num::S) where {R<:Routine,S} =
+    map(_routine_schedule_multiplier, specification_num)
 get_resume_idxs(r::Routine) = getfield(r, :resume_idxs)
 resume_idx(r::Routine, idx) = getfield(r, :resume_idxs)[idx]
 resumable(r::Routine) = true
@@ -79,10 +117,17 @@ end
 @inline getalgotype(::Union{Routine{T,R}, Type{<:Routine{T,R}}}, idx) where {T,R} = T.parameters[idx]
 @inline numalgos(r::Union{Routine{T,R}, Type{<:Routine{T,R}}}) where {T,R} = length(T.parameters)
 
-multipliers(r::Routine) = repeats(r)
-multipliers(rT::Type{R}) where {R<:Routine} = repeats(rT)
+"""Return registry multiplier weights for each routine child."""
+multipliers(r::R) where {R<:Routine} = map(_routine_schedule_multiplier, lifetimes(r))
+multipliers(rT::Type{R}) where {R<:Routine} = map(_routine_schedule_multiplier, lifetimes(rT))
 getid(r::Union{Routine{T,R,MV,W,id},Type{<:Routine{T,R,MV,W,id}}}) where {T,R,MV,W,id} = id
 
+"""Return the child lifetime schedule tuple for a routine."""
+@inline lifetimes(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}) where {F,R} = R
+lifetimes(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, idx::Int) where {F,R} = R[idx]
+lifetimes(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, ::Val{idx}) where {F,R,idx} = R[idx]
+
+"""Compatibility alias for the historical integer-only routine schedule API."""
 @inline repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}) where {F,R} = R
 repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, idx::Int) where {F,R} = R[idx]
 repeats(r::Union{Routine{F,R}, Type{<:Routine{F,R}}}, ::Val{idx}) where {F,R,idx} = R[idx]

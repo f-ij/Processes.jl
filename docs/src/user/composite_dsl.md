@@ -362,6 +362,20 @@ routine = @Routine begin
 end
 ```
 
+`@repeat` also accepts the normal lifetime constructors. When a lifetime selector
+is written as a DSL variable, the DSL resolves it to the corresponding `Var(...)`
+selector:
+
+```julia
+routine = @Routine begin
+    count = @repeat Until(x -> x >= 100, count) Counter()
+end
+```
+
+Supported forms are `Repeat(n)`, `Indefinite()`, `Until(condition, selector)`,
+`RepeatOrUntil(condition, n, selector)`, `AtLeast(condition, n, selector)`, and
+`AtLeastAtMost(condition, min, max, selector)`.
+
 For repeated sub-blocks:
 
 ```julia
