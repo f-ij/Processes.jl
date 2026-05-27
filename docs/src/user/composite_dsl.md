@@ -308,6 +308,51 @@ This creates a `ContextWrite` entry and routes the assigned value into it. For a
 nested routine's inline state, the write targets the nested state field through
 the normal route and merge machinery.
 
+## Explicit State Sharing
+
+Nested DSL blocks can independently declare the same state field. That remains
+compatible, but the merge now warns unless the parent documents the intended
+sharing.
+
+Use `@bind` when the current block owns or requires the shared state:
+
+```julia
+forward = @Routine begin
+    @state buffers
+    buffers = fill_forward!(buffers)
+end
+
+nudged = @Routine begin
+    @state buffers
+    buffers = read_nudged!(buffers)
+end
+
+algo = @CompositeAlgorithm begin
+    @state buffers = make_buffers()
+
+    @context f = forward()
+    @context n = nudged()
+
+    @bind buffers => f.buffers
+    @bind buffers => n.buffers
+end
+```
+
+Use `@merge` when two child state slots are intentionally the same resource:
+
+```julia
+algo = @CompositeAlgorithm begin
+    @context f = forward()
+    @context n = nudged()
+
+    @merge f.buffers, n.buffers
+end
+```
+
+`f.buffers` is transparent syntax for the nested inline state field
+`f._state.buffers`. If the merged field has no default anywhere, it remains a
+required init value for the merged `:_state` slot.
+
 ## Context Aliases
 
 Use `@context` when later statements need to refer to the subcontext produced by

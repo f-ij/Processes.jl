@@ -24,6 +24,7 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             local _dsl_producers = Dict{Symbol, Any}()
             local _dsl_state_owners = Dict{Symbol, Any}()
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
+            local _dsl_context_indices = Dict{Symbol, Int}()
 
             $(isnothing(state_setup_expr) ? nothing : state_setup_expr)
             $(isnothing(input_setup_expr) ? nothing : input_setup_expr)
@@ -95,6 +96,7 @@ function _dsl_expand_simplealgorithm_resolved(
             local _dsl_producers = Dict{Symbol, Any}()
             local _dsl_state_owners = Dict{Symbol, Any}()
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
+            local _dsl_context_indices = Dict{Symbol, Int}()
 
             $(isnothing(state_setup_expr) ? nothing : state_setup_expr)
             $(isnothing(input_setup_expr) ? nothing : input_setup_expr)
@@ -205,6 +207,17 @@ but does not assign the nested algorithm the key `:c`.
 Direct `c.field` access is interpreted as a reference to the nested inline
 state owned by that algorithm, so `n.changeable_seed` lowers like routing from
 `capture_noise._state` with source `:changeable_seed`.
+
+State composition:
+- `@bind buffers => c.buffers`
+- `@merge c1.buffers, c2.buffers`
+
+When nested DSL blocks declare overlapping inline state fields, the merge is
+allowed for compatibility but warns unless the parent block documents the sharing
+with `@bind` or `@merge`. `@bind` marks sharing from the current block's state
+field into a child state field. `@merge` marks peer child state fields as the
+same shared slot. Explicit `_state` selectors like `c._state.buffers`
+are accepted anywhere `c.buffers` is accepted.
 
 Direct owned-field access like `dynamics.state` is also accepted in route
 positions. It routes directly from the known `:dynamics` owner with source

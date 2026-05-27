@@ -53,6 +53,8 @@ constant_value_dsl_test() = 0.25
 square_dsl_test(x) = x^2
 keyword_value_identity_dsl_test(; value) = value
 dsl_final_summary(context) = (; result = context[DSLValueAlgo].result)
+dsl_state_push_writer!(buffers) = (push!(buffers, :writer); buffers)
+dsl_state_push_reader!(buffers) = (push!(buffers, :reader); buffers)
 
 @ProcessAlgorithm function DSLPositionalCallAlgo(value)
     return (; seen = value)
@@ -136,6 +138,74 @@ end
             seed = 7
         end)
         @test Processes.init(overlap_merged, (; scale = 3.0)) == (; seed = 7, scale = 3.0)
+    end
+
+    @testset "Explicit state bind and merge document overlapping child state" begin
+        @info "Composite DSL: Explicit state bind and merge document overlapping child state"
+        writer = @Routine begin
+            @state buffers
+            buffers = dsl_state_push_writer!(buffers)
+        end
+        reader = @Routine begin
+            @state buffers
+            buffers = dsl_state_push_reader!(buffers)
+        end
+
+        implicit_overlap = @CompositeAlgorithm begin
+            @context f = writer()
+            @context n = reader()
+        end
+
+        @test_logs (:warn, r"f\.buffers <=> n\.buffers") resolve(implicit_overlap)
+
+        bound = @CompositeAlgorithm begin
+            @state buffers = Symbol[]
+            @context f = writer()
+            @context n = reader()
+            @bind buffers => f.buffers
+            @bind buffers => n.buffers
+        end
+
+        bound_process = Process(resolve(bound), repeat = 1)
+        Processes.run(bound_process)
+        @test context(bound_process)[:_state].buffers == [:writer, :reader]
+
+        merged_required = @CompositeAlgorithm begin
+            @context f = writer()
+            @context n = reader()
+            @merge f.buffers, n.buffers
+        end
+
+        resolved_required = resolve(merged_required)
+        @test_throws ErrorException init(resolved_required)
+        initialized = init(resolved_required, Init(:_state; buffers = Symbol[]))
+        merged_process = Process(initialized, repeat = 1)
+        Processes.run(merged_process)
+        @test context(merged_process)[:_state].buffers == [:writer, :reader]
+
+        explicit_state_path = @CompositeAlgorithm begin
+            @context f = writer()
+            @context n = reader()
+            @merge f._state.buffers, n.buffers
+        end
+
+        @test_throws ErrorException init(resolve(explicit_state_path))
+
+        left_default = @Routine begin
+            @state buffers = Symbol[:left]
+            buffers = dsl_state_push_writer!(buffers)
+        end
+        right_default = @Routine begin
+            @state buffers = Symbol[:right]
+            buffers = dsl_state_push_reader!(buffers)
+        end
+        default_conflict = @CompositeAlgorithm begin
+            @context f = left_default()
+            @context n = right_default()
+            @merge f.buffers, n.buffers
+        end
+
+        @test_logs (:warn, r"multiple defaults") resolve(default_conflict)
     end
 
     @testset "CompositeAlgorithm DSL resolves and runs" begin
