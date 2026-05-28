@@ -100,7 +100,7 @@ algo = @CompositeAlgorithm begin
 
     nudged.nudged_beta = clamping_beta[]
     nudged()
-end</code></pre><p>This creates a <code>ContextWrite</code> entry and routes the assigned value into it. For a nested routine&#39;s inline state, the write targets the nested state field through the normal route and merge machinery.</p><h2 id="Explicit-State-Sharing"><a class="docs-heading-anchor" href="#Explicit-State-Sharing">Explicit State Sharing</a><a id="Explicit-State-Sharing-1"></a><a class="docs-heading-anchor-permalink" href="#Explicit-State-Sharing" title="Permalink"></a></h2><p>Nested DSL blocks can independently declare the same state field. That remains compatible, but the merge now warns unless the parent documents the intended sharing.</p><p>Use <code>@bind</code> when the current block owns or requires the shared state:</p><pre><code class="language-julia hljs">forward = @Routine begin
+end</code></pre><p>This creates a <code>ContextWrite</code> entry and routes the assigned value into it. For a nested routine&#39;s inline state, the write targets the nested state field through the normal route and merge machinery.</p><h2 id="Explicit-State-Sharing"><a class="docs-heading-anchor" href="#Explicit-State-Sharing">Explicit State Sharing</a><a id="Explicit-State-Sharing-1"></a><a class="docs-heading-anchor-permalink" href="#Explicit-State-Sharing" title="Permalink"></a></h2><p>Nested DSL blocks can independently declare the same state field. That remains compatible, but the merge now warns unless the parent documents the intended sharing.</p><p>Use <code>@bind</code> when the parent block owns, defaults, or requires the shared state and a child block should use that same slot.</p><pre><code class="language-julia hljs">@bind buffers =&gt; f.buffers</code></pre><p>This says: the current block&#39;s <code>buffers</code> state slot and child context <code>f</code>&#39;s inline <code>buffers</code> state slot are intentionally the same resource.</p><pre><code class="language-julia hljs">forward = @Routine begin
     @state buffers
     buffers = fill_forward!(buffers)
 end
@@ -118,12 +118,36 @@ algo = @CompositeAlgorithm begin
 
     @bind buffers =&gt; f.buffers
     @bind buffers =&gt; n.buffers
-end</code></pre><p>Use <code>@merge</code> when two child state slots are intentionally the same resource:</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+end</code></pre><p>In this example, <code>algo</code> creates the buffer with <code>make_buffers()</code>. Both child routines declare <code>@state buffers</code> because each routine is still a reusable building block with a local contract, but the parent explicitly binds both child contracts to the parent-owned state slot.</p><p>Use <code>@merge</code> when child blocks should share with each other and the parent does not need to declare a separate state slot:</p><pre><code class="language-julia hljs">@merge f.buffers, n.buffers</code></pre><p>This says: child context <code>f</code>&#39;s inline <code>buffers</code> slot and child context <code>n</code>&#39;s inline <code>buffers</code> slot are intentionally the same resource.</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
     @context f = forward()
     @context n = nudged()
 
     @merge f.buffers, n.buffers
-end</code></pre><p><code>f.buffers</code> is transparent syntax for the nested inline state field <code>f._state.buffers</code>. If the merged field has no default anywhere, it remains a required init value for the merged <code>:_state</code> slot.</p><h2 id="Context-Aliases"><a class="docs-heading-anchor" href="#Context-Aliases">Context Aliases</a><a id="Context-Aliases-1"></a><a class="docs-heading-anchor-permalink" href="#Context-Aliases" title="Permalink"></a></h2><p>Use <code>@context</code> when later statements need to refer to the subcontext produced by a nested DSL entry.</p><pre><code class="language-julia hljs">plus = @Routine begin
+end</code></pre><p>If neither child supplies a default, the merged field remains required:</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @context f = forward()
+    @context n = nudged()
+
+    @merge f.buffers, n.buffers
+end
+
+resolved = resolve(algo)
+initialized = init(resolved, Init(:_state; buffers = make_buffers()))</code></pre><p>If one side has a default and the other side is required, the default satisfies the merged slot:</p><pre><code class="language-julia hljs">forward_with_default = @Routine begin
+    @state buffers = make_buffers()
+    buffers = fill_forward!(buffers)
+end
+
+algo = @CompositeAlgorithm begin
+    @context f = forward_with_default()
+    @context n = nudged()
+
+    @merge f.buffers, n.buffers
+end</code></pre><p>If multiple merged slots provide defaults for the same field, construction still continues but warns because the later default wins. Prefer a single parent default with <code>@bind</code> when ownership is clear.</p><p>Selectors are written against <code>@context</code> aliases and must appear after the context has been declared:</p><pre><code class="language-julia hljs">algo = @CompositeAlgorithm begin
+    @context f = forward()
+    @context n = nudged()
+
+    @merge f.buffers, n.buffers
+end</code></pre><p><code>f.buffers</code> is transparent syntax for the nested inline state field <code>f._state.buffers</code>; both forms are accepted:</p><pre><code class="language-julia hljs">@merge f._state.buffers, n.buffers
+@bind buffers =&gt; f._state.buffers</code></pre><p>Use <code>@bind</code> for parent-to-child sharing. Use <code>@merge</code> for peer child-to-child sharing. Without either declaration, overlapping child state fields are still merged for compatibility, but the DSL warns with paths such as <code>f.buffers &lt;=&gt; n.buffers</code> and suggests an explicit <code>@bind</code> or <code>@merge</code>.</p><h2 id="Context-Aliases"><a class="docs-heading-anchor" href="#Context-Aliases">Context Aliases</a><a id="Context-Aliases-1"></a><a class="docs-heading-anchor-permalink" href="#Context-Aliases" title="Permalink"></a></h2><p>Use <code>@context</code> when later statements need to refer to the subcontext produced by a nested DSL entry.</p><pre><code class="language-julia hljs">plus = @Routine begin
     @alias capture = Capturer()
     capture()
 end
@@ -158,4 +182,4 @@ end</code></pre><p>The condition is evaluated at construction time. Skipped entr
     @state seed = 8
     Sink(value = seed)
     @finally summarize_context
-end</code></pre><p><code>@finally</code> is only valid at the outer DSL block level.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../algorithms_states/">« Algorithms and States</a><a class="docs-footer-nextpage" href="../referencing_algorithms/">Referencing Algorithms »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Wednesday 27 May 2026 14:34">Wednesday 27 May 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+end</code></pre><p><code>@finally</code> is only valid at the outer DSL block level.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../algorithms_states/">« Algorithms and States</a><a class="docs-footer-nextpage" href="../referencing_algorithms/">Referencing Algorithms »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Thursday 28 May 2026 13:05">Thursday 28 May 2026</span>. Using Julia version 1.12.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
