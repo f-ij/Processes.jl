@@ -41,9 +41,9 @@ function _cleanup_paused_process!(p::Process, fetched_result)
     # `close` turns that paused lifecycle into a final one, so cleanup must run
     # here because the loop will not re-enter `after_while`.
     cleanup_context = fetched_result isa AbstractContext ? fetched_result : context(p)
-    cleaned_context = @inline _loop_cleanup_context(getalgo(p), cleanup_context)
-    context(p, cleaned_context)
+    cleaned_context = @inline cleanup(getalgo(p), cleanup_context)
     p.lastresult = @inline _loop_final_result(getalgo(p), cleaned_context)
+    context(p, _strip_runtime_inputs(cleaned_context, getstoredcontext(getalgo(p))))
     return p.lastresult
 end
 
@@ -73,9 +73,6 @@ function Base.close(p::Process)
 
     end
 
-    if !was_paused && fetched_result isa AbstractContext
-        context(p, fetched_result)
-    end
     p.task = nothing 
 
     p.loopidx = 1

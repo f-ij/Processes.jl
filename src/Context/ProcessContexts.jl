@@ -80,6 +80,19 @@ end
 end
 
 """
+Merge a runtime-owned step return into `ProcessContext._runtime`.
+"""
+@inline merge_runtime_return(context::C, ::Nothing) where {C<:ProcessContext} = context
+
+@inline function merge_runtime_return(context::C, retval::R) where {C<:ProcessContext, R<:NamedTuple}
+    return @inline _merge_into_globals(context, retval)
+end
+
+function merge_runtime_return(context::C, retval::R) where {C<:ProcessContext, R}
+    error("Runtime-owned step returns must be named tuples or `nothing`, got $(typeof(retval)).")
+end
+
+"""
 Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), subcontextname2 = (;...), ...)
     Assumes that the subcontext names exist in the context, otherwise it errors
 """

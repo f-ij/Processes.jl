@@ -17,3 +17,10 @@ end
 @inline function Base.getindex(c::ProcessContext, var::Var{:globals, name}) where {name}
     getglobals(c)[name]
 end
+
+"""
+Read a DSL runtime variable selector from `ProcessContext._runtime`.
+"""
+@inline function Base.getindex(c::ProcessContext, var::Var{:_runtime, name}) where {name}
+    getglobals(c)[name]
+end

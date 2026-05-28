@@ -83,7 +83,8 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
 
     runtime_result = run(initialized_runtime; temp = 1.5, scale = 2)
     runtime_context = Processes.context(runtime_result)
-    @test runtime_context[:FuncWrapper_1].value == 6.0
+    @test isempty(runtime_context[:FuncWrapper_1])
+    @test !haskey(Processes.getglobals(runtime_context), :value)
     @test !haskey(Processes.get_subcontexts(runtime_context), :_input)
     @test !haskey(Processes.getglobals(runtime_context), :process)
 
@@ -91,7 +92,10 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
         process = Process(entry; repeats = 1)
         run(process; temp = 2.0, scale = 3)
         wait(process)
-        @test Processes.context(process)[:FuncWrapper_1].value == 9.0
+        fetched_context = fetch(process)
+        @test Processes.getglobals(fetched_context).value == 9.0
+        @test isempty(Processes.context(process)[:FuncWrapper_1])
+        @test !haskey(Processes.getglobals(Processes.context(process)), :value)
         @test !haskey(Processes.get_subcontexts(Processes.context(process)), :_input)
         @test !haskey(Processes.getglobals(Processes.context(process)), :process)
         close(process)

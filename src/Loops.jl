@@ -19,19 +19,19 @@ end
         persistent_context = _strip_runtime_inputs(context, stored_context)
         return persistent_context
     else
-        cleaned_context = @inline _loop_cleanup_context(func, context)
+        cleaned_context = @inline cleanup(func, context)
         persistent_context = _strip_runtime_inputs(cleaned_context, stored_context)
         Processes.context(p, persistent_context)
-        return @inline _loop_final_result(func, persistent_context)
+        return @inline _loop_final_result(func, cleaned_context)
     end
 end
 
 @inline function after_while(ip::InlineProcess, func::F, context::C, stored_context::SC = context) where {F, C, SC}
     @inline set_endtime!(ip)
-    cleaned_context = @inline _loop_cleanup_context(func, context)
+    cleaned_context = @inline cleanup(func, context)
     persistent_context = _strip_runtime_inputs(cleaned_context, stored_context)
     Processes.context(ip, persistent_context)
-    return @inline _loop_final_result(func, persistent_context)
+    return @inline _loop_final_result(func, cleaned_context)
 end
 
 """

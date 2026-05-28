@@ -152,3 +152,10 @@ then enters the same `_step!` chain used by `run`.
     process = LoopRunProcess(lifetime)
     return @inline _step!(la, context, getwiring(la), process, lifetime, typestable)
 end
+
+"""
+Return the public result for a loop after cleanup has produced the stored context.
+"""
+@inline function _loop_final_result(algo, cleaned_context)
+    return cleaned_context
+end

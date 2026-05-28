@@ -19,7 +19,6 @@ The public extension point remains `step!(algo, context)` on the wrapped
     
     retval = @inline step!(getalgo(sa), contextview)
     
-    
     if S <: Unstable
         return @inline unstablemerge(contextview, retval)
     else
