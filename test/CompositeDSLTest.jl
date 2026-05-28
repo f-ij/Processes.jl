@@ -7,6 +7,7 @@ struct DSLSinkAlgo <: Processes.ProcessAlgorithm end
 struct DSLValueAlgo <: Processes.ProcessAlgorithm end
 struct DSLNestedSourceAlgo <: Processes.ProcessAlgorithm end
 struct DSLHeldStateAlgo <: Processes.ProcessAlgorithm end
+struct DSLRepeatLifetimeCounter <: Processes.ProcessAlgorithm end
 
 function Processes.step!(::DSLSourceAlgo, context)
     return (; produced = 2, passthrough = context.seed)
@@ -36,6 +37,14 @@ function Processes.step!(::DSLHeldStateAlgo, context)
     return (; state = context.state)
 end
 
+function Processes.init(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
+    return (; count = get(context, :count, 0))
+end
+
+function Processes.step!(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
+    return (; count = context.count + 1)
+end
+
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
 zero_input_dsl_test() = 7
 keyword_only_capture_dsl_test(; plus_capture, minus_capture, β, buffers) = plus_capture + minus_capture + β + buffers
@@ -44,6 +53,8 @@ constant_value_dsl_test() = 0.25
 square_dsl_test(x) = x^2
 keyword_value_identity_dsl_test(; value) = value
 dsl_final_summary(context) = (; result = context[DSLValueAlgo].result)
+dsl_state_push_writer!(buffers) = (push!(buffers, :writer); buffers)
+dsl_state_push_reader!(buffers) = (push!(buffers, :reader); buffers)
 
 @ProcessAlgorithm function DSLPositionalCallAlgo(value)
     return (; seen = value)
@@ -127,6 +138,74 @@ end
             seed = 7
         end)
         @test Processes.init(overlap_merged, (; scale = 3.0)) == (; seed = 7, scale = 3.0)
+    end
+
+    @testset "Explicit state bind and merge document overlapping child state" begin
+        @info "Composite DSL: Explicit state bind and merge document overlapping child state"
+        writer = @Routine begin
+            @state buffers
+            buffers = dsl_state_push_writer!(buffers)
+        end
+        reader = @Routine begin
+            @state buffers
+            buffers = dsl_state_push_reader!(buffers)
+        end
+
+        implicit_overlap = @CompositeAlgorithm begin
+            @context f = writer()
+            @context n = reader()
+        end
+
+        @test_logs (:warn, r"f\.buffers <=> n\.buffers") resolve(implicit_overlap)
+
+        bound = @CompositeAlgorithm begin
+            @state buffers = Symbol[]
+            @context f = writer()
+            @context n = reader()
+            @bind buffers => f.buffers
+            @bind buffers => n.buffers
+        end
+
+        bound_process = Process(resolve(bound), repeat = 1)
+        Processes.run(bound_process)
+        @test context(bound_process)[:_state].buffers == [:writer, :reader]
+
+        merged_required = @CompositeAlgorithm begin
+            @context f = writer()
+            @context n = reader()
+            @merge f.buffers, n.buffers
+        end
+
+        resolved_required = resolve(merged_required)
+        @test_throws ErrorException init(resolved_required)
+        initialized = init(resolved_required, Init(:_state; buffers = Symbol[]))
+        merged_process = Process(initialized, repeat = 1)
+        Processes.run(merged_process)
+        @test context(merged_process)[:_state].buffers == [:writer, :reader]
+
+        explicit_state_path = @CompositeAlgorithm begin
+            @context f = writer()
+            @context n = reader()
+            @merge f._state.buffers, n.buffers
+        end
+
+        @test_throws ErrorException init(resolve(explicit_state_path))
+
+        left_default = @Routine begin
+            @state buffers = Symbol[:left]
+            buffers = dsl_state_push_writer!(buffers)
+        end
+        right_default = @Routine begin
+            @state buffers = Symbol[:right]
+            buffers = dsl_state_push_reader!(buffers)
+        end
+        default_conflict = @CompositeAlgorithm begin
+            @context f = left_default()
+            @context n = right_default()
+            @merge f.buffers, n.buffers
+        end
+
+        @test_logs (:warn, r"multiple defaults") resolve(default_conflict)
     end
 
     @testset "CompositeAlgorithm DSL resolves and runs" begin
@@ -365,6 +444,51 @@ end
         @test repeats(resolved_routine) == (3,)
     end
 
+    @testset "Routine repeat supports lifetime syntax with DSL selectors" begin
+        @info "Composite DSL: Routine repeat supports lifetime syntax with DSL selectors"
+        until_routine = @Routine begin
+            count = @repeat Until(x -> x >= 3, count) DSLRepeatLifetimeCounter
+        end
+
+        until_result = run(until_routine; repeats = 1)
+        @test Processes.context(until_result)[DSLRepeatLifetimeCounter].count == 3
+
+        until_ten_routine = @Routine begin
+            count = @repeat Until(x -> x >= 10, count) DSLRepeatLifetimeCounter
+        end
+
+        until_ten_result = run(until_ten_routine; repeats = 1)
+        @test Processes.context(until_ten_result)[DSLRepeatLifetimeCounter].count == 10
+
+        capped_routine = @Routine begin
+            count = @repeat RepeatOrUntil(x -> x >= 10, 4, count) DSLRepeatLifetimeCounter
+        end
+
+        capped_result = run(capped_routine; repeats = 1)
+        @test Processes.context(capped_result)[DSLRepeatLifetimeCounter].count == 4
+
+        repeat_routine = @Routine begin
+            count = @repeat Repeat(2) DSLRepeatLifetimeCounter
+        end
+
+        repeat_result = run(repeat_routine; repeats = 1)
+        @test Processes.context(repeat_result)[DSLRepeatLifetimeCounter].count == 2
+
+        atleast_routine = @Routine begin
+            count = @repeat AtLeast(x -> x >= 1, 4, count) DSLRepeatLifetimeCounter
+        end
+
+        atleast_result = run(atleast_routine; repeats = 1)
+        @test Processes.context(atleast_result)[DSLRepeatLifetimeCounter].count == 4
+
+        atleast_atmost_routine = @Routine begin
+            count = @repeat AtLeastAtMost(x -> x >= 10, 2, 5, count) DSLRepeatLifetimeCounter
+        end
+
+        atleast_atmost_result = run(atleast_atmost_routine; repeats = 1)
+        @test Processes.context(atleast_atmost_result)[DSLRepeatLifetimeCounter].count == 5
+    end
+
     @testset "Nested DSL state writeback resolves through keyed _state" begin
         @info "Composite DSL: Nested DSL state writeback resolves through keyed _state"
         inner = @Routine begin
@@ -588,6 +712,65 @@ end
         ctx = fetch(p)
         @test ctx[sink_key].result == 11
         @test ctx[:dynamics].state == 11
+    end
+
+    @testset "Alias names can route owned fields without output bindings" begin
+        @info "Composite DSL: Alias names can route owned fields without output bindings"
+        algo = @Routine begin
+            @alias dynamics = DSLHeldStateAlgo()
+            @alias model_state = dynamics.state
+            result = keyword_value_identity_dsl_test(value = model_state)
+            doubled = scaled_double_dsl_test(model_state)
+            transformed = keyword_value_identity_dsl_test(value = @transform(x -> x + 1, model_state))
+            seen = DSLValueAlgo(value = model_state)
+            dynamics()
+        end
+
+        resolved = resolve(algo)
+        function_key = Processes.plan_child_namespace(resolved, 1)
+        positional_key = Processes.plan_child_namespace(resolved, 2)
+        transform_key = Processes.plan_child_namespace(resolved, 3)
+        sink_key = Processes.plan_child_namespace(resolved, 4)
+        _, sharedvars = Processes._resolve_options(resolved)
+        @test length(sharedvars[function_key]) == 1
+        @test length(sharedvars[positional_key]) == 1
+        @test Processes.gettransform(first(sharedvars[transform_key])) !== nothing
+        @test length(sharedvars[sink_key]) == 1
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[function_key].result == 11
+        @test ctx[positional_key].doubled == 22
+        @test ctx[transform_key].transformed == 12
+        @test ctx[sink_key].result == 11
+    end
+
+    @testset "Nested repeat blocks inherit alias owned-field routes" begin
+        @info "Composite DSL: Nested repeat blocks inherit alias owned-field routes"
+        algo = @Routine begin
+            @alias dynamics = DSLHeldStateAlgo()
+            @repeat 2 begin
+                result = keyword_value_identity_dsl_test(value = dynamics.state)
+                doubled = scaled_double_dsl_test(dynamics.state)
+            end
+            dynamics()
+        end
+
+        resolved = resolve(algo)
+        nested = Processes.getalgo(resolved, 1)
+        nested_plan = Processes.getalgo(nested, 1)
+        function_key = Processes.plan_child_namespace(nested_plan, 1)
+        positional_key = Processes.plan_child_namespace(nested_plan, 2)
+        _, sharedvars = Processes._resolve_options(resolved)
+        @test length(sharedvars[function_key]) == 1
+        @test length(sharedvars[positional_key]) == 1
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[function_key].result == 11
+        @test ctx[positional_key].doubled == 22
     end
 
     @testset "ProcessAlgorithm direct-call positional args accept alias field routes" begin

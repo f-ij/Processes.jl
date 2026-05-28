@@ -79,6 +79,87 @@ end
 =#
 
 """
+Step one child inside a `Routine`.
+
+Dispatch on `subroutine_lifetime` keeps the integer-repeat fast path separate
+from child-local lifetime schedules such as `Until(...)`.
+"""
+@inline function _subroutine_step!(
+    context::C,
+    func::F,
+    r::R,
+    process::P,
+    lifetime::LT,
+    typestable::S,
+    idx::Int,
+    subroutine_lifetime::I,
+    child_step_wiring::W,
+    namespace::N,
+) where {C,F,R<:Routine,P<:AbstractProcess,LT<:Lifetime,S<:Stability,I<:Integer,W,N<:Namespace}
+    resume_point = @inline get_resume_point(r, idx)
+    if resume_point <= subroutine_lifetime
+        context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, Unstable())
+        @inline tick!(process)
+
+        next_idx = resume_point + 1
+        if @inline routine_breakcondition(subroutine_lifetime, lifetime, process, context, resume_point)
+            @inline set_resume_point!(r, idx, next_idx)
+            return context
+        end
+
+        for lidx in next_idx:subroutine_lifetime
+            if @inline routine_breakcondition(subroutine_lifetime, lifetime, process, context, lidx)
+                @inline set_resume_point!(r, idx, lidx)
+                return context
+            end
+            context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, typestable)
+            @inline tick!(process)
+        end
+    end
+    return context
+end
+
+@inline function _subroutine_step!(
+    context::C,
+    func::F,
+    r::R,
+    process::P,
+    lifetime::LT,
+    typestable::S,
+    idx::Int,
+    subroutine_lifetime::SL,
+    child_step_wiring::W,
+    namespace::N,
+) where {C,F,R<:Routine,P<:AbstractProcess,LT<:Lifetime,S<:Stability,SL<:Lifetime,W,N<:Namespace}
+    resume_point = @inline get_resume_point(r, idx)
+    this_repeat_count = @inline routine_repeat_count(subroutine_lifetime)
+    if resume_point <= this_repeat_count
+        context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, Unstable())
+        @inline tick!(process)
+
+        next_idx = resume_point + 1
+        if @inline routine_breakcondition(subroutine_lifetime, lifetime, process, context, resume_point)
+            if !(@inline _routine_local_breakcondition(subroutine_lifetime, process, context, resume_point))
+                @inline set_resume_point!(r, idx, next_idx)
+            end
+            return context
+        end
+
+        for lidx in next_idx:this_repeat_count
+            if @inline routine_breakcondition(subroutine_lifetime, lifetime, process, context, lidx)
+                if !(@inline _routine_local_breakcondition(subroutine_lifetime, process, context, lidx))
+                    @inline set_resume_point!(r, idx, lidx)
+                end
+                return context
+            end
+            context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, typestable)
+            @inline tick!(process)
+        end
+    end
+    return context
+end
+
+"""
 Step each child routine in sequence with explicit loop runtime.
 
 Each child is run once as `Unstable()` at its resume point, then repeated on the
@@ -91,22 +172,8 @@ Base.@constprop :aggressive @inline function _step!(r::R, context::C, wiring::W,
         context,
         @inline getalgos(r);
         args = (r, process, lifetime, typestable),
-        zips = (child_idxs, repeats(r), child_wiring(wiring), plan_child_namespaces(r)),
-    ) do context, func, r, process, lifetime, typestable, idx, this_repeat, child_step_wiring, namespace
-        resume_point = @inline get_resume_point(r, idx)
-        if resume_point <= this_repeat
-            context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, Unstable())
-            @inline tick!(process)
-
-            for lidx in (resume_point + 1):this_repeat
-                if @inline breakcondition(lifetime, process, context)
-                    @inline set_resume_point!(r, idx, lidx)
-                    return context
-                end
-                context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, typestable)
-                @inline tick!(process)
-            end
-        end
-        return context
+        zips = (child_idxs, lifetimes(r), child_wiring(wiring), plan_child_namespaces(r)),
+    ) do context, func, r, process, lifetime, typestable, idx, this_lifetime, child_step_wiring, namespace
+        return @inline _subroutine_step!(context, func, r, process, lifetime, typestable, idx, this_lifetime, child_step_wiring, namespace)
     end
 end

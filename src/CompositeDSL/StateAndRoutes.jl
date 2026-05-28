@@ -131,6 +131,13 @@ function _composite_dsl_owner(entity, name::Symbol)
     return IdentifiableAlgo(entity, name)
 end
 
+"""Return the constructor entry used for a DSL algorithm/state value.
+
+`CompositeAlgorithm`/`Routine` constructors accept `:name => entity` pairs for
+normal process entities, but nested loop algorithms are already keyed through
+their own tree. This helper centralizes that distinction so route ownership and
+constructor entries keep the same identity convention.
+"""
 function _composite_dsl_entry(entity, name::Symbol)
     if name == Symbol() || entity isa AbstractLoopAlgorithm
         return entity
@@ -138,11 +145,43 @@ function _composite_dsl_entry(entity, name::Symbol)
     return name => entity
 end
 
+"""Emit an expression for the owner value associated with a known DSL name.
+
+The DSL builds route/share metadata at macro expansion time, but the concrete
+entity is only available when the emitted block runs. This helper returns the
+runtime expression that wraps the entity in `IdentifiableAlgo` when a stable DSL
+name is known, and leaves it unchanged when no name was declared.
+"""
 function _dsl_known_owner_expr(entity_expr, name::Symbol)
     name == Symbol() && return entity_expr
     return :(Processes._composite_dsl_owner($entity_expr, $(QuoteNode(name))))
 end
 
+"""Return the key-safe owner value used by `Var` selectors emitted from the DSL."""
+function _composite_dsl_var_owner(owner::O) where {O}
+    if owner isa AbstractIdentifiableAlgo && haskey(owner)
+        return getkey(owner)
+    end
+    return owner
+end
+
+"""Resolve a DSL variable name to the `Var` selector for its current producer."""
+function _composite_dsl_var_selector(producers::D, current_owner::O, current_outputs::CO, name::Symbol) where {D<:Dict{Symbol,Any},O,CO<:Tuple}
+    if name in current_outputs
+        isnothing(current_owner) && error("Cannot use current output `$name` as a lifetime selector here.")
+        return Var(_composite_dsl_var_owner(current_owner), name)
+    elseif haskey(producers, name)
+        return Var(_composite_dsl_var_owner(producers[name]), name)
+    end
+    error("Lifetime selector `$name` is not a known DSL variable at this point.")
+end
+
+"""Return the route target used for `owner.field = value` DSL writes.
+
+Loop algorithms expose their inline state through the synthetic `._state`
+property, so writes into a nested routine/composite must target that state owner.
+Plain algorithms use the normal keyed owner wrapper.
+"""
 function _composite_dsl_write_owner(entity, name::Symbol)
     if entity isa AbstractLoopAlgorithm
         return getproperty(entity, :_state)
@@ -150,7 +189,184 @@ function _composite_dsl_write_owner(entity, name::Symbol)
     return IdentifiableAlgo(entity, name)
 end
 
-"""Build the general state expression used by both `@state` and the block DSL."""
+"""Return the key carried by a state constructor entry.
+
+State entries appear in several forms while the DSL is being assembled:
+`:_state => state` before constructor parsing, `IdentifiableAlgo(state, key)`
+after parsing/resolution, and occasionally a plain state value in lower-level
+helpers. This accessor lets the approval code handle those shapes uniformly.
+"""
+@inline _composite_dsl_state_entry_key(entry::P) where {P<:Pair} = entry.first
+@inline _composite_dsl_state_entry_key(entry::IA) where {IA<:AbstractIdentifiableAlgo} = getkey(entry)
+@inline _composite_dsl_state_entry_key(entry::E) where {E} = Symbol()
+
+"""Return the process state value contained by a state constructor entry."""
+@inline _composite_dsl_state_entry_value(entry::P) where {P<:Pair} = entry.second
+@inline _composite_dsl_state_entry_value(entry::IA) where {IA<:AbstractIdentifiableAlgo} = getalgo(entry)
+@inline _composite_dsl_state_entry_value(entry::E) where {E} = entry
+
+"""Rebuild a state constructor entry after transforming the contained state.
+
+This preserves the original entry wrapper. For example, a `:_state => state`
+input stays a pair, while an already resolved `IdentifiableAlgo` keeps its key,
+id, aliases, and algorithm name.
+"""
+function _composite_dsl_rebuild_state_entry(entry::P, state::S) where {P<:Pair, S}
+    return entry.first => state
+end
+
+function _composite_dsl_rebuild_state_entry(entry::IA, state::S) where {IA<:AbstractIdentifiableAlgo, S}
+    return setfield(entry, :func, state)
+end
+
+_composite_dsl_rebuild_state_entry(entry::E, state::S) where {E, S} = state
+
+"""Apply `func` to one state constructor entry, preserving its wrapper.
+
+The returned boolean tells callers whether the state object changed. That lets
+the tree walk below return original branches unchanged when diagnostic metadata
+does not apply.
+"""
+function _composite_dsl_map_state_entry(func::F, entry::E) where {F, E}
+    state = _composite_dsl_state_entry_value(entry)
+    next_state = func(state)
+    next_state === state && return entry, false
+    return _composite_dsl_rebuild_state_entry(entry, next_state), true
+end
+
+@inline _composite_dsl_map_state_entries(::F, entries::Tuple{}) where {F} = entries, false
+
+"""Apply `func` to a tuple of state entries without rebuilding no-op tuples."""
+function _composite_dsl_map_state_entries(func::F, entries::Entries) where {F, Entries<:Tuple}
+    head, head_changed = _composite_dsl_map_state_entry(func, first(entries))
+    tail, tail_changed = _composite_dsl_map_state_entries(func, Base.tail(entries))
+    (head_changed || tail_changed) || return entries, false
+    return (head, tail...), true
+end
+
+@inline _composite_dsl_map_state_children(::F, children::Tuple{}) where {F} = children, false
+
+"""Apply a state transform through child algorithms without rebuilding no-op branches."""
+function _composite_dsl_map_state_children(func::F, children::Children) where {F, Children<:Tuple}
+    head, head_changed = _composite_dsl_map_states_changed(func, first(children))
+    tail, tail_changed = _composite_dsl_map_state_children(func, Base.tail(children))
+    (head_changed || tail_changed) || return children, false
+    return (head, tail...), true
+end
+
+"""Apply `func` to every process state contained by a loop-algorithm tree.
+
+The DSL needs to update state metadata before the parent constructor flattens
+nested algorithms into one registry. This tree walk preserves the executable
+plan shape and only replaces branches that contain a changed state. Non-loop
+algorithm leaves pass through unchanged.
+"""
+function _composite_dsl_map_states_changed(func::F, entity::LA) where {F, LA<:LoopAlgorithm}
+    plan, plan_changed = _composite_dsl_map_states_changed(func, getplan(entity))
+    states, states_changed = _composite_dsl_map_state_entries(func, getstates(entity))
+    (plan_changed || states_changed) || return entity, false
+    return LoopAlgorithm(
+        plan;
+        states,
+        options = getoptions(entity),
+        registry = getregistry(entity),
+        context = getstoredcontext(entity),
+        inits = getstoredinits(entity),
+        overrides = getstoredoverrides(entity),
+        id = getid(entity),
+    ), true
+end
+
+function _composite_dsl_map_states_changed(func::F, entity::LA) where {F, LA<:Union{CompositeAlgorithm, Routine}}
+    funcs, funcs_changed = _composite_dsl_map_state_children(func, getalgos(entity))
+    funcs_changed || return entity, false
+    return rebuild_loopalgorithm_funcs(entity, funcs), true
+end
+
+function _composite_dsl_map_states_changed(func::F, entity::IA) where {F, Inner<:AbstractLoopAlgorithm, IA<:AbstractIdentifiableAlgo{Inner}}
+    inner, inner_changed = _composite_dsl_map_states_changed(func, getalgo(entity))
+    inner_changed || return entity, false
+    return setfield(entity, :func, inner), true
+end
+
+_composite_dsl_map_states_changed(::F, entity::E) where {F, E} = entity, false
+
+"""Return an entity with `func` applied to contained states."""
+function _composite_dsl_map_states(func::F, entity::E) where {F, E}
+    mapped, _ = _composite_dsl_map_states_changed(func, entity)
+    return mapped
+end
+
+"""Prefix diagnostic state-field paths with a parent `@context` alias.
+
+Warnings for overlapping anonymous `@state` fields are only useful when they
+name where the fields came from. When a parent writes `@context f = child()`,
+this changes diagnostic paths from `buffers` to `f.buffers` while leaving the
+runtime field name as `:buffers`.
+"""
+function _composite_dsl_prefix_state_diagnostic_paths(entity::E, context_alias::Symbol) where {E}
+    return _composite_dsl_map_states(entity) do state
+        state isa GeneralState || return state
+        return prefix_general_state_diagnostic_paths(state, context_alias)
+    end
+end
+
+"""Mark a field in nested inline states as explicitly shared.
+
+`@bind` and `@merge` do not create a new route by themselves; they mark a future
+`GeneralState` merge as intentional so the registry can coalesce the slots
+without emitting the accidental-overlap warning. The field name is still the
+actual state variable name, not the display path.
+"""
+function _composite_dsl_mark_shared_state_field(entity::E, field::Symbol) where {E}
+    return _composite_dsl_map_states(entity) do state
+        state isa GeneralState || return state
+        field in general_state_fields(state) || return state
+        return mark_general_state_fields_explicitly_shared(state, (field,))
+    end
+end
+
+"""Mark a shared field on the current block's anonymous inline state.
+
+This is the current-block half of `@bind buffers => f.buffers`. The local state
+has already been pushed into `_dsl_states` by `_dsl_state_setup_expr`, so the
+metadata update mutates that constructor list before the final loop-algorithm
+constructor call is made.
+"""
+function _composite_dsl_mark_local_shared_state_field!(states::S, field::Symbol) where {S<:Vector{Any}}
+    for idx in eachindex(states)
+        entry = states[idx]
+        _composite_dsl_state_entry_key(entry) == :_state || continue
+        state = _composite_dsl_state_entry_value(entry)
+        state isa GeneralState || continue
+        field in general_state_fields(state) || continue
+        states[idx] = _composite_dsl_rebuild_state_entry(entry, mark_general_state_fields_explicitly_shared(state, (field,)))
+    end
+    return states
+end
+
+"""Mark a shared field on the child entry named by a `@context` alias.
+
+The parent DSL records the index at which each `@context` entry was pushed into
+`_dsl_algos`. `@bind`/`@merge` use that table to rewrite the already-pushed child
+entry with explicit-sharing metadata. Referencing an unknown alias is a DSL
+authoring error because state-sharing declarations must appear after the relevant
+`@context` declaration.
+"""
+function _composite_dsl_mark_context_shared_state_field!(algos::A, context_indices::CI, context_alias::Symbol, field::Symbol) where {A<:Vector{Any}, CI<:Dict{Symbol, Int}}
+    haskey(context_indices, context_alias) || error("`@bind`/`@merge` references unknown context alias `$context_alias`. Declare it first with `@context $context_alias = ...`.")
+    idx = context_indices[context_alias]
+    algos[idx] = _composite_dsl_mark_shared_state_field(algos[idx], field)
+    return algos
+end
+
+"""Build the `GeneralState` constructor expression for parsed `@state` fields.
+
+Required fields are stored in the `Required` type parameter, while defaulted
+fields are emitted into a zero-argument builder closure. Keeping defaults in a
+builder is important for mutable defaults such as `Float64[]`: each init gets a
+fresh value instead of sharing one array across process instances.
+"""
 function _dsl_expand_state_expr(fields)
     field_names = Expr(:tuple, [QuoteNode(field.name) for field in fields]...)
     required_names = Expr(:tuple, [QuoteNode(field.name) for field in fields if field.required]...)
@@ -164,7 +380,12 @@ function _dsl_expand_state_expr(fields)
     end
 end
 
-"""Parse one field entry from a `@state` declaration."""
+"""Parse one field entry from a `@state` declaration.
+
+Plain symbols become required state slots. Assignments become optional slots
+whose right-hand side is evaluated by the generated defaults builder during
+state initialization.
+"""
 function _dsl_parse_state_entry(ex)
     if ex isa Symbol
         return (; name = ex, required = true, default = nothing)
@@ -176,7 +397,12 @@ function _dsl_parse_state_entry(ex)
     error("@state only supports entries like `a` or `a = 1`. Got `$ex`.")
 end
 
-"""Collect field entries from a `@state` declaration, ignoring line nodes."""
+"""Collect field entries from a `@state` declaration, ignoring line nodes.
+
+The parser accepts both compact forms such as `@state x = 1` and block forms
+such as `@state begin ... end`. This helper flattens those surface forms into a
+single vector of raw field entries before per-field validation.
+"""
 function _dsl_collect_state_fields(args)
     raw_entries = Any[]
     for arg in args
@@ -200,6 +426,10 @@ Supported forms:
 - `@state a = 1`
 - `@state begin ... end`
 - `@state mystate begin ... end`
+
+The return value is `(state_name, fields)`. Anonymous state declarations use the
+reserved state key `:_state`; named forms use the explicit state key supplied by
+the user.
 """
 function _dsl_parse_state_statement(stmt)
     stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state") || error("Invalid @state statement `$stmt`.")
@@ -213,6 +443,13 @@ function _dsl_parse_state_statement(stmt)
     return :_state, _dsl_collect_state_fields(args)
 end
 
+"""Parse one `@input` declaration into runtime-input metadata.
+
+`@input x` declares a required input of type `Any`; `@input x::T` records a type
+constraint; `@input x = default` makes the input optional. The result is a plain
+NamedTuple so the macro collector can carry input metadata without constructing
+runtime objects early.
+"""
 function _dsl_parse_input_entry(ex)
     default = nothing
     required = true
@@ -231,6 +468,12 @@ function _dsl_parse_input_entry(ex)
     return (; name, typeexpr, required, default)
 end
 
+"""Parse a complete `@input` statement.
+
+The current DSL deliberately allows exactly one input field per statement. That
+keeps diagnostics precise and mirrors the runtime `RuntimeInput` objects emitted
+later by `_dsl_runtime_input_setup_expr`.
+"""
 function _dsl_parse_input_statement(stmt)
     stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@input") || error("Invalid @input statement `$stmt`.")
     args = [stmt.args[i] for i in 3:length(stmt.args) if !(stmt.args[i] isa LineNumberNode)]
@@ -238,7 +481,13 @@ function _dsl_parse_input_statement(stmt)
     return _dsl_parse_input_entry(only(args))
 end
 
-"""Accumulate one `@state` statement into the current block-level inline state."""
+"""Accumulate one `@state` statement into the current block-level inline state.
+
+One DSL block produces at most one inline `GeneralState` entry. Multiple
+anonymous `@state` statements are merged into that entry, but mixing two
+different explicit state names in one block is rejected because later plain field
+references would become ambiguous.
+"""
 function _dsl_merge_state_statement!(state_fields::Vector, state_name::Symbol, stmt)
     this_state_name, this_state_fields = _dsl_parse_state_statement(stmt)
     state_name == :_state || this_state_name == :_state || this_state_name == state_name || error("Use a single state name inside one DSL block. Got `$state_name` and `$this_state_name`.")
@@ -246,7 +495,14 @@ function _dsl_merge_state_statement!(state_fields::Vector, state_name::Symbol, s
     return this_state_name == :_state ? state_name : this_state_name
 end
 
-"""Generate the setup expression for the collected block-level inline state."""
+"""Generate the emitted setup expression for the block's inline state.
+
+The emitted code constructs the `GeneralState`, pushes it into `_dsl_states`, and
+registers its fields as known producers/state owners. Registering state owners is
+what lets later assignments such as `buffers = f(buffers)` route the produced
+value back into the inline state slot instead of rebinding `buffers` to a new
+algorithm owner.
+"""
 function _dsl_state_setup_expr(state_fields, state_name::Symbol)
     isempty(state_fields) && return nothing
 
@@ -265,6 +521,13 @@ function _dsl_state_setup_expr(state_fields, state_name::Symbol)
     end
 end
 
+"""Generate the emitted setup expression for collected `@input` fields.
+
+Runtime inputs are represented as a special `RuntimeInputState` plus a matching
+`RuntimeInputs` option. The state owns the input symbols for DSL routing
+purposes, while the option performs validation/default handling when users call
+`run(...; input = value)`.
+"""
 function _dsl_runtime_input_setup_expr(input_fields)
     isempty(input_fields) && return nothing
     specs = map(input_fields) do field
@@ -296,6 +559,12 @@ function _dsl_parse_output_symbols(lhs)
     error("Unsupported left-hand side in the DSL: `$lhs`.")
 end
 
+"""Try to parse assignment outputs without throwing.
+
+Callers use this in speculative paths where an expression may not be a DSL
+assignment. A single symbol becomes a one-element tuple; tuple LHS forms become
+multi-output tuples; unsupported LHS forms return `nothing`.
+"""
 function _dsl_try_parse_output_symbols(lhs)
     if lhs isa Symbol
         return (lhs,)
@@ -329,26 +598,47 @@ function _dsl_parse_alias(stmt)
     return lhs => assign.args[2]
 end
 
-"""Parse a constructor-time conditional include statement."""
+"""Parse a constructor-time conditional include statement.
+
+`@include_if condition entry` and `@include_if condition begin ... end` are
+evaluated while building the loop algorithm, not during process stepping. The
+returned pair is the condition expression plus the entry/body expression to
+lower when the condition is true.
+"""
 function _dsl_parse_include_if(stmt)
     stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@include_if") || error("Invalid @include_if statement `$stmt`.")
     length(stmt.args) == 4 || error("@include_if expects `@include_if condition entry` or `@include_if condition begin ... end`.")
     return stmt.args[3], stmt.args[4]
 end
 
-"""Parse a root-level final post-processing statement."""
+"""Parse a root-level final post-processing statement.
+
+`@finally` wraps the outer DSL algorithm in `FinalizedAlgorithm`. It is parsed
+here but enforced by the block collector so nested and conditional uses can
+produce targeted errors.
+"""
 function _dsl_parse_finally(stmt)
     stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@finally") || error("Invalid @finally statement `$stmt`.")
     length(stmt.args) == 3 || error("@finally expects exactly one callable, e.g. `@finally summarize`.")
     return stmt.args[3]
 end
 
-"""Reject declarations whose scope would be ambiguous inside conditional blocks."""
+"""Reject declarations whose scope would be ambiguous inside conditional blocks.
+
+`@include_if` can conditionally add executable entries, but it cannot
+conditionally introduce names, state slots, or state-sharing approvals. Those
+declarations affect the surrounding block's compile-time routing tables and must
+be visible unconditionally before later statements are parsed.
+"""
 function _dsl_reject_include_if_declarations(stmt)
     if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
         error("@state is not supported inside `@include_if`; declare state at the surrounding DSL block level.")
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
         error("@alias is not supported inside `@include_if`; declare aliases before the conditional block.")
+    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@bind")
+        error("@bind is not supported inside `@include_if`; bind state at the surrounding DSL block level.")
+    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@merge")
+        error("@merge is not supported inside `@include_if`; merge state at the surrounding DSL block level.")
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@finally")
         error("@finally is root-only and is not supported inside `@include_if`.")
     end

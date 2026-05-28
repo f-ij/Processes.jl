@@ -98,11 +98,11 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability:
     # Builds an Expr representing the body of `step!` for a Routine:
     # each child algorithm runs `reps[i]` times before moving to the next.
 
-    func_repeats = repeats(routine)
+    func_lifetimes = lifetimes(routine)
     exprs = Any[]
 
     for i in 1:numalgos(routine)
-        this_repeat = func_repeats[i]
+        this_lifetime = func_lifetimes[i]
         local_name = gensym(:algo)
         this_functype = getalgotype(routine, i)
         namespace = _generated_child_namespace(routine, i)
@@ -111,11 +111,43 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability:
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
         push!(exprs, :(local $local_name = @inline getalgo($name, $i)))
 
+        if this_lifetime isa Lifetime
+            push!(exprs, quote
+                local _subroutine_lifetime = lifetimes($name, Val($i))
+                local _routine_repeat_count = @inline routine_repeat_count(_subroutine_lifetime)
+                if resume_idx($name, $i) <= _routine_repeat_count
+                    $(step!_expr(this_functype, C, local_name, namespace, :unstable))
+                    @inline tick!(process)
+
+                    local _routine_next_idx = resume_idx($name, $i) + 1
+                    local _routine_resume_point = resume_idx($name, $i)
+                    if @inline routine_breakcondition(_subroutine_lifetime, lifetime, process, context, _routine_resume_point)
+                        if !(@inline _routine_local_breakcondition(_subroutine_lifetime, process, context, _routine_resume_point))
+                            set_resume_point!($name, $i, _routine_next_idx)
+                        end
+                        return context
+                    end
+
+                    for lidx in _routine_next_idx:_routine_repeat_count
+                        if @inline routine_breakcondition(_subroutine_lifetime, lifetime, process, context, lidx)
+                            if !(@inline _routine_local_breakcondition(_subroutine_lifetime, process, context, lidx))
+                                set_resume_point!($name, $i, lidx)
+                            end
+                            return context
+                        end
+                        $(step!_expr(this_functype, C, local_name, namespace, stability))
+                        @inline tick!(process)
+                    end
+                end
+            end)
+            continue
+        end
+
         # Generated block: a repeat-loop for this child algorithm.
         # - If `shouldrun(process)` is false, record the resume point (child index i) and return early.
         # - Otherwise execute the child's generated `step!` body.
         push!(exprs, quote
-            if resume_idx($name, $i) <= $this_repeat
+            if resume_idx($name, $i) <= $this_lifetime
                 # One unstable step allowed
                 $(step!_expr(this_functype, C, local_name, namespace, :unstable))
                 
@@ -127,7 +159,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability:
                 end
 
                 start_idx = @inline resume_idx($name, $i) + UInt(1)
-                for lidx in start_idx:$(this_repeat)
+                for lidx in start_idx:$(this_lifetime)
                     # Pause/stop check: if the process is not running, record which child we were on.
 
                     # Inline the child's `step!` body, specialized to the child's algorithm type and the context type.

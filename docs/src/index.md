@@ -39,7 +39,8 @@ If you are new to the package, read these first:
 - [Vars (`Var` Selectors)](@ref vars_user)
 - [Lifetime](@ref lifetime_user)
 - [Running, Wait, Fetch](@ref running_user)
-- [Copying and Process Management](@ref copying_and_management_user)
+- [Copying Processes](@ref copying_processes_user)
+- [Threaded Process Managers](@ref threaded_process_managers_user)
 - [Value Semantics and `Unique`](@ref value_semantics_user)
 
 ## Internals

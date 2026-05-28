@@ -6,6 +6,34 @@ abstract type AbstractWiring end
 abstract type ProcessState <: AbstractOption end
 abstract type ParserOption end
 
+export ThreadsType, Static, Dynamic, Greedy
+
+"""
+Thread scheduling trait used by manager-level threaded runners.
+"""
+abstract type ThreadsType end
+
+"""
+    Static()
+
+Use static thread scheduling where a threaded loop supports it.
+"""
+struct Static <: ThreadsType end
+
+"""
+    Dynamic()
+
+Use dynamic thread scheduling where a threaded loop supports it.
+"""
+struct Dynamic <: ThreadsType end
+
+"""
+    Greedy()
+
+Use greedy thread scheduling where a threaded loop supports it.
+"""
+struct Greedy <: ThreadsType end
+
 struct IfWrapped{A,C} <: ParserOption
     algo::A
     cond::C

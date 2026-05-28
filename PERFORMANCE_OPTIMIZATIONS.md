@@ -186,7 +186,7 @@ context/lifetime while keeping task/result/error fields flexible.
 
 Relevant file:
 
-- `src/ProcessManager.jl`
+- `src/Manager/ProcessManager.jl`
 
 `WorkerSlot` stores `job`, `scratch`, `result`, and `error` as `Any`, which is
 appropriate for the generic manager. A typed manager/slot variant could improve

@@ -20,10 +20,11 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             local _dsl_algos = Any[]
             local _dsl_states = Any[]
             local _dsl_options = Any[]
-            local _dsl_specification = Int[]
+            local _dsl_specification = Any[]
             local _dsl_producers = Dict{Symbol, Any}()
             local _dsl_state_owners = Dict{Symbol, Any}()
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
+            local _dsl_context_indices = Dict{Symbol, Int}()
 
             $(isnothing(state_setup_expr) ? nothing : state_setup_expr)
             $(isnothing(input_setup_expr) ? nothing : input_setup_expr)
@@ -60,10 +61,26 @@ function _dsl_parse_loopalgorithm_macro_args(args, macro_name::Symbol)
     error("`@$macro_name` expects either `@$macro_name begin ... end` or `@$macro_name :print begin ... end`.")
 end
 
-"""Expand the body used inside `@repeat n begin ... end` into a `CompositeAlgorithm`."""
-function _dsl_expand_simplealgorithm_resolved(block)
+"""
+Expand the body used inside `@repeat n begin ... end` into a `CompositeAlgorithm`.
+
+Nested repeat blocks inherit surrounding aliases for route parsing, while any
+alias declarations inside the nested block remain local to that nested block.
+"""
+function _dsl_expand_simplealgorithm_resolved(
+    block,
+    initial_alias_map::Dict{Symbol, Any} = Dict{Symbol, Any}(),
+    initial_context_map::Dict{Symbol, Any} = Dict{Symbol, Any}(),
+)
     statements = block isa Expr && block.head == :block ? block.args : Any[block]
-    collected = _dsl_collect_block(statements, :none, :repeat; allow_final = false)
+    collected = _dsl_collect_block(
+        statements,
+        :none,
+        :repeat;
+        allow_final = false,
+        initial_alias_map,
+        initial_context_map,
+    )
 
     state_setup_expr = _dsl_state_setup_expr(collected.state_fields, collected.state_name)
     input_setup_expr = _dsl_runtime_input_setup_expr(collected.input_fields)
@@ -75,10 +92,11 @@ function _dsl_expand_simplealgorithm_resolved(block)
             local _dsl_algos = Any[]
             local _dsl_states = Any[]
             local _dsl_options = Any[]
-            local _dsl_specification = Int[]
+            local _dsl_specification = Any[]
             local _dsl_producers = Dict{Symbol, Any}()
             local _dsl_state_owners = Dict{Symbol, Any}()
             local _dsl_external_inputs = Pair{Symbol, Symbol}[]
+            local _dsl_context_indices = Dict{Symbol, Int}()
 
             $(isnothing(state_setup_expr) ? nothing : state_setup_expr)
             $(isnothing(input_setup_expr) ? nothing : input_setup_expr)
@@ -96,15 +114,20 @@ function _dsl_expand_simplealgorithm_resolved(block)
 end
 
 """Wrap a repeated DSL block in a `Routine`, then expose it as one routable entity."""
-function _dsl_expand_repeated_block(block, repeats_expr)
-    inner_expr = _dsl_expand_simplealgorithm_resolved(block)
+function _dsl_expand_repeated_block(
+    block,
+    repeats_expr,
+    initial_alias_map::Dict{Symbol, Any} = Dict{Symbol, Any}(),
+    initial_context_map::Dict{Symbol, Any} = Dict{Symbol, Any}(),
+)
+    inner_expr = _dsl_expand_simplealgorithm_resolved(block, initial_alias_map, initial_context_map)
     expanded = quote
         let
             local _dsl_inner = $inner_expr
-            local _dsl_repeats = Int($(esc(repeats_expr)))
-            # `Unique` gives the repeated block one stable identity so normal
-            # routes and aliases can target it from the outer DSL block.
-            local _dsl_algo = Processes.Unique(Processes.Routine(_dsl_inner.entity, (_dsl_repeats,)))
+            local _dsl_owner = nothing
+            local _dsl_outputs = ()
+            local _dsl_repeats = $(_dsl_repeat_schedule_expr(repeats_expr))
+            local _dsl_algo = Processes.Routine(_dsl_inner.entity, (_dsl_repeats,))
             local _dsl_inputs = _dsl_inner.inputs
             Processes._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
         end
@@ -184,6 +207,17 @@ but does not assign the nested algorithm the key `:c`.
 Direct `c.field` access is interpreted as a reference to the nested inline
 state owned by that algorithm, so `n.changeable_seed` lowers like routing from
 `capture_noise._state` with source `:changeable_seed`.
+
+State composition:
+- `@bind buffers => c.buffers`
+- `@merge c1.buffers, c2.buffers`
+
+When nested DSL blocks declare overlapping inline state fields, the merge is
+allowed for compatibility but warns unless the parent block documents the sharing
+with `@bind` or `@merge`. `@bind` marks sharing from the current block's state
+field into a child state field. `@merge` marks peer child state fields as the
+same shared slot. Explicit `_state` selectors like `c._state.buffers`
+are accepted anywhere `c.buffers` is accepted.
 
 Direct owned-field access like `dynamics.state` is also accepted in route
 positions. It routes directly from the known `:dynamics` owner with source

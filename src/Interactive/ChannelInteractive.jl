@@ -13,4 +13,4 @@ function Processes.cleanup(::Interactive{T}, context) where T
     return (;)
 end
 
-put!(I::Interactive{T}, value::T) where T = put!(I.channel, value)
+Base.put!(I::Interactive{T}, value::T) where T = put!(I.channel, value)

@@ -287,7 +287,23 @@ makeloop!(p::Process, lt::Lifetime; threaded = true, loopfunc::LF = loop) where 
     makeloop!(p, (;), lt; threaded, loopfunc)
 
 """
-Reset process to initial state
+    reset!(process)
+
+Reset selected `Process` fields without rebuilding its context.
+
+This performs these exact mutations:
+
+- `process.loopidx = 1`
+- `process.tickidx = 1`
+- `process.paused = false`
+- `process.shouldrun = true`
+- `process.starttime = nothing`
+- `process.endtime = nothing`
+- `reset!(getalgo(process))`
+
+It does not change `process.runtime_context`, `process.task`, or
+`process.lastresult`. It does not clear or replace values stored in
+`context(process)`.
 """
 function reset!(p::Process)
     reset_loopidx!(p)

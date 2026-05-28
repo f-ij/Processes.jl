@@ -7,8 +7,31 @@
 # tuples of closures keep their closure types available to inference.
 
 export ProcessManager, WorkerSlot
+export WorkerInitMode, CopyFirstWorker, MakeEachWorker
 export FlushPolicy, FlushAtEnd, NoFlush, FlushEvery
 export dispatch!, poll!, drain!, run!, resetworker!, reinitworker!, partialinitworker!, slots, workers, copyworker, runprocessinline!
+
+"""
+Worker construction mode used when a `ProcessManager` owns its workers.
+"""
+abstract type WorkerInitMode end
+
+"""
+    CopyFirstWorker()
+
+Build slot 1 with `makeworker`, then build later slots through `copyworker`.
+This is the default historical manager behavior.
+"""
+struct CopyFirstWorker <: WorkerInitMode end
+
+"""
+    MakeEachWorker()
+
+Call `makeworker(idx, manager)` independently for every owned worker slot.
+Use this when workers should be uniquely initialized instead of copied or
+deep-copied from slot 1.
+"""
+struct MakeEachWorker <: WorkerInitMode end
 
 """
 Policy trait controlling when a `ProcessManager` invokes a recipe `flush!` callback.
@@ -83,24 +106,53 @@ WorkerSlot(idx::Integer, worker; scratch = nothing) =
 """
     context(slot::WorkerSlot)
 
-Return the current context of the worker stored in `slot`.
+Return the current context of `slot.worker`.
+
+For a `Process` slot, this is the same object returned by
+`context(slot.worker)`. Mutating fields in this context changes the data the
+next managed run will see.
 """
 context(slot::WorkerSlot) = context(slot.worker)
 
 """
     resetworker!(slot)
 
-Reset the worker stored in `slot` and return the slot. The manager never calls
-this automatically; recipes opt into reset timing explicitly.
+Reset `slot.worker` by calling `reset!(slot.worker)` and return `slot`.
+
+For a `Process`, this performs these exact mutations:
+
+- `slot.worker.loopidx = 1`
+- `slot.worker.tickidx = 1`
+- `slot.worker.paused = false`
+- `slot.worker.shouldrun = true`
+- `slot.worker.starttime = nothing`
+- `slot.worker.endtime = nothing`
+- `reset!(getalgo(slot.worker))`
+
+It does not change `slot.worker.runtime_context`, `slot.worker.task`, or
+`slot.worker.lastresult`. It also does not rebuild or clear values stored in the
+process context. Context fields, arrays, buffers, and refs stay exactly as they
+were.
+
+Call this from `prepare!` after you have loaded the next job into an existing
+context and want the next run to start from the first repeat/step again. Use
+`reinitworker!` or `partialinitworker!` when context values should be rebuilt
+through `init`.
 """
 resetworker!(slot::WorkerSlot) = (reset!(slot.worker); slot)
 
 """
     reinitworker!(slot, inputs_overrides...; kwargs...)
 
-Rebuild the worker context through the normal process init pipeline and return
-the slot. Use this from `prepare!` when a job should rebuild the whole worker
-context before the worker is started.
+Replace the whole context of `slot.worker` by running the normal process init
+pipeline, then return `slot`.
+
+This is different from `resetworker!`: it rebuilds context values by calling
+`init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))`
+and then assigning the resulting context with
+`context(slot.worker, context(init(...)))`. Use it from `prepare!` when a job
+needs freshly initialized context state instead of reusing the previous context
+object.
 """
 function reinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...; kwargs...)
     context(slot.worker, context(init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))))
@@ -110,8 +162,15 @@ end
 """
     partialinitworker!(slot, inputs_overrides...)
 
-Rebuild only the targeted parts of a `Process` worker context through
-`partialinit` and return the slot.
+Reinitialize only the context targets named by `inputs_overrides`, then return
+`slot`.
+
+This keeps the existing process context as the starting point and runs
+`partialinit` for the affected algorithm or state entries. Use it when one part
+of the context should be rebuilt through its `init` method while the rest of the
+context should keep its current values. Concretely, it builds a lifecycle-wrapped
+algorithm from the current process context, runs `partialinit(algo, inputs_overrides...)`,
+and assigns the returned context back to `slot.worker`.
 """
 function partialinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...)
     algo = _with_lifecycle(
@@ -161,6 +220,8 @@ end
 """
     ProcessManager(recipe; nworkers = Threads.nthreads(), workers = nothing,
                    config = nothing, state = nothing, flush_policy = FlushAtEnd(),
+                   worker_init = CopyFirstWorker(),
+                   worker_init_data = nothing,
                    throw = true, poll_interval = 0.0,
                    job_type = Any, scratch_type = Any,
                    result_type = Any, error_type = Any)
@@ -187,6 +248,11 @@ each slot while keeping the template task description, or
 `copyworker(template, idx, manager)` when the whole worker copy must be custom. When
 `workers` is passed, the manager wraps those existing workers in slots and does
 not create new worker contexts.
+
+Set `worker_init = MakeEachWorker()` to call `makeworker(idx, manager)` for every
+owned slot instead of copying slot 1. This avoids the manager's deepcopy-based
+default `Process` copy path entirely. Pass `worker_init_data = data` to provide
+one value per worker; callbacks may accept it as `makeworker(idx, manager, data)`.
 
 The `job_type`, `scratch_type`, `result_type`, and `error_type` keywords let
 latency-sensitive code make worker slot fields concrete. Leaving them as `Any`
@@ -379,24 +445,101 @@ function _process_with_context(template, idx::Integer, prepared_context)
 end
 
 """
+    _validate_worker_init_data(worker_init_data, nworkers)
+
+Validate optional per-worker construction data and return it unchanged.
+"""
+function _validate_worker_init_data(worker_init_data::Data, nworkers::Integer) where {Data}
+    isnothing(worker_init_data) && return nothing
+    length(worker_init_data) == Int(nworkers) || throw(ArgumentError("`worker_init_data` must have one entry per worker."))
+    return worker_init_data
+end
+
+"""
+    _has_worker_init_data(worker_init_data)
+
+Return whether manager-owned worker construction should pass per-slot data into
+worker-construction callbacks.
+"""
+_has_worker_init_data(worker_init_data::Data) where {Data} = !isnothing(worker_init_data)
+
+"""
+    _worker_init_value(worker_init_data, idx)
+
+Return the per-worker construction data for slot `idx`.
+"""
+_worker_init_value(worker_init_data::Data, idx::Integer) where {Data} = worker_init_data[Int(idx)]
+
+"""
+    _makeworker(recipe, idx, manager, worker_init_data)
+
+Call `makeworker`, optionally passing the per-worker construction value as a
+third callback argument.
+"""
+function _makeworker(recipe::Recipe, idx::Integer, manager::M, worker_init_data::Data) where {Recipe, M<:ProcessManager, Data}
+    if _has_worker_init_data(worker_init_data)
+        return makeworker(recipe, idx, manager, _worker_init_value(worker_init_data, idx))
+    end
+    return makeworker(recipe, idx, manager)
+end
+
+"""
+    _worker_context(recipe, idx, manager, template, worker_init_data)
+
+Call `makecontext`, optionally passing the per-worker construction value as a
+fourth callback argument.
+"""
+function _worker_context(recipe::Recipe, idx::Integer, manager::M, template, worker_init_data::Data) where {Recipe, M<:ProcessManager, Data}
+    if _has_worker_init_data(worker_init_data)
+        return _call_optional_recipe_field(recipe, Val(:makecontext), idx, manager, template, _worker_init_value(worker_init_data, idx))
+    end
+    return _worker_context(recipe, idx, manager, template)
+end
+
+"""
+    _copyworker(recipe, template, idx, manager, worker_init_data)
+
+Call `copyworker`, optionally passing the per-worker construction value as a
+fourth callback argument.
+"""
+function _copyworker(recipe::Recipe, template, idx::Integer, manager::M, worker_init_data::Data) where {Recipe, M<:ProcessManager, Data}
+    if _has_worker_init_data(worker_init_data)
+        return copyworker(recipe, template, idx, manager, _worker_init_value(worker_init_data, idx))
+    end
+    return copyworker(recipe, template, idx, manager)
+end
+
+"""
     _owned_worker_values(recipe, nworkers, build_manager)
 
 Create the worker tuple for a manager that owns its workers. The first worker is
 made by `makeworker`; later workers are either slot-specific contexts or copied
 from the template.
 """
-function _owned_worker_values(recipe, nworkers::Integer, build_manager)
-    template = makeworker(recipe, 1, build_manager)
+function _owned_worker_values(recipe, nworkers::Integer, build_manager, ::CopyFirstWorker, worker_init_data)
+    template = _makeworker(recipe, 1, build_manager, worker_init_data)
 
     if _has_recipe_callback(recipe, Val(:makecontext))
         return ntuple(Int(nworkers)) do idx
-            prepared_context = _worker_context(recipe, idx, build_manager, template)
+            prepared_context = _worker_context(recipe, idx, build_manager, template, worker_init_data)
             _process_with_context(template, idx, prepared_context)
         end
     end
 
     return ntuple(Int(nworkers)) do idx
-        idx == 1 ? template : copyworker(recipe, template, idx, build_manager)
+        idx == 1 ? template : _copyworker(recipe, template, idx, build_manager, worker_init_data)
+    end
+end
+
+"""
+    _owned_worker_values(recipe, nworkers, build_manager, ::MakeEachWorker)
+
+Create each manager-owned worker by calling `makeworker` for that slot index.
+This path does not copy or deepcopy a template worker.
+"""
+function _owned_worker_values(recipe, nworkers::Integer, build_manager, ::MakeEachWorker, worker_init_data)
+    return ntuple(Int(nworkers)) do idx
+        _makeworker(recipe, idx, build_manager, worker_init_data)
     end
 end
 
@@ -406,8 +549,9 @@ end
 Construct a manager and its worker slots. Recipes are stored concretely, so a
 named tuple of anonymous functions becomes part of the manager type.
 """
-function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), throw::Bool = true, poll_interval::Real = 0.0, job_type::Type{Job} = Any, scratch_type::Type{Scratch} = Any, result_type::Type{Result} = Any, error_type::Type{Err} = Any) where {Job, Scratch, Result, Err}
+function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), worker_init::WIM = CopyFirstWorker(), worker_init_data = nothing, throw::Bool = true, poll_interval::Real = 0.0, job_type::Type{Job} = Any, scratch_type::Type{Scratch} = Any, result_type::Type{Result} = Any, error_type::Type{Err} = Any) where {Job, Scratch, Result, Err, WIM<:WorkerInitMode}
     nworkers > 0 || throw(ArgumentError("`nworkers` must be positive."))
+    prepared_worker_init_data = _validate_worker_init_data(worker_init_data, nworkers)
     normalized_policy = _normalize_flush_policy(flush_policy)
     prepared_state = if isnothing(state)
         initstate(recipe, config, nothing)
@@ -417,7 +561,7 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
     build_manager = ProcessManager(recipe, (), config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, 0, 1, Any[], false, isnothing(workers))
 
     worker_values = if isnothing(workers)
-        _owned_worker_values(recipe, nworkers, build_manager)
+        _owned_worker_values(recipe, nworkers, build_manager, worker_init, prepared_worker_init_data)
     else
         collected = collect(workers)
         isempty(collected) && throw(ArgumentError("`workers` must not be empty."))
@@ -522,6 +666,16 @@ end
     throw(MethodError(f, (a, b, c, d)))
 end
 
+@inline function _call_with_supported_arity(f, a, b, c, d, e)
+    applicable(f, a, b, c, d, e) && return f(a, b, c, d, e)
+    applicable(f, a, b, c, d) && return f(a, b, c, d)
+    applicable(f, a, b, c) && return f(a, b, c)
+    applicable(f, a, b) && return f(a, b)
+    applicable(f, a) && return f(a)
+    applicable(f) && return f()
+    throw(MethodError(f, (a, b, c, d, e)))
+end
+
 function _call_with_supported_arity(f, args...)
     throw(MethodError(f, args))
 end
@@ -556,6 +710,7 @@ Required callback used when the manager owns workers and must construct the
 template worker.
 """
 makeworker(recipe, idx, manager) = _call_recipe_field(recipe, Val(:makeworker), idx, manager)
+makeworker(recipe, idx, manager, initdata) = _call_recipe_field(recipe, Val(:makeworker), idx, manager, initdata)
 
 """
     _default_copyworker(template, idx, manager)
@@ -576,6 +731,11 @@ when provided.
 """
 function copyworker(recipe, template, idx, manager)
     result = _call_optional_recipe_field(recipe, Val(:copyworker), template, idx, manager)
+    return _is_no_recipe_callback(result) ? _default_copyworker(template, idx, manager) : result
+end
+
+function copyworker(recipe, template, idx, manager, initdata)
+    result = _call_optional_recipe_field(recipe, Val(:copyworker), template, idx, manager, initdata)
     return _is_no_recipe_callback(result) ? _default_copyworker(template, idx, manager) : result
 end
 
@@ -628,8 +788,12 @@ isdone(recipe, slot, manager) = _call_optional_recipe_field(recipe, Val(:isdone)
 """
     finalize!(recipe, slot, job, manager)
 
-Optional finish-step callback. Missing callbacks wait for and close `Process`
-workers.
+Optional finish-step callback for a completed slot.
+
+The manager calls this after the worker has finished and before `afterrun!`,
+`consume!`, and `release!`. Missing callbacks wait for and close `Process`
+workers, which stores the finished context back on the process before result
+collection.
 """
 finalize!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:finalize!), slot, job, manager)
 
