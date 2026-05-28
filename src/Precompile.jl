@@ -336,6 +336,8 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
             getalgo(composite_inline),
             context(composite_inline),
             lifetime(composite_inline),
+            (;),
+            Resuming{false}(),
             Generated(),
         )
         reset!(composite_inline)

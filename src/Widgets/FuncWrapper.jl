@@ -5,17 +5,166 @@ struct ValueRef{index, T} end
 to_expr(::ValueRef{index, T}, varname) where {index, T} = :((getindex(getproperty($varname, :values), $index))::$T)
 @inline _valueref_index(::ValueRef{index, T}) where {index, T} = index
 
+const _funcwrapper_default_aliases = VarAliases()
+
 """
 Wrap a plain function so it behaves like a `ProcessAlgorithm`.
 
 `InputSymbols` are routed positionally, `OutputSymbols` are written back by name,
 and `Kwargs` can point either to context symbols or inline literal values.
 """
-mutable struct FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T} <: ProcessAlgorithm
+mutable struct FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName, Key} <:
+    AbstractIdentifiableAlgo{FuncWrapper, Id, Aliases, AlgoName, Key}
     func::F
     values::T
     display::Any
 end
+
+@inline Base.getkey(fw::FuncWrapper) = getkey(typeof(fw))
+@inline Base.getkey(::Type{<:FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName, Key}}) where {F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName, Key} = Key
+@inline id(fw::FuncWrapper) = id(typeof(fw))
+@inline id(::Type{<:FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id}}) where {F, InputSymbols, OutputSymbols, Kwargs, T, Id} = Id
+@inline algoname(fw::FuncWrapper) = algoname(typeof(fw))
+@inline algoname(::Type{<:FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName}}) where {F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName} =
+    AlgoName == Symbol() ? nothing : AlgoName
+@inline varaliases(fw::FuncWrapper) = varaliases(typeof(fw))
+@inline varaliases(::Type{<:FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases}}) where {F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases} = Aliases
+@inline getvaraliases(fw::FuncWrapper) = varaliases(fw)
+@inline getalgo(fw::FuncWrapper) = fw
+@inline getalgos(fw::FuncWrapper) = (fw,)
+@inline match_by(fw::FuncWrapper) = id(fw)
+@inline match_by(::Type{FW}) where {FW<:FuncWrapper} = id(FW)
+@inline registry_entrytype(::Type{<:FuncWrapper}) = FuncWrapper
+
+function setcontextkey(fw::FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName}, newkey::Symbol) where {F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName}
+    return FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName, newkey}(fw.func, fw.values, fw.display)
+end
+
+function setid(fw::FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName, Key}, newid) where {F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName, Key}
+    resolved_id = newid isa UUID ? SimpleId(newid) : newid
+    return FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, resolved_id, Aliases, AlgoName, Key}(fw.func, fw.values, fw.display)
+end
+
+function setvaraliases(fw::FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName, Key}, newaliases) where {F, InputSymbols, OutputSymbols, Kwargs, T, Id, Aliases, AlgoName, Key}
+    return FuncWrapper{F, InputSymbols, OutputSymbols, Kwargs, T, Id, typeof(newaliases), AlgoName, Key}(fw.func, fw.values, fw.display)
+end
+
+function replacecontextkeys(fw::FuncWrapper, key_replacement::Pair)
+    getkey(fw) == key_replacement.first || return fw
+    return setcontextkey(fw, key_replacement.second)
+end
+
+function _step!(fw::FW, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, W<:Wiring{Tuple{}, Tuple{}}, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+    contextview = @inline view(context, fw)
+
+    retval = @inline step!(fw, contextview)
+    return @inline merge_funcwrapper_return(contextview, context, retval, stability)
+end
+
+function _step!(fw::FW, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, W<:Wiring, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+    contextview = @inline view(
+        context,
+        fw;
+        sharedcontexts = (@inline shares(wiring)),
+        sharedvars = (@inline routes(wiring)),
+    )
+
+    retval = @inline step!(fw, contextview)
+    return @inline merge_funcwrapper_return(contextview, context, retval, stability)
+end
+
+function _step!(fw::FW, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, W<:PlanWiring, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+    return @inline _step!(fw, context, global_wiring(wiring), process, lifetime, stability)
+end
+
+"""
+Step a resolved `FuncWrapper` child using its explicit plan namespace.
+
+Resolved plans keep the namespace outside the wrapper value, so generated and
+non-generated child stepping must view the context through `Namespace{Name}`.
+"""
+function _step!(fw::FW, context::C, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, W<:Wiring{Tuple{}, Tuple{}}, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+    contextview = @inline view(context, fw, namespace)
+
+    retval = @inline step!(fw, contextview)
+    return @inline merge_funcwrapper_return(contextview, context, retval, stability)
+end
+
+function _step!(fw::FW, context::C, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, W<:Wiring, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+    contextview = @inline view(
+        context,
+        fw,
+        namespace;
+        sharedcontexts = (@inline shares(wiring)),
+        sharedvars = (@inline routes(wiring)),
+    )
+
+    retval = @inline step!(fw, contextview)
+    return @inline merge_funcwrapper_return(contextview, context, retval, stability)
+end
+
+"""
+Merge a `FuncWrapper` return into the correct runtime target.
+
+Outputs whose names already resolve in the wrapper view are routed/shared/local
+writebacks and should be merged through `SubContextView`. New output names are
+DSL temporaries and remain in `ProcessContext._runtime` for later statements.
+"""
+@inline @generated function merge_funcwrapper_return(
+    contextview::SCV,
+    context::C,
+    retval::R,
+    stability::S,
+) where {SCV<:SubContextView, C<:ProcessContext, R<:NamedTuple, S<:Stability}
+    view_names = Symbol[]
+    runtime_names = Symbol[]
+
+    # Partition return names at generation time. Names visible in the
+    # SubContextView are real state/writeback targets; the rest are temporary
+    # runtime outputs for later DSL statements.
+    for name in fieldnames(R)
+        location, _ = _compute_location(SCV, name)
+        if isnothing(location)
+            push!(runtime_names, name)
+        else
+            push!(view_names, name)
+        end
+    end
+
+    view_expr = Expr(:tuple, Expr(:parameters, (
+        Expr(:kw, name, :(getproperty(retval, $(QuoteNode(name)))))
+        for name in view_names
+    )...))
+    runtime_expr = Expr(:tuple, Expr(:parameters, (
+        Expr(:kw, name, :(getproperty(retval, $(QuoteNode(name)))))
+        for name in runtime_names
+    )...))
+
+    view_merge_expr = if isempty(view_names)
+        :(context)
+    elseif S <: Unstable
+        :(@inline unstablemerge(contextview, $view_expr))
+    else
+        :(@inline stablemerge(contextview, $view_expr))
+    end
+
+    runtime_merge_expr = if isempty(runtime_names)
+        :(merged_context)
+    else
+        :(@inline merge_runtime_return(merged_context, $runtime_expr))
+    end
+
+    return quote
+        $(LineNumberNode(@__LINE__, @__FILE__))
+        merged_context = $view_merge_expr
+        return $runtime_merge_expr
+    end
+end
+
+"""
+Treat a `FuncWrapper` with no return value as a pure side-effecting step.
+"""
+@inline merge_funcwrapper_return(contextview::SCV, context::C, ::Nothing, stability::S) where {SCV<:SubContextView, C<:ProcessContext, S<:Stability} = context
 
 @inline _funcwrapper_render_value(value; io::IO = stdout) = sprint(show, value; context = io)
 
@@ -69,7 +218,6 @@ end
 end
 
 @inline _funcwrapper_callable_label(f) = sprint(show, f)
-@inline _identifiable_funcwrapper_label(sa::IdentifiableAlgo{F}) where {F<:FuncWrapper} = isnothing(algoname(sa)) ? string(getkey(sa)) : string(algoname(sa), "@", getkey(sa))
 
 @inline _funcwrapper_display_bundle(inputs::Tuple, kwargs::NamedTuple) = (; positional = inputs, kwargs)
 @inline _funcwrapper_default_display_inputs(inputs) = tuple(inputs...)
@@ -110,12 +258,25 @@ context_input_symbols(inputs) = tuple((x for x in inputs if x isa Symbol)...)
     end
 end
 
+@inline init(::FuncWrapper, context::ProcessContext) = context
 @inline init(::FuncWrapper, context) = (;)
+@inline cleanup(::FuncWrapper, context::ProcessContext) = context
+@inline cleanup(::FuncWrapper, context) = (;)
 
 function _funcwrapper_construct(f::F, inputs, outputsyms::NTuple{M, Symbol}, kwargs::NamedTuple, display_inputs::Tuple, display_kwargs::NamedTuple) where {F, M}
     newinputs, values = _funcwrapper_encode_inputs(inputs)
     display = _funcwrapper_display_bundle(display_inputs, display_kwargs)
-    FuncWrapper{F, newinputs, outputsyms, kwargs, typeof(values)}(f, values, display)
+    FuncWrapper{
+        F,
+        newinputs,
+        outputsyms,
+        kwargs,
+        typeof(values),
+        SimpleId(),
+        typeof(_funcwrapper_default_aliases),
+        Symbol(),
+        Symbol(),
+    }(f, values, display)
 end
 
 function FuncWrapper(f::F, inputs, outputsyms::NTuple{M, Symbol}) where {F, M}
@@ -155,19 +316,4 @@ function Base.show(io::IO, ::MIME"text/plain", fw::FuncWrapper)
     println(io, "├── signature = ", _funcwrapper_signature_string(fw; io))
     print(io, "└── function = ", _funcwrapper_callable_label(getfield(fw, :func)))
     return nothing
-end
-
-function Base.show(io::IO, sa::IdentifiableAlgo{F}) where {F<:FuncWrapper}
-    fw = getalgo(sa)
-    print(
-        io,
-        _identifiable_funcwrapper_label(sa),
-        ": ",
-        _funcwrapper_callable_label(getfield(fw, :func)),
-        " :: ",
-        _funcwrapper_signature_string(fw; io),
-    )
-    @static if debug_mode()
-        print(io, " [match_by=", match_by(sa), "]")
-    end
 end

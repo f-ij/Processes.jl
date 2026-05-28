@@ -327,11 +327,12 @@ context.
 """
 function Base.run(la::LA; repeats = 1, lifetime = nothing, kwargs...) where {LA<:AbstractLoopAlgorithm}
     initialized = isnothing(getstoredcontext(la)) ? init(la) : la
+    stored_context = getstoredcontext(initialized)
     lt = isnothing(lifetime) ? normalize_process_lifetime(initialized, repeats) : normalize_process_lifetime(initialized, lifetime)
     inputs = _validate_runtime_inputs(initialized, (; kwargs...))
     process = LoopRunProcess(lt)
-    result = loop(process, initialized, getstoredcontext(initialized), lt, inputs)
-    stored = result isa AbstractContext ? result : getstoredcontext(initialized)
-    stored = _strip_runtime_inputs(stored)
-    return _with_lifecycle(initialized, stored, getstoredinits(initialized), getstoredoverrides(initialized))
+    result = loop(process, initialized, stored_context, lt, inputs)
+    runtime_context = result isa AbstractContext ? result : stored_context
+    persistent_context = _strip_runtime_inputs(runtime_context, stored_context)
+    return _with_lifecycle(initialized, persistent_context, getstoredinits(initialized), getstoredoverrides(initialized))
 end
