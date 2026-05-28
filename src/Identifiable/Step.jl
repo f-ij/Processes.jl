@@ -4,26 +4,35 @@ Internal loop-runtime step for an identifiable algorithm.
 The public extension point remains `step!(algo, context)` on the wrapped
 `ProcessAlgorithm`. This method is only the loop engine's view/merge wrapper.
 """
-@inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: Union{Wiring, PlanWiring}, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
-    contextview = nothing
-    if !isempty(wiring)
-        contextview = @inline view(
-            context,
-            sa;
-            sharedcontexts = (@inline shares(wiring)),
-            sharedvars = (@inline routes(wiring))
-        )
-    else
-        contextview = @inline view(context, sa)
-    end
-    
+@inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: Wiring{Tuple{}, Tuple{}}, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+    contextview = @inline view(context, sa)
     retval = @inline step!(getalgo(sa), contextview)
-    
+
     if S <: Unstable
         return @inline unstablemerge(contextview, retval)
     else
         return @inline merge(contextview, retval)
     end
+end
+
+@inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: Wiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+    contextview = @inline view(
+        context,
+        sa;
+        sharedcontexts = (@inline shares(wiring)),
+        sharedvars = (@inline routes(wiring)),
+    )
+    retval = @inline step!(getalgo(sa), contextview)
+
+    if S <: Unstable
+        return @inline unstablemerge(contextview, retval)
+    else
+        return @inline merge(contextview, retval)
+    end
+end
+
+@inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+    return @inline _step!(sa, context, global_wiring(wiring), process, lifetime, stability)
 end
 
 """
@@ -44,19 +53,17 @@ end
 """
 Expression form of the scoped step! to inline view/merge and the inner step! call.
 """
-function step!_expr(sa::Type{<:IdentifiableAlgo}, context::Type{C}, funcname::Symbol, stability::Symbol) where {C<:AbstractContext}
-    returnexp = if stability === :stable
-        :(context = @inline stablemerge(contextview, returnvals))
+function step!_expr(sa::Type{<:IdentifiableAlgo}, context::Type{C}, funcname::Symbol, wiringname::Symbol, stability::Symbol) where {C<:AbstractContext}
+    stability_expr = if stability === :stable
+        :(Stable())
     elseif stability === :unstable
-        :(context = @inline unstablemerge(contextview, returnvals))
+        :(Unstable())
     else
         error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
     end
 
     return quote
         $(LineNumberNode(@__LINE__, @__FILE__))
-        local contextview = @inline view(context, $funcname)
-        local returnvals = @inline step!(getalgo($funcname), contextview)
-        $(returnexp)
+        context = @inline _step!($funcname, context, $wiringname, process, lifetime, $stability_expr)
     end
 end

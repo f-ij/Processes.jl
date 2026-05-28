@@ -54,21 +54,91 @@ function replacecontextkeys(fw::FuncWrapper, key_replacement::Pair)
     return setcontextkey(fw, key_replacement.second)
 end
 
-function _step!(fw::FW, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, W<:Union{Wiring, PlanWiring}, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
-    contextview = if !isempty(wiring)
-        @inline view(
-            context,
-            fw;
-            sharedcontexts = (@inline shares(wiring)),
-            sharedvars = (@inline routes(wiring)),
-        )
-    else
-        @inline view(context, fw)
-    end
+function _step!(fw::FW, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, W<:Wiring{Tuple{}, Tuple{}}, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+    contextview = @inline view(context, fw)
 
     retval = @inline step!(fw, contextview)
-    return @inline merge_runtime_return(context, retval)
+    return @inline merge_funcwrapper_return(contextview, context, retval, stability)
 end
+
+function _step!(fw::FW, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, W<:Wiring, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+    contextview = @inline view(
+        context,
+        fw;
+        sharedcontexts = (@inline shares(wiring)),
+        sharedvars = (@inline routes(wiring)),
+    )
+
+    retval = @inline step!(fw, contextview)
+    return @inline merge_funcwrapper_return(contextview, context, retval, stability)
+end
+
+function _step!(fw::FW, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, W<:PlanWiring, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+    return @inline _step!(fw, context, global_wiring(wiring), process, lifetime, stability)
+end
+
+"""
+Merge a `FuncWrapper` return into the correct runtime target.
+
+Outputs whose names already resolve in the wrapper view are routed/shared/local
+writebacks and should be merged through `SubContextView`. New output names are
+DSL temporaries and remain in `ProcessContext._runtime` for later statements.
+"""
+@inline @generated function merge_funcwrapper_return(
+    contextview::SCV,
+    context::C,
+    retval::R,
+    stability::S,
+) where {SCV<:SubContextView, C<:ProcessContext, R<:NamedTuple, S<:Stability}
+    view_names = Symbol[]
+    runtime_names = Symbol[]
+
+    # Partition return names at generation time. Names visible in the
+    # SubContextView are real state/writeback targets; the rest are temporary
+    # runtime outputs for later DSL statements.
+    for name in fieldnames(R)
+        location, _ = _compute_location(SCV, name)
+        if isnothing(location)
+            push!(runtime_names, name)
+        else
+            push!(view_names, name)
+        end
+    end
+
+    view_expr = Expr(:tuple, Expr(:parameters, (
+        Expr(:kw, name, :(getproperty(retval, $(QuoteNode(name)))))
+        for name in view_names
+    )...))
+    runtime_expr = Expr(:tuple, Expr(:parameters, (
+        Expr(:kw, name, :(getproperty(retval, $(QuoteNode(name)))))
+        for name in runtime_names
+    )...))
+
+    view_merge_expr = if isempty(view_names)
+        :(context)
+    elseif S <: Unstable
+        :(@inline unstablemerge(contextview, $view_expr))
+    else
+        :(@inline stablemerge(contextview, $view_expr))
+    end
+
+    runtime_merge_expr = if isempty(runtime_names)
+        :(merged_context)
+    else
+        :(@inline merge_runtime_return(merged_context, $runtime_expr))
+    end
+
+    return quote
+        $(LineNumberNode(@__LINE__, @__FILE__))
+        merged_context = $view_merge_expr
+        return $runtime_merge_expr
+    end
+end
+
+"""
+Treat a `FuncWrapper` with no return value as a pure side-effecting step.
+"""
+@inline merge_funcwrapper_return(contextview::SCV, context::C, ::Nothing, stability::S) where {SCV<:SubContextView, C<:ProcessContext, S<:Stability} = context
 
 @inline _funcwrapper_render_value(value; io::IO = stdout) = sprint(show, value; context = io)
 

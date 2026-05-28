@@ -5,11 +5,11 @@ Generated process loops receive the resolved wrapper at the root. Inline the
 stored plan directly so generated code does not call the old no-runtime
 `step!` entry point.
 """
-function step!_expr(::Type{LA}, context::Type{C}, name::Symbol, stability::Symbol) where {Plan, LA<:LoopAlgorithm{Plan}, C<:AbstractContext}
+function step!_expr(::Type{LA}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {Plan, LA<:LoopAlgorithm{Plan}, C<:AbstractContext}
     plan_name = gensym(:plan)
     return quote
         local $plan_name = @inline getplan($name)
-        $(step!_expr(Plan, C, plan_name, stability))
+        $(step!_expr(Plan, C, plan_name, wiringname, stability))
     end
 end
 
@@ -19,18 +19,18 @@ Generated expression form for a finalized root loop algorithm.
 Finalization affects the result after cleanup, not the loop step itself, so the
 generated step expression delegates to the wrapped algorithm.
 """
-function step!_expr(::Type{FA}, context::Type{C}, name::Symbol, stability::Symbol) where {LA, FA<:FinalizedAlgorithm{LA}, C<:AbstractContext}
+function step!_expr(::Type{FA}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {LA, FA<:FinalizedAlgorithm{LA}, C<:AbstractContext}
     inner_name = gensym(:inner)
     return quote
         local $inner_name = @inline inneralgorithm($name)
-        $(step!_expr(LA, C, inner_name, stability))
+        $(step!_expr(LA, C, inner_name, wiringname, stability))
     end
 end
 
 """
 Generated expression form of the composite step! with a caller-provided name binding.
 """
-function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, stability::Symbol) where {CA<:CompositeAlgorithm, C<:AbstractContext}
+function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {CA<:CompositeAlgorithm, C<:AbstractContext}
     # This method does not execute the algorithm directly. Instead, it *builds an Expr*
     # representing the body of a `step!` method specialized to:
     # - the CompositeAlgorithm type `ca`
@@ -40,31 +40,28 @@ function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, stability::Sym
     # `ca.parameters[1]` is the function-tuple type that stores the child algorithms.
    
     exprs = Any[]
-    this_inc = gensym(:this_inc)
+    algo_count = numalgos(ca)
+    child_wiring_type = ca.parameters[3].parameters[2]
+    sizehint!(exprs, algo_count + 4)
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
-    push!(exprs, :($this_inc = @inline inc($name)))
-    for i in 1:numalgos(ca)
+    push!(exprs, :(local this_inc = @inline inc($name)))
+    for i in 1:algo_count
         interval = Processes.interval(ca, i)
+        interval_type = typeof(interval)
+        child_step_wiring_value = fieldtype(child_wiring_type, i)()
         local_name = gensym(:algo)
+        local_wiring = gensym(:child_step_wiring)
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
-        push!(exprs, :(local $local_name = @inline getalgo($name, $i)))
         # fti = ft.parameters[i]
         this_functype = getalgotype(ca, i)
-        if interval == 1
-            # Generated block: the child algorithm's `step!` body (always executed).
-            push!(exprs, step!_expr(this_functype, C, local_name, stability))
-        else
-            # Generated block:
-            #   if this_inc % interval == 0
-            #       <child step! body>
-            #   end
-            push!(exprs, quote
-                # Only run this child every `interval` composite steps.
-                if $this_inc % $(interval) == 0
-                    $(step!_expr(this_functype, C, local_name, stability))
-                end
-            end)
-        end
+        push!(exprs, quote
+            # Only run this child every `interval` composite steps.
+            if @inline divides(this_inc, $interval_type())
+                local $local_name = @inline getalgo($name, $i)
+                local $local_wiring = $(QuoteNode(child_step_wiring_value))
+                $(step!_expr(this_functype, C, local_name, local_wiring, stability))
+            end
+        end)
     end
     # Generated line: `inc!(name)` (advance composite counter after running children).
     push!(exprs, :(@inline inc!($name)))
@@ -77,28 +74,33 @@ end
 """
 Generated expression form of the routine step! with a caller-provided name binding.
 """
-function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability::Symbol) where {R<:Routine, C<:AbstractContext}
+function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {R<:Routine, C<:AbstractContext}
     # Builds an Expr representing the body of `step!` for a Routine:
     # each child algorithm runs `reps[i]` times before moving to the next.
 
     func_lifetimes = lifetimes(routine)
     exprs = Any[]
+    algo_count = numalgos(routine)
+    child_wiring_type = routine.parameters[4].parameters[2]
+    sizehint!(exprs, algo_count + 3)
 
-    for i in 1:numalgos(routine)
+    for i in 1:algo_count
         this_lifetime = func_lifetimes[i]
+        child_step_wiring_value = fieldtype(child_wiring_type, i)()
         local_name = gensym(:algo)
+        local_wiring = gensym(:child_step_wiring)
         this_functype = getalgotype(routine, i)
         
 
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
-        push!(exprs, :(local $local_name = @inline getalgo($name, $i)))
-
         if this_lifetime isa Lifetime
             push!(exprs, quote
+                local $local_name = @inline getalgo($name, $i)
+                local $local_wiring = $(QuoteNode(child_step_wiring_value))
                 local _subroutine_lifetime = lifetimes($name, Val($i))
                 local _routine_repeat_count = @inline routine_repeat_count(_subroutine_lifetime)
                 if resume_idx($name, $i) <= _routine_repeat_count
-                    $(step!_expr(this_functype, C, local_name, :unstable))
+                    $(step!_expr(this_functype, C, local_name, local_wiring, :unstable))
                     @inline tick!(process)
 
                     local _routine_next_idx = resume_idx($name, $i) + 1
@@ -117,7 +119,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability:
                             end
                             return context
                         end
-                        $(step!_expr(this_functype, C, local_name, stability))
+                        $(step!_expr(this_functype, C, local_name, local_wiring, stability))
                         @inline tick!(process)
                     end
                 end
@@ -129,9 +131,11 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability:
         # - If `shouldrun(process)` is false, record the resume point (child index i) and return early.
         # - Otherwise execute the child's generated `step!` body.
         push!(exprs, quote
+            local $local_name = @inline getalgo($name, $i)
+            local $local_wiring = $(QuoteNode(child_step_wiring_value))
             if resume_idx($name, $i) <= $this_lifetime
                 # One unstable step allowed
-                $(step!_expr(this_functype, C, local_name, :unstable))
+                $(step!_expr(this_functype, C, local_name, local_wiring, :unstable))
                 
                 # Assumes process is defined in the top level
                 @inline tick!(process) # Tick counter
@@ -145,7 +149,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, stability:
                     # Pause/stop check: if the process is not running, record which child we were on.
 
                     # Inline the child's `step!` body, specialized to the child's algorithm type and the context type.
-                    $(step!_expr(this_functype, C, local_name, stability))
+                    $(step!_expr(this_functype, C, local_name, local_wiring, stability))
                     
                     # Assumes process is defined in the top level
                     @inline tick!(process) # Tick counter
@@ -168,9 +172,17 @@ end
 """
 Fallback expression form for non-CLA algorithms.
 """
-function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, ::Symbol) where {T, C<:AbstractContext}
+function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiringname::Symbol, stability::Symbol) where {T, C<:AbstractContext}
     # Generated single line:
-    #   context = step!(funcname, context)
-    # This is the non-generated fallback that just dispatches to an existing runtime `step!`.
-    return :(context = @inline step!($funcname, context))
+    #   context = _step!(funcname, context, wiring, process, lifetime, stability)
+    # This keeps generated loops aligned with the normal runtime route/share
+    # semantics for algorithms that do not provide a custom expression form.
+    stability_expr = if stability === :stable
+        :(Stable())
+    elseif stability === :unstable
+        :(Unstable())
+    else
+        error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
+    end
+    return :(context = @inline _step!($funcname, context, $wiringname, process, lifetime, $stability_expr))
 end

@@ -1,10 +1,29 @@
 """
 Generated process loop that inlines the step! expression when available.
 """
-@inline @generated function loop(process::AbstractProcess, algo::F, context::C, lifetime::RL, ::Generated) where {F, C, RL <: RepeatLifetime}
-    algo_name = gensym(:algo)
-    first_step_expr = step!_expr(F, C, algo_name, :unstable)
-    for_step_expr = step!_expr(F, C, algo_name, :stable)
+@inline @generated function loop(
+    process::P,
+    algo::F,
+    context::C,
+    lifetime::RL,
+    inputs::I,
+    ::Resuming{isresuming},
+    ::Generated,
+) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:AbstractContext, RL<:RepeatLifetime, I<:NamedTuple, isresuming}
+    first_step_expr = step!_expr(F, C, :algo, :step_wiring, :unstable)
+    for_step_expr = step!_expr(F, C, :algo, :step_wiring, :stable)
+
+    bootstrap_expr = if isresuming
+        quote
+            @atomic process.paused = false
+        end
+    else
+        quote
+            $(first_step_expr)
+            @inline inc!(process)
+            @inline tick!(process)
+        end
+    end
 
     return quote
         # First we do ONE step which is allowed to change the context,
@@ -12,15 +31,13 @@ Generated process loop that inlines the step! expression when available.
 
         @inline before_while(process)
         stored_context = context
-        $(algo_name) = algo
-        $(first_step_expr)
-        @inline inc!(process)
-        @inline tick!(process)
+        step_wiring = @inline getwiring(algo)
+        context = @inline _merge_runtime_inputs(context, inputs)
+        $bootstrap_expr
 
         first_step_idx = @inline loopidx(process)
         final_idx = @inline repeats(lifetime)
         for _ in first_step_idx:final_idx
-            $(algo_name) = algo
             $(for_step_expr)
             @inline inc!(process)
             @inline tick!(process)
@@ -30,7 +47,6 @@ Generated process loop that inlines the step! expression when available.
         end
         return @inline after_while(process, algo, context, stored_context)
     end
-    
 end
 
 
@@ -92,14 +108,37 @@ end
 """
 Generated process loop that inlines the step! expression when available.
 """
-@generated function loop(process::AbstractProcess, func::F, context::C, lifetime::LT, ::Generated) where {F, C, LT <: IndefiniteLifetime}
-    step_expr = step!_expr(F, C, :func, :unstable)
+@generated function loop(
+    process::P,
+    func::F,
+    context::C,
+    lifetime::LT,
+    inputs::I,
+    ::Resuming{isresuming},
+    ::Generated,
+) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:AbstractContext, LT<:IndefiniteLifetime, I<:NamedTuple, isresuming}
+    unstable_step_expr = step!_expr(F, C, :func, :step_wiring, :unstable)
+    stable_step_expr = step!_expr(F, C, :func, :step_wiring, :stable)
+    bootstrap_expr = if isresuming
+        quote
+            @atomic process.paused = false
+        end
+    else
+        quote
+            $(unstable_step_expr)
+            @inline inc!(process)
+            @inline tick!(process)
+        end
+    end
     return quote
         # println("Running generated process loop indefinitely from thread $(Threads.threadid())")
         @inline before_while(process)
         stored_context = context
+        step_wiring = @inline getwiring(func)
+        context = @inline _merge_runtime_inputs(context, inputs)
+        $bootstrap_expr
         while true
-            $(step_expr)
+            $(stable_step_expr)
             @inline inc!(process)
             @inline tick!(process)
             if @inline breakcondition(lifetime, process, context)
