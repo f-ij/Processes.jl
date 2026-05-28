@@ -314,7 +314,15 @@ Nested DSL blocks can independently declare the same state field. That remains
 compatible, but the merge now warns unless the parent documents the intended
 sharing.
 
-Use `@bind` when the current block owns or requires the shared state:
+Use `@bind` when the parent block owns, defaults, or requires the shared state
+and a child block should use that same slot.
+
+```julia
+@bind buffers => f.buffers
+```
+
+This says: the current block's `buffers` state slot and child context `f`'s
+inline `buffers` state slot are intentionally the same resource.
 
 ```julia
 forward = @Routine begin
@@ -338,7 +346,67 @@ algo = @CompositeAlgorithm begin
 end
 ```
 
-Use `@merge` when two child state slots are intentionally the same resource:
+In this example, `algo` creates the buffer with `make_buffers()`. Both child
+routines declare `@state buffers` because each routine is still a reusable
+building block with a local contract, but the parent explicitly binds both child
+contracts to the parent-owned state slot.
+
+Use `@merge` when child blocks should share with each other and the parent does
+not need to declare a separate state slot:
+
+```julia
+@merge f.buffers, n.buffers
+```
+
+This says: child context `f`'s inline `buffers` slot and child context `n`'s
+inline `buffers` slot are intentionally the same resource.
+
+```julia
+algo = @CompositeAlgorithm begin
+    @context f = forward()
+    @context n = nudged()
+
+    @merge f.buffers, n.buffers
+end
+```
+
+If neither child supplies a default, the merged field remains required:
+
+```julia
+algo = @CompositeAlgorithm begin
+    @context f = forward()
+    @context n = nudged()
+
+    @merge f.buffers, n.buffers
+end
+
+resolved = resolve(algo)
+initialized = init(resolved, Init(:_state; buffers = make_buffers()))
+```
+
+If one side has a default and the other side is required, the default satisfies
+the merged slot:
+
+```julia
+forward_with_default = @Routine begin
+    @state buffers = make_buffers()
+    buffers = fill_forward!(buffers)
+end
+
+algo = @CompositeAlgorithm begin
+    @context f = forward_with_default()
+    @context n = nudged()
+
+    @merge f.buffers, n.buffers
+end
+```
+
+If multiple merged slots provide defaults for the same field, construction still
+continues but warns because the later default wins. Prefer a single parent
+default with `@bind` when ownership is clear.
+
+Selectors are written against `@context` aliases and must appear after the
+context has been declared:
 
 ```julia
 algo = @CompositeAlgorithm begin
@@ -350,8 +418,17 @@ end
 ```
 
 `f.buffers` is transparent syntax for the nested inline state field
-`f._state.buffers`. If the merged field has no default anywhere, it remains a
-required init value for the merged `:_state` slot.
+`f._state.buffers`; both forms are accepted:
+
+```julia
+@merge f._state.buffers, n.buffers
+@bind buffers => f._state.buffers
+```
+
+Use `@bind` for parent-to-child sharing. Use `@merge` for peer child-to-child
+sharing. Without either declaration, overlapping child state fields are still
+merged for compatibility, but the DSL warns with paths such as
+`f.buffers <=> n.buffers` and suggests an explicit `@bind` or `@merge`.
 
 ## Context Aliases
 
