@@ -44,7 +44,8 @@ function get_routed_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, 
         _localnames = localnames(sv)
         _subvarcontextnames = subvarcontextnames(sv)
         _transform = gettransform(sv)
-        pairs = (_localnames[i] => VarLocation{:subcontext}(fromname, _subvarcontextnames[i], _transform) for i in 1:length(_localnames))
+        location_type = fromname == :_runtime ? :runtime : :subcontext
+        pairs = (_localnames[i] => VarLocation{location_type}(fromname, _subvarcontextnames[i], _transform) for i in 1:length(_localnames))
         return NamedTuple(pairs)
     end
 
@@ -161,6 +162,32 @@ end
     fexpr = funcexpr(vl, varsymbols...)
     
     return  quote
+        $(assign_exprs...)
+        return $(fexpr)
+    end
+end
+
+"""
+Read a routed runtime variable from `ProcessContext._runtime`.
+"""
+@inline @generated function Base.getproperty(sct::SCV, vl::VarLocation{:runtime}) where SCV <: SubContextView
+    target_variables = get_originalname(vl)
+    if isnothing(getfunc(vl)) && target_variables isa Symbol
+        return quote
+            runtime = @inline getglobals(getcontext(sct))
+            return @inline getproperty(runtime, $(QuoteNode(target_variables)))
+        end
+    end
+
+    varnames = target_variables isa Tuple ? target_variables : (target_variables,)
+    varsymbols = ntuple(i -> gensym(:runtime_var), length(varnames))
+    assign_exprs = [
+        :($(varsymbols[i]) = @inline getproperty(getglobals(getcontext(sct)), $(QuoteNode(varnames[i]))))
+        for i in eachindex(varnames)
+    ]
+    fexpr = funcexpr(vl, varsymbols...)
+
+    return quote
         $(assign_exprs...)
         return $(fexpr)
     end
