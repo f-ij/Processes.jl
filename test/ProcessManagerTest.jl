@@ -41,7 +41,8 @@ end
     )
 
     @test manager.config === nothing
-    @test eltype(slots(manager)) <: WorkerSlot{ManagerFakeWorker, Int, Any, Nothing, Any}
+    @test eltype(slots(manager)) <: WorkerSlot{ManagerFakeWorker, Int, Any, Nothing, Any, Symbol}
+    @test only(slots(manager)).name == :worker_1
 end
 
 @testset "ProcessManager stores slots as a typed tuple" begin
@@ -58,8 +59,8 @@ end
     @test slots(manager) isa Tuple
     @test workers(manager) isa Tuple
     @test typeof(slots(manager)) <: Tuple{
-        WorkerSlot{ManagerFakeWorker, Int, Any, Any, Any},
-        WorkerSlot{@NamedTuple{done::Bool, buffer::Vector{Int}}, Int, Any, Any, Any},
+        WorkerSlot{ManagerFakeWorker, Int, Any, Any, Any, Symbol},
+        WorkerSlot{@NamedTuple{done::Bool, buffer::Vector{Int}}, Int, Any, Any, Any, Symbol},
     }
 end
 
@@ -421,6 +422,7 @@ end
             push!(created, job.value)
             ManagerFakeWorker(job.value, Int[], false)
         end,
+        workername = (idx, manager, job) -> job.name,
         prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job.value),
         start! = (slot, job, manager) -> (slot.worker.done = true),
         isdone = (slot, manager) -> slot.worker.done,
@@ -429,8 +431,8 @@ end
         release! = (slot, job, manager) -> push!(released, slot.worker.idx),
     )
     jobs = [
-        (; value = 3, finalizer = worker -> (push!(finalized, worker.idx); worker.done = false; worker)),
-        (; value = 5, finalizer = (worker, slot, job) -> (push!(finalized, job.value); worker.done = false; worker)),
+        (; name = :trial_a, value = 3, finalizer = worker -> (push!(finalized, worker.idx); worker.done = false; worker)),
+        (; name = :trial_b, value = 5, finalizer = (worker, slot, job) -> (push!(finalized, job.value); worker.done = false; worker)),
     ]
 
     manager = ProcessManager(
@@ -449,6 +451,7 @@ end
     @test finalized == [3, 5]
     @test consumed == [3, 5]
     @test released == [3, 5]
+    @test only(slots(manager)).name == :trial_b
     @test only(workers(manager)).idx == 5
 end
 
@@ -501,6 +504,7 @@ end
     outputs = Int[]
     recipe = (;
         makeworker = (idx, manager, job) -> Process(job.algo; repeats = 1),
+        workername = (idx, manager, job) -> job.name,
         prepare! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job.value
@@ -512,8 +516,8 @@ end
         end,
     )
     jobs = Any[
-        (; algo = ManagerProcessAccumulator(), value = 4),
-        (; algo = ManagerProcessMultiplier(), value = 4),
+        (; name = :accumulate, algo = ManagerProcessAccumulator(), value = 4),
+        (; name = :multiply, algo = ManagerProcessMultiplier(), value = 4),
     ]
 
     manager = ProcessManager(
@@ -528,6 +532,7 @@ end
     run!(manager, jobs)
 
     @test outputs == [4, 8]
+    @test only(slots(manager)).name == :multiply
     @test only(workers(manager)) isa Process
     @test_throws ArgumentError ProcessManager(
         recipe;

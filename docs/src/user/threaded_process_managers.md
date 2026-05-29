@@ -131,16 +131,49 @@ Closing an owning manager also closes its processes:
 close(manager)
 ```
 
-Use `OnDemandWorkers` when every job should receive a freshly constructed worker:
+You can also pass processes that were built elsewhere:
+
+```julia
+manager = ProcessManager(recipe; workers = existing_workers)
+```
+
+This wraps the existing processes in new slots. It does not create contexts.
+Use this form when some other object owns the processes or when the processes
+must be constructed before the manager exists.
+
+## On-Demand Workers
+
+Use `OnDemandWorkers` when the job should define the worker that runs it. This
+is a different manager operation mode from reusable workers: slots are created
+upfront, but workers are not. Each dispatched job calls
+`makeworker(idx, manager, job)` and installs the returned worker into the slot.
+
+This is useful for automating long lived experiments where the job record is the
+experiment specification. For example, one job can carry the algorithm type,
+initialization options, seed, output location, and a worker-specific finalizer.
+The manager still gives you bounded threaded scheduling, error accounting,
+flushing, and a consistent result collection lifecycle, but each experiment can
+choose its own worker shape.
+
+Slots also keep a `slot.name::Symbol`. By default names are `:worker_1`,
+`:worker_2`, and so on. Define `workername(idx, manager, job)` when a job should
+provide a stable experiment label, so later result lookup and logs can refer to
+the same name.
 
 ```julia
 recipe = (;
+    initstate = config -> (; results = []),
+    workername = (idx, manager, job) -> job.name,
     makeworker = (idx, manager, job) -> Process(
-        MyAlgo,
-        Init(MyAlgo; seed = job.seed);
+        job.algo,
+        Init(job.algo; seed = job.seed);
         repeats = 1,
     ),
     workerfinalizer = (slot, job, manager) -> job.finalizer,
+    consume! = (slot, job, manager) -> push!(
+        manager.state.results,
+        (; name = slot.name, output = job.readout(slot.worker)),
+    ),
 )
 
 manager = ProcessManager(
@@ -151,11 +184,17 @@ manager = ProcessManager(
 )
 ```
 
-With `OnDemandWorkers`, `makeworker` is not called during manager construction
-when `workers` is omitted. Before each job, `makeworker(idx, manager, job)`
-builds the job-specific worker and replaces `slot.worker`. Pass `worker_type`
-to construct slots with a useful worker field type. Use `worker_type = Process`
-when jobs may select different concrete `Process{LoopAlgo}` specializations.
+Pass `worker_type` when different jobs may return different concrete worker
+types. For `Process` workers, `Process(job.algo; ...)` usually has a concrete
+type that depends on `job.algo`, so use `worker_type = Process` when jobs may
+select different concrete `Process{LoopAlgo}` specializations. If every job
+returns exactly the same worker type, pass that concrete type as `worker_type`
+to keep the slot field concrete. If you omit `worker_type`, on-demand slots use
+`Any` for maximum flexibility.
+
+Worker names are `Symbol` by default. If you need another name type, pass
+`name_type`, but symbols are preferred because they are compact and easy to use
+as result keys.
 
 `workerfinalizer` may select a finalizer function from the job. That function is
 called as `finalizer(worker, slot, job, manager)`, or with fewer trailing
@@ -167,16 +206,6 @@ By default `OnDemandWorkers()` destroys the job worker after `consume!` and
 and otherwise the default worker close behavior. Pass
 `destroy_after_finalize = false` to keep the finished worker in the slot until
 the next job replaces it.
-
-You can also pass processes that were built elsewhere:
-
-```julia
-manager = ProcessManager(recipe; workers = existing_workers)
-```
-
-This wraps the existing processes in new slots. It does not create contexts.
-Use this form when some other object owns the processes or when the processes
-must be constructed before the manager exists.
 
 ## Threaded Scheduling
 
@@ -324,6 +353,8 @@ functions in a named tuple are part of the manager type.
 - `makeworker(idx, manager)`: create process `idx` when `workers` is not passed.
 - `makeworker(idx, manager, job)`: create the worker for one job when
   `worker_lifecycle = OnDemandWorkers()`.
+- `workername(idx, manager)`: name reusable workers at manager construction.
+- `workername(idx, manager, job)`: name an on-demand worker from job data.
 - `makecontext(idx, manager, template)`: for manager-owned `Process` workers,
   build the context for slot `idx` from the template process.
 - `prepare!(slot, job, manager)`: write one job into a process before it starts.

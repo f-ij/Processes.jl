@@ -106,8 +106,9 @@ Transparent manager-owned slot around a reusable worker.
 The `worker` field is intentionally public so recipes can inspect and mutate the
 underlying worker context directly.
 """
-mutable struct WorkerSlot{W, Job, Scratch, Result, Err}
+mutable struct WorkerSlot{W, Job, Scratch, Result, Err, Name}
     idx::Int                         # Stable slot number inside the manager.
+    name::Name                       # User-facing worker name for logs/results.
     worker::W                        # Reusable worker object owned or wrapped by the slot.
     job::Union{Nothing, Job}          # Job currently assigned to this slot.
     scratch::Union{Nothing, Scratch}  # Optional user scratch storage for recipes.
@@ -118,13 +119,13 @@ mutable struct WorkerSlot{W, Job, Scratch, Result, Err}
 end
 
 """
-    WorkerSlot(idx, worker; scratch = nothing)
+    WorkerSlot(idx, worker; name = Symbol(:worker_, idx), scratch = nothing)
 
 Create an untyped slot around `worker`. The main `ProcessManager` constructor
 usually creates slots with concrete job/result/error field types instead.
 """
-WorkerSlot(idx::Integer, worker; scratch = nothing) =
-    WorkerSlot{typeof(worker), Any, Any, Any, Any}(Int(idx), worker, nothing, scratch, nothing, nothing, false, 0)
+WorkerSlot(idx::Integer, worker; name = Symbol(:worker_, idx), scratch = nothing) =
+    WorkerSlot{typeof(worker), Any, Any, Any, Any, typeof(name)}(Int(idx), name, worker, nothing, scratch, nothing, nothing, false, 0)
 
 """
     context(slot::WorkerSlot)
@@ -247,6 +248,7 @@ end
                    worker_init = CopyFirstWorker(),
                    worker_init_data = nothing,
                    worker_type = nothing,
+                   name_type = Symbol,
                    throw = true, poll_interval = 0.0,
                    job_type = Any, scratch_type = Any,
                    result_type = Any, error_type = Any)
@@ -283,6 +285,10 @@ Use `worker_lifecycle = OnDemandWorkers()` when workers should be constructed
 from job data instead of upfront. That mode lives in `OnDemandWorkers.jl` and
 uses `makeworker(idx, manager, job)` for each dispatched job. Pass
 `worker_type` when the job may choose among different concrete worker types.
+
+Slots have a public `name` field for logs and result lookup. Missing
+`workername` callbacks use names such as `:worker_1`. Pass `name_type` if names
+should use a type other than `Symbol`.
 
 The `job_type`, `scratch_type`, `result_type`, and `error_type` keywords let
 latency-sensitive code make worker slot fields concrete. Leaving them as `Any`
@@ -465,14 +471,16 @@ function schedule_processmanager_precompile!(manager::ProcessManager)
 end
 
 """
-    _slot_container(workers, Job, Scratch, Result, Err, worker_type = nothing)
+    _slot_container(workers, worker_names, Job, Scratch, Result, Err,
+                    worker_type = nothing, name_type = Any)
 
 Wrap worker values in a typed tuple of mutable `WorkerSlot`s.
 """
-function _slot_container(workers, ::Type{Job}, ::Type{Scratch}, ::Type{Result}, ::Type{Err}, worker_type = nothing) where {Job, Scratch, Result, Err}
+function _slot_container(workers, worker_names, ::Type{Job}, ::Type{Scratch}, ::Type{Result}, ::Type{Err}, worker_type = nothing, ::Type{Name} = Any) where {Job, Scratch, Result, Err, Name}
     return Tuple(
-        WorkerSlot{_slot_worker_type(worker, worker_type), Job, Scratch, Result, Err}(
+        WorkerSlot{_slot_worker_type(worker, worker_type), Job, Scratch, Result, Err, _slot_name_type(worker_names[Int(idx)], Name)}(
             Int(idx),
+            worker_names[Int(idx)],
             worker,
             nothing,
             nothing,
@@ -483,6 +491,29 @@ function _slot_container(workers, ::Type{Job}, ::Type{Scratch}, ::Type{Result}, 
         )
         for (idx, worker) in enumerate(workers)
     )
+end
+
+"""
+    _slot_name_type(name, Name)
+
+Return the name field type for one slot and validate explicit name type
+requests.
+"""
+function _slot_name_type(name, ::Type{Name}) where {Name}
+    name isa Name || throw(ArgumentError("`name_type = $Name` cannot store worker name of type $(typeof(name))."))
+    return Name
+end
+
+"""
+    _set_slot_name!(slot, name)
+
+Assign a new worker name to `slot`, validating the slot's name field type before
+mutation.
+"""
+function _set_slot_name!(slot::WorkerSlot{W, Job, Scratch, Result, Err, Name}, name) where {W, Job, Scratch, Result, Err, Name}
+    name isa Name || throw(ArgumentError("Worker name $(repr(name)) has type $(typeof(name)), which cannot be stored in a slot typed for $Name."))
+    slot.name = name
+    return slot
 end
 
 """
@@ -520,11 +551,33 @@ function _manager_worker_values(recipe, nworkers::Integer, build_manager, worker
 end
 
 """
+    _manager_worker_names(recipe, nworkers, build_manager, workers, lifecycle)
+
+Return the initial worker names for the manager lifecycle. Reusable workers are
+named at construction; other lifecycle modes may override this in their own
+file.
+"""
+function _manager_worker_names(recipe, nworkers::Integer, build_manager, workers, ::WorkerLifecycle)
+    return ntuple(Int(nworkers)) do idx
+        workername(recipe, idx, build_manager)
+    end
+end
+
+"""
     _manager_slot_worker_type(worker_type, lifecycle)
 
 Normalize the requested slot worker type for a manager lifecycle.
 """
 _manager_slot_worker_type(worker_type, ::WorkerLifecycle) = worker_type
+
+"""
+    _manager_slot_name_type(name_type, lifecycle)
+
+Normalize the requested slot name type for a manager lifecycle.
+"""
+_manager_slot_name_type(::Type{Name}, ::WorkerLifecycle) where {Name} = Name
+_manager_slot_name_type(name_type, ::WorkerLifecycle) =
+    throw(ArgumentError("`name_type` must be a type, got $(typeof(name_type))."))
 
 """
     _has_recipe_callback(recipe, Val(name))
@@ -668,7 +721,7 @@ end
 Construct a manager and its worker slots. Recipes are stored concretely, so a
 named tuple of anonymous functions becomes part of the manager type.
 """
-function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), worker_lifecycle = ReuseWorker(), worker_init::WIM = CopyFirstWorker(), worker_init_data = nothing, worker_type = nothing, throw::Bool = true, poll_interval::Real = 0.0, job_type::Type{Job} = Any, scratch_type::Type{Scratch} = Any, result_type::Type{Result} = Any, error_type::Type{Err} = Any) where {Job, Scratch, Result, Err, WIM<:WorkerInitMode}
+function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), worker_lifecycle = ReuseWorker(), worker_init::WIM = CopyFirstWorker(), worker_init_data = nothing, worker_type = nothing, name_type::Type{Name} = Symbol, throw::Bool = true, poll_interval::Real = 0.0, job_type::Type{Job} = Any, scratch_type::Type{Scratch} = Any, result_type::Type{Result} = Any, error_type::Type{Err} = Any) where {Job, Scratch, Result, Err, Name, WIM<:WorkerInitMode}
     nworkers > 0 || throw(ArgumentError("`nworkers` must be positive."))
     prepared_worker_init_data = _validate_worker_init_data(worker_init_data, nworkers)
     normalized_policy = _normalize_flush_policy(flush_policy)
@@ -689,9 +742,11 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
         workers,
         normalized_lifecycle,
     )
+    worker_names = _manager_worker_names(recipe, nworkers, build_manager, workers, normalized_lifecycle)
 
     slot_worker_type = _manager_slot_worker_type(worker_type, normalized_lifecycle)
-    slot_values = _slot_container(worker_values, job_type, scratch_type, result_type, error_type, slot_worker_type)
+    slot_name_type = _manager_slot_name_type(name_type, normalized_lifecycle)
+    slot_values = _slot_container(worker_values, worker_names, job_type, scratch_type, result_type, error_type, slot_worker_type, slot_name_type)
     manager = ProcessManager(recipe, slot_values, config, prepared_state, normalized_policy, normalized_lifecycle, throw, Float64(poll_interval), 0, 0, 0, 0, 1, Any[], false, isnothing(workers))
     schedule_processmanager_precompile!(manager)
     return manager
@@ -871,6 +926,24 @@ default to `nothing`.
 function initstate(recipe, config, manager)
     result = _call_optional_recipe_field(recipe, Val(:initstate), config, manager)
     return _is_no_recipe_callback(result) ? nothing : result
+end
+
+"""
+    workername(recipe, idx, manager)
+    workername(recipe, idx, manager, job)
+
+Optional callback for naming workers. Missing callbacks use the slot index.
+On-demand workers usually define the four-argument form so the job can provide
+the experiment or worker name.
+"""
+function workername(recipe, idx, manager)
+    result = _call_optional_recipe_field(recipe, Val(:workername), idx, manager)
+    return _is_no_recipe_callback(result) ? Symbol(:worker_, idx) : result
+end
+
+function workername(recipe, idx, manager, job)
+    result = _call_optional_recipe_field(recipe, Val(:workername), idx, manager, job)
+    return _is_no_recipe_callback(result) ? Symbol(:worker_, idx) : result
 end
 
 """
