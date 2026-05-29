@@ -7,19 +7,16 @@ The resolver takes an Override or Input that either targets a namespace directly
 or a process entity and returns the same kind of object with the target changed
 to the resolved namespace symbol.
 """
-@inline _retarget_input(::Init{Target,NT,Ref}, name) where {Target,NT,Ref} = Init{name,NT,Ref}
-@inline _retarget_input(::Override{Target,NT,Ref}, name) where {Target,NT,Ref} = Override{name,NT,Ref}
-@inline retarget(ov::InputInterface, name) = _retarget_input(ov, name)(get_vars(ov), get_ref(ov))
-@inline _with_ref_input(::Init{Target,NT,Ref}, ref::NewRef) where {Target,NT,Ref,NewRef} = Init{Target,NT,NewRef}
-@inline _with_ref_input(::Override{Target,NT,Ref}, ref::NewRef) where {Target,NT,Ref,NewRef} = Override{Target,NT,NewRef}
-@inline with_ref(ov::InputInterface, ref) = _with_ref_input(ov, ref)(get_vars(ov), ref)
+@inline _retarget_input(::Init{Target,NT,Ref}, name) where {Target,NT,Ref} = Init{name,NT,Nothing}
+@inline _retarget_input(::Override{Target,NT,Ref}, name) where {Target,NT,Ref} = Override{name,NT,Nothing}
+@inline retarget(ov::InputInterface, name) = _retarget_input(ov, name)(get_vars(ov), nothing)
 
 @inline get_target(::Union{Init{Target}, Override{Target}}) where {Target} = Target
 @inline get_ref(ov::OI) where {OI<:Union{Override, Input}} = ov.ref
 @inline get_vars(ov::OI) where {OI<:Union{Override, Input}} = ov.vars
 
 @inline get_target_name(ov::Union{Init, Override}) = get_target(ov)
-@inline _is_resolved_input(::Union{Init{Name}, Override{Name}}) where {Name} = Name isa Symbol
+@inline _is_resolved_input(ov::Union{Init, Override}) = isresolved(ov)
 
 @inline _resolve_input_target_key(reg::NameSpaceRegistry, target) = static_findkey(reg, target)
 @inline _resolve_input_target_key(reg::NameSpaceRegistry, matcher::AbstractMatcher) = getkey(get_by_matcher(reg, matcher))
@@ -37,7 +34,7 @@ end
     target = get_target(ov)
     if target isa Symbol
         @assert haskey(reg, target) "Target algorithm $(target) not found in registry: $reg \n Cannot resolve lifecycle target."
-        return (with_ref(ov, reg[target]),)
+        return (retarget(ov, target),)
     elseif target isa Tuple #i.e. multiple targets for same variables
         duplicated_ovs = map(t -> retarget(ov, t), target)
         return resolve(reg, duplicated_ovs)
@@ -66,6 +63,9 @@ ProcessContext.
 @inline function construct_context_merge_tuples(named_overrides_inputs; to_all::TA = (;)) where {TA}
     if isempty(named_overrides_inputs)
         return (;)
+    end
+    for input in named_overrides_inputs
+        isresolved(input) || error("Expected resolved lifecycle input/override with a Symbol target, got target $(get_target(input)).")
     end
     names = map(o -> get_target_name(o), named_overrides_inputs) # Get the names from the registry
     vars = get_vars.(named_overrides_inputs) # Get the input variables

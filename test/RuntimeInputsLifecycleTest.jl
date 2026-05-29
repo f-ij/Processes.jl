@@ -45,6 +45,10 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
     @test Input === Init
     @test Init(LifecycleInitA; x = 1).vars == (; x = 1)
     @test Input(LifecycleInitA, :x => 2).vars == (; x = 2)
+    @test !Processes.isresolved(Init(LifecycleInitA; x = 1))
+    @test !Processes.isresolved(typeof(Init(LifecycleInitA; x = 1)))
+    @test Processes.isresolved(Init(:LifecycleInitA_1; x = 1))
+    @test Processes.isresolved(typeof(Init(:LifecycleInitA_1; x = 1)))
 
     la = CompositeAlgorithm(LifecycleInitA, LifecycleInitB, (1, 1))
     initialized = init(la, Init(LifecycleInitA; x = 1), Init(LifecycleInitB; y = 2))
@@ -64,9 +68,13 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
     @test Processes.context(partial)[LifecycleInitB].y === b_ref
 
     resolved_la = resolve(la)
-    resolved_target = first(Processes.getalgos(resolved_la))
-    initialized_by_matcher = init(resolved_la, Init(resolved_target; x = 7))
-    @test Processes.context(initialized_by_matcher)[LifecycleInitA].x[] == 7
+    resolved_target = getkey(only(findall(LifecycleInitA, Processes.getregistry(resolved_la))))
+    resolved_input = only(Processes.resolve(Processes.getregistry(resolved_la), Init(resolved_target; x = 7)))
+    @test Processes.get_ref(resolved_input) === nothing
+    @test Processes.isresolved(resolved_input)
+    @test Processes.isresolved(typeof(resolved_input))
+    initialized_by_symbol = init(resolved_la, Init(resolved_target; x = 7))
+    @test Processes.context(initialized_by_symbol)[LifecycleInitA].x[] == 7
 
     runtime_algo = @CompositeAlgorithm begin
         @state seed = 1

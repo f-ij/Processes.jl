@@ -22,19 +22,23 @@ using Processes
 
     resolved_route = Route(:source => :target, :value => :seen)
     @test Processes.isresolved(resolved_route)
+    @test Processes.isresolved(typeof(resolved_route))
     @test typeof(resolved_route)() == resolved_route
 
     raw_route = Route(WiringSource => WiringTarget, :value)
     @test !Processes.isresolved(raw_route)
+    @test !Processes.isresolved(typeof(raw_route))
     @test Processes.getfrom(raw_route) === WiringSource
     @test Processes.getto(raw_route) === WiringTarget
 
     resolved_share = Share(:source, :target)
     @test Processes.isresolved(resolved_share)
+    @test Processes.isresolved(typeof(resolved_share))
     @test typeof(resolved_share)() == resolved_share
 
     raw_share = Share(WiringSource, WiringTarget)
     @test !Processes.isresolved(raw_share)
+    @test !Processes.isresolved(typeof(raw_share))
     @test Processes.get_firstalgo(raw_share) === WiringSource
     @test Processes.get_secondalgo(raw_share) === WiringTarget
 
