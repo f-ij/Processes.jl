@@ -9,6 +9,48 @@ function _generated_child_namespace(::Type{LA}, idx::Int) where {FT, LA<:Union{C
     return isnothing(names) ? trykey(getalgotype(LA, idx)) : names[idx]
 end
 
+"""Return a generated expression for stepping one child while preserving main's optimized loop shape."""
+function _generated_child_step_expr(::Type{LA}, context_name::Symbol, algo_name::Symbol, wiring_name::Symbol, namespace::Symbol, stability_expr, ::Type{S}, child_wiring_value) where {LA<:AbstractLoopAlgorithm,S<:Stability}
+    return :($context_name = @inline _step!($algo_name, $context_name, $wiring_name, process, lifetime, $stability_expr))
+end
+
+function _generated_child_step_expr(::Type{IA}, context_name::Symbol, algo_name::Symbol, wiring_name::Symbol, namespace::Symbol, stability_expr, ::Type{S}, child_wiring_value) where {IA<:IdentifiableAlgo,S<:Stability}
+    return :($context_name = @inline _step!($algo_name, $context_name, $wiring_name, process, lifetime, $stability_expr))
+end
+
+function _generated_child_step_expr(::Type{FW}, context_name::Symbol, algo_name::Symbol, wiring_name::Symbol, namespace::Symbol, stability_expr, ::Type{S}, child_wiring_value) where {FW<:FuncWrapper,S<:Stability}
+    namespace_expr = :(Namespace{$(QuoteNode(namespace))}())
+    return :($context_name = @inline _step!($algo_name, $context_name, $wiring_name, $namespace_expr, process, lifetime, $stability_expr))
+end
+
+function _generated_child_step_expr(::Type{A}, context_name::Symbol, algo_name::Symbol, wiring_name::Symbol, namespace::Symbol, stability_expr, ::Type{S}, child_wiring_value) where {A<:ProcessAlgorithm,S<:Stability}
+    namespace_expr = :(Namespace{$(QuoteNode(namespace))}())
+    contextview_name = gensym(:contextview)
+    returnvals_name = gensym(:returnvals)
+    view_expr = if isempty(child_wiring_value)
+        :(@inline view($context_name, $algo_name, $namespace_expr))
+    else
+        quote
+            @inline view(
+                $context_name,
+                $algo_name,
+                $namespace_expr;
+                sharedcontexts = (@inline shares($wiring_name)),
+                sharedvars = (@inline routes($wiring_name)),
+            )
+        end
+    end
+    merge_expr = S <: Unstable ?
+        :($context_name = @inline unstablemerge($contextview_name, $returnvals_name)) :
+        :($context_name = @inline merge($contextview_name, $returnvals_name))
+
+    return quote
+        local $contextview_name = $view_expr
+        local $returnvals_name = @inline step!($algo_name, $contextview_name)
+        $merge_expr
+    end
+end
+
 """
 Step each scheduled child of a composite plan with explicit loop runtime.
 
@@ -31,14 +73,14 @@ Base.@constprop :aggressive @inline @generated function _step!(ca::CA, context::
     for i in 1:algo_count
         interval_value = interval_values[i]
         child_step_wiring_value = fieldtype(child_wiring_type, i)()
-        child_namespace_value = Namespace{_generated_child_namespace(CA, i)}()
+        namespace = _generated_child_namespace(CA, i)
         interval_type = typeof(interval_value)
+        child_step_expr = _generated_child_step_expr(getalgotype(CA, i), :context, :algo, :child_step_wiring, namespace, :typestable, S, child_step_wiring_value)
         push!(exprs, quote
             if @inline divides(this_inc, $interval_type())
                 local algo = @inline getfield(algos, $i)
                 local child_step_wiring = $(QuoteNode(child_step_wiring_value))
-                local child_namespace = $(QuoteNode(child_namespace_value))
-                context = @inline _step!(algo, context, child_step_wiring, child_namespace, process, lifetime, typestable)
+                $child_step_expr
             end
         end)
     end

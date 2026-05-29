@@ -52,6 +52,9 @@ function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, wiringname::Sy
     exprs = Any[]
     algo_count = numalgos(ca)
     child_wiring_type = ca.parameters[3].parameters[2]
+    stability_expr = stability === :stable ? :(Stable()) : stability === :unstable ? :(Unstable()) :
+        error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
+    stability_type = stability === :stable ? Stable : Unstable
     sizehint!(exprs, algo_count + 4)
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
     push!(exprs, :(local this_inc = @inline inc($name)))
@@ -65,12 +68,13 @@ function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, wiringname::Sy
         # fti = ft.parameters[i]
         this_functype = getalgotype(ca, i)
         namespace = _generated_child_namespace(ca, i)
+        child_step_expr = _generated_child_step_expr(this_functype, :context, local_name, local_wiring, namespace, stability_expr, stability_type, child_step_wiring_value)
         push!(exprs, quote
             # Only run this child every `interval` composite steps.
             if @inline divides(this_inc, $interval_type())
                 local $local_name = @inline getalgo($name, $i)
                 local $local_wiring = $(QuoteNode(child_step_wiring_value))
-                $(step!_expr(this_functype, C, local_name, local_wiring, namespace, stability))
+                $child_step_expr
             end
         end)
     end
@@ -93,6 +97,11 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
     exprs = Any[]
     algo_count = numalgos(routine)
     child_wiring_type = routine.parameters[4].parameters[2]
+    stable_expr = :(Stable())
+    unstable_expr = :(Unstable())
+    stability_expr = stability === :stable ? stable_expr : stability === :unstable ? unstable_expr :
+        error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
+    stability_type = stability === :stable ? Stable : Unstable
     sizehint!(exprs, algo_count + 3)
 
     for i in 1:algo_count
@@ -102,6 +111,8 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
         local_wiring = gensym(:child_step_wiring)
         this_functype = getalgotype(routine, i)
         namespace = _generated_child_namespace(routine, i)
+        unstable_child_step_expr = _generated_child_step_expr(this_functype, :context, local_name, local_wiring, namespace, unstable_expr, Unstable, child_step_wiring_value)
+        stable_child_step_expr = _generated_child_step_expr(this_functype, :context, local_name, local_wiring, namespace, stability_expr, stability_type, child_step_wiring_value)
         
 
         # Generated line: `local algoᵢ = getalgo(name, i)` (bind child algorithm instance).
@@ -112,7 +123,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
                 local _subroutine_lifetime = lifetimes($name, Val($i))
                 local _routine_repeat_count = @inline routine_repeat_count(_subroutine_lifetime)
                 if resume_idx($name, $i) <= _routine_repeat_count
-                    $(step!_expr(this_functype, C, local_name, local_wiring, namespace, :unstable))
+                    $unstable_child_step_expr
                     @inline tick!(process)
 
                     local _routine_next_idx = resume_idx($name, $i) + 1
@@ -131,7 +142,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
                             end
                             return context
                         end
-                        $(step!_expr(this_functype, C, local_name, local_wiring, namespace, stability))
+                        $stable_child_step_expr
                         @inline tick!(process)
                     end
                 end
@@ -147,7 +158,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
             local $local_wiring = $(QuoteNode(child_step_wiring_value))
             if resume_idx($name, $i) <= $this_lifetime
                 # One unstable step allowed
-                $(step!_expr(this_functype, C, local_name, local_wiring, namespace, :unstable))
+                $unstable_child_step_expr
                 
                 # Assumes process is defined in the top level
                 @inline tick!(process) # Tick counter
@@ -161,7 +172,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
                     # Pause/stop check: if the process is not running, record which child we were on.
 
                     # Inline the child's `step!` body, specialized to the child's algorithm type and the context type.
-                    $(step!_expr(this_functype, C, local_name, local_wiring, namespace, stability))
+                    $stable_child_step_expr
                     
                     # Assumes process is defined in the top level
                     @inline tick!(process) # Tick counter
