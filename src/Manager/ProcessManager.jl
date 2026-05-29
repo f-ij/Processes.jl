@@ -433,8 +433,10 @@ manager starts processing jobs.
 function _precompile_processmanager!(::Type{M}, ::Type{Slot}, ::Type{Job}) where {M<:ProcessManager, Slot<:WorkerSlot, Job}
     _try_precompile(dispatch!, (M, Job))
     _try_precompile(poll!, (M,))
+    _try_precompile(wait, (M,))
     _try_precompile(drain!, (M,))
     _try_precompile(run!, (M, Vector{Job}))
+    _try_precompile(_wait_active_slots!, (M,))
     _try_precompile(_wait_for_free_slot!, (M,))
     _try_precompile(_finish_done_slots!, (M,))
     _try_precompile(_finish_slot!, (M, Slot))
@@ -773,6 +775,132 @@ _slot_worker(slot::WorkerSlot) = slot.worker
 Return the workers stored in each manager slot.
 """
 workers(manager::ProcessManager) = map(_slot_worker, manager.slots)
+
+"""
+Return a short status label for a manager slot.
+"""
+function _slot_status_label(slot::S) where {S<:WorkerSlot}
+    if slot.active
+        return :active
+    elseif !isnothing(slot.error)
+        return :error
+    elseif isnothing(slot.worker)
+        return :empty
+    else
+        return :idle
+    end
+end
+
+"""
+Return a compact label for values shown in manager summaries.
+"""
+function _manager_value_label(value::V) where {V}
+    isnothing(value) && return "nothing"
+    return sprint(summary, value)
+end
+
+"""Return the number of manager slots currently marked active."""
+function _manager_active_count(manager::M) where {M<:ProcessManager}
+    return count(slot -> slot.active, manager.slots)
+end
+
+"""
+Print one manager slot as a compact diagnostic line.
+"""
+function _show_manager_slot_line(io::IO, slot::S; prefix::String = "") where {S<:WorkerSlot}
+    print(
+        io,
+        prefix,
+        "[",
+        slot.idx,
+        "] ",
+        repr(slot.name),
+        " ",
+        _slot_status_label(slot),
+        " runs=",
+        slot.runs,
+        " worker=",
+        _manager_value_label(slot.worker),
+    )
+    !isnothing(slot.job) && print(io, " job=", _manager_value_label(slot.job))
+    !isnothing(slot.result) && print(io, " result=", _manager_value_label(slot.result))
+    !isnothing(slot.error) && print(io, " error=", _manager_value_label(slot.error))
+    return nothing
+end
+
+function Base.show(io::IO, slot::S) where {S<:WorkerSlot}
+    print(io, "WorkerSlot(")
+    _show_manager_slot_line(io, slot)
+    print(io, ")")
+    return nothing
+end
+
+function Base.summary(io::IO, slot::S) where {S<:WorkerSlot}
+    print(io, "WorkerSlot(", slot.idx, ", ", _slot_status_label(slot), ")")
+    return nothing
+end
+
+function Base.show(io::IO, ::MIME"text/plain", slot::S) where {S<:WorkerSlot}
+    println(io, "WorkerSlot")
+    println(io, "├── idx = ", slot.idx)
+    println(io, "├── name = ", repr(slot.name))
+    println(io, "├── status = ", _slot_status_label(slot))
+    println(io, "├── runs = ", slot.runs)
+    println(io, "├── worker = ", _manager_value_label(slot.worker))
+    println(io, "├── job = ", _manager_value_label(slot.job))
+    println(io, "├── result = ", _manager_value_label(slot.result))
+    print(io, "└── error = ", _manager_value_label(slot.error))
+    return nothing
+end
+
+function Base.show(io::IO, manager::M) where {M<:ProcessManager}
+    active = _manager_active_count(manager)
+    print(
+        io,
+        "ProcessManager(",
+        manager.closed ? "closed" : "open",
+        ", workers=",
+        length(manager.slots),
+        ", active=",
+        active,
+        ", completions=",
+        manager.completions,
+        ", errors=",
+        length(manager.errors),
+        ")",
+    )
+    return nothing
+end
+
+function Base.summary(io::IO, manager::M) where {M<:ProcessManager}
+    print(io, "ProcessManager(", length(manager.slots), " workers, ", manager.closed ? "closed" : "open", ")")
+    return nothing
+end
+
+function Base.show(io::IO, ::MIME"text/plain", manager::M) where {M<:ProcessManager}
+    active = _manager_active_count(manager)
+    println(io, "ProcessManager")
+    println(io, "├── status = ", manager.closed ? :closed : :open)
+    println(io, "├── workers = ", length(manager.slots), " (active=", active, ", idle=", length(manager.slots) - active, ")")
+    println(io, "├── lifecycle = ", typeof(manager.worker_lifecycle))
+    println(io, "├── flush_policy = ", manager.flush_policy)
+    println(
+        io,
+        "├── progress = dispatched=",
+        manager.dispatched,
+        ", completions=",
+        manager.completions,
+        ", since_flush=",
+        manager.completions_since_flush,
+    )
+    println(io, "├── errors = ", length(manager.errors))
+    print(io, "└── slots")
+    for slot in manager.slots
+        print(io, "\n    ")
+        _show_manager_slot_line(io, slot)
+    end
+    return nothing
+end
 
 """
 Sentinel returned by optional recipe lookup when a callback is not defined.
@@ -1479,14 +1607,39 @@ policy.
 """
 function drain!(manager::ProcessManager)
     manager.closed && throw(ArgumentError("Cannot drain a closed ProcessManager."))
+    _wait_active_slots!(manager)
+    _apply_flush_policy!(manager, manager.flush_policy; final = true)
+    return manager
+end
+
+"""
+    _wait_active_slots!(manager)
+
+Wait until all currently active manager slots have finished and been finalized.
+This does not apply the manager's final flush policy.
+"""
+function _wait_active_slots!(manager::M) where {M<:ProcessManager}
     while _has_active_slots(manager)
         _finish_done_slots!(manager)
+
+        # Avoid a busy loop while all remaining active slots are still running.
         if _has_active_slots(manager)
             manager.poll_interval > 0 ? sleep(manager.poll_interval) : yield()
         end
     end
-    _apply_flush_policy!(manager, manager.flush_policy; final = true)
     return manager
+end
+
+"""
+    wait(manager)
+
+Wait for all currently active manager workers to finish, without applying the
+configured final flush policy. Use `drain!(manager)` when waiting should also
+perform the final manager-level flush.
+"""
+function Base.wait(manager::M) where {M<:ProcessManager}
+    manager.closed && throw(ArgumentError("Cannot wait on a closed ProcessManager."))
+    return _wait_active_slots!(manager)
 end
 
 """

@@ -504,11 +504,15 @@ The manager also has a lower-level, polling-based interface:
 ```julia
 dispatch!(manager, job)
 poll!(manager)
+wait(manager)
 drain!(manager)
 ```
 
 Use this only when you need manual control over dispatch and polling. For normal
 threaded `Process` runs, prefer `runthreaded!`.
+
+`wait(manager)` waits until all currently active workers finish. `drain!(manager)`
+also applies the final flush policy after all active workers have finished.
 
 `poll_interval = 0.0` means the manager yields while waiting. A positive
 `poll_interval` sleeps for that many seconds between checks when all slots are
