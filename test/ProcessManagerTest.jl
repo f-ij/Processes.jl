@@ -29,6 +29,7 @@ end
     manager = ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1)
     @test manager.flush_policy isa FlushAtEnd
     @test_throws ArgumentError ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, flush_policy = :end)
+    @test_throws ArgumentError ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, worker_lifecycle = :reuse)
 end
 
 @testset "ProcessManager can keep slot fields concrete" begin
@@ -394,6 +395,93 @@ end
     @test make_count[] == 3
     @test length(unique(objectid(Processes.context(slot.worker)) for slot in manager_slots)) == 3
     @test [ctx.value[] for ctx in contexts] == worker_data
+end
+
+@testset "ProcessManager can replace workers for each job and keep the last worker" begin
+    created = Int[]
+    finalized = Int[]
+    consumed = Int[]
+    released = Int[]
+    recipe = (;
+        makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
+        makejobworker = (slot, job, manager) -> begin
+            push!(created, job.value)
+            ManagerFakeWorker(job.value, Int[], false)
+        end,
+        prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job.value),
+        start! = (slot, job, manager) -> (slot.worker.done = true),
+        isdone = (slot, manager) -> slot.worker.done,
+        workerfinalizer = (slot, job, manager) -> job.finalizer,
+        consume! = (slot, job, manager) -> push!(consumed, only(slot.worker.buffer)),
+        release! = (slot, job, manager) -> push!(released, slot.worker.idx),
+    )
+    jobs = [
+        (; value = 3, finalizer = worker -> (push!(finalized, worker.idx); worker.done = false; worker)),
+        (; value = 5, finalizer = (worker, slot, job) -> (push!(finalized, job.value); worker.done = false; worker)),
+    ]
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 1,
+        worker_lifecycle = WorkerPerJob(destroy_after_finalize = false),
+        flush_policy = NoFlush(),
+        job_type = eltype(jobs),
+        result_type = ManagerFakeWorker,
+    )
+    run!(manager, jobs)
+
+    @test created == [3, 5]
+    @test finalized == [3, 5]
+    @test consumed == [3, 5]
+    @test released == [3, 5]
+    @test only(workers(manager)).idx == 5
+end
+
+@testset "ProcessManager can destroy per-job workers after release" begin
+    destroyed = Int[]
+    recipe = (;
+        makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
+        makejobworker = (slot, job, manager) -> ManagerFakeWorker(job, Int[], false),
+        prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job),
+        start! = (slot, job, manager) -> (slot.worker.done = true),
+        isdone = (slot, manager) -> slot.worker.done,
+        workerfinalizer = (slot, job, manager) -> worker -> (worker.done = false; worker),
+        destroyworker! = (slot, job, manager) -> push!(destroyed, slot.worker.idx),
+    )
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 1,
+        worker_lifecycle = WorkerPerJob(),
+        flush_policy = NoFlush(),
+        job_type = Int,
+        result_type = ManagerFakeWorker,
+    )
+    run!(manager, 7:9)
+
+    @test destroyed == [7, 8, 9]
+
+    closed = Int[]
+    close_recipe = (;
+        makeworker = recipe.makeworker,
+        makejobworker = recipe.makejobworker,
+        prepare! = recipe.prepare!,
+        start! = recipe.start!,
+        isdone = recipe.isdone,
+        workerfinalizer = recipe.workerfinalizer,
+        close! = (slot, manager) -> push!(closed, slot.worker.idx),
+    )
+    close_manager = ProcessManager(
+        close_recipe;
+        nworkers = 1,
+        worker_lifecycle = WorkerPerJob(),
+        flush_policy = NoFlush(),
+        job_type = Int,
+        result_type = ManagerFakeWorker,
+    )
+    run!(close_manager, [11])
+
+    @test closed == [11]
 end
 
 @testset "Process workers are transparent and reset is explicit" begin

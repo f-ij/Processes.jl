@@ -78,6 +78,7 @@ function _run_threaded_job!(
     slot.active = true
 
     try
+        _assign_job_worker!(manager, slot, job)
         prepare!(manager.recipe, slot, job, manager)
         _start_slot_inline!(manager, slot, job)
         dispatched[Int(slot_idx)] += 1
@@ -85,6 +86,7 @@ function _run_threaded_job!(
         afterrun!(manager.recipe, slot, job, manager)
         consume!(manager.recipe, slot, job, manager)
         release!(manager.recipe, slot, job, manager)
+        _destroy_finished_job_worker!(manager, slot, job)
         slot.runs += 1
         counts[Int(slot_idx)] += 1
     catch err

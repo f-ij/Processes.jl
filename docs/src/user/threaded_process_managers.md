@@ -131,6 +131,43 @@ Closing an owning manager also closes its processes:
 close(manager)
 ```
 
+Use `WorkerPerJob` when every job should receive a freshly constructed worker:
+
+```julia
+recipe = (;
+    makeworker = (idx, manager) -> Process(MyAlgo; repeats = 1),
+    makejobworker = (slot, job, manager) -> Process(
+        MyAlgo,
+        Init(MyAlgo; seed = job.seed);
+        repeats = 1,
+    ),
+    workerfinalizer = (slot, job, manager) -> job.finalizer,
+)
+
+manager = ProcessManager(
+    recipe;
+    nworkers = 4,
+    worker_lifecycle = WorkerPerJob(destroy_after_finalize = false),
+)
+```
+
+`makeworker` still creates the initial slot workers and fixes the concrete slot
+worker type. Before each job, `makejobworker` replaces `slot.worker` with the
+job-specific worker. The returned worker must have the same concrete type as
+the slot's initial worker, unless you intentionally constructed slots with a
+broader worker field type.
+
+`workerfinalizer` may select a finalizer function from the job. That function is
+called as `finalizer(worker, slot, job, manager)`, or with fewer trailing
+arguments if it accepts less. Return `nothing` to use the default finalizer for
+that job.
+
+By default `WorkerPerJob()` destroys the job worker after `consume!` and
+`release!`, using `destroyworker!` when the recipe defines it, then `close!`,
+and otherwise the default worker close behavior. Pass
+`destroy_after_finalize = false` to keep the finished worker in the slot until
+the next job replaces it.
+
 You can also pass processes that were built elsewhere:
 
 ```julia
@@ -285,6 +322,8 @@ functions in a named tuple are part of the manager type.
 
 - `initstate(config, manager)`: build `manager.state` from user configuration.
 - `makeworker(idx, manager)`: create process `idx` when `workers` is not passed.
+- `makejobworker(slot, job, manager)`: create the worker for one job when
+  `worker_lifecycle = WorkerPerJob()`.
 - `makecontext(idx, manager, template)`: for manager-owned `Process` workers,
   build the context for slot `idx` from the template process.
 - `prepare!(slot, job, manager)`: write one job into a process before it starts.
@@ -302,12 +341,17 @@ functions in a named tuple are part of the manager type.
 - `finalize!(slot, job, manager)`: custom finish step called after the process
   has completed and before `afterrun!` and `consume!`. Defaults to
   `wait(worker); close(worker)` for `Process` workers.
+- `workerfinalizer(slot, job, manager)`: select a finalizer function for the
+  current job. Ignored when `finalize!` is present.
 - `afterrun!(slot, job, manager)`: optional hook after finalization.
 - `consume!(slot, job, manager)`: read a finished process and accumulate output.
 - `release!(slot, job, manager)`: clear local state after `consume!`.
 - `flush!(manager)`: move slot-local buffers into manager state or another
   destination.
 - `close!(slot, manager)`: custom process close.
+- `destroyworker!(slot, job, manager)`: cleanup hook for
+  `WorkerPerJob(destroy_after_finalize = true)`. If this is missing, the
+  manager falls back to `close!`.
 - `onerror!(slot, err, manager)`: custom error handling.
 - `beforechunk!(process, chunk, slot, manager)`: optional chunk setup for
   `InlineChunkWorker`.
@@ -468,6 +512,9 @@ Processes.FlushPolicy
 Processes.FlushAtEnd
 Processes.NoFlush
 Processes.FlushEvery
+Processes.WorkerLifecycle
+Processes.ReuseWorker
+Processes.WorkerPerJob
 Processes.ThreadsType
 Processes.Static
 Processes.Dynamic
