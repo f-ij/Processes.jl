@@ -7,8 +7,8 @@ import Base: rename
     return la
 end
 
-@inline _stored_schedule_spec(::CompositeAlgorithm{T, Spec}) where {T, Spec} = Spec
-@inline _stored_schedule_spec(::Routine{T, Repeats}) where {T, Repeats} = Repeats
+@inline _stored_schedule_spec(la::CompositeAlgorithm) = intervals(la)
+@inline _stored_schedule_spec(la::Routine) = lifetimes(la)
 @inline _stored_schedule_spec(::ThreadedCompositeAlgorithm{T, Spec}) where {T, Spec} = Spec
 @inline _stored_schedule_spec(la::LoopAlgorithm) = _stored_schedule_spec(getplan(la))
 
@@ -69,11 +69,12 @@ end
     return tuple_setindex(t, val, idx)
 end
 
-@inline _default_schedule_entry(::Routine) = 1
+@inline _default_schedule_entry(::Routine) = Repeat(1)
 @inline _default_schedule_entry(::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}) = Interval(1)
 @inline _default_schedule_entry(la::LoopAlgorithm) = _default_schedule_entry(getplan(la))
 
-@inline _normalize_schedule_entry(::Routine, spec) = spec
+@inline _normalize_schedule_entry(::Routine, spec::Lifetime) = spec
+@inline _normalize_schedule_entry(::Routine, spec) = Repeat(spec)
 @inline _normalize_schedule_entry(::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}, spec::Interval) = spec
 @inline _normalize_schedule_entry(::Union{CompositeAlgorithm, ThreadedCompositeAlgorithm}, spec::Real) = Interval(round(Int, spec))
 @inline _normalize_schedule_entry(la::LoopAlgorithm, spec) = _normalize_schedule_entry(getplan(la), spec)
@@ -83,7 +84,7 @@ end
 end
 
 @inline function _schedule_entries(la::Routine)
-    ntuple(i -> repeats(la, i), length(getalgos(la)))
+    ntuple(i -> lifetimes(la, i), length(getalgos(la)))
 end
 @inline _schedule_entries(la::LoopAlgorithm) = _schedule_entries(getplan(la))
 

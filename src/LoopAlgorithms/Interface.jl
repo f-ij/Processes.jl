@@ -10,6 +10,10 @@ without branching.
 """
 @inline getplan(la::LoopAlgorithm) = getfield(la, :plan)
 @inline getplan(plan::Union{CompositeAlgorithm, Routine}) = plan
+@inline getplan(fa::FinalizedAlgorithm) = getplan(inneralgorithm(fa))
+@inline getplan(::Type{<:LoopAlgorithm{Plan}}) where {Plan} = Plan
+@inline getplan(::Type{Plan}) where {Plan<:Union{CompositeAlgorithm, Routine}} = Plan
+@inline getplan(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}} = getplan(LA)
 
 """
 Build or rebuild a concrete `LoopAlgorithm` runtime wrapper.
@@ -64,20 +68,11 @@ Base.isempty(wiring::PlanWiring) =
 
 """Return the namespace symbol stored for one child of a resolved plan."""
 @inline function plan_child_namespace(la::Union{CompositeAlgorithm, Routine}, idx::Int)
-    names = _plan_func_names(getfield(la, :funcs))
-    return isnothing(names) ? trykey(getalgo(la, idx)) : names[idx]
+    name = namesymbol(getfield(getfield(la, :namespaces), idx))
+    return isnothing(name) ? trykey(getalgo(la, idx)) : name
 end
 
 @inline plan_child_namespace(la::LoopAlgorithm, idx::Int) = plan_child_namespace(getplan(la), idx)
-
-"""Return child namespaces as `Namespace{Name}()` values for step-time zipping."""
-@inline function plan_child_namespaces(la::Union{CompositeAlgorithm, Routine})
-    funcs = getfield(la, :funcs)
-    if funcs isa TupleWithNames
-        return namespaces(funcs)
-    end
-    return ntuple(i -> Namespace{trykey(getalgo(la, i))}(), length(getalgos(la)))
-end
 
 get_shares(cla::LA) where {LA<:AbstractLoopAlgorithm} = @inline filter_by_type(Share, getoptions(cla))
 get_routes(cla::LA) where {LA<:AbstractLoopAlgorithm} = @inline filter_by_type(Route, getoptions(cla))
@@ -150,15 +145,6 @@ end
 @inline inc!(la::LoopAlgorithm) = inc!(getplan(la))
 
 """
-Internal loop-runtime step for a resolved loop algorithm.
-
-The expanded signature is deliberately `_step!` so external process algorithms
-only need to implement the public two-argument `step!(algo, context)`.
-"""
-@inline _step!(la::LA, context::C, step_wiring::W, process::P, lifetime::LT, typestable::S = Stable()) where {LA <: LoopAlgorithm, C <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability} =
-    _step!(getplan(la), context, step_wiring, process, lifetime, typestable)
-
-"""
 Internal single-step entrypoint for tests and manual loop-plan driving.
 
 This builds the minimal process handle needed by routines and interval logic,
@@ -167,7 +153,8 @@ then enters the same `_step!` chain used by `run`.
 @inline function _step!(la::LA, context::C, typestable::S = Stable()) where {LA<:AbstractLoopAlgorithm, C<:AbstractContext, S<:Stability}
     lifetime = get(getglobals(context), :lifetime, Indefinite())
     process = LoopRunProcess(lifetime)
-    return @inline _step!(la, context, getwiring(la), process, lifetime, typestable)
+    plan = @inline getplan(la)
+    return @inline _step!(plan, context, getwiring(plan), Namespace{nothing}(), process, lifetime, typestable)
 end
 
 """

@@ -15,11 +15,6 @@ The public extension point remains `step!(algo, context)` on the wrapped
     end
 end
 
-"""Forward namespace-aware stepping through nested loop plans."""
-@inline function _step!(algo::LA, context::C, wiring::W, ::Namespace, process::P, lifetime::LT, stability::S = Stable()) where {LA <: AbstractLoopAlgorithm, C <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
-    return @inline _step!(algo, context, wiring, process, lifetime, stability)
-end
-
 @inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: Wiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
     contextview = @inline view(
         context,

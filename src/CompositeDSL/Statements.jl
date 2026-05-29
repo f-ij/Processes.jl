@@ -53,13 +53,13 @@ function _dsl_repeat_schedule_expr(schedule_value::SV) where {SV}
             return :(Processes.AtLeastAtMost($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(esc(schedule_value.args[4])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[5]))))
         end
     end
-    return :(Int($(esc(schedule_value))))
+    return :(Processes.Repeat(Int($(esc(schedule_value)))))
 end
 
 """Validate schedule usage and turn it into the constructor specification entry."""
 function _dsl_schedule_expr(schedule_kind::Symbol, schedule_value, expected_schedule::Symbol, owner_name::Symbol)
     if schedule_kind == :default
-        return :(1)
+        return expected_schedule == :repeat ? :(Processes.Repeat(1)) : :(1)
     elseif expected_schedule == :none
         got = schedule_kind == :every ? "@interval" : "@repeat"
         error("Use plain entries inside `@$(owner_name) ... begin ... end`, not `$got`.")

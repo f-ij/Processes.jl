@@ -27,9 +27,8 @@ end
 
 """Return the key for a child position, preferring resolved tuple names."""
 @inline function _child_key(la::Union{CompositeAlgorithm, Routine}, idx::Int, child)
-    names = _plan_func_names(getfield(la, :funcs))
-    isnothing(names) && return trykey(child)
-    return names[idx]
+    key = namesymbol(getfield(getfield(la, :namespaces), idx))
+    return isnothing(key) ? trykey(child) : key
 end
 
 @inline _child_key(la, idx::Int, child) = trykey(child)
@@ -53,13 +52,13 @@ function _loopalgorithm_keys(la)
     return tuple(names...)
 end
 
-function _loopalgorithm_keys(::Type{LA}) where {FT, LA<:Union{CompositeAlgorithm{FT}, Routine{FT}}}
+function _loopalgorithm_keys(::Type{LA}) where {FT, S, NS, LA<:Union{CompositeAlgorithm{FT,S,NS}, Routine{FT,S,NS}}}
     names = Symbol[]
-    child_names = _plan_func_names_type(FT)
     child_types = algotypes(LA)
     for idx in eachindex(child_types)
         child = child_types[idx]
-        key = isnothing(child_names) ? trykey(child) : child_names[idx]
+        namespace_name = namesymbol(fieldtype(NS, idx))
+        key = isnothing(namespace_name) ? trykey(child) : namespace_name
         key == Symbol() || push!(names, key)
 
         nested = subalgo(child)
@@ -123,12 +122,12 @@ function _findkey_loopalgorithm(la, key::Symbol, prefix::Tuple = ())
     return nothing
 end
 
-function _findkey_loopalgorithm(::Type{LA}, key::Symbol, prefix::Tuple = ()) where {FT, LA<:Union{CompositeAlgorithm{FT}, Routine{FT}}}
-    child_names = _plan_func_names_type(FT)
+function _findkey_loopalgorithm(::Type{LA}, key::Symbol, prefix::Tuple = ()) where {FT, S, NS, LA<:Union{CompositeAlgorithm{FT,S,NS}, Routine{FT,S,NS}}}
     child_types = algotypes(LA)
     for idx in eachindex(child_types)
         child = child_types[idx]
-        child_key = isnothing(child_names) ? trykey(child) : child_names[idx]
+        namespace_name = namesymbol(fieldtype(NS, idx))
+        child_key = isnothing(namespace_name) ? trykey(child) : namespace_name
         if child_key == key && child_key != Symbol()
             return KeyLocation((prefix..., idx))
         end

@@ -10,8 +10,10 @@ Execution plan that steps child algorithms on fixed intervals.
 the registry, root process states, stored context, inputs, and overrides belongs
 to the concrete `LoopAlgorithm` wrapper created by `resolve`/`init`.
 """
-struct CompositeAlgorithm{T, Intervals, W, id} <: AbstractLoopAlgorithm
+struct CompositeAlgorithm{T, Intervals, Namespaces, W, id} <: AbstractLoopAlgorithm
     funcs::T
+    intervals
+    namespaces::Namespaces
     wiring::W
     inc::Base.RefValue{Int} # Runtime interval cursor.
 end
@@ -31,8 +33,9 @@ plain route/share wiring is stored on the plan. States and other
 non-plan options stay on the `LoopAlgorithm` wrapper.
 """
 function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
+    namespaces = ntuple(_ -> Namespace{nothing}(), length(funcs))
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(funcs, options))
-    plan = CompositeAlgorithm{typeof(funcs), intervals, typeof(wiring), id}(funcs, wiring, Ref(1))
+    plan = CompositeAlgorithm{typeof(funcs), intervals, typeof(namespaces), typeof(wiring), id}(funcs, intervals, namespaces, wiring, Ref(1))
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end
@@ -47,18 +50,11 @@ function setoptions(ca::CompositeAlgorithm, options)
     return setfield(ca, :wiring, wiring)
 end
 
-"""Return the tuple type that actually stores child algorithms."""
-@inline _child_tuple_type(::Type{T}) where {T<:Tuple} = T
-@inline _child_tuple_type(::Type{<:TupleWithNames{Names,T}}) where {Names,T<:Tuple} = T
-
-"""Return the child algorithm types stored by a plan function container type."""
-@inline _child_tuple_parameters(::Type{T}) where {T} = _child_tuple_type(T).parameters
-
 subalgorithms(ca::CompositeAlgorithm) = getalgos(ca)
-algotypes(ca::Union{CompositeAlgorithm{FT}, Type{<:CompositeAlgorithm{FT}}}) where FT = _child_tuple_parameters(FT)
+algotypes(ca::Union{CompositeAlgorithm{FT}, Type{<:CompositeAlgorithm{FT}}}) where FT = FT.parameters
 statetypes(ca::Union{CompositeAlgorithm, Type{<:CompositeAlgorithm}}) = ()
-subalgotypes(ca::CompositeAlgorithm{FT}) where FT = _child_tuple_parameters(FT)
-subalgotypes(::Type{CA}) where {FT, CA<:CompositeAlgorithm{FT}} = _child_tuple_parameters(FT)
+subalgotypes(ca::CompositeAlgorithm{FT}) where FT = FT.parameters
+subalgotypes(::Type{CA}) where {FT, CA<:CompositeAlgorithm{FT}} = FT.parameters
 @inline getstates(ca::CompositeAlgorithm) = ()
 
 
@@ -66,30 +62,26 @@ getinc(ca::CompositeAlgorithm) = getfield(ca, :inc)
 getwiring(ca::CompositeAlgorithm) = getfield(ca, :wiring)
 getoptions(ca::CompositeAlgorithm) = _all_plan_wiring(global_wiring(getwiring(ca)), child_wiring(getwiring(ca)))
 
-getid(ca::Union{CompositeAlgorithm{T,I,W,id}, Type{<:CompositeAlgorithm{T,I,W,id}}}) where {T,I,W,id} = id
-setid(ca::CA, id = uuid4()) where {CA<:CompositeAlgorithm} = setparameter(ca, 4, id)
+getid(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = id
+setid(ca::CA, id = uuid4()) where {CA<:CompositeAlgorithm} = setparameter(ca, 5, id)
 
 # setname(ca::CA, name::Symbol) where CA <: CompositeAlgorithm = setparameter(ca, 6, name)
 # getname(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}}}) where {T,I,NSR,O,R,id,CustomName} = CustomName
 
-interval(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, idx) where {T,I} = I[idx]
+interval(ca::CompositeAlgorithm, idx) = typeof(ca).parameters[2][idx]
+interval(::Type{<:CompositeAlgorithm{T,I}}, idx) where {T,I} = I[idx]
 
 
 ###########################################
 ################ Type Info ###############
 ###########################################
-@inline functypes(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = tuple(_child_tuple_parameters(T)...)
-@inline getalgotype(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}, idx) where {T,I} = _child_tuple_parameters(T)[idx]
-@inline numalgos(::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I} = length(_child_tuple_parameters(T))
+@inline functypes(ca::Union{CompositeAlgorithm{T,I,NS}, Type{<:CompositeAlgorithm{T,I,NS}}}) where {T,I,NS} = tuple(T.parameters...)
+@inline getalgotype(::Union{CompositeAlgorithm{T,I,NS}, Type{<:CompositeAlgorithm{T,I,NS}}}, idx) where {T,I,NS} = T.parameters[idx]
+@inline numalgos(::Union{CompositeAlgorithm{T,I,NS}, Type{<:CompositeAlgorithm{T,I,NS}}}) where {T,I,NS} = length(T.parameters)
 
 
-@inline function intervals(ca::Union{CompositeAlgorithm{T,I}, Type{<:CompositeAlgorithm{T,I}}}) where {T,I}
-    if I isa Tuple
-        return I
-    else 
-        return ntuple(_ -> 1, length(_child_tuple_parameters(T)))
-    end
-end
+@inline intervals(ca::CompositeAlgorithm) = typeof(ca).parameters[2]
+@inline intervals(::Type{<:CompositeAlgorithm{T,I}}) where {T,I} = I
 @inline intervals(ca::Union{CompositeAlgorithm, Type{<:CompositeAlgorithm}}, ::Val{Idx}) where Idx = @inline intervals(ca)[Idx]
 
 get_this_interval(args) = interval(getalgo(args.process), algoidx(args))
@@ -108,12 +100,11 @@ end
 #######################################
 ############ Properties ################
 ########################################
-# intervals(ca::C) where {C<:CompositeAlgorithm} = C.parameters[2]
-# intervals(caT::Type{<:CompositeAlgorithm}) = caT.parameters[2]
+# intervals(ca::C) where {C<:CompositeAlgorithm} = getfield(ca, :intervals)
 get_intervals(ca) = intervals(ca)
 
-hasid(ca::Union{CompositeAlgorithm{T,I,W,id}, Type{<:CompositeAlgorithm{T,I,W,id}}}) where {T,I,W,id} = !isnothing(id)
-id(ca::Union{CompositeAlgorithm{T,I,W,id}, Type{<:CompositeAlgorithm{T,I,W,id}}}) where {T,I,W,id} = id
+hasid(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = !isnothing(id)
+id(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = id
 
 
 
@@ -121,7 +112,7 @@ id(ca::Union{CompositeAlgorithm{T,I,W,id}, Type{<:CompositeAlgorithm{T,I,W,id}}}
 Base.length(ca::CompositeAlgorithm) = length(getalgos(ca))
 Base.eachindex(ca::CompositeAlgorithm) = eachindex(getalgos(ca))
 getalgo(ca::CompositeAlgorithm, idx) = getalgos(ca)[idx]
-getalgos(ca::CompositeAlgorithm) = _raw_plan_funcs(getfield(ca, :funcs))
+getalgos(ca::CompositeAlgorithm) = getfield(ca, :funcs)
 hasflag(ca::CompositeAlgorithm, flag) = flag in getfield(ca, :flags)
 track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
 """
@@ -140,11 +131,11 @@ function reset!(ca::CA) where CA <: CompositeAlgorithm
     reset!.(getalgos(ca))
 end
 
-num_funcs(ca::CompositeAlgorithm{FA}) where FA = fieldcount(_child_tuple_type(FA))
+num_funcs(ca::CompositeAlgorithm{FA}) where FA = fieldcount(FA)
 
 # TODO: WHAT IS THIS
 type_instances(ca::CompositeAlgorithm{FT}) where FT = getalgos(ca)
-get_funcs(ca::CompositeAlgorithm{FT}) where FT = _child_tuple_parameters(FT)
+get_funcs(ca::CompositeAlgorithm{FT}) where FT = FT.parameters
 
 # CompositeAlgorithm{FS, Intervals}() where {FS, Intervals} = CompositeAlgorithm{FS, Intervals}(call_all(FS)) 
 
@@ -159,10 +150,10 @@ end
 multiplier(ca::CompositeAlgorithm, idx) = 1 / getinterval(getalgo(ca, idx))
 
 tupletype_to_tuple(t) = (t.parameters...,)
-get_intervals(ct::Type{CA}) where {CA<:CompositeAlgorithm} = ct.parameters[2]
+get_intervals(ct::Type{CA}) where {CA<:CompositeAlgorithm} = intervals(ct)
 
-@inline function getvals(ca::CompositeAlgorithm{FT, Is}) where {FT, Is}
-    return Val.(Is)
+@inline function getvals(ca::CompositeAlgorithm)
+    return Val.(intervals(ca))
 end
 
 @inline inc(ca::CA) where {CA<:CompositeAlgorithm} = getinc(ca)[]

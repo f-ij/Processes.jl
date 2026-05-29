@@ -134,7 +134,7 @@ function Base.show(io::IO, caT::Type{<:CompositeAlgorithm})
         print(io, "CompositeAlgorithm")
         return
     end
-    labels = _composite_algo_type_labels(_child_tuple_parameters(ft))
+    labels = _composite_algo_type_labels(ft.parameters)
     print(io, "CompositeAlgorithm(", join(labels, ", "), ")")
 end
 
@@ -173,7 +173,7 @@ function Base.show(io::IO, rT::Type{<:Routine})
         print(io, "Routine")
         return
     end
-    labels = _composite_algo_type_labels(_child_tuple_parameters(ft))
+    labels = _composite_algo_type_labels(ft.parameters)
     print(io, "Routine(", join(labels, ", "), ")")
 end
 

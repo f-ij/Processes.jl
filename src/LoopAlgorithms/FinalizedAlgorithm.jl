@@ -78,8 +78,6 @@ end
 @inline Base.length(fa::FinalizedAlgorithm) = length(inneralgorithm(fa))
 @inline Base.eachindex(fa::FinalizedAlgorithm) = eachindex(inneralgorithm(fa))
 @inline reset!(fa::FinalizedAlgorithm) = reset!(inneralgorithm(fa))
-@inline _step!(fa::FA, context::C, step_wiring::W, process::P, lifetime::LT, typestable::S = Stable()) where {FA <: FinalizedAlgorithm, C <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability} =
-    _step!(inneralgorithm(fa), context, step_wiring, process, lifetime, typestable)
 @inline cleanup(fa::FinalizedAlgorithm, context) = cleanup(inneralgorithm(fa), context)
 
 @inline multipliers(fa::FinalizedAlgorithm) = multipliers(inneralgorithm(fa))

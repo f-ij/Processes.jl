@@ -38,11 +38,18 @@ end
     return registry, setfield(la, :plan, named_plan)
 end
 
+@inline function add_algos_to_registry(registry::R, la::LA, multiplier) where {R<:NameSpaceRegistry, LA<:Union{CompositeAlgorithm, Routine}}
+    funcs = getalgos(la)
+    algo_multipliers = multiplier .* multipliers(la)
+    registry, raw_funcs, namespaces = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
+    return registry, setfield(rebuild_loopalgorithm_funcs(la, raw_funcs), :namespaces, namespaces)
+end
+
 @inline function add_algos_to_registry(registry::R, la::LA, multiplier) where {R<:NameSpaceRegistry, LA<:AbstractLoopAlgorithm}
     funcs = getalgos(la)
     algo_multipliers = multiplier .* multipliers(la)
-    registry, raw_funcs, names = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
-    return registry, rebuild_loopalgorithm_funcs(la, TupleWithNames(names, raw_funcs))
+    registry, raw_funcs, _ = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
+    return registry, rebuild_loopalgorithm_funcs(la, raw_funcs)
 end
 
 @inline add_algo_tuple_to_registry(registry::R, ::Tuple{}, ::Tuple{}) where {R<:NameSpaceRegistry} = registry, (), ()
@@ -56,23 +63,21 @@ end
 @inline function add_algo_to_registry(registry::R, algo::LA, multiplier) where {R<:NameSpaceRegistry, LA<:AbstractLoopAlgorithm}
     inner = algo isa LoopAlgorithm ? getplan(algo) : algo
     registry, plan = add_algos_to_registry(registry, inner, multiplier)
-    return registry, plan, Symbol()
+    return registry, plan, Namespace{nothing}()
 end
 
 @inline function add_algo_to_registry(registry::R, algo::IA, multiplier) where {F<:AbstractLoopAlgorithm, R<:NameSpaceRegistry, IA<:AbstractIdentifiableAlgo{F}}
     registry, plan = add_algos_to_registry(registry, getalgo(algo), multiplier)
-    return registry, plan, Symbol()
+    return registry, plan, Namespace{nothing}()
 end
 
 @inline function add_algo_to_registry(registry::R, algo::A, multiplier) where {R<:NameSpaceRegistry, A}
     registry, keyed_algo = add(registry, algo, multiplier)
-    return registry, getalgo(keyed_algo), getkey(keyed_algo)
+    return registry, getalgo(keyed_algo), Namespace{getkey(keyed_algo)}()
 end
 
 @inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:Union{CompositeAlgorithm, Routine}, F<:Tuple}
-    names = _plan_func_names(getfield(la, :funcs))
-    named_funcs = !isnothing(names) && length(names) == length(funcs) ? TupleWithNames(names, funcs) : funcs
-    return setfield(la, :funcs, named_funcs)
+    return setfield(la, :funcs, funcs)
 end
 
 @inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:AbstractLoopAlgorithm, F}

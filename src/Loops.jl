@@ -43,18 +43,19 @@ Run a single function in a loop indefinitely
 @inline function loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT <: IndefiniteLifetime, isresuming}
     @inline before_while(process)
 
-    step_wiring = @inline getwiring(func)
+    step_plan = @inline getplan(func)
+    step_wiring = @inline getwiring(step_plan)
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
     if isresuming
         @atomic process.paused = false
     else
-        runtime_context = @inline _step!(func, runtime_context, step_wiring, process, lt, Unstable())
+        runtime_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Unstable())
         @inline tick!(process)
         @inline inc!(process)
     end
 
     while true
-        nextcontext = @inline _step!(func, runtime_context, step_wiring, process, lt, Stable())
+        nextcontext = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
         # typeof(nextcontext) === typeof(runtime_context) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(runtime_context)).")
         runtime_context = nextcontext
         @inline tick!(process)
@@ -78,14 +79,15 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     @assert isresolved(algo) "Algo must be resolved before running the loop. Got algo $(algo) which is not resolved."
     @inline before_while(process)
     
-    step_wiring = @inline getwiring(algo)
+    step_plan = @inline getplan(algo)
+    step_wiring = @inline getwiring(step_plan)
 
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
     stablecontext = if isresuming
         @atomic process.paused = false
         runtime_context
     else
-        stepped_context = @inline _step!(algo, runtime_context, step_wiring, process, r, Unstable())
+        stepped_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, r, Unstable())
         @inline tick!(process)
         @inline inc!(process)
         stepped_context
@@ -96,7 +98,7 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     
     for _ in start_idx:end_idx
     
-        nextcontext = @inline _step!(algo, stablecontext, step_wiring, process, r, Stable())
+        nextcontext = @inline _step!(step_plan, stablecontext, step_wiring, Namespace{nothing}(), process, r, Stable())
         # typeof(nextcontext) === typeof(stablecontext) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(stablecontext)).")
         stablecontext = nextcontext
         @inline tick!(process)
