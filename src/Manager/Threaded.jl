@@ -29,6 +29,7 @@ end
 Close a slot while collecting close failures in thread-local error storage.
 """
 function _safe_close_slot_threadlocal!(manager::M, slot::S, errors::Vector{Any}) where {M<:ProcessManager, S<:WorkerSlot}
+    isnothing(slot.worker) && return slot
     try
         result = close!(manager.recipe, slot, manager)
         _is_no_recipe_callback(result) && _close_worker!(slot.worker)

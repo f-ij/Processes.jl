@@ -309,6 +309,18 @@ function Processes.step!(::ManagerProcessAccumulator, context)
     return (;)
 end
 
+struct ManagerProcessMultiplier <: Processes.ProcessAlgorithm end
+
+function Processes.init(::ManagerProcessMultiplier, context::C) where {C}
+    value = get(context, :start, 0)
+    return (; value = Ref(value), buffer = Int[])
+end
+
+function Processes.step!(::ManagerProcessMultiplier, context::C) where {C}
+    push!(context.buffer, 2 * context.value[])
+    return (;)
+end
+
 function manager_process_context(worker)
     subcontexts = Processes.get_subcontexts(Processes.context(worker))
     names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
@@ -397,14 +409,15 @@ end
     @test [ctx.value[] for ctx in contexts] == worker_data
 end
 
-@testset "ProcessManager can replace workers for each job and keep the last worker" begin
+@testset "ProcessManager can create on-demand workers for each job and keep the last worker" begin
     created = Int[]
     finalized = Int[]
     consumed = Int[]
     released = Int[]
+    construction_count = Ref(0)
     recipe = (;
-        makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
-        makejobworker = (slot, job, manager) -> begin
+        makeworker = (idx, manager, job) -> begin
+            construction_count[] += 1
             push!(created, job.value)
             ManagerFakeWorker(job.value, Int[], false)
         end,
@@ -423,13 +436,15 @@ end
     manager = ProcessManager(
         recipe;
         nworkers = 1,
-        worker_lifecycle = WorkerPerJob(destroy_after_finalize = false),
+        worker_lifecycle = OnDemandWorkers(destroy_after_finalize = false),
         flush_policy = NoFlush(),
         job_type = eltype(jobs),
         result_type = ManagerFakeWorker,
     )
+    @test construction_count[] == 0
     run!(manager, jobs)
 
+    @test construction_count[] == 2
     @test created == [3, 5]
     @test finalized == [3, 5]
     @test consumed == [3, 5]
@@ -437,11 +452,10 @@ end
     @test only(workers(manager)).idx == 5
 end
 
-@testset "ProcessManager can destroy per-job workers after release" begin
+@testset "ProcessManager can destroy on-demand workers after release" begin
     destroyed = Int[]
     recipe = (;
-        makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
-        makejobworker = (slot, job, manager) -> ManagerFakeWorker(job, Int[], false),
+        makeworker = (idx, manager, job) -> ManagerFakeWorker(job, Int[], false),
         prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job),
         start! = (slot, job, manager) -> (slot.worker.done = true),
         isdone = (slot, manager) -> slot.worker.done,
@@ -452,7 +466,7 @@ end
     manager = ProcessManager(
         recipe;
         nworkers = 1,
-        worker_lifecycle = WorkerPerJob(),
+        worker_lifecycle = OnDemandWorkers(),
         flush_policy = NoFlush(),
         job_type = Int,
         result_type = ManagerFakeWorker,
@@ -464,7 +478,6 @@ end
     closed = Int[]
     close_recipe = (;
         makeworker = recipe.makeworker,
-        makejobworker = recipe.makejobworker,
         prepare! = recipe.prepare!,
         start! = recipe.start!,
         isdone = recipe.isdone,
@@ -474,7 +487,7 @@ end
     close_manager = ProcessManager(
         close_recipe;
         nworkers = 1,
-        worker_lifecycle = WorkerPerJob(),
+        worker_lifecycle = OnDemandWorkers(),
         flush_policy = NoFlush(),
         job_type = Int,
         result_type = ManagerFakeWorker,
@@ -482,6 +495,46 @@ end
     run!(close_manager, [11])
 
     @test closed == [11]
+end
+
+@testset "ProcessManager can use job-specific Process algorithm types" begin
+    outputs = Int[]
+    recipe = (;
+        makeworker = (idx, manager, job) -> Process(job.algo; repeats = 1),
+        prepare! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job.value
+            nothing
+        end,
+        consume! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            push!(outputs, only(local_context.buffer))
+        end,
+    )
+    jobs = Any[
+        (; algo = ManagerProcessAccumulator(), value = 4),
+        (; algo = ManagerProcessMultiplier(), value = 4),
+    ]
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 1,
+        worker_lifecycle = OnDemandWorkers(destroy_after_finalize = false),
+        worker_type = Process,
+        flush_policy = NoFlush(),
+        job_type = Any,
+        result_type = Process,
+    )
+    run!(manager, jobs)
+
+    @test outputs == [4, 8]
+    @test only(workers(manager)) isa Process
+    @test_throws ArgumentError ProcessManager(
+        recipe;
+        nworkers = 1,
+        worker_lifecycle = OnDemandWorkers(),
+        worker_type = :process,
+    )
 end
 
 @testset "Process workers are transparent and reset is explicit" begin

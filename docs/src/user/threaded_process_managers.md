@@ -131,12 +131,11 @@ Closing an owning manager also closes its processes:
 close(manager)
 ```
 
-Use `WorkerPerJob` when every job should receive a freshly constructed worker:
+Use `OnDemandWorkers` when every job should receive a freshly constructed worker:
 
 ```julia
 recipe = (;
-    makeworker = (idx, manager) -> Process(MyAlgo; repeats = 1),
-    makejobworker = (slot, job, manager) -> Process(
+    makeworker = (idx, manager, job) -> Process(
         MyAlgo,
         Init(MyAlgo; seed = job.seed);
         repeats = 1,
@@ -147,22 +146,23 @@ recipe = (;
 manager = ProcessManager(
     recipe;
     nworkers = 4,
-    worker_lifecycle = WorkerPerJob(destroy_after_finalize = false),
+    worker_lifecycle = OnDemandWorkers(destroy_after_finalize = false),
+    worker_type = Process,
 )
 ```
 
-`makeworker` still creates the initial slot workers and fixes the concrete slot
-worker type. Before each job, `makejobworker` replaces `slot.worker` with the
-job-specific worker. The returned worker must have the same concrete type as
-the slot's initial worker, unless you intentionally constructed slots with a
-broader worker field type.
+With `OnDemandWorkers`, `makeworker` is not called during manager construction
+when `workers` is omitted. Before each job, `makeworker(idx, manager, job)`
+builds the job-specific worker and replaces `slot.worker`. Pass `worker_type`
+to construct slots with a useful worker field type. Use `worker_type = Process`
+when jobs may select different concrete `Process{LoopAlgo}` specializations.
 
 `workerfinalizer` may select a finalizer function from the job. That function is
 called as `finalizer(worker, slot, job, manager)`, or with fewer trailing
 arguments if it accepts less. Return `nothing` to use the default finalizer for
 that job.
 
-By default `WorkerPerJob()` destroys the job worker after `consume!` and
+By default `OnDemandWorkers()` destroys the job worker after `consume!` and
 `release!`, using `destroyworker!` when the recipe defines it, then `close!`,
 and otherwise the default worker close behavior. Pass
 `destroy_after_finalize = false` to keep the finished worker in the slot until
@@ -322,8 +322,8 @@ functions in a named tuple are part of the manager type.
 
 - `initstate(config, manager)`: build `manager.state` from user configuration.
 - `makeworker(idx, manager)`: create process `idx` when `workers` is not passed.
-- `makejobworker(slot, job, manager)`: create the worker for one job when
-  `worker_lifecycle = WorkerPerJob()`.
+- `makeworker(idx, manager, job)`: create the worker for one job when
+  `worker_lifecycle = OnDemandWorkers()`.
 - `makecontext(idx, manager, template)`: for manager-owned `Process` workers,
   build the context for slot `idx` from the template process.
 - `prepare!(slot, job, manager)`: write one job into a process before it starts.
@@ -350,7 +350,7 @@ functions in a named tuple are part of the manager type.
   destination.
 - `close!(slot, manager)`: custom process close.
 - `destroyworker!(slot, job, manager)`: cleanup hook for
-  `WorkerPerJob(destroy_after_finalize = true)`. If this is missing, the
+  `OnDemandWorkers(destroy_after_finalize = true)`. If this is missing, the
   manager falls back to `close!`.
 - `onerror!(slot, err, manager)`: custom error handling.
 - `beforechunk!(process, chunk, slot, manager)`: optional chunk setup for
@@ -514,7 +514,7 @@ Processes.NoFlush
 Processes.FlushEvery
 Processes.WorkerLifecycle
 Processes.ReuseWorker
-Processes.WorkerPerJob
+Processes.OnDemandWorkers
 Processes.ThreadsType
 Processes.Static
 Processes.Dynamic
