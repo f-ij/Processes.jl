@@ -1,195 +1,163 @@
 """
-Val-like location for a recursively nested loop-algorithm child.
+Type-stable location for a named loop child or state.
 
-The stored tuple is a path of consecutive indexes through `(algos..., states...)`
-at each nested loop-algorithm level.
+`Path` is a tuple of positional indexes through `(algos..., states...)` at each
+loop-algorithm level. For example, `(2, 1)` means "second child of the current
+loop, then first child of that nested loop".
 """
 struct KeyLocation{Path} end
 
 @inline KeyLocation(path::Tuple) = KeyLocation{path}()
 @inline keypath(::KeyLocation{Path}) where {Path} = Path
 
-@inline trykey(::Any) = Symbol()
-@inline trykey(sa::AbstractIdentifiableAlgo) = haskey(sa) ? getkey(sa) : Symbol()
-@inline function trykey(::Type{SA}) where {SA<:AbstractIdentifiableAlgo}
-    key = getkey(SA)
-    return key == Symbol() ? Symbol() : key
+"""Return an entity key, or `Symbol()` when the entity is not directly keyed."""
+@inline _entity_key(::Any) = Symbol()
+@inline _entity_key(entity::AbstractIdentifiableAlgo) = haskey(entity) ? getkey(entity) : Symbol()
+@inline function _entity_key(::Type{Entity}) where {Entity<:AbstractIdentifiableAlgo}
+    key = getkey(Entity)
+    return isnothing(key) ? Symbol() : key
 end
 
-@inline subalgo(::Any) = nothing
-@inline subalgo(la::LA) where {LA<:AbstractLoopAlgorithm} = la
-@inline subalgo(::Type{LA}) where {LA<:AbstractLoopAlgorithm} = LA
-@inline subalgo(sa::AbstractIdentifiableAlgo{F}) where {F} = F <: AbstractLoopAlgorithm ? getalgo(sa) : nothing
-@inline subalgo(::Type{<:AbstractIdentifiableAlgo{F}}) where {F} = F <: AbstractLoopAlgorithm ? F : nothing
+"""Return a nested loop algorithm carried by `entity`, or `nothing`."""
+@inline _nested_loop(::Any) = nothing
+@inline _nested_loop(loop::LA) where {LA<:AbstractLoopAlgorithm} = loop
+@inline _nested_loop(::Type{LA}) where {LA<:AbstractLoopAlgorithm} = LA
+@inline _nested_loop(entity::AbstractIdentifiableAlgo{F}) where {F} =
+    F <: AbstractLoopAlgorithm ? getalgo(entity) : nothing
+@inline _nested_loop(::Type{<:AbstractIdentifiableAlgo{F}}) where {F} =
+    F <: AbstractLoopAlgorithm ? F : nothing
 
-@inline childnodes(la::LA) where {LA<:AbstractLoopAlgorithm} = tuple(getalgos(la)..., getstates(la)...)
-@inline childnodes(::Type{LA}) where {LA<:AbstractLoopAlgorithm} = tuple(algotypes(LA)..., statetypes(LA)...)
+"""Return `(algos..., states...)` for following a `KeyLocation` path."""
+@inline _key_children(loop::LA) where {LA<:AbstractLoopAlgorithm} = tuple(getalgos(loop)..., getstates(loop)...)
+@inline _key_children(::Type{LA}) where {LA<:AbstractLoopAlgorithm} = tuple(algotypes(LA)..., statetypes(LA)...)
 
-"""Return the key for a child position, preferring resolved tuple names."""
-@inline function _child_key(la::Union{CompositeAlgorithm, Routine}, idx::Int, child)
-    key = namesymbol(getfield(getfield(la, :namespaces), idx))
-    return isnothing(key) ? trykey(child) : key
+@inline _namespace_key(namespaces::Tuple, idx::Int) = namesymbol(getfield(namespaces, idx))
+@inline _namespace_key(::Type{NS}, idx::Int) where {NS<:Tuple} = namesymbol(fieldtype(NS, idx))
+@inline _namespace_key(::Nothing, idx::Int) = nothing
+
+@inline _namespace_tuple(loop::Union{CompositeAlgorithm, Routine}) = getfield(loop, :namespaces)
+@inline _namespace_tuple(::Type{<:Union{CompositeAlgorithm{FT,S,NS}, Routine{FT,S,NS}}}) where {FT,S,NS} = NS
+@inline _namespace_tuple(loop::LoopAlgorithm) = _namespace_tuple(getplan(loop))
+@inline _namespace_tuple(::Type{<:LoopAlgorithm{Plan}}) where {Plan} = _namespace_tuple(Plan)
+@inline _namespace_tuple(loop::FinalizedAlgorithm) = _namespace_tuple(inneralgorithm(loop))
+@inline _namespace_tuple(::Type{FA}) where {LA,FA<:FinalizedAlgorithm{LA}} = _namespace_tuple(LA)
+@inline _namespace_tuple(::Any) = nothing
+@inline _namespace_tuple(::Type) = nothing
+
+"""Return the direct key for a loop child, preferring resolved namespaces."""
+@inline function _child_key(loop, idx::Int, child)
+    key = _namespace_key(_namespace_tuple(loop), idx)
+    return isnothing(key) ? _entity_key(child) : key
 end
 
-@inline _child_key(la, idx::Int, child) = trykey(child)
-
-function _loopalgorithm_keys(la)
-    names = Symbol[]
-    funcs = getalgos(la)
-    for idx in eachindex(funcs)
-        child = funcs[idx]
-        key = _child_key(la, idx, child)
+function _append_keys!(names::Vector{Symbol}, loop)
+    children = getalgos(loop)
+    for idx in eachindex(children)
+        child = children[idx]
+        key = _child_key(loop, idx, child)
         key == Symbol() || push!(names, key)
 
-        nested = subalgo(child)
-        isnothing(nested) || append!(names, keys(nested))
+        nested = _nested_loop(child)
+        isnothing(nested) || _append_keys!(names, _key_source(nested))
     end
-    for state in getstates(la)
-        key = trykey(state)
+
+    for state in getstates(loop)
+        key = _entity_key(state)
         key == Symbol() || push!(names, key)
     end
-
-    return tuple(names...)
+    return names
 end
 
-function _loopalgorithm_keys(::Type{LA}) where {FT, S, NS, LA<:Union{CompositeAlgorithm{FT,S,NS}, Routine{FT,S,NS}}}
-    names = Symbol[]
+function _append_keys!(names::Vector{Symbol}, ::Type{LA}) where {LA<:AbstractLoopAlgorithm}
     child_types = algotypes(LA)
     for idx in eachindex(child_types)
-        child = child_types[idx]
-        namespace_name = namesymbol(fieldtype(NS, idx))
-        key = isnothing(namespace_name) ? trykey(child) : namespace_name
+        child_type = child_types[idx]
+        key = _child_key(LA, idx, child_type)
         key == Symbol() || push!(names, key)
 
-        nested = subalgo(child)
-        isnothing(nested) || append!(names, keys(nested))
+        nested = _nested_loop(child_type)
+        isnothing(nested) || _append_keys!(names, _key_source(nested))
     end
-    for state in statetypes(LA)
-        key = trykey(state)
+
+    for state_type in statetypes(LA)
+        key = _entity_key(state_type)
         key == Symbol() || push!(names, key)
     end
-    return tuple(names...)
+    return names
 end
 
-function _loopalgorithm_keys(::Type{<:LoopAlgorithm{Plan}}) where {Plan}
-    return _loopalgorithm_keys(Plan)
+@inline _key_source(loop::FinalizedAlgorithm) = inneralgorithm(loop)
+@inline _key_source(::Type{FA}) where {LA,FA<:FinalizedAlgorithm{LA}} = LA
+@inline _key_source(loop) = loop
+
+"""Return all named children and states visible from a loop algorithm tree."""
+function Base.keys(loop::LA) where {LA<:AbstractLoopAlgorithm}
+    return tuple(_append_keys!(Symbol[], _key_source(loop))...)
 end
 
-function _loopalgorithm_keys(la::LoopAlgorithm)
-    names = collect(keys(getplan(la)))
-    for state in getstates(la)
-        key = trykey(state)
-        key == Symbol() || push!(names, key)
-    end
-    return tuple(names...)
+@generated function Base.keys(::Type{LA}) where {LA<:AbstractLoopAlgorithm}
+    names = tuple(_append_keys!(Symbol[], _key_source(LA))...)
+    return Expr(:tuple, (QuoteNode(name) for name in names)...)
 end
 
-function _loopalgorithm_keys(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}}
-    return _loopalgorithm_keys(LA)
-end
+function _findkey(loop, key::Symbol, prefix::Tuple)
+    children = getalgos(loop)
+    for idx in eachindex(children)
+        child = children[idx]
+        child_key = _child_key(loop, idx, child)
+        child_key == key && child_key != Symbol() && return KeyLocation((prefix..., idx))
 
-function Base.keys(la::LA) where {LA<:AbstractLoopAlgorithm}
-    return _loopalgorithm_keys(la)
-end
-
-function Base.keys(la::Type{<:AbstractLoopAlgorithm})
-    return _loopalgorithm_keys(la)
-end
-
-function _findkey_loopalgorithm(la, key::Symbol, prefix::Tuple = ())
-    funcs = getalgos(la)
-    for idx in eachindex(funcs)
-        child = funcs[idx]
-        child_key = _child_key(la, idx, child)
-        if child_key == key && child_key != Symbol()
-            return KeyLocation((prefix..., idx))
-        end
-
-        nested = subalgo(child)
+        nested = _nested_loop(child)
         if !isnothing(nested)
             location = _findkey(nested, key, (prefix..., idx))
             isnothing(location) || return location
         end
     end
-    offset = length(funcs)
-    for (idx, state) in pairs(getstates(la))
-        state_key = trykey(state)
-        if state_key == key && state_key != Symbol()
-            return KeyLocation((prefix..., offset + idx))
-        end
-    end
 
+    offset = length(children)
+    for (idx, state) in pairs(getstates(loop))
+        state_key = _entity_key(state)
+        state_key == key && state_key != Symbol() && return KeyLocation((prefix..., offset + idx))
+    end
     return nothing
 end
 
-function _findkey_loopalgorithm(::Type{LA}, key::Symbol, prefix::Tuple = ()) where {FT, S, NS, LA<:Union{CompositeAlgorithm{FT,S,NS}, Routine{FT,S,NS}}}
+function _findkey(::Type{LA}, key::Symbol, prefix::Tuple) where {LA<:AbstractLoopAlgorithm}
     child_types = algotypes(LA)
     for idx in eachindex(child_types)
-        child = child_types[idx]
-        namespace_name = namesymbol(fieldtype(NS, idx))
-        child_key = isnothing(namespace_name) ? trykey(child) : namespace_name
-        if child_key == key && child_key != Symbol()
-            return KeyLocation((prefix..., idx))
-        end
+        child_type = child_types[idx]
+        child_key = _child_key(LA, idx, child_type)
+        child_key == key && child_key != Symbol() && return KeyLocation((prefix..., idx))
 
-        nested = subalgo(child)
+        nested = _nested_loop(child_type)
         if !isnothing(nested)
             location = _findkey(nested, key, (prefix..., idx))
             isnothing(location) || return location
         end
     end
+
     offset = length(child_types)
-    for (idx, state) in pairs(statetypes(LA))
-        state_key = trykey(state)
-        if state_key == key && state_key != Symbol()
-            return KeyLocation((prefix..., offset + idx))
-        end
+    for (idx, state_type) in pairs(statetypes(LA))
+        state_key = _entity_key(state_type)
+        state_key == key && state_key != Symbol() && return KeyLocation((prefix..., offset + idx))
     end
     return nothing
 end
 
-function _findkey_loopalgorithm(::Type{<:LoopAlgorithm{Plan}}, key::Symbol, prefix::Tuple = ()) where {Plan}
-    return _findkey_loopalgorithm(Plan, key, prefix)
-end
-
-function _findkey_loopalgorithm(la::LoopAlgorithm, key::Symbol, prefix::Tuple = ())
-    location = _findkey(getplan(la), key, prefix)
-    !isnothing(location) && return location
-
-    offset = length(getalgos(la))
-    for (idx, state) in pairs(getstates(la))
-        state_key = trykey(state)
-        if state_key == key && state_key != Symbol()
-            return KeyLocation((prefix..., offset + idx))
-        end
-    end
-    return nothing
-end
-
-function _findkey_loopalgorithm(::Type{FA}, key::Symbol, prefix::Tuple = ()) where {LA, FA<:FinalizedAlgorithm{LA}}
-    return _findkey_loopalgorithm(LA, key, prefix)
-end
-
-function _findkey(la::LA, key::Symbol, prefix::Tuple = ()) where {LA<:AbstractLoopAlgorithm}
-    return _findkey_loopalgorithm(la, key, prefix)
-end
-
-function _findkey(la::Type{<:AbstractLoopAlgorithm}, key::Symbol, prefix::Tuple = ())
-    return _findkey_loopalgorithm(la, key, prefix)
-end
-
-@inline findkey(la::LA, key::Symbol) where {LA<:AbstractLoopAlgorithm} = _findkey(la, key)
-@inline findkey(la::Type{<:AbstractLoopAlgorithm}, key::Symbol) = _findkey(la, key)
-@inline Base.haskey(la::LA, key::Symbol) where {LA<:AbstractLoopAlgorithm} = !isnothing(findkey(la, key))
-@inline Base.haskey(la::Type{<:AbstractLoopAlgorithm}, key::Symbol) = !isnothing(findkey(la, key))
+"""Return the `KeyLocation` for `key`, or `nothing` if the key is not visible."""
+@inline findkey(loop::LA, key::Symbol) where {LA<:AbstractLoopAlgorithm} = _findkey(_key_source(loop), key, ())
+@inline findkey(::Type{LA}, key::Symbol) where {LA<:AbstractLoopAlgorithm} = _findkey(_key_source(LA), key, ())
+@inline Base.haskey(loop::LA, key::Symbol) where {LA<:AbstractLoopAlgorithm} = !isnothing(findkey(loop, key))
+@inline Base.haskey(::Type{LA}, key::Symbol) where {LA<:AbstractLoopAlgorithm} = !isnothing(findkey(LA, key))
 
 function _getindex_keylocation(current, path::Tuple)
-    child = childnodes(current)[first(path)]
+    child = _key_children(current)[first(path)]
     length(path) == 1 && return child
 
-    nested = subalgo(child)
+    nested = _nested_loop(child)
     isnothing(nested) && error("KeyLocation $(path) descends through non-LoopAlgorithm child $(child).")
     return _getindex_keylocation(nested, Base.tail(path))
 end
 
-@inline Base.getindex(cla::LA, location::KeyLocation) where {LA<:AbstractLoopAlgorithm} = _getindex_keylocation(cla, keypath(location))
+@inline Base.getindex(loop::LA, location::KeyLocation) where {LA<:AbstractLoopAlgorithm} =
+    _getindex_keylocation(loop, keypath(location))

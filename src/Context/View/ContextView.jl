@@ -124,7 +124,13 @@ end
 Create a view from a non-scoped instance by looking it up in the registry
 """
 @inline function Base.view(pc::ProcessContext, instance::I, inject = (;)) where I
-    scoped_instance = @inline static_get(getregistry(pc), instance)
+    reg = getregistry(pc)
+    scoped_instance = @inline get(reg, instance, nothing)
+    if isnothing(scoped_instance) && instance isa ProcessEntity
+        scoped_instance = @inline static_get(reg, typeof(instance))
+    elseif isnothing(scoped_instance)
+        scoped_instance = @inline static_get(reg, instance)
+    end
     return SubContextView{typeof(pc), getkey(scoped_instance), typeof(scoped_instance), typeof(inject)}(pc, scoped_instance; inject=inject)
 end
 

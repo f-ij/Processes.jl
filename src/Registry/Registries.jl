@@ -304,10 +304,6 @@ Statically Find the name in the registry
 @inline function static_findkey(reg::NameSpaceRegistry, val)
     location = @inline static_findfirst_match(reg, val)
     if isnothing(getidx(location))
-        entries = get_type_entries(reg, val)
-        if val isa Union{ProcessEntity, Type{<:ProcessEntity}} && length(entries) == 1
-            return @inline getkey(entries[1])
-        end
         return nothing
     else
         return @inline getkey(reg[location])
@@ -356,9 +352,6 @@ function static_get(reg::NameSpaceRegistry, v::V) where {V}
     entries = get_type_entries(reg, v)
     idx = findfirst_match(entries, v)
     if isnothing(idx)
-        if v isa Union{ProcessEntity, Type{<:ProcessEntity}} && length(entries) == 1
-            return entries[1]
-        end
         return static_get(entries, v)
     end
     return entries[idx]

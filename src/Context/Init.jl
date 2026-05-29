@@ -14,7 +14,12 @@ end
 
 Base.@constprop :aggressive function initcontext(context::C, algo::A; inputs::I = (;), overrides::O = (;)) where {C<:ProcessContext, A, I, O}
     reg = getregistry(context)
-    identified_algo = reg[algo]
+    identified_algo = get(reg, algo, nothing)
+    if isnothing(identified_algo) && algo isa ProcessEntity
+        identified_algo = reg[typeof(algo)]
+    elseif isnothing(identified_algo)
+        identified_algo = reg[algo]
+    end
     return initcontext(context, identified_algo; inputs, overrides)
 end
 
