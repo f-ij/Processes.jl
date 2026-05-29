@@ -44,9 +44,16 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
 @testset "Runtime inputs and LoopAlgorithm lifecycle" begin
     @test Input === Init
     @test Init(LifecycleInitA; x = 1).vars == (; x = 1)
+    @test Init(; x = 1).vars == (; x = 1)
     @test Input(LifecycleInitA, :x => 2).vars == (; x = 2)
     @test !Processes.isresolved(Init(LifecycleInitA; x = 1))
     @test !Processes.isresolved(typeof(Init(LifecycleInitA; x = 1)))
+    @test !Processes.isresolved(Init(; x = 1))
+    @test !Processes.isresolved(typeof(Init(; x = 1)))
+    @test Processes.isalltargets(Init(; x = 1))
+    @test Processes.isalltargets(typeof(Init(; x = 1)))
+    @test !Processes.isalltargets(Init(LifecycleInitA; x = 1))
+    @test !Processes.isalltargets(Override(LifecycleInitA; x = 1))
     @test Processes.isresolved(Init(:LifecycleInitA_1; x = 1))
     @test Processes.isresolved(typeof(Init(:LifecycleInitA_1; x = 1)))
 
@@ -59,6 +66,15 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
     @test Processes.context(replayed)[LifecycleInitB].y[] == 2
     @test Processes.context(overridden)[LifecycleInitA].x[] == 5
     @test Processes.context(overridden)[LifecycleInitB].y[] == 2
+
+    general_init = init(la, Init(; x = 3, y = 4, z = 5))
+    @test Processes.context(general_init)[LifecycleInitA].x[] == 3
+    @test Processes.context(general_init)[LifecycleInitA].z == 5
+    @test Processes.context(general_init)[LifecycleInitB].y[] == 4
+
+    targeted_after_general = init(la, Init(; x = 3, y = 4), Init(LifecycleInitA; x = 8))
+    @test Processes.context(targeted_after_general)[LifecycleInitA].x[] == 8
+    @test Processes.context(targeted_after_general)[LifecycleInitB].y[] == 4
 
     b_ref = Processes.context(overridden)[LifecycleInitB].y
     partial = partialinit(overridden, Init(LifecycleInitA; x = 9, z = 4))
@@ -73,6 +89,9 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
     @test Processes.get_ref(resolved_input) === nothing
     @test Processes.isresolved(resolved_input)
     @test Processes.isresolved(typeof(resolved_input))
+    resolved_general_inputs = Processes.resolve(Processes.getregistry(resolved_la), Init(; x = 11))
+    @test length(resolved_general_inputs) == length(keys(Processes.getregistry(resolved_la)))
+    @test all(Processes.isresolved, resolved_general_inputs)
     initialized_by_symbol = init(resolved_la, Init(resolved_target; x = 7))
     @test Processes.context(initialized_by_symbol)[LifecycleInitA].x[] == 7
 

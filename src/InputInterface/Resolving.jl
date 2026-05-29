@@ -16,7 +16,6 @@ to the resolved namespace symbol.
 @inline get_vars(ov::OI) where {OI<:Union{Override, Input}} = ov.vars
 
 @inline get_target_name(ov::Union{Init, Override}) = get_target(ov)
-@inline _is_resolved_input(ov::Union{Init, Override}) = isresolved(ov)
 
 @inline _resolve_input_target_key(reg::NameSpaceRegistry, target) = static_findkey(reg, target)
 @inline _resolve_input_target_key(reg::NameSpaceRegistry, matcher::AbstractMatcher) = getkey(get_by_matcher(reg, matcher))
@@ -49,6 +48,17 @@ end
 
 @inline resolve(cla::LA, ovs::Tuple) where {LA<:AbstractLoopAlgorithm} = flat_collect_broadcast(ovs) do ov
     resolve(cla, ov)
+end
+
+"""
+Resolve a targetless `Init` into one resolved `Init` per registered namespace.
+"""
+@inline function resolve(reg::R, init::I) where {R<:NameSpaceRegistry, I<:Init{AllInitTargets}}
+    vars = get_vars(init)
+
+    # After this point the init pipeline can use the ordinary target-specific
+    # merge path, so all-target init does not need special cases downstream.
+    return map(name -> Init{name, typeof(vars), Nothing}(vars, nothing), keys(reg))
 end
 
 """

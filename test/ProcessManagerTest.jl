@@ -45,6 +45,25 @@ end
     @test only(slots(manager)).name == :worker_1
 end
 
+@testset "ProcessManager show includes useful runtime state" begin
+    manager = ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 2, job_type = Int)
+    compact = sprint(show, manager)
+    manager_summary = sprint(summary, manager)
+    detailed = sprint(show, MIME("text/plain"), manager)
+    slot_detail = sprint(show, MIME("text/plain"), first(slots(manager)))
+
+    @test occursin("ProcessManager(open, workers=2", compact)
+    @test manager_summary == "ProcessManager(2 workers, open)"
+    @test occursin("active=0", compact)
+    @test occursin("completions=0", compact)
+    @test occursin("status = open", detailed)
+    @test occursin("workers = 2 (active=0, idle=2)", detailed)
+    @test occursin("progress = dispatched=0, completions=0", detailed)
+    @test occursin("[1] :worker_1 idle runs=0", detailed)
+    @test occursin("WorkerSlot", slot_detail)
+    @test occursin("status = idle", slot_detail)
+end
+
 @testset "ProcessManager stores slots as a typed tuple" begin
     recipe = (;
         prepare! = (slot, job, manager) -> (slot.worker.done = true; push!(slot.worker.buffer, job)),
@@ -211,6 +230,25 @@ end
     @test manager.completions == 5
     drain!(manager)
     @test sort(external) == collect(1:5)
+    @test flush_count[] == 1
+end
+
+@testset "wait finishes active ProcessManager work without final flush" begin
+    external = Int[]
+    flush_count = Ref(0)
+    manager = ProcessManager(immediate_fake_recipe(external, flush_count); nworkers = 2)
+
+    dispatch!(manager, 1)
+    dispatch!(manager, 2)
+
+    @test wait(manager) === manager
+    @test manager.active_count == 0
+    @test isempty(external)
+    @test sort(vcat((slot.worker.buffer for slot in slots(manager))...)) == [1, 2]
+    @test flush_count[] == 0
+
+    drain!(manager)
+    @test sort(external) == [1, 2]
     @test flush_count[] == 1
 end
 

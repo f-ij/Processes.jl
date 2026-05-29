@@ -191,7 +191,10 @@ function _resolved_update_from_view(context::ProcessContext, target, varname::Sy
 end
 
 function _resolved_updates(context::ProcessContext, input::Union{Input, Override})
-    if _is_resolved_input(input)
+    if isalltargets(input)
+        resolved = resolve(getregistry(context), input)
+        return Iterators.flatten(_resolved_updates(context, named) for named in resolved)
+    elseif isresolved(input)
         target = get_target_name(input)
         return tuple((_resolved_update_from_view(context, target, first(pair), last(pair)) for pair in pairs(get_vars(input)))...)
     end
