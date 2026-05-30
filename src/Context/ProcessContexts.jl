@@ -165,12 +165,13 @@ end
         error("Trying to merge into unknown subcontext $(QuoteNode(name)) in ProcessContext. Available subcontexts are: $(sc_names)")
     end
 
-    getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(sc_name)))) for sc_name in sc_names]
-    getproperty_exprs[found_idx] = :(@inline merge(getproperty(get_subcontexts(pc), $(QuoteNode(name))), args))
+    getproperty_exprs = Expr[:(getproperty(old_subcontexts, $(QuoteNode(sc_name)))) for sc_name in sc_names]
+    getproperty_exprs[found_idx] = :(@inline merge(getproperty(old_subcontexts, $(QuoteNode(name))), args))
     ntnames = tuple(sc_names...)
 
     return quote
         LineNumberNode(@__LINE__, @__FILE__)
+        old_subcontexts = @inline get_subcontexts(pc)
         new_subcontexts = @inline NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
         return @inline ProcessContext(new_subcontexts, getregistry(pc), getglobals(pc), getruntimeinput(pc))
     end
@@ -183,14 +184,15 @@ end
         error("Trying to merge into unknown subcontext $(QuoteNode(name)) in ProcessContext. Available subcontexts are: $(sc_names)")
     end
 
-    getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(sc_name)))) for sc_name in sc_names]
-    getproperty_exprs[found_idx] = :(@inline merge(getproperty(get_subcontexts(pc), $(QuoteNode(name))), args))
-    ntnames = tuple(sc_names...)
-
     return quote
         LineNumberNode(@__LINE__, @__FILE__)
-        new_subcontexts = @inline NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
-        @inline setfield!(pc, :subcontexts, new_subcontexts)
+        subcontext = @inline getproperty(@inline(get_subcontexts(pc)), $(QuoteNode(name)))
+        new_data = @inline merge(getdata(subcontext), args)
+        @inline setfield!(subcontext, :data, new_data)
+        # Immutable experiment:
+        # old_subcontexts = @inline get_subcontexts(pc)
+        # new_subcontexts = @inline NamedTuple{$(tuple(sc_names...))}(tuple(...))
+        # @inline setfield!(pc, :subcontexts, new_subcontexts)
         return pc
     end
 end

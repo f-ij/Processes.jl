@@ -4,7 +4,10 @@ SubContext{Name}(d::D) where {Name, D<:NamedTuple} = SubContext{Name, D}(d)
 SubContext(name, data::NamedTuple) = SubContext{name, typeof(data)}(data)
 
 function newdata(sc::SubContext, data::NamedTuple)
-    setfield(sc, :data, data)
+    setfield!(sc, :data, data)
+    return sc
+    # Immutable experiment:
+    # return setfield(sc, :data, data)
 end
 
 @inline Base.isempty(sc::SubContext) = isempty(getdata(sc))
@@ -34,7 +37,9 @@ Merge subcontext into a NamedTuple.
 end
 
 @inline function Base.replace(sc::SubContext{Name, T}, args::NamedTuple = (;)) where {Name, T}
-    @inline setfield(sc, :data, args)
+    @inline SubContext{Name, typeof(args)}(args)
+    # Immutable experiment:
+    # return @inline setfield(sc, :data, args)
 end
 
 @inline Base.keys(sct::Type{<:SubContext}) = fieldnames(sct.parameters[2])

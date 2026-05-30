@@ -80,42 +80,44 @@ end
 @inline function Base.run(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing)
     algo = getalgo(p)
     
-    if isnothing(context)
-        context = Processes.context(p)
+    run_context = if isnothing(context)
+        Processes.context(p)
     else
         @assert context isa contexttype(p) "Wrong context shape for this process\n Context is of type $(typeof(context)), but expected $(contexttype(p))."
+        context
     end
 
     p.loopidx = 1
     runtime_inputs = _validate_runtime_inputs(algo, (;))
     inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
-    lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
+    run_lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
     if (isnothing(threaded) && isthreaded(p)) || threaded === true
-        return Threads.@spawn @inline loop(p, algo, context, lifetime, runtime_inputs)
+        return Threads.@spawn @inline loop(p, algo, run_context, run_lifetime, runtime_inputs)
     elseif (isnothing(threaded) && isasync(p)) || threaded === :async
-        return @async @inline loop(p, algo, context, lifetime, runtime_inputs)
+        return @async @inline loop(p, algo, run_context, run_lifetime, runtime_inputs)
     else 
-        return @inline @inline loop(p, algo, context, lifetime, runtime_inputs)
+        return @inline @inline loop(p, algo, run_context, run_lifetime, runtime_inputs)
     end
 end
 
 @inline function run_nogen(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing)
     algo = getalgo(p)
     
-    if isnothing(context)
-        context = Processes.context(p)
+    run_context = if isnothing(context)
+        Processes.context(p)
     else
         @assert context isa contexttype(p) "Wrong context shape for this process\n Context is of type $(typeof(context)), but expected $(contexttype(p))."
+        context
     end
 
     p.loopidx = 1
     # loopdispatch = isnothing(repeat) ? lifetime(p) : _inline_process_lifetime(algo, repeat, nothing)
     inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
-    lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
+    run_lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
     # p.consumed = true
-    return @inline loop(p, algo, context, lifetime)
+    return @inline loop(p, algo, run_context, run_lifetime)
 end
 
 @inline function init_and_run(p::InlineProcess, inputs_overrides...)

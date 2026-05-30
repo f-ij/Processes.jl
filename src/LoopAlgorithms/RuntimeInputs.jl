@@ -166,9 +166,16 @@ context was created before the runtime/input field split.
 """
 function _strip_runtime_inputs(context::C) where {C<:ProcessContext}
     runtime = getglobals(context)
+    subcontexts = get_subcontexts(context)
+    if !haskey(runtime, :process) &&
+        !haskey(runtime, :lifetime) &&
+        !haskey(subcontexts, :_input) &&
+        isempty(getruntimeinput(context))
+        return context
+    end
+
     stripped_runtime = haskey(runtime, :process) ? deletekeys(runtime, :process) : runtime
     stripped_runtime = haskey(stripped_runtime, :lifetime) ? deletekeys(stripped_runtime, :lifetime) : stripped_runtime
-    subcontexts = get_subcontexts(context)
     persistent_subcontexts = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
     return ProcessContext(persistent_subcontexts, getregistry(context), stripped_runtime, (;))
 end
@@ -183,7 +190,20 @@ runtime and input fields from `stored_context`.
 
 @inline function _strip_runtime_inputs(runtime_context::C, stored_context::S) where {C<:ProcessContext, S<:ProcessContext}
     subcontexts = get_subcontexts(runtime_context)
+    if !haskey(subcontexts, :_input) &&
+        getglobals(runtime_context) == getglobals(stored_context) &&
+        getruntimeinput(runtime_context) == getruntimeinput(stored_context)
+        return runtime_context
+    end
+
     persistent_subcontexts = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
+    # Previous implementation always rebuilt the context:
+    # return ProcessContext(
+    #     persistent_subcontexts,
+    #     getregistry(runtime_context),
+    #     getglobals(stored_context),
+    #     getruntimeinput(stored_context),
+    # )
     return ProcessContext(
         persistent_subcontexts,
         getregistry(runtime_context),
