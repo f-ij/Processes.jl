@@ -1,4 +1,8 @@
 export resolve
+
+"""Child-count threshold where registry construction switches to batch insertion."""
+const _REGISTRY_BATCH_CHILD_LIMIT = 16
+
 """
 Materialize a loop algorithm for context construction.
 
@@ -54,7 +58,47 @@ end
 
 @inline add_algo_tuple_to_registry(registry::R, ::Tuple{}, ::Tuple{}) where {R<:NameSpaceRegistry} = registry, (), ()
 
+"""Return whether every child is a raw `FuncWrapper` value."""
+function _all_funcwrapper_values(funcs::Funcs) where {Funcs<:Tuple}
+    for func in funcs
+        func isa FuncWrapper || return false
+    end
+    return true
+end
+
+"""Add a large tuple of raw `FuncWrapper`s to the registry in one pass.
+
+Large DSL function-call chains usually produce many unique `FuncWrapper`
+children. Adding them one-by-one creates and compiles one intermediate registry
+tuple type per child; batching keeps the same final registry shape while only
+materializing the final `RegistryTypeEntry{FuncWrapper}` once.
+"""
+function _add_funcwrapper_tuple_to_registry(registry::R, funcs::Funcs, multipliers::Multipliers) where {R<:NameSpaceRegistry, Funcs<:Tuple, Multipliers<:Tuple}
+    entries = ntuple(i -> Autokey(getfield(funcs, i), i), length(funcs))
+    multiplier_values = Float64[]
+    sizehint!(multiplier_values, length(multipliers))
+    lookup = Dict{Any, Int}()
+
+    # Mirror `RegistryTypeEntry.add`: store multipliers and dynamic lookup for
+    # each autokeyed wrapper, but avoid building every intermediate entry tuple.
+    for i in eachindex(entries)
+        push!(multiplier_values, Float64(getfield(multipliers, i)))
+        lookup[match_by(getfield(entries, i))] = i
+    end
+
+    entry = RegistryTypeEntry{FuncWrapper, typeof(entries)}(entries, multiplier_values, lookup)
+    registry_entries = (getentries(registry)..., entry)
+    namespaces = ntuple(i -> Namespace{getkey(getfield(entries, i))}(), length(entries))
+    return NameSpaceRegistry{typeof(registry_entries)}(registry_entries), funcs, namespaces
+end
+
 @inline function add_algo_tuple_to_registry(registry::R, funcs::F, multipliers::M) where {R<:NameSpaceRegistry, F<:Tuple, M<:Tuple}
+    if length(funcs) > _REGISTRY_BATCH_CHILD_LIMIT &&
+       isnothing(find_typeidx(registry, FuncWrapper)) &&
+       _all_funcwrapper_values(funcs)
+        return _add_funcwrapper_tuple_to_registry(registry, funcs, multipliers)
+    end
+
     registry, raw_head, name_head = add_algo_to_registry(registry, first(funcs), first(multipliers))
     registry, raw_tail, name_tail = add_algo_tuple_to_registry(registry, Base.tail(funcs), Base.tail(multipliers))
     return registry, (raw_head, raw_tail...), (name_head, name_tail...)

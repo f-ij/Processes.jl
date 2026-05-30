@@ -429,6 +429,37 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         wait(dsl_routine_state_process)
         close(dsl_routine_state_process)
 
+        large_dsl_funcwrapper_routine = @Routine begin
+            @state seed = 1.0
+            @state bias = 0.25
+            v1 = _process_precompile_scale(seed; scale = 1.01)
+            v2 = _process_precompile_add(v1, bias; bias = 0.02)
+            v3 = _process_precompile_scale(v2; scale = 1.03)
+            v4 = _process_precompile_add(v3, v1; bias = 0.04)
+            v5 = _process_precompile_scale(v4; scale = 1.05)
+            v6 = _process_precompile_add(v5, v2; bias = 0.06)
+            v7 = _process_precompile_scale(v6; scale = 1.07)
+            v8 = _process_precompile_add(v7, v3; bias = 0.08)
+            v9 = _process_precompile_scale(v8; scale = 1.09)
+            v10 = _process_precompile_add(v9, v4; bias = 0.10)
+            v11 = _process_precompile_add(@transform(x -> x + 0.11, v10), bias; bias = 0.11)
+            v12 = _process_precompile_scale(v11; scale = 1.12)
+            v13 = _process_precompile_add(v12, v6; bias = 0.13)
+            v14 = _process_precompile_scale(v13; scale = 1.14)
+            v15 = _process_precompile_add(v14, v8; bias = 0.15)
+            v16 = _process_precompile_scale(v15; scale = 1.16)
+            v17 = _process_precompile_add(v16, v10; bias = 0.17)
+            v18 = _process_precompile_scale(v17; scale = 1.18)
+            v19 = _process_precompile_add(v18, seed; bias = 0.19)
+            v20 = _process_precompile_scale(v19; scale = 1.20)
+        end
+        resolved_large_dsl_funcwrapper_routine = resolve(large_dsl_funcwrapper_routine)
+        initcontext(resolved_large_dsl_funcwrapper_routine)
+        large_dsl_process = Process(resolved_large_dsl_funcwrapper_routine; repeats = 1)
+        run(large_dsl_process)
+        wait(large_dsl_process)
+        close(large_dsl_process)
+
         fake_events = Int[]
         fake_recipe = (;
             makeworker = (idx, manager) -> _ProcessPrecompileFakeWorker(idx, 0, false),

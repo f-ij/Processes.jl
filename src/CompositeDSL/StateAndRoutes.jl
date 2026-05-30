@@ -50,12 +50,14 @@ _dsl_keyword_value_expr(value) = value isa Symbol ? QuoteNode(value) : esc(value
 
 """Store a DSL-emitted plan option at the statement-local owner."""
 function _composite_dsl_push_local_option!(options::Vector{Any}, owner, option)
+    @nospecialize owner option
     push!(options, LocalPlanOption(owner, option))
     return options
 end
 
 """Turn parsed DSL input specs into statement-local `Route` options."""
 function _composite_dsl_add_routes!(options::Vector{Any}, producers::Dict{Symbol, Any}, external_inputs::Vector{Pair{Symbol, Symbol}}, target, inputs::Tuple)
+    @nospecialize target inputs
     for input in inputs
         if input.kind == :simple
             source = input.source
@@ -88,6 +90,7 @@ end
 
 """Register outputs as the current producer for later routed lookups."""
 function _composite_dsl_register_outputs!(producers::Dict{Symbol, Any}, owner, outputs::Tuple{Vararg{Symbol}})
+    @nospecialize owner outputs
     owner = _composite_dsl_runtime_owner(owner) ? :_runtime : owner
     for output in outputs
         # Later statements resolve symbols by asking this table who currently
@@ -99,6 +102,7 @@ end
 
 """Remember which symbols belong to an inline state for later writeback routing."""
 function _composite_dsl_register_state_outputs!(state_owners::Dict{Symbol, Any}, owner, outputs::Tuple{Vararg{Symbol}})
+    @nospecialize owner outputs
     for output in outputs
         state_owners[output] = owner
     end
@@ -112,6 +116,7 @@ If the output already belongs to an inline `@state`, keep that state as the
 owner and add a writeback route instead of rebinding the symbol.
 """
 function _composite_dsl_bind_outputs!(options::Vector{Any}, producers::Dict{Symbol, Any}, state_owners::Dict{Symbol, Any}, target, outputs::Tuple{Vararg{Symbol}})
+    @nospecialize target outputs
     if _composite_dsl_runtime_owner(target)
         _composite_dsl_register_outputs!(producers, :_runtime, outputs)
         return producers

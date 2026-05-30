@@ -4,6 +4,73 @@ macro state(args...)
     return _dsl_expand_state_expr(fields)
 end
 
+"""Return the concrete loop-algorithm constructor represented by a DSL macro."""
+@inline _dsl_loopalgorithm_type(::Val{:CompositeAlgorithm}) = CompositeAlgorithm
+@inline _dsl_loopalgorithm_type(::Val{:Routine}) = Routine
+@inline _dsl_loopalgorithm_type(::Val{Name}) where {Name} =
+    error("Unsupported DSL loop algorithm constructor `$Name`.")
+
+"""Normalize DSL-collected process state entries without a large vararg parse."""
+function _dsl_normalize_state_entries(states)
+    normalized = Any[]
+    sizehint!(normalized, length(states))
+    for state in states
+        if state isa Pair
+            push!(normalized, IdentifiableAlgo(state.second, state.first))
+        elseif state isa Union{ProcessState, Type{<:ProcessState}}
+            push!(normalized, IdentifiableAlgo(state))
+        else
+            push!(normalized, state)
+        end
+    end
+    return Tuple(normalized)
+end
+
+"""Build a loop algorithm from DSL vectors without compiling a giant vararg call."""
+function _dsl_build_loopalgorithm(::Val{Name}, algos, specification, states, options) where {Name}
+    laType = _dsl_loopalgorithm_type(Val(Name))
+    length(algos) == length(specification) || error("DSL produced $(length(algos)) algorithms but $(length(specification)) schedule entries.")
+
+    processalgos = Any[]
+    kept_specification = Any[]
+    sizehint!(processalgos, length(algos))
+    sizehint!(kept_specification, length(specification))
+
+    # Conditional DSL branches use `IfWrapped`; keep specification entries
+    # aligned only for algorithms that survive constructor-time filtering.
+    for idx in eachindex(algos)
+        parsed = _parse_loopalgorithm_entity_input(algos[idx])
+        isnothing(parsed) && continue
+        parsed = _strip_nested_finalized_algorithm(parsed)
+        push!(processalgos, _normalize_loopalgorithm_entity_input(parsed))
+        push!(kept_specification, specification[idx])
+    end
+    isempty(processalgos) && error("`@$Name` requires at least one algorithm entry.")
+
+    processalgos_tuple = Tuple(processalgos)
+    schedule_tuple = Tuple(kept_specification)
+    normalized_schedule = if iscomposite(laType)
+        map(x -> x isa Interval ? x : Interval(x), schedule_tuple)
+    else
+        map(x -> x isa Lifetime ? x : Repeat(x), schedule_tuple)
+    end
+
+    if iscomposite(laType)
+        processalgos_tuple, normalized_schedule = flatten_comp_funcs(processalgos_tuple, normalized_schedule)
+    end
+
+    collected_options = ()
+    for algo in processalgos_tuple
+        if algo isa LoopAlgorithm && isresolved(algo)
+            collected_options = (unique(collected_options)..., update_option_keys(algo)...)
+        end
+    end
+
+    state_tuple = _dsl_normalize_state_entries(states)
+    option_tuple = (collected_options..., Tuple(options)...)
+    return LoopAlgorithm(laType, processalgos_tuple, state_tuple, option_tuple, normalized_schedule)
+end
+
 """Expand a top-level DSL block into either a `CompositeAlgorithm` or a `Routine`."""
 function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_schedule::Symbol; print_constructor::Bool = false)
     statements = block isa Expr && block.head == :block ? block.args : Any[block]
@@ -34,7 +101,13 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             $(print_constructor ? :(Processes._dsl_print_constructor_call($(QuoteNode(constructor_name)), _dsl_algos, _dsl_specification, _dsl_states, _dsl_options)) : nothing)
             # Build the final `CompositeAlgorithm`/`Routine` using the same
             # constructor surface users would write by hand.
-            local _dsl_loopalgorithm = getproperty(Processes, $(QuoteNode(constructor_name)))(_dsl_algos..., Tuple(_dsl_specification), _dsl_states..., _dsl_options...)
+            local _dsl_loopalgorithm = Processes._dsl_build_loopalgorithm(
+                Val{$(QuoteNode(constructor_name))}(),
+                _dsl_algos,
+                _dsl_specification,
+                _dsl_states,
+                _dsl_options,
+            )
             $(isnothing(final_expr) ? :(_dsl_loopalgorithm) : :(Processes.finalstep(_dsl_loopalgorithm, $(esc(final_expr)))))
         end
     end
@@ -103,7 +176,13 @@ function _dsl_expand_simplealgorithm_resolved(
             $(collected.step_exprs...)
 
             isempty(_dsl_algos) && error("`@repeat n begin ... end` requires at least one algorithm entry.")
-            local _dsl_algo = Processes.CompositeAlgorithm(_dsl_algos..., _dsl_states..., _dsl_options...)
+            local _dsl_algo = Processes._dsl_build_loopalgorithm(
+                Val{:CompositeAlgorithm}(),
+                _dsl_algos,
+                _dsl_specification,
+                _dsl_states,
+                _dsl_options,
+            )
             # Return the same resolved wrapper the outer builder expects from any
             # other DSL statement.
             local _dsl_inputs = Tuple((; kind = :simple, source = input.first, destination = input.second) for input in _dsl_external_inputs)
