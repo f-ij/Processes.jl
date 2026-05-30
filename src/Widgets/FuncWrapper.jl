@@ -142,8 +142,6 @@ DSL temporaries and remain in `ProcessContext._runtime` for later statements.
 
     view_merge_expr = if isempty(view_names)
         :(context)
-    elseif S <: Unstable
-        :(@inline unstablemerge(contextview, $view_expr))
     else
         :(@inline stablemerge(contextview, $view_expr))
     end

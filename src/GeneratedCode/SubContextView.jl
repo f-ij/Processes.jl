@@ -12,10 +12,17 @@ end
 
 function _subcontext_view_mergetuple_expr(SCV::Type, Args::Type)
     @nospecialize SCV Args
+    merge_expr, widened_expr = _subcontext_view_merge_exprs(SCV, Args)
+    return merge_expr
+end
+
+function _subcontext_view_merge_exprs(SCV::Type, Args::Type)
+    @nospecialize SCV Args
     SubKey = SCV.parameters[2]
     algo_varnames = fieldnames(Args)
 
     merge_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
+    widened_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
 
     for (var_idx, algo_varname) in enumerate(algo_varnames)
         target_location, subcontext_varname = _compute_location(SCV, algo_varname)
@@ -37,7 +44,7 @@ function _subcontext_view_mergetuple_expr(SCV::Type, Args::Type)
             )
 
         else # New variable so add it to this subcontext
-            exprs = get!(merge_expressions_by_subcontext, SubKey, Expr[])
+            exprs = get!(widened_expressions_by_subcontext, SubKey, Expr[])
             push!(
                 exprs,
                 Expr(:(=), subcontext_varname, :(getproperty(args, $(QuoteNode(algo_varname))))),
@@ -45,21 +52,29 @@ function _subcontext_view_mergetuple_expr(SCV::Type, Args::Type)
         end
     end
 
-    # Build the NamedTuple expression for mergetuple
-    # There lines creates (;subcontext1 = (; varname1 = getproperty(args, :algoname_1), ...), subcontext2 = (...), ...)
+    # Build the NamedTuple expressions for real subcontext writes and widened
+    # field patches. These create:
+    #   (; subcontext1 = (; var1 = ...), ...)
 
-    subcontext_exprs = [
+    merge_subcontext_exprs = [
         Expr(:(=), subctx, Expr(:tuple, Expr(:parameters, field_exprs...)))
         for (subctx, field_exprs) in merge_expressions_by_subcontext
     ]
-    return Expr(:tuple, Expr(:parameters, subcontext_exprs...))
+    widened_subcontext_exprs = [
+        Expr(:(=), subctx, Expr(:tuple, Expr(:parameters, field_exprs...)))
+        for (subctx, field_exprs) in widened_expressions_by_subcontext
+    ]
+    return (
+        Expr(:tuple, Expr(:parameters, merge_subcontext_exprs...)),
+        Expr(:tuple, Expr(:parameters, widened_subcontext_exprs...)),
+    )
 end
 
 """
 Merge but error if a var would be overwritten and only allow local merging
 """
 @inline @generated function stablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    mergetuple_expr = _subcontext_view_mergetuple_expr(scv, args)
+    mergetuple_expr, widenedtuple_expr = _subcontext_view_merge_exprs(scv, args)
 
     # Return the expression that does the merge
     return quote
@@ -67,7 +82,8 @@ Merge but error if a var would be overwritten and only allow local merging
         mergetuple = $mergetuple_expr
         newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
         @assert typeof(newcontext) == typeof(getcontext(scv)) "A variable type in a subcontext was changed. This is prohibited for performance reasons.\nIf type mutation is needed, set the variable up as a Ref\n$(sprint(show, ContextTypeDiff(getcontext(scv), newcontext)))"
-        return newcontext
+        widenedtuple = $widenedtuple_expr
+        return @inline merge_into_widened(newcontext, widenedtuple)
     end
 end
 
@@ -78,14 +94,16 @@ This doesn't check for type stability, and allows overwriting existing variables
 
 """
 @inline @generated function unstablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    mergetuple_expr = _subcontext_view_mergetuple_expr(scv, args)
+    mergetuple_expr, widenedtuple_expr = _subcontext_view_merge_exprs(scv, args)
 
     # Return the expression that does the merge
     return quote
         $(LineNumberNode(@__LINE__, @__FILE__))
         mergetuple = $mergetuple_expr
         newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
-        return newcontext
+        @assert typeof(newcontext) == typeof(getcontext(scv)) "A variable type in a subcontext was changed. This is prohibited for performance reasons.\nIf type mutation is needed, set the variable up as a Ref\n$(sprint(show, ContextTypeDiff(getcontext(scv), newcontext)))"
+        widenedtuple = $widenedtuple_expr
+        return @inline merge_into_widened(newcontext, widenedtuple)
     end
 end
 

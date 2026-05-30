@@ -1,4 +1,10 @@
-@generated function ProcessContext(subcontexts::D, registry::Reg, runtime::R = (;), input::I = (;)) where {D,Reg,R,I}
+@generated function ProcessContext(
+    subcontexts::D,
+    registry::Reg,
+    runtime::R = (;),
+    input::I = (;),
+    widened = (;),
+) where {D,Reg,R,I}
     # Statically Check if all keys except for global are SubContexts
     sc_names = fieldnames(D)
     bad_names = Symbol[]
@@ -9,16 +15,18 @@
     end
     @assert isempty(bad_names) "All fields in ProcessContext subcontexts must be of type SubContext, but found non-SubContext fields: $bad_names"
     @assert Reg <: AbstractRegistry "Registry type must be a subtype of AbstractRegistry, got: $Reg"
-    return :(ProcessContext{D,Reg,R,I}(subcontexts, registry, runtime, input))
+    return :(ProcessContext{D,Reg,R,I}(subcontexts, registry, runtime, input, widened))
 end
 
 @inline Base.@constprop :aggressive function Base.getproperty(pc::ProcessContext, name::Symbol)
-    if name === :subcontexts || name === :registry || name === :_runtime || name === :_input
+    if name === :subcontexts || name === :registry || name === :_runtime || name === :_input || name === :_widened
         return getfield(pc, name)
     end
     subcontexts = @inline get_subcontexts(pc)
     if haskey(subcontexts, name)
-        return @inline getproperty(subcontexts, name)
+        subcontext = @inline getproperty(subcontexts, name)
+        widened = @inline get_widened_subcontext(pc, Val(name))
+        return isempty(widened) ? subcontext : @inline merge(subcontext, widened)
     end
     input = @inline getruntimeinput(pc)
     if haskey(input, name)
@@ -46,6 +54,7 @@ end
 @inline get_subcontexts(pc::ProcessContext) = getfield(pc, :subcontexts)
 @inline getregistry(pc::ProcessContext) = getfield(pc, :registry)
 @inline getruntimeinput(pc::ProcessContext) = getfield(pc, :_input)
+@inline getwidened(pc::ProcessContext) = getfield(pc, :_widened)
 
 """
     withruntime(pc, runtime)
@@ -54,7 +63,7 @@ Return an immutable `ProcessContext` rebuild with updated runtime globals.
 This is the package-local replacement for `@set pc._runtime = runtime`.
 """
 @inline function withruntime(pc::PC, runtime::R) where {PC<:ProcessContext, R<:NamedTuple}
-    return ProcessContext(get_subcontexts(pc), getregistry(pc), runtime, getruntimeinput(pc))
+    return ProcessContext(get_subcontexts(pc), getregistry(pc), runtime, getruntimeinput(pc), getwidened(pc))
 end
 
 """
@@ -64,7 +73,88 @@ Return an immutable `ProcessContext` rebuild with updated subcontexts. This is
 the package-local replacement for `@set pc.subcontexts = subcontexts`.
 """
 @inline function withsubcontexts(pc::PC, subcontexts::D) where {PC<:ProcessContext, D<:NamedTuple}
-    return ProcessContext(subcontexts, getregistry(pc), getglobals(pc), getruntimeinput(pc))
+    return ProcessContext(subcontexts, getregistry(pc), getglobals(pc), getruntimeinput(pc), getwidened(pc))
+end
+
+"""
+    withwidened(pc, widened)
+
+Return an immutable `ProcessContext` rebuild with updated shape-widening data.
+
+The widened bucket is intentionally not part of the `ProcessContext` type
+parameters. It stores rare algorithm returns that introduce new fields without
+forcing the main subcontext layout to change inside `_step!`.
+"""
+@inline function withwidened(pc::PC, widened) where {PC<:ProcessContext}
+    return ProcessContext(get_subcontexts(pc), getregistry(pc), getglobals(pc), getruntimeinput(pc), widened)
+end
+
+"""
+    get_widened_subcontext(pc, Val(name))
+
+Return the widened field patch for one subcontext, or an empty `NamedTuple`.
+"""
+@inline function get_widened_subcontext(pc::PC, ::Val{name}) where {PC<:ProcessContext, name}
+    widened = getwidened(pc)
+    return widened isa NamedTuple && haskey(widened, name) ? getproperty(widened, name) : (;)
+end
+
+"""
+    has_widened_var(pc, Val(subcontext), Val(name))
+
+Return whether a shape-widening patch contains `name` for `subcontext`.
+"""
+@inline function has_widened_var(pc::PC, ::Val{subcontext}, ::Val{name}) where {PC<:ProcessContext, subcontext, name}
+    patch = @inline get_widened_subcontext(pc, Val(subcontext))
+    return patch isa NamedTuple && haskey(patch, name)
+end
+
+"""
+    get_widened_var(pc, Val(subcontext), Val(name))
+
+Read a variable stored in the widened bucket for a subcontext.
+"""
+@inline function get_widened_var(pc::PC, ::Val{subcontext}, ::Val{name}) where {PC<:ProcessContext, subcontext, name}
+    patch = @inline get_widened_subcontext(pc, Val(subcontext))
+    return getproperty(patch, name)
+end
+
+"""
+    merge_into_widened(pc, args)
+
+Merge nested subcontext patches into `ProcessContext._widened` without changing
+the main `ProcessContext` type.
+"""
+@inline merge_into_widened(pc::PC, ::NamedTuple{()}) where {PC<:ProcessContext} = pc
+
+function merge_into_widened(pc::PC, args::As) where {PC<:ProcessContext, As<:NamedTuple}
+    widened = getwidened(pc)
+    widened_nt = widened isa NamedTuple ? widened : (;)
+    for name in fieldnames(As)
+        patch = getproperty(args, name)
+        old_patch = haskey(widened_nt, name) ? getproperty(widened_nt, name) : (;)
+        new_patch = merge(old_patch, patch)
+        widened_nt = merge(widened_nt, NamedTuple{(name,)}((new_patch,)))
+    end
+    return @inline withwidened(pc, widened_nt)
+end
+
+"""
+    materialize_widened_context(pc)
+
+Merge widened patches into their target subcontexts. This is used after a loop
+has finished so external callers can inspect shape-changing results without the
+hot `_step!` path changing context type.
+"""
+function materialize_widened_context(pc::PC) where {PC<:ProcessContext}
+    widened = getwidened(pc)
+    widened isa NamedTuple || return pc
+    isempty(widened) && return pc
+    context = pc
+    for name in fieldnames(typeof(widened))
+        context = @inline merge_into_subcontext_rebuild(context, Val(name), getproperty(widened, name))
+    end
+    return @inline withwidened(context, (;))
 end
 
 @inline subcontext_names(pc::ProcessContext{D}, name::Symbol) where {D} = @inline fieldnames(typeof(getproperty(get_subcontexts(pc), name)))

@@ -152,7 +152,7 @@ subcontexts, so finished contexts can be stripped back to their original shape.
 """
 @inline _merge_runtime_inputs(context, ::NamedTuple{()}) = context
 @inline _merge_runtime_inputs(context, inputs::I) where {I<:NamedTuple} =
-    ProcessContext(get_subcontexts(context), getregistry(context), getglobals(context), inputs)
+    ProcessContext(get_subcontexts(context), getregistry(context), getglobals(context), inputs, getwidened(context))
 
 @inline _strip_runtime_inputs(context) = context
 
@@ -177,7 +177,7 @@ function _strip_runtime_inputs(context::C) where {C<:ProcessContext}
     stripped_runtime = haskey(runtime, :process) ? deletekeys(runtime, :process) : runtime
     stripped_runtime = haskey(stripped_runtime, :lifetime) ? deletekeys(stripped_runtime, :lifetime) : stripped_runtime
     persistent_subcontexts = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
-    return ProcessContext(persistent_subcontexts, getregistry(context), stripped_runtime, (;))
+    return ProcessContext(persistent_subcontexts, getregistry(context), stripped_runtime, (;), getwidened(context))
 end
 
 """
@@ -209,6 +209,7 @@ runtime and input fields from `stored_context`.
         getregistry(runtime_context),
         getglobals(stored_context),
         getruntimeinput(stored_context),
+        getwidened(runtime_context),
     )
 end
 
@@ -239,6 +240,7 @@ process.
         getregistry(runtime_context),
         getglobals(stored_context),
         getruntimeinput(stored_context),
+        getwidened(runtime_context),
     )
 end
 

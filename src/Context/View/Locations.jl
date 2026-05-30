@@ -215,13 +215,16 @@ end
             $(LineNumberNode(@__LINE__, @__FILE__))
             @inline getproperty(sct, $target_location) 
         end
-    else
-        locations = get_all_locations(sct)
-        available = keys(locations)
-        return quote
-            if $(QuoteNode(subcontextname)) == $(QuoteNode(key))
-                $(LineNumberNode(@__LINE__, @__FILE__))
-                a_name = $(QuoteNode(key))
+        else
+            locations = get_all_locations(sct)
+            available = keys(locations)
+            return quote
+                if @inline has_widened_var(getcontext(sct), Val($(QuoteNode(SubKey))), Val($(QuoteNode(key))))
+                    return @inline get_widened_var(getcontext(sct), Val($(QuoteNode(SubKey))), Val($(QuoteNode(key))))
+                end
+                if $(QuoteNode(subcontextname)) == $(QuoteNode(key))
+                    $(LineNumberNode(@__LINE__, @__FILE__))
+                    a_name = $(QuoteNode(key))
                 context = getcontext(sct)
                 available_names = $available
                 sct_name = $(QuoteNode(subcontextname))

@@ -8,11 +8,7 @@ The public extension point remains `step!(algo, context)` on the wrapped
     contextview = @inline view(context, sa)
     retval = @inline step!(getalgo(sa), contextview)
 
-    if S <: Unstable
-        return @inline unstablemerge(contextview, retval)
-    else
-        return @inline merge(contextview, retval)
-    end
+    return @inline merge(contextview, retval)
 end
 
 @inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: Wiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
@@ -24,11 +20,7 @@ end
     )
     retval = @inline step!(getalgo(sa), contextview)
 
-    if S <: Unstable
-        return @inline unstablemerge(contextview, retval)
-    else
-        return @inline merge(contextview, retval)
-    end
+    return @inline merge(contextview, retval)
 end
 
 @inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
@@ -47,11 +39,7 @@ type instead of from a wrapper value.
     contextview = @inline view(context, algo, namespace)
     retval = @inline step!(algo, contextview)
 
-    if S <: Unstable
-        return @inline unstablemerge(contextview, retval)
-    else
-        return @inline merge(contextview, retval)
-    end
+    return @inline merge(contextview, retval)
 end
 
 @inline function _step!(algo::A, context::C, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {A <: ProcessAlgorithm, C <: AbstractContext, W <: Wiring, Name, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
@@ -64,11 +52,7 @@ end
     )
     retval = @inline step!(algo, contextview)
 
-    if S <: Unstable
-        return @inline unstablemerge(contextview, retval)
-    else
-        return @inline merge(contextview, retval)
-    end
+    return @inline merge(contextview, retval)
 end
 
 """

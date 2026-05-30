@@ -20,18 +20,20 @@ end
         return persistent_context
     else
         cleaned_context = @inline cleanup(func, context)
-        persistent_context = _strip_runtime_inputs(cleaned_context, stored_context)
+        visible_context = materialize_widened_context(cleaned_context)
+        persistent_context = _strip_runtime_inputs(visible_context, stored_context)
         Processes.context(p, persistent_context)
-        return @inline _loop_final_result(func, cleaned_context)
+        return @inline _loop_final_result(func, visible_context)
     end
 end
 
 @inline function after_while(ip::InlineProcess, func::F, context::C, stored_context::SC = context) where {F, C, SC}
     @inline set_endtime!(ip)
     cleaned_context = @inline cleanup(func, context)
+    visible_context = materialize_widened_context(cleaned_context)
     persistent_context = _strip_runtime_inputs_preserve_context_type(cleaned_context, stored_context)
     Processes.context(ip, persistent_context)
-    return @inline _loop_final_result(func, cleaned_context)
+    return @inline _loop_final_result(func, visible_context)
 end
 
 """
@@ -49,7 +51,7 @@ Run a single function in a loop indefinitely
     if isresuming
         @atomic process.paused = false
     else
-        runtime_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Unstable())
+        runtime_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
         @inline tick!(process)
         @inline inc!(process)
     end
@@ -87,7 +89,7 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
         @atomic process.paused = false
         runtime_context
     else
-        stepped_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, r, Unstable())
+        stepped_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, r, Stable())
         @inline tick!(process)
         @inline inc!(process)
         stepped_context

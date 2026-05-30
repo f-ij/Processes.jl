@@ -59,7 +59,7 @@ end
     resume_point = @inline get_resume_point(r, idx)
     this_repeat_count = @inline routine_repeat_count(subroutine_lifetime)
     if resume_point <= this_repeat_count
-        context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, Unstable())
+        context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, typestable)
         @inline tick!(process)
 
         next_idx = resume_point + 1
@@ -87,8 +87,8 @@ end
 """
 Step each child routine in sequence with explicit loop runtime.
 
-Each child is run once as `Unstable()` at its resume point, then repeated on the
-stable path until its declared repeat count is reached or the lifetime stops.
+Each child is run once at its resume point, then repeated until its declared
+repeat count is reached or the lifetime stops.
 """
 Base.@constprop :aggressive @inline @generated function _step!(r::R, context::C, wiring::W, namespace::N, process::P, lifetime::LT, typestable::S = Stable()) where {R <: Routine, C <: AbstractContext, W <: PlanWiring, N <: Namespace, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
     algo_count = numalgos(R)

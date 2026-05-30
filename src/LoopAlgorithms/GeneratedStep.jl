@@ -45,7 +45,7 @@ function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, wiringname::Sy
     interval_values = ca.parameters[2]
     child_namespace_tuple_type = ca.parameters[3]
     child_wiring_type = ca.parameters[4].parameters[2]
-    stability_expr = stability === :stable ? :(Stable()) : stability === :unstable ? :(Unstable()) :
+    stability_expr = stability === :stable ? :(Stable()) : stability === :unstable ? :(Stable()) :
         error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
     sizehint!(exprs, algo_count + 4)
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
@@ -89,8 +89,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
     child_namespace_tuple_type = routine.parameters[3]
     child_wiring_type = routine.parameters[5].parameters[2]
     stable_expr = :(Stable())
-    unstable_expr = :(Unstable())
-    stability_expr = stability === :stable ? stable_expr : stability === :unstable ? unstable_expr :
+    stability_expr = stability === :stable ? stable_expr : stability === :unstable ? stable_expr :
         error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
     sizehint!(exprs, algo_count + 3)
 
@@ -113,7 +112,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
             local _subroutine_lifetime = $this_lifetime
             local _routine_repeat_count = @inline routine_repeat_count(_subroutine_lifetime)
             if resume_idx($name, $i) <= _routine_repeat_count
-                context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime, $unstable_expr)
+                context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime, $stability_expr)
                 @inline tick!(process)
 
                 local _routine_next_idx = resume_idx($name, $i) + 1
@@ -155,7 +154,7 @@ function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiringname::Symbol, 
     stability_expr = if stability === :stable
         :(Stable())
     elseif stability === :unstable
-        :(Unstable())
+        :(Stable())
     else
         error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
     end

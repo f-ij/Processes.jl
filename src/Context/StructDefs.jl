@@ -11,8 +11,15 @@ struct ProcessContext{D,Reg,R,I} <: AbstractContext
     registry::Reg
     _runtime::R
     _input::I
-    function ProcessContext{D,Reg,R,I}(subcontexts::D, registry::Reg, runtime::R, input::I) where {D,Reg,R,I}
-        new{D,Reg,R,I}(subcontexts, registry, runtime, input)
+    _widened::Any
+    function ProcessContext{D,Reg,R,I}(
+        subcontexts::D,
+        registry::Reg,
+        runtime::R,
+        input::I,
+        widened = (;),
+    ) where {D,Reg,R,I}
+        new{D,Reg,R,I}(subcontexts, registry, runtime, input, widened)
     end
 end
 
