@@ -19,15 +19,22 @@ same semantic work.
 
 ## Main Conclusions
 
-Type-preserving routed writes currently do not allocate new objects in the hot
-loop. That is a narrow statement: it does **not** mean the context is stack
-allocated or scalar-replaced. With mutable `SubContext`, the context already
-contains heap-backed subcontext objects, and the hot loop mutates fields inside
-those objects.
+Type-preserving routed writes currently do not allocate in the measured hot
+loops. That is a narrow statement: it does **not** by itself prove stack
+allocation or scalar replacement.
 
-Mutable `SubContext` does allocate at context creation/reset. That is the main
-cost paid by the mutable approach: each subcontext is a heap object, so reset and
-construction allocate even for tiny scalar subcontexts.
+Several context representations were tested. The mutable `SubContext` approach
+made same-type writes cheap to compile and fast for medium route-heavy work, but
+it gives up the possibility that tiny scalar subcontexts are fully inline/isbits
+inside the top-level context. The all-immutable Accessors approach improved the
+tiny scalar shape, but it triggered pathological first-call LLVM/codegen latency
+in the InteractiveIsing free-phase probe.
+
+The active direction is therefore all-immutable context wrappers with a
+package-local rebuild helper instead of Accessors. `replace_namedtuple_field`
+rebuilds one named-tuple field, and `withdata`, `withruntime`, and
+`withsubcontexts` rebuild the specific Processes context objects. This keeps
+immutability and avoids the generic Accessors lens/reconstruction machinery.
 
 The remaining tiny-scalar performance problem is exactly the SROA/stack-local
 problem. An ad hoc two-algorithm scalar replace probe performs no fresh
@@ -103,15 +110,15 @@ The `merge_into_subcontexts` hot path was not heap-allocating, but the immutable
 subcontext implementation still caused aggregate copying. LLVM showed repeated
 copies of the full `subcontexts` aggregate when rebuilding one field.
 
-Two changes were made in `src/Context/ProcessContexts.jl`:
+Two early changes were made in `src/Context/ProcessContexts.jl`:
 
 - `merge_into_subcontext_rebuild` now binds `old_subcontexts = get_subcontexts(pc)`
   once before reading unchanged fields.
 - Type-preserving `merge_into_subcontext_mutate` now mutates only the target
   subcontext's `data` field.
 
-`SubContext` was changed from immutable to mutable in
-`src/Context/StructDefs.jl`, and `newdata` now uses `setfield!`.
+`SubContext` was temporarily changed from immutable to mutable in
+`src/Context/StructDefs.jl`, and `newdata` used `setfield!`.
 
 Important tradeoff: this removes aggregate rebuild traffic for type-preserving
 stable writes, but subcontexts are now heap-backed objects rather than inline
@@ -137,6 +144,17 @@ The better follow-up was to remove the duplicated `Name` type parameter from
 now stores `name::Symbol` as a value field and keeps only `data::T` in the type.
 That makes `@set sc.data = new_data` work directly with default reconstruction,
 while preserving typed payloads and the user-facing key via `getkey(sc)`.
+
+Current source keeps `SubContext{T}` immutable with `name::Symbol`, but does not
+use Accessors on the active path. Same-type subcontext updates now do:
+
+```julia
+new_subcontext = withdata(subcontext, new_data)
+new_subcontexts = replace_namedtuple_field(old_subcontexts, Val(name), new_subcontext)
+return withsubcontexts(pc, new_subcontexts)
+```
+
+The old mutable `setfield!` path remains only as comments for comparison.
 
 ## Allocation Results
 
@@ -190,6 +208,16 @@ experiments. Examples observed:
   about `512` bytes
 
 The hot run path is still allocation-free in the measured inline benchmarks.
+After switching the active path to package-local immutable rebuild helpers, the
+route-heavy benchmark at `20_000` steps and `5` runs measured:
+
+```text
+inline_route_run_seconds_per_run=0.002236909
+plain_loop_seconds_per_run=0.002176383
+seconds_ratio=1.028
+inline_route_run_bytes_per_run=0.0
+plain_loop_bytes_per_run=41.6
+```
 
 ## Checked-In Fib/Luc Benchmark
 
@@ -395,15 +423,20 @@ so the stable facts to carry forward are:
 ## Current Risk
 
 The mutable `SubContext` fix is good for medium route-heavy scalar work because
-it removes repeated aggregate rebuild traffic. It is risky for very small
-scalar-only algorithms. Those now avoid fresh hot-loop allocations, but the
-heap-backed subcontext representation and abstraction overhead can dominate the
-actual work. The scalar Fib/Luc probe confirms this risk.
+it removes repeated aggregate rebuild traffic, but it is risky for very small
+scalar-only algorithms because the heap-backed subcontext representation and
+abstraction overhead can dominate the actual work.
 
 If a workload creates/resets processes frequently, mutable subcontexts can be
 worse because reset/construction allocate one object per subcontext. If a
 workload reuses a process for many loop steps, that allocation is amortized and
 the hot loop remains allocation-free.
+
+The all-immutable Accessors fix is risky in the other direction: it can recover
+better scalar behavior, but the InteractiveIsing free-phase probe showed
+pathological first-call LLVM/codegen latency after the Accessors-based context
+rebuild commit. Manual immutable rebuilds avoid the Accessors dependency and are
+the current compromise under test.
 
 ## Immutable Rebuild Trial
 

@@ -35,6 +35,12 @@ specialization/codegen cost rather than semantic runtime work.
    construction-time work, so the step path is back to the normal generated
    unrolled behavior.
 
+4. Accessors.jl `@set` was removed from active context rebuild paths. The
+   replacement is package-local and deliberately small: `replace_namedtuple_field`
+   rebuilds one existing `NamedTuple` field, while `withdata`, `withruntime`, and
+   `withsubcontexts` rebuild the immutable context wrappers. This mimics only
+   the behavior Processes needs from `@set`, without generic lens machinery.
+
 ## Current Measurements
 
 On the 20-statement big DSL probe after this pass:
@@ -74,12 +80,23 @@ Current 30-statement construction numbers with the step fallback removed:
 - `dsl_macroexpand_seconds`: about `0.34s` to `0.43s`
 - `dsl_expanded_eval_seconds`: about `1.9s`
 - `dsl_eval_seconds`: about `2.3s`
-- `resolve_seconds`: about `3.2s`
-- `process_construct_seconds`: about `0.72s`
+- `resolve_seconds`: about `3.2s` to `4.1s`
+- `process_construct_seconds`: about `0.72s` to `0.82s`
 
-Cold `runprocessinline!` is again around `8.4s` for the 30-statement probe,
-because the large generated step method is compiled at first execution. That is
-separate from DSL construction time.
+Cold `runprocessinline!` is again around `8.4s` to `9.6s` for the 30-statement
+probe, because the large generated step method is compiled at first execution.
+That is separate from DSL construction time.
+
+After replacing Accessors with the package-local immutable rebuild helpers, the
+30-statement probe measured:
+
+- `dsl_expr_seconds`: `0.000096s`
+- `dsl_macroexpand_seconds`: `0.363s`
+- `dsl_expanded_eval_seconds`: `1.880s`
+- `dsl_eval_seconds`: `2.270s`
+- `resolve_seconds`: `4.069s`
+- `process_construct_seconds`: `0.823s`
+- `cold_runprocessinline_seconds`: `9.630s`
 
 The small five-algorithm route-heavy benchmark remained on target after forcing
 runtime child wiring: about `0.00153s` routed/process execution versus about

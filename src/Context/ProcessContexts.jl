@@ -47,6 +47,26 @@ end
 @inline getregistry(pc::ProcessContext) = getfield(pc, :registry)
 @inline getruntimeinput(pc::ProcessContext) = getfield(pc, :_input)
 
+"""
+    withruntime(pc, runtime)
+
+Return an immutable `ProcessContext` rebuild with updated runtime globals.
+This is the package-local replacement for `@set pc._runtime = runtime`.
+"""
+@inline function withruntime(pc::PC, runtime::R) where {PC<:ProcessContext, R<:NamedTuple}
+    return ProcessContext(get_subcontexts(pc), getregistry(pc), runtime, getruntimeinput(pc))
+end
+
+"""
+    withsubcontexts(pc, subcontexts)
+
+Return an immutable `ProcessContext` rebuild with updated subcontexts. This is
+the package-local replacement for `@set pc.subcontexts = subcontexts`.
+"""
+@inline function withsubcontexts(pc::PC, subcontexts::D) where {PC<:ProcessContext, D<:NamedTuple}
+    return ProcessContext(subcontexts, getregistry(pc), getglobals(pc), getruntimeinput(pc))
+end
+
 @inline subcontext_names(pc::ProcessContext{D}, name::Symbol) where {D} = @inline fieldnames(typeof(getproperty(get_subcontexts(pc), name)))
 @inline subcontext_type(pc::ProcessContext{D}, name::Symbol) where {D} = @inline fieldtype(typeof(get_subcontexts(pc)), name)
 @inline function subcontext_type(pct::Type{<:ProcessContext{D}}, name::Symbol) where {D}
@@ -76,9 +96,9 @@ end
 ###
 @inline function _merge_into_globals(pc::ProcessContext{D}, args) where {D}
     merged_runtime = @inline merge(getglobals(pc), args)
-    # Constructor path kept for comparison:
-    # return @inline ProcessContext(get_subcontexts(pc), getregistry(pc), merged_runtime, getruntimeinput(pc))
-    return @inline @set pc._runtime = merged_runtime
+    return @inline withruntime(pc, merged_runtime)
+    # Accessors path kept for comparison:
+    # return @inline @set pc._runtime = merged_runtime
 end
 
 """
@@ -167,15 +187,13 @@ end
         error("Trying to merge into unknown subcontext $(QuoteNode(name)) in ProcessContext. Available subcontexts are: $(sc_names)")
     end
 
-    getproperty_exprs = Expr[:(getproperty(old_subcontexts, $(QuoteNode(sc_name)))) for sc_name in sc_names]
-    getproperty_exprs[found_idx] = :(@inline merge(getproperty(old_subcontexts, $(QuoteNode(name))), args))
-    ntnames = tuple(sc_names...)
-
     return quote
         LineNumberNode(@__LINE__, @__FILE__)
         old_subcontexts = @inline get_subcontexts(pc)
-        new_subcontexts = @inline NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
-        return @inline ProcessContext(new_subcontexts, getregistry(pc), getglobals(pc), getruntimeinput(pc))
+        old_subcontext = @inline getproperty(old_subcontexts, $(QuoteNode(name)))
+        new_subcontext = @inline merge(old_subcontext, args)
+        new_subcontexts = @inline replace_namedtuple_field(old_subcontexts, Val($(QuoteNode(name))), new_subcontext)
+        return @inline withsubcontexts(pc, new_subcontexts)
     end
 end
 
@@ -191,12 +209,12 @@ end
         old_subcontexts = @inline get_subcontexts(pc)
         subcontext = @inline getproperty(old_subcontexts, $(QuoteNode(name)))
         new_data = @inline merge(getdata(subcontext), args)
-        new_subcontext = @inline @set subcontext.data = new_data
-        new_subcontexts = @inline @set old_subcontexts.$name = new_subcontext
-        # Mutable SubContext experiment:
+        new_subcontext = @inline withdata(subcontext, new_data)
+        new_subcontexts = @inline replace_namedtuple_field(old_subcontexts, Val($(QuoteNode(name))), new_subcontext)
+        return @inline withsubcontexts(pc, new_subcontexts)
+        # Mutable SubContext path kept for comparison:
         # @inline setfield!(subcontext, :data, new_data)
         # return pc
-        return @inline @set pc.subcontexts = new_subcontexts
     end
 end
 
@@ -208,22 +226,29 @@ Args should name subcontext they want to replace, check if all names are in the 
 @inline @generated function _replace_subcontexts(pc::ProcessContext{D, Reg}, args::As) where {D, Reg, As<:NamedTuple}
     sc_names = get_subcontexts_fieldnames(pc)
     replacenames = fieldnames(args)
-    getproperty_exprs = Expr[:(getproperty(get_subcontexts(pc), $(QuoteNode(name)))) for name in sc_names]
+    replace_exprs = Expr[]
 
     for replacename in replacenames
         found_idx = _static_tuple_index(sc_names, replacename)
         if isnothing(found_idx)
             error("Trying to replace unknown subcontext $(QuoteNode(replacename)) in ProcessContext. Available subcontexts are: $(sc_names) and args has names: $(replacenames)")
         end
-        getproperty_exprs[found_idx] = :(replace(getproperty(get_subcontexts(pc), $(QuoteNode(replacename))), getproperty(args, $(QuoteNode(replacename)))))
+        push!(
+            replace_exprs,
+            quote
+                old_subcontext = @inline getproperty(new_subcontexts, $(QuoteNode(replacename)))
+                new_subcontext = @inline replace(old_subcontext, getproperty(args, $(QuoteNode(replacename))))
+                new_subcontexts = @inline replace_namedtuple_field(new_subcontexts, Val($(QuoteNode(replacename))), new_subcontext)
+            end,
+        )
     end
 
-    ntnames = tuple(sc_names...)
     return quote
-        new_subcontexts = NamedTuple{$ntnames}(tuple($(getproperty_exprs...)))
-        # Constructor path kept for comparison:
-        # return @inline ProcessContext(new_subcontexts, getregistry(pc), getglobals(pc), getruntimeinput(pc))
-        return @inline @set pc.subcontexts = new_subcontexts
+        new_subcontexts = @inline get_subcontexts(pc)
+        $(replace_exprs...)
+        return @inline withsubcontexts(pc, new_subcontexts)
+        # Accessors path kept for comparison:
+        # return @inline @set pc.subcontexts = new_subcontexts
     end
 end
 

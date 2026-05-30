@@ -227,7 +227,7 @@ process.
     # Preserve persistent state updates, but restore the stored input bucket
     # when the initialized inline context contains one for routing metadata.
     persistent_subcontexts = if haskey(stored_subcontexts, :_input) && haskey(runtime_subcontexts, :_input)
-        @set runtime_subcontexts._input = stored_subcontexts._input
+        replace_namedtuple_field(runtime_subcontexts, Val(:_input), stored_subcontexts._input)
     elseif haskey(runtime_subcontexts, :_input)
         deletekeys(runtime_subcontexts, :_input)
     else

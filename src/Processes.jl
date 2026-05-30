@@ -4,7 +4,6 @@ module Processes
     export getcontext, context, Process, start, quit
 
     using UUIDs, Preferences, JLD2, MacroTools, StaticArrays, PrecompileTools
-    import Accessors: @set
 
     import Base: Threads.SpinLock, lock, unlock
     const wait_timeout = .5
