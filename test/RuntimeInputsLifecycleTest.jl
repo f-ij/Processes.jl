@@ -128,6 +128,38 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
         close(process)
     end
 
+    per_run_repeats_process = Process(runtime_algo)
+    run(per_run_repeats_process; repeats = 1, temp = 2.0, scale = 3)
+    wait(per_run_repeats_process)
+    @test Processes.getglobals(fetch(per_run_repeats_process)).value == 9.0
+    @test Processes.lifetime(per_run_repeats_process) == Repeat(1)
+    close(per_run_repeats_process)
+
+    per_run_lifetime_process = Process(runtime_algo)
+    run(per_run_lifetime_process; lifetime = Repeat(1), temp = 1.5, scale = 2)
+    wait(per_run_lifetime_process)
+    @test Processes.getglobals(fetch(per_run_lifetime_process)).value == 6.0
+    close(per_run_lifetime_process)
+
+    positional_specs_process = Process(runtime_algo; repeats = 1)
+    @test_throws ErrorException run(positional_specs_process, nothing, Input(; seed = 2); temp = 1.0, scale = 2)
+
+    inline_process = InlineProcess(runtime_algo; repeats = 1)
+    inline_result = run(inline_process; temp = 2.0, scale = 3)
+    @test Processes.getglobals(inline_result).value == 9.0
+    @test isempty(Processes.context(inline_process)[:FuncWrapper_1])
+    @test !haskey(Processes.getglobals(Processes.context(inline_process)), :value)
+    @test isempty(Processes.getruntimeinput(Processes.context(inline_process)))
+    @test isempty(getproperty(Processes.get_subcontexts(Processes.context(inline_process)), :_input))
+
+    inline_nogen_result = Processes.run_nogen(inline_process; temp = 1.5, scale = 2)
+    @test Processes.getglobals(inline_nogen_result).value == 6.0
+    @test isempty(Processes.getruntimeinput(Processes.context(inline_process)))
+    @test isempty(getproperty(Processes.get_subcontexts(Processes.context(inline_process)), :_input))
+    @test_throws ErrorException run(inline_process)
+    @test_throws ErrorException run(inline_process; temp = 1, scale = 2)
+    @test_throws ErrorException run(inline_process, Input(; seed = 2); temp = 1.0, scale = 2)
+
     shape_result = run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(0))
     @test runtime_shape_context(Processes.context(shape_result)).added == 1
     @test_throws Exception run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(2))

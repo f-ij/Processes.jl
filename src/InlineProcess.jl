@@ -77,7 +77,19 @@ getalgo(ip::InlineProcess) = ip.algo
     return true
 end
 
-@inline function Base.run(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing)
+"""
+Validate the runtime inputs for one `InlineProcess` execution.
+
+`InlineProcess` has a fixed context type after construction. Per-run data is
+therefore limited to declared `@input` keywords; structural reinitialization
+stays on `reset!`, where the process can rebuild its stored context.
+"""
+@inline function _inline_runtime_inputs(algo::A, inputs_overrides::IO, kwargs::K) where {A<:AbstractLoopAlgorithm, IO<:Tuple, K<:NamedTuple}
+    isempty(inputs_overrides) || error("InlineProcess run accepts runtime inputs as keywords only. Use reset!(p, specs...) to reinitialize the context.")
+    return _validate_runtime_inputs(algo, kwargs)
+end
+
+@inline function Base.run(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing, kwargs...)
     algo = getalgo(p)
     
     run_context = if isnothing(context)
@@ -88,7 +100,7 @@ end
     end
 
     p.loopidx = 1
-    runtime_inputs = _validate_runtime_inputs(algo, (;))
+    runtime_inputs = _inline_runtime_inputs(algo, inputs_overrides, (; kwargs...))
     inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
     run_lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
@@ -101,7 +113,7 @@ end
     end
 end
 
-@inline function run_nogen(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing)
+@inline function run_nogen(p::InlineProcess, inputs_overrides...; context = nothing, repeats=nothing, lifetime=nothing, threaded=nothing, kwargs...)
     algo = getalgo(p)
     
     run_context = if isnothing(context)
@@ -115,9 +127,10 @@ end
     # loopdispatch = isnothing(repeat) ? lifetime(p) : _inline_process_lifetime(algo, repeat, nothing)
     inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
     run_lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
+    runtime_inputs = _inline_runtime_inputs(algo, inputs_overrides, (; kwargs...))
 
     # p.consumed = true
-    return @inline loop(p, algo, run_context, run_lifetime)
+    return @inline loop(p, algo, run_context, run_lifetime, runtime_inputs)
 end
 
 @inline function init_and_run(p::InlineProcess, inputs_overrides...)

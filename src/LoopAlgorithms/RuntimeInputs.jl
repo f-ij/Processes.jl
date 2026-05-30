@@ -212,6 +212,36 @@ runtime and input fields from `stored_context`.
     )
 end
 
+"""
+Remove runtime-only values while preserving the stored context type.
+
+`InlineProcess` stores its context in a concrete field for inference. Runtime
+inputs may temporarily change `ProcessContext._input`, but the persistent
+context must return to the exact stored shape before assignment back into the
+process.
+"""
+@inline function _strip_runtime_inputs_preserve_context_type(runtime_context::C, stored_context::S) where {C<:ProcessContext, S<:ProcessContext}
+    runtime_subcontexts = get_subcontexts(runtime_context)
+    stored_subcontexts = get_subcontexts(stored_context)
+
+    # Preserve persistent state updates, but restore the stored input bucket
+    # when the initialized inline context contains one for routing metadata.
+    persistent_subcontexts = if haskey(stored_subcontexts, :_input) && haskey(runtime_subcontexts, :_input)
+        @set runtime_subcontexts._input = stored_subcontexts._input
+    elseif haskey(runtime_subcontexts, :_input)
+        deletekeys(runtime_subcontexts, :_input)
+    else
+        runtime_subcontexts
+    end
+
+    return ProcessContext(
+        persistent_subcontexts,
+        getregistry(runtime_context),
+        getglobals(stored_context),
+        getruntimeinput(stored_context),
+    )
+end
+
 # Lifecycle accessors keep `LoopAlgorithm`, plain plan nodes, and wrappers on a
 # shared path. Plain plans report no stored lifecycle data.
 @inline getstoredinits(la::LA) where {LA<:AbstractLoopAlgorithm} = hasfield(LA, :inits) ? getfield(la, :inits) : ()

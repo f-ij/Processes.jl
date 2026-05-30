@@ -29,7 +29,7 @@ end
 @inline function after_while(ip::InlineProcess, func::F, context::C, stored_context::SC = context) where {F, C, SC}
     @inline set_endtime!(ip)
     cleaned_context = @inline cleanup(func, context)
-    persistent_context = _strip_runtime_inputs(cleaned_context, stored_context)
+    persistent_context = _strip_runtime_inputs_preserve_context_type(cleaned_context, stored_context)
     Processes.context(ip, persistent_context)
     return @inline _loop_final_result(func, cleaned_context)
 end
