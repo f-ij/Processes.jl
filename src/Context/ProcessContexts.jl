@@ -3,8 +3,8 @@
     registry::Reg,
     runtime::R = (;),
     input::I = (;),
-    widened = (;),
-) where {D,Reg,R,I}
+    widened::W = (;),
+) where {D,Reg,R,I,W}
     # Statically Check if all keys except for global are SubContexts
     sc_names = fieldnames(D)
     bad_names = Symbol[]
@@ -15,7 +15,7 @@
     end
     @assert isempty(bad_names) "All fields in ProcessContext subcontexts must be of type SubContext, but found non-SubContext fields: $bad_names"
     @assert Reg <: AbstractRegistry "Registry type must be a subtype of AbstractRegistry, got: $Reg"
-    return :(ProcessContext{D,Reg,R,I}(subcontexts, registry, runtime, input, widened))
+    return :(ProcessContext{D,Reg,R,I,W}(subcontexts, registry, runtime, input, widened))
 end
 
 @inline Base.@constprop :aggressive function Base.getproperty(pc::ProcessContext, name::Symbol)
@@ -39,12 +39,12 @@ end
     name === :globals && return getglobals(pc)
     name === :_runtime && return getglobals(pc)
     name === :_input && return getruntimeinput(pc)
-    return @inline getproperty(get_subcontexts(pc), name)
+    return @inline getproperty(pc, name)
 end
 
 @inline function Base.getindex(pc::ProcessContext, obj)
     name = getkey(getregistry(pc)[obj])
-    return @inline getproperty(get_subcontexts(pc), name)
+    return @inline getproperty(pc, name)
 end
 
 @inline function Base.getindex(pc::ProcessContext, idx::Int)
@@ -81,9 +81,9 @@ end
 
 Return an immutable `ProcessContext` rebuild with updated shape-widening data.
 
-The widened bucket is intentionally not part of the `ProcessContext` type
-parameters. It stores rare algorithm returns that introduce new fields without
-forcing the main subcontext layout to change inside `_step!`.
+The widened bucket is part of the `ProcessContext` type so rare shape-changing
+returns still rebuild a concrete context. The field is stripped after loop
+completion, which keeps persistent context shape separate from widening.
 """
 @inline function withwidened(pc::PC, widened) where {PC<:ProcessContext}
     return ProcessContext(get_subcontexts(pc), getregistry(pc), getglobals(pc), getruntimeinput(pc), widened)
@@ -96,7 +96,7 @@ Return the widened field patch for one subcontext, or an empty `NamedTuple`.
 """
 @inline function get_widened_subcontext(pc::PC, ::Val{name}) where {PC<:ProcessContext, name}
     widened = getwidened(pc)
-    return widened isa NamedTuple && haskey(widened, name) ? getproperty(widened, name) : (;)
+    return haskey(widened, name) ? getproperty(widened, name) : (;)
 end
 
 """
@@ -106,7 +106,7 @@ Return whether a shape-widening patch contains `name` for `subcontext`.
 """
 @inline function has_widened_var(pc::PC, ::Val{subcontext}, ::Val{name}) where {PC<:ProcessContext, subcontext, name}
     patch = @inline get_widened_subcontext(pc, Val(subcontext))
-    return patch isa NamedTuple && haskey(patch, name)
+    return haskey(patch, name)
 end
 
 """
@@ -122,21 +122,30 @@ end
 """
     merge_into_widened(pc, args)
 
-Merge nested subcontext patches into `ProcessContext._widened` without changing
-the main `ProcessContext` type.
-"""
-@inline merge_into_widened(pc::PC, ::NamedTuple{()}) where {PC<:ProcessContext} = pc
+Merge nested subcontext patches into `ProcessContext._widened`.
 
-function merge_into_widened(pc::PC, args::As) where {PC<:ProcessContext, As<:NamedTuple}
-    widened = getwidened(pc)
-    widened_nt = widened isa NamedTuple ? widened : (;)
-    for name in fieldnames(As)
-        patch = getproperty(args, name)
-        old_patch = haskey(widened_nt, name) ? getproperty(widened_nt, name) : (;)
-        new_patch = merge(old_patch, patch)
-        widened_nt = merge(widened_nt, NamedTuple{(name,)}((new_patch,)))
+This rebuilds a concretely typed `ProcessContext` with a new widened field type,
+but does not change the main subcontext layout.
+"""
+@inline @generated function merge_into_widened(pc::PC, args::As) where {PC<:ProcessContext, As<:NamedTuple}
+    patch_names = fieldnames(As)
+    isempty(patch_names) && return :(pc)
+
+    widened_type = PC.parameters[5]
+    widened_names = fieldnames(widened_type)
+    exprs = Any[:(widened = @inline getwidened(pc))]
+    for name in patch_names
+        old_patch_expr = name in widened_names ? :(getproperty(widened, $(QuoteNode(name)))) : :((;))
+        new_patch = gensym(:new_patch)
+        push!(exprs, :($new_patch = @inline merge($old_patch_expr, getproperty(args, $(QuoteNode(name))))))
+        if name in widened_names
+            push!(exprs, :(widened = @inline replace_namedtuple_field(widened, Val($(QuoteNode(name))), $new_patch)))
+        else
+            push!(exprs, :(widened = @inline merge(widened, NamedTuple{$((name,))}(($new_patch,)))))
+        end
     end
-    return @inline withwidened(pc, widened_nt)
+    push!(exprs, :(return @inline withwidened(pc, widened)))
+    return Expr(:block, exprs...)
 end
 
 """

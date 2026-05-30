@@ -5,21 +5,21 @@
 Previously args system
 This stores the context of a process
 """
-# mutable struct ProcessContext{D,Reg,R,I} <: AbstractContext
-struct ProcessContext{D,Reg,R,I} <: AbstractContext
+# mutable struct ProcessContext{D,Reg,R,I,W} <: AbstractContext
+struct ProcessContext{D,Reg,R,I,W} <: AbstractContext
     subcontexts::D
     registry::Reg
     _runtime::R
     _input::I
-    _widened::Any
-    function ProcessContext{D,Reg,R,I}(
+    _widened::W
+    function ProcessContext{D,Reg,R,I,W}(
         subcontexts::D,
         registry::Reg,
         runtime::R,
         input::I,
-        widened = (;),
-    ) where {D,Reg,R,I}
-        new{D,Reg,R,I}(subcontexts, registry, runtime, input, widened)
+        widened::W,
+    ) where {D,Reg,R,I,W}
+        new{D,Reg,R,I,W}(subcontexts, registry, runtime, input, widened)
     end
 end
 

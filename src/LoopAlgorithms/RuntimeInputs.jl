@@ -170,14 +170,15 @@ function _strip_runtime_inputs(context::C) where {C<:ProcessContext}
     if !haskey(runtime, :process) &&
         !haskey(runtime, :lifetime) &&
         !haskey(subcontexts, :_input) &&
-        isempty(getruntimeinput(context))
+        isempty(getruntimeinput(context)) &&
+        isempty(getwidened(context))
         return context
     end
 
     stripped_runtime = haskey(runtime, :process) ? deletekeys(runtime, :process) : runtime
     stripped_runtime = haskey(stripped_runtime, :lifetime) ? deletekeys(stripped_runtime, :lifetime) : stripped_runtime
     persistent_subcontexts = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
-    return ProcessContext(persistent_subcontexts, getregistry(context), stripped_runtime, (;), getwidened(context))
+    return ProcessContext(persistent_subcontexts, getregistry(context), stripped_runtime, (;), (;))
 end
 
 """
@@ -192,7 +193,8 @@ runtime and input fields from `stored_context`.
     subcontexts = get_subcontexts(runtime_context)
     if !haskey(subcontexts, :_input) &&
         getglobals(runtime_context) == getglobals(stored_context) &&
-        getruntimeinput(runtime_context) == getruntimeinput(stored_context)
+        getruntimeinput(runtime_context) == getruntimeinput(stored_context) &&
+        getwidened(runtime_context) == getwidened(stored_context)
         return runtime_context
     end
 
@@ -209,7 +211,7 @@ runtime and input fields from `stored_context`.
         getregistry(runtime_context),
         getglobals(stored_context),
         getruntimeinput(stored_context),
-        getwidened(runtime_context),
+        getwidened(stored_context),
     )
 end
 
@@ -240,7 +242,7 @@ process.
         getregistry(runtime_context),
         getglobals(stored_context),
         getruntimeinput(stored_context),
-        getwidened(runtime_context),
+        getwidened(stored_context),
     )
 end
 

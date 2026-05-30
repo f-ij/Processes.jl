@@ -127,7 +127,23 @@ end
 @inline Base.propertynames(scv::SCV) where SCV <: SubContextView = @inline propertynames(@inline get_all_locations(scv))
 @inline Base.haskey(scv::SCV, name::Symbol) where SCV <: SubContextView = @inline haskey(get_all_locations(scv), name)
 @inline getregistry(scv::SCV) where SCV <: SubContextView = getregistry(getcontext(scv))
-@inline getproperty_fromsubcontext(scv::SCV, subcontextname::Symbol, varname::Symbol) where SCV <: SubContextView = @inline getproperty(getproperty(getcontext(scv), subcontextname), varname)
+@inline function getproperty_fromsubcontext(
+    scv::SCV,
+    ::Val{subcontextname},
+    ::Val{varname},
+) where {SCV<:SubContextView, subcontextname, varname}
+    if subcontextname === :_input
+        return @inline getproperty(getruntimeinput(getcontext(scv)), varname)
+    end
+    subcontext = @inline getproperty(get_subcontexts(getcontext(scv)), subcontextname)
+    if @inline haskey(getdata(subcontext), varname)
+        return @inline getproperty(subcontext, varname)
+    end
+    if @inline has_widened_var(getcontext(scv), Val(subcontextname), Val(varname))
+        return @inline get_widened_var(getcontext(scv), Val(subcontextname), Val(varname))
+    end
+    return @inline getproperty(subcontext, varname)
+end
 @inline getinjected(scv::SCV, key) where SCV <: SubContextView = getproperty(getinjected(scv), key)
 @inline function Base.get(scv::SCV, name::Symbol, default) where SCV <: SubContextView
     if haskey(scv, name)
@@ -154,7 +170,7 @@ end
     target_variable = get_originalname(vl)
     if isnothing(getfunc(vl)) && target_variable isa Symbol
         return quote
-            return @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(target_variable)))
+            return @inline getproperty_fromsubcontext(sct, Val($(QuoteNode(target_subcontext))), Val($(QuoteNode(target_variable))))
         end
     end
 
