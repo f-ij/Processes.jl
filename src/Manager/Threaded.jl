@@ -18,7 +18,8 @@ function _start_slot_inline!(manager::M, slot::S, job) where {M<:ProcessManager,
 
     kwargs = _run_kwargs(manager, slot, job)
     if slot.worker isa Process
-        return runprocessinline!(slot.worker; kwargs...)
+        lifetime, runtime_kwargs = _manager_process_launch_args(slot.worker, kwargs)
+        return runprocessinline!(slot.worker; lifetime = lifetime, runtime_kwargs...)
     end
     return _start_worker!(slot.worker, kwargs)
 end

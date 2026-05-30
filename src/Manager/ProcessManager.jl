@@ -208,20 +208,62 @@ function partialinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...)
 end
 
 """
-    runprocessinline!(worker; lifetime = nothing, kwargs...)
+    _manager_launch_lifetime(worker, kwargs)
+
+Extract a per-run process lifetime from manager launch keyword arguments.
+`lifetime`, `repeats`, and `repeat` are launch controls, not runtime inputs.
+"""
+function _manager_launch_lifetime(worker::P, kwargs::K) where {P<:Process, K<:NamedTuple}
+    lifetime_value = get(kwargs, :lifetime, nothing)
+    repeats_value = get(kwargs, :repeats, nothing)
+    repeat_value = get(kwargs, :repeat, nothing)
+    has_lifetime = !isnothing(lifetime_value)
+    has_repeats = !isnothing(repeats_value)
+    has_repeat = !isnothing(repeat_value)
+    has_repeats && has_repeat && throw(ArgumentError("Pass either `repeats` or `repeat`, not both."))
+    has_lifetime && (has_repeats || has_repeat) && throw(ArgumentError("Pass either `lifetime` or `repeats`/`repeat`, not both."))
+
+    raw_lifetime = if has_lifetime
+        lifetime_value
+    elseif has_repeats
+        repeats_value
+    elseif has_repeat
+        repeat_value
+    else
+        nothing
+    end
+    return isnothing(raw_lifetime) ? nothing : normalize_process_lifetime(getalgo(worker), raw_lifetime)
+end
+
+"""
+    _manager_process_launch_args(worker, kwargs)
+
+Split manager launch arguments into `(lifetime, runtime_kwargs)` for a `Process`
+worker. Runtime keyword arguments are passed to the loop as `@input` values.
+"""
+function _manager_process_launch_args(worker::P, kwargs::K) where {P<:Process, K<:NamedTuple}
+    lifetime = _manager_launch_lifetime(worker, kwargs)
+    runtime_kwargs = deletekeys(kwargs, :lifetime, :repeats, :repeat)
+    return lifetime, runtime_kwargs
+end
+
+"""
+    runprocessinline!(worker; lifetime = nothing, repeats = nothing, repeat = nothing, kwargs...)
 
 Run a `Process` worker synchronously in the current task and store the resulting
 runtime context back on the worker. This avoids per-job `Task` allocation for
-manager recipes that do not need concurrent `Process` execution.
+threaded manager jobs.
 """
-function runprocessinline!(worker::P; lifetime = nothing, kwargs...) where {P<:Process}
+function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, repeat = nothing, kwargs...) where {P<:Process}
     @assert isidle(worker) "Process is already in use"
     @atomic worker.shouldrun = true
     @atomic worker.paused = false
     worker.lastresult = nothing
 
-    if !isnothing(lifetime)
-        lt = normalize_process_lifetime(getalgo(worker), lifetime)
+    launch_kwargs = (; lifetime, repeats, repeat)
+    launch_lifetime = _manager_launch_lifetime(worker, launch_kwargs)
+    if !isnothing(launch_lifetime)
+        lt = launch_lifetime
         context(worker, _merge_into_globals(context(worker), (; lifetime = lt)))
     end
 
@@ -1056,7 +1098,8 @@ Default worker launch step. `Process` workers are launched with
 shape or provide recipe `start!`.
 """
 function _start_worker!(worker::Process, kwargs::NamedTuple)
-    run(worker; kwargs...)
+    lifetime, runtime_kwargs = _manager_process_launch_args(worker, kwargs)
+    run(worker, lifetime; runtime_kwargs...)
     return worker
 end
 

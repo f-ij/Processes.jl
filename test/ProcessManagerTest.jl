@@ -647,6 +647,54 @@ end
     @test isnothing(worker.task)
 end
 
+@testset "ProcessManager runarguments can set per-job Process lifetime" begin
+    jobs = [
+        (; value = 1, repeats = 2),
+        (; value = 2, lifetime = Repeat(3)),
+    ]
+
+    polling_worker = Process(ManagerProcessAccumulator(); repeats = 1)
+    polling_output = Int[]
+    polling_recipe = (;
+        prepare! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job.value
+            nothing
+        end,
+        runarguments = (slot, job, manager) -> haskey(job, :repeats) ? (; repeats = job.repeats) : (; lifetime = job.lifetime),
+        consume! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            append!(polling_output, local_context.buffer)
+            empty!(local_context.buffer)
+        end,
+    )
+    polling_manager = ProcessManager(polling_recipe; workers = (polling_worker,), flush_policy = NoFlush())
+    run!(polling_manager, jobs)
+
+    @test polling_output == [1, 1, 2, 2, 2]
+    @test isnothing(polling_worker.task)
+
+    threaded_template = Process(ManagerProcessAccumulator(); repeats = 1)
+    threaded_output = Int[]
+    threaded_recipe = (;
+        makeworker = (idx, manager) -> copyprocess(threaded_template; context = deepcopy(context(threaded_template))),
+        prepare! = polling_recipe.prepare!,
+        runarguments = polling_recipe.runarguments,
+        flush! = manager -> begin
+            for slot in slots(manager)
+                local_context = manager_process_context(slot.worker)
+                append!(threaded_output, local_context.buffer)
+                empty!(local_context.buffer)
+            end
+        end,
+    )
+    threaded_manager = ProcessManager(threaded_recipe; nworkers = 2, flush_policy = FlushAtEnd())
+    runthreaded!(threaded_manager, jobs, Dynamic())
+
+    @test sort(threaded_output) == [1, 1, 2, 2, 2]
+    @test all(isnothing(slot.worker.task) for slot in slots(threaded_manager))
+end
+
 @testset "ProcessManager threaded mode runs Process workers inline" begin
     template = Process(ManagerProcessAccumulator(); repeats = 1)
     external = Int[]
@@ -808,6 +856,55 @@ end
     @test worker.runs == 5
     @test manager.dispatched == 3
     @test isnothing(worker.task)
+end
+
+@testset "Inline chunk workers support threaded manager schedules" begin
+    outputs = Int[]
+    recipe = (;
+        makeworker = (idx, manager) -> InlineChunkWorker(InlineProcess(ManagerInlineAccumulator(); repeats = 1)),
+        beforechunk! = (process, chunk, slot, manager) -> begin
+            isnothing(slot.scratch) && (slot.scratch = Int[])
+            nothing
+        end,
+        resetexample! = (process, example, slot, manager) -> begin
+            local_context = manager_inline_context(slot.worker)
+            local_context.total[] = 0
+            nothing
+        end,
+        loadexample! = (process, example, slot, manager) -> begin
+            local_context = manager_inline_context(slot.worker)
+            local_context.value[] = example
+            nothing
+        end,
+        afterexample! = (process, example, result, slot, manager) -> begin
+            local_context = manager_inline_context(slot.worker)
+            push!(slot.scratch, local_context.total[])
+            nothing
+        end,
+        flush! = manager -> begin
+            for slot in slots(manager)
+                isnothing(slot.scratch) && continue
+                append!(outputs, slot.scratch)
+                empty!(slot.scratch)
+            end
+        end,
+    )
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 2,
+        flush_policy = FlushAtEnd(),
+        job_type = Vector{Int},
+        scratch_type = Vector{Int},
+        result_type = InlineChunkWorker,
+    )
+    runchunks!(manager, 1:6, Dynamic(); chunksize = 2)
+
+    @test sort(outputs) == collect(1:6)
+    @test sum(slot.worker.runs for slot in slots(manager)) == 6
+    @test manager.dispatched == 3
+    @test manager.completions == 3
+    @test all(isnothing(slot.worker.task) for slot in slots(manager))
 end
 
 @testset "Inline chunk workers keep context between examples unless recipe resets" begin
