@@ -28,8 +28,8 @@ Route/share metadata deliberately does not live on `SubContext`. Plan routing is
 applied through `SubContextView` at step time so context shape stays independent
 from execution-plan wiring.
 """
-mutable struct SubContext{Name, T<:NamedTuple} <: AbstractSubContext
-# struct SubContext{Name, T<:NamedTuple} <: AbstractSubContext
+struct SubContext{T<:NamedTuple} <: AbstractSubContext
+    name::Symbol
     data::T
 end
 

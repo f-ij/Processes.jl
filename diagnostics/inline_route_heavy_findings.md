@@ -125,6 +125,19 @@ do not need to mutate the top-level `ProcessContext` wrapper at all. The
 previous mutable `ProcessContext` line is left commented beside the immutable
 definition for easy comparison.
 
+A second experiment made both `ProcessContext` and `SubContext` immutable and
+used Accessors.jl `@set` to rebuild immutable structures. Initially,
+`SubContext{Name,T}` needed a custom reconstruction hook because Accessors /
+ConstructionBase reconstructed `SubContext` as `SubContext(data)` and lost the
+`Name` type parameter.
+
+The better follow-up was to remove the duplicated `Name` type parameter from
+`SubContext`. The subcontext key is already present in the enclosing
+`ProcessContext` named tuple and in `SubContextView{...,SubName}`. `SubContext`
+now stores `name::Symbol` as a value field and keeps only `data::T` in the type.
+That makes `@set sc.data = new_data` work directly with default reconstruction,
+while preserving typed payloads and the user-facing key via `getkey(sc)`.
+
 ## Allocation Results
 
 Measured allocation facts after the mutable `SubContext` change and the
@@ -148,9 +161,9 @@ Route-heavy benchmark, current sample:
 ```text
 inline_route_heavy_steps=20000
 inline_route_heavy_runs=20
-inline_route_run_seconds_per_run=0.001504329
-plain_loop_seconds_per_run=0.001511271
-seconds_ratio=0.995
+inline_route_run_seconds_per_run=0.001562606
+plain_loop_seconds_per_run=0.001528365
+seconds_ratio=1.022
 inline_route_run_bytes_per_run=0.0
 plain_loop_bytes_per_run=10.4
 ```
@@ -165,14 +178,18 @@ runtime inputs, and legacy `:_input` storage are already unchanged. The previous
 rebuild expression is left commented beside the new branch so it is easy to
 restore for comparison.
 
-Reset/construction allocation remains. Examples observed:
+Reset/construction allocation changed across the context representation
+experiments. Examples observed:
 
-- tiny two-algorithm scalar reset: about `144` bytes
-- scalar Fib/Luc reset: about `176` bytes
-- route-heavy reset: about `496` bytes
+- mutable `SubContext`: tiny scalar reset was about `176` bytes, and
+  dependency/top-state reset was about `1848` bytes
+- immutable `ProcessContext` with mutable `SubContext`: dependency/top-state
+  reset dropped to about `760` bytes
+- all-immutable `SubContext{T}` with `name::Symbol`: tiny scalar reset is `0`
+  bytes in the current scalar replace probe, and dependency/top-state reset is
+  about `512` bytes
 
-This is expected with mutable subcontexts: reset creates fresh `SubContext`
-objects.
+The hot run path is still allocation-free in the measured inline benchmarks.
 
 ## Checked-In Fib/Luc Benchmark
 
@@ -219,20 +236,20 @@ The shape is intentionally small but route-heavy:
 Current result at `100_000` steps and `100` trials:
 
 ```text
-reset_alloc = 760
+reset_alloc = 512
 run_alloc = 0
 direct_loop_alloc = 0
 generated_processloop_alloc = 0
 direct_plan_alloc = 0
-run_seconds = 0.008400834
-direct_loop_seconds = 0.008372458
-generated_processloop_seconds = 0.008332333
-direct_plan_seconds = 0.010554917
-plain_seconds = 0.006100500
-run_ratio = 1.377
-direct_loop_ratio = 1.372
-generated_processloop_ratio = 1.366
-direct_plan_ratio = 1.730
+run_seconds = 0.006085208
+direct_loop_seconds = 0.006072750
+generated_processloop_seconds = 0.006078875
+direct_plan_seconds = 0.009892083
+plain_seconds = 0.006100166
+run_ratio = 0.998
+direct_loop_ratio = 0.996
+generated_processloop_ratio = 0.997
+direct_plan_ratio = 1.622
 ```
 
 Interpretation:
@@ -243,9 +260,9 @@ Interpretation:
   back to immutable, the real `run`/loop/generated paths remain close, while
   the diagnostic direct-plan path is slower.
 - The remaining cost is still the routed/context step path itself.
-- This more dependency-heavy benchmark is much less pathological than the tiny
-  scalar replace probe, but it is still about `1.4x` slower than the equivalent
-  local-variable loop.
+- In the all-immutable Accessors experiment, this dependency-heavy benchmark is
+  effectively at parity with the equivalent local-variable loop on the real
+  `run`/loop/generated paths.
 
 Ad hoc inference checks for this probe returned concrete `ProcessContext`
 types for `run`, direct `loop`, generated process-loop, and direct plan.
@@ -264,34 +281,58 @@ work to hide context access/writeback overhead.
 Current result at `100_000` steps:
 
 ```text
-reset_b = 176
-merge_b = 0
-stable_step_b = 0
+reset_b = 0
+merge_b = 464
+stable_step_b = 288
 strip_b = 0
 after_b = 0
 run_b = 0
 plan_b = 0
-run_t = 0.000202583
-plan_t = 0.000202583
-plain_t = 0.000030958
-run_ratio = 6.544
-plan_ratio = 6.544
+run_t = 0.000080917
+plan_t = 0.000047334
+plain_t = 0.000031875
+run_ratio = 2.539
+plan_ratio = 1.485
 ```
 
 Interpretation:
 
-- There is no heap allocation in the hot scalar replace loop.
+- The static literal child merge remains allocation-free, but this diagnostic's
+  compatibility-oriented dynamic merge probe reports allocation in the
+  all-immutable version.
 - Public `run` adds no measurable allocation after the strip shortcut.
-- Direct plan timing equals public run timing, so the entrypoint wrapper is not
-  the issue in this tiny case.
-- The plain scalar loop is much faster, so the remaining problem is CPU overhead
-  from the context/process abstraction itself.
+- Direct plan timing is much closer to the plain scalar loop in the
+  all-immutable version.
+- Moving the subcontext name from the type parameter to a value field improved
+  public `run` substantially in this tiny scalar case, from around `10x` to
+  about `2.5x` over plain.
 
 This means mutable subcontexts are not causing fresh per-step heap allocation,
 but they also cannot give the old "fully stack/SROA everything" behavior for
 tiny scalar contexts, because the subcontext object itself is a heap object. For
 this benchmark, the relevant regression is not allocation count; it is the loss
 of scalar replacement and the extra pointer/load/store path.
+
+In the all-immutable Accessors experiment, the tiny direct-plan path improves
+substantially, suggesting LLVM can optimize the immutable rebuild in that narrow
+call shape. Removing `Name` from the `SubContext` type also helps the normal
+public run path, although it is still not plain-loop speed.
+
+## Interactive Caveat For All-Immutable SubContexts
+
+The full test suite under all-immutable `SubContext` passed everything except
+two `InteractiveVar` assertions:
+
+```text
+Processes | 682 passed, 2 failed
+```
+
+Both failures are in `InteractiveVar writes through ContextInjector`. This is
+expected for the experiment: `InteractiveVar` stores an old `ProcessContext`
+value and previously observed later writes because mutable `SubContext` objects
+were updated in place. With immutable subcontexts, the injector step returns a
+new context value, and the old `InteractiveVar` still points at the old context.
+The core inline/process tests otherwise passed.
 
 ## Previous Commit Comparison
 
