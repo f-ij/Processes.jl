@@ -10,6 +10,7 @@ allocation/SROA investigation. The active diagnostic files are:
 - `diagnostics/inline_route_heavy_benchmark.jl`
 - `diagnostics/inline_route_heavy_breakdown.jl`
 - `diagnostics/inline_route_type_stability.jl`
+- `diagnostics/inline_scalar_dependency_probe.jl`
 
 The benchmark target is intentionally real route-heavy scalar work: five
 `ProcessAlgorithm`s (`sensor`, `filter`, `controller`, `plant`, `audit`) with
@@ -117,6 +118,13 @@ stable writes, but subcontexts are now heap-backed objects rather than inline
 isbits fields inside the context named tuple. Therefore this cannot preserve the
 old tiny-scalar SROA behavior by construction.
 
+Follow-up: `ProcessContext` itself was switched back to immutable while keeping
+`SubContext` mutable. This matches the actual hot write path better:
+type-preserving child writes mutate only the target `SubContext.data` field and
+do not need to mutate the top-level `ProcessContext` wrapper at all. The
+previous mutable `ProcessContext` line is left commented beside the immutable
+definition for easy comparison.
+
 ## Allocation Results
 
 Measured allocation facts after the mutable `SubContext` change and the
@@ -140,9 +148,9 @@ Route-heavy benchmark, current sample:
 ```text
 inline_route_heavy_steps=20000
 inline_route_heavy_runs=20
-inline_route_run_seconds_per_run=0.001611185
-plain_loop_seconds_per_run=0.001551658
-seconds_ratio=1.038
+inline_route_run_seconds_per_run=0.001504329
+plain_loop_seconds_per_run=0.001511271
+seconds_ratio=0.995
 inline_route_run_bytes_per_run=0.0
 plain_loop_bytes_per_run=10.4
 ```
@@ -181,6 +189,66 @@ NoGen/Naive:       105.19 %
 
 Separate direct runs also sampled around `109 %` to `112 %` of naive. This
 benchmark therefore does not show the severe scalar-regression behavior.
+
+## Route-Heavy Dependency And Top-State Probe
+
+Added `inline_scalar_dependency_probe.jl` to cover a case the original
+route-heavy benchmark did not isolate well: writes that are read by later
+algorithms inside the same loop iteration, plus writes merged into the
+top-level composite state.
+
+The probe uses five `ProcessAlgorithm`s:
+
+- `DependencySource`
+- `DependencyMid`
+- `DependencySink`
+- `DependencyTopState`
+- `DependencyFeedback`
+
+The shape is intentionally small but route-heavy:
+
+- a few scalar fields on each child
+- small preallocated `Vector{Float64}` buffers on source/mid/sink/feedback
+- top-level `_state` fields `top_signal`, `top_metric`, and `top_buffer`
+- source writes read by mid in the same iteration
+- mid/source writes read by sink in the same iteration
+- sink/source writes merged into top-level `_state`
+- freshly merged top-level state read by feedback in the same iteration
+- feedback writes merged back into source-owned shared state
+
+Current result at `100_000` steps and `100` trials:
+
+```text
+reset_alloc = 760
+run_alloc = 0
+direct_loop_alloc = 0
+generated_processloop_alloc = 0
+direct_plan_alloc = 0
+run_seconds = 0.008400834
+direct_loop_seconds = 0.008372458
+generated_processloop_seconds = 0.008332333
+direct_plan_seconds = 0.010554917
+plain_seconds = 0.006100500
+run_ratio = 1.377
+direct_loop_ratio = 1.372
+generated_processloop_ratio = 1.366
+direct_plan_ratio = 1.730
+```
+
+Interpretation:
+
+- The hot loop remains allocation-free for all measured entrypoints.
+- `run`, direct `loop`, generated process-loop, and direct plan are close to
+  each other with mutable `ProcessContext`; after switching `ProcessContext`
+  back to immutable, the real `run`/loop/generated paths remain close, while
+  the diagnostic direct-plan path is slower.
+- The remaining cost is still the routed/context step path itself.
+- This more dependency-heavy benchmark is much less pathological than the tiny
+  scalar replace probe, but it is still about `1.4x` slower than the equivalent
+  local-variable loop.
+
+Ad hoc inference checks for this probe returned concrete `ProcessContext`
+types for `run`, direct `loop`, generated process-loop, and direct plan.
 
 ## Ad Hoc Tiny Scalar Replace Probe
 
@@ -224,6 +292,49 @@ but they also cannot give the old "fully stack/SROA everything" behavior for
 tiny scalar contexts, because the subcontext object itself is a heap object. For
 this benchmark, the relevant regression is not allocation count; it is the loss
 of scalar replacement and the extra pointer/load/store path.
+
+## Previous Commit Comparison
+
+The scalar replace probe was run against the committed optimized code and the
+previous commit using a detached worktree rather than commenting code in/out.
+
+Current commit:
+
+```text
+commit = da5f10e Potential performance updates
+reset_alloc = 176
+merge_alloc = 0
+stable_step_alloc = 0
+run_alloc = 0
+direct_plan_alloc = 0
+run_seconds = 0.000206542
+direct_plan_seconds = 0.000206542
+plain_seconds = 0.000031500
+run_ratio = 6.557
+direct_plan_ratio = 6.557
+```
+
+Previous commit:
+
+```text
+commit = f0c294a Manager updates
+reset_alloc = 128
+merge_alloc = 0
+stable_step_alloc = 0
+run_alloc = 208
+direct_plan_alloc = 0
+run_seconds = 0.000517625
+direct_plan_seconds = 0.000516833
+plain_seconds = 0.000031916
+run_ratio = 16.218
+direct_plan_ratio = 16.194
+```
+
+So the current commit improves this scalar replace probe substantially and
+removes the fixed public `run` allocation, but it is still far from the
+near-plain scalar behavior we want. The old near-identical scalar Fib/Luc result
+must have been from an earlier commit or a different loop shape than the current
+plain `ProcessAlgorithm` replace path.
 
 ## Process Loop Entrypoint
 

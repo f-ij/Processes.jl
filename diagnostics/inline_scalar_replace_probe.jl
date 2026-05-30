@@ -31,12 +31,7 @@ end
 
 """Build the tiny scalar replace algorithm with stable subcontext names."""
 function scalar_replace_algorithm()
-    return @CompositeAlgorithm begin
-        @alias fib = ProbeScalarFib()
-        @alias luc = ProbeScalarLuc()
-        fib()
-        luc()
-    end
+    return Processes.CompositeAlgorithm(ProbeScalarFib, ProbeScalarLuc, (1, 1))
 end
 
 """Create an inline process for the tiny scalar replace workload."""
@@ -61,6 +56,7 @@ end
 
 """Run the scalar replace workload through the direct plan entrypoint."""
 function scalar_replace_direct_plan_loop(process::IP) where {IP<:Processes.InlineProcess}
+    isdefined(Processes, :Namespace) || error("direct plan entrypoint requires Processes.Namespace")
     algo = Processes.getalgo(process)
     lifetime = Processes.lifetime(process)
     plan = Processes.getplan(algo)
@@ -97,8 +93,10 @@ end
 
 """Extract comparable values from the scalar replace process result."""
 function scalar_replace_summary(context::C) where {C<:Processes.ProcessContext}
-    fib = context[:fib]
-    luc = context[:luc]
+    subcontexts = Processes.get_subcontexts(context)
+    subcontext_names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
+    fib = getproperty(subcontexts, subcontext_names[1])
+    luc = getproperty(subcontexts, subcontext_names[2])
     return (; fib_prev = fib.prev, fib_curr = fib.curr, luc_prev = luc.prev, luc_curr = luc.curr)
 end
 
@@ -128,11 +126,20 @@ function run_scalar_replace_probe(;
     reset!(process)
 
     context = Processes.context(process)
-    algo = Processes.getalgo(process)
-    lifetime = Processes.lifetime(process)
-    plan = Processes.getplan(algo)
-    wiring = Processes.getwiring(plan)
-    namespace = Processes.Namespace{nothing}()
+    subcontext_names = filter(!=(:globals), fieldnames(typeof(Processes.get_subcontexts(context))))
+    merge_target = subcontext_names[1]
+    has_direct_plan_api = isdefined(Processes, :Namespace) &&
+        isdefined(Processes, :getplan) &&
+        isdefined(Processes, :getwiring) &&
+        isdefined(Processes, :_step!)
+
+    if has_direct_plan_api
+        algo = Processes.getalgo(process)
+        lifetime = Processes.lifetime(process)
+        plan = Processes.getplan(algo)
+        wiring = Processes.getwiring(plan)
+        namespace = Processes.Namespace{nothing}()
+    end
 
     reset!(process)
     run_summary = scalar_replace_summary(run(process))
@@ -141,24 +148,38 @@ function run_scalar_replace_probe(;
 
     # Warm the exact allocation probes before recording their steady-state value.
     reset!(process)
-    Processes.merge_into_subcontexts(context, (; fib = (; prev = Int64(1), curr = Int64(1))))
-    Processes._step!(plan, context, wiring, namespace, process, lifetime, Processes.Stable())
+    Processes.merge_into_subcontexts(context, (; merge_target => (; prev = Int64(1), curr = Int64(1))))
+    has_direct_plan_api && Processes._step!(plan, context, wiring, namespace, process, lifetime, Processes.Stable())
     reset!(process)
     run(process)
-    reset!(process)
-    scalar_replace_direct_plan_loop(process)
+    if has_direct_plan_api
+        reset!(process)
+        scalar_replace_direct_plan_loop(process)
+    end
 
     reset_alloc = @allocated reset!(process)
     reset!(process)
-    merge_alloc = @allocated Processes.merge_into_subcontexts(context, (; fib = (; prev = Int64(1), curr = Int64(1))))
-    stable_step_alloc = @allocated Processes._step!(plan, context, wiring, namespace, process, lifetime, Processes.Stable())
+    merge_alloc = @allocated Processes.merge_into_subcontexts(context, (; merge_target => (; prev = Int64(1), curr = Int64(1))))
+    stable_step_alloc = if has_direct_plan_api
+        @allocated Processes._step!(plan, context, wiring, namespace, process, lifetime, Processes.Stable())
+    else
+        missing
+    end
     reset!(process)
     run_alloc = @allocated run(process)
-    reset!(process)
-    direct_plan_alloc = @allocated scalar_replace_direct_plan_loop(process)
+    direct_plan_alloc = if has_direct_plan_api
+        reset!(process)
+        @allocated scalar_replace_direct_plan_loop(process)
+    else
+        missing
+    end
 
     run_seconds = scalar_replace_best_seconds(() -> reset!(process), () -> run(process), trials)
-    direct_plan_seconds = scalar_replace_best_seconds(() -> reset!(process), () -> scalar_replace_direct_plan_loop(process), trials)
+    direct_plan_seconds = if has_direct_plan_api
+        scalar_replace_best_seconds(() -> reset!(process), () -> scalar_replace_direct_plan_loop(process), trials)
+    else
+        missing
+    end
     plain_seconds = scalar_replace_best_seconds(() -> nothing, () -> scalar_replace_plain(steps), trials)
 
     println("scalar_replace_steps=", steps)
@@ -169,10 +190,18 @@ function run_scalar_replace_probe(;
     println("run_alloc=", run_alloc)
     println("direct_plan_alloc=", direct_plan_alloc)
     @printf("run_seconds=%.9f\n", run_seconds)
-    @printf("direct_plan_seconds=%.9f\n", direct_plan_seconds)
+    if ismissing(direct_plan_seconds)
+        println("direct_plan_seconds=missing")
+    else
+        @printf("direct_plan_seconds=%.9f\n", direct_plan_seconds)
+    end
     @printf("plain_seconds=%.9f\n", plain_seconds)
     @printf("run_ratio=%.3f\n", run_seconds / plain_seconds)
-    @printf("direct_plan_ratio=%.3f\n", direct_plan_seconds / plain_seconds)
+    if ismissing(direct_plan_seconds)
+        println("direct_plan_ratio=missing")
+    else
+        @printf("direct_plan_ratio=%.3f\n", direct_plan_seconds / plain_seconds)
+    end
 
     return (;
         reset_alloc,
