@@ -26,7 +26,7 @@ its inner loop is materialized.
     registry, keyed_la = setup_registry_and_keyed_algos(la)
     keyed_la = attach_registry_to_tree(keyed_la, registry)
     keyed_la = resolve_plan_wiring(keyed_la, registry)
-    return setoptions(keyed_la, _root_loop_options(_unresolved_options(la)))
+    return setoptions(keyed_la, _root_loop_options(la))
 end
 
 @inline function setup_registry_and_keyed_algos(la::LoopAlgorithm)
@@ -66,6 +66,11 @@ function _all_funcwrapper_values(funcs::Funcs) where {Funcs<:Tuple}
     return true
 end
 
+"""Return the same autokey shape used for raw `FuncWrapper` DSL children."""
+@inline function _funcwrapper_autokey(func::F, idx::Int) where {F<:FuncWrapper}
+    return IdentifiableAlgo(func, Symbol(:FuncWrapper_, idx))
+end
+
 """Add a large tuple of raw `FuncWrapper`s to the registry in one pass.
 
 Large DSL function-call chains usually produce many unique `FuncWrapper`
@@ -74,7 +79,7 @@ tuple type per child; batching keeps the same final registry shape while only
 materializing the final `RegistryTypeEntry{FuncWrapper}` once.
 """
 function _add_funcwrapper_tuple_to_registry(registry::R, funcs::Funcs, multipliers::Multipliers) where {R<:NameSpaceRegistry, Funcs<:Tuple, Multipliers<:Tuple}
-    entries = ntuple(i -> Autokey(getfield(funcs, i), i), length(funcs))
+    entries = ntuple(i -> _funcwrapper_autokey(getfield(funcs, i), i), length(funcs))
     multiplier_values = Float64[]
     sizehint!(multiplier_values, length(multipliers))
     lookup = Dict{Any, Int}()

@@ -1,11 +1,48 @@
 """Return non-wiring options that must stay on the `LoopAlgorithm` wrapper."""
-@inline function _root_loop_options(options::Options) where {Options<:Tuple}
-    isempty(options) && return ()
-    tail = _root_loop_options(Base.tail(options))
-    option = getfield(options, 1)
-    Option = fieldtype(Options, 1)
-    Option <: AbstractWiring && return tail
-    return (option, tail...)
+function _root_loop_options(options::Options) where {Options<:Tuple}
+    root_options = Any[]
+
+    # Constructor-only filtering. Keep this as a plain loop so large DSL route
+    # lists do not compile one recursive tuple-builder method per option.
+    for option in options
+        option isa AbstractWiring && continue
+        push!(root_options, option)
+    end
+    return Tuple(root_options)
+end
+
+"""Append non-wiring options to `root_options` without constructing a large tuple."""
+function _append_root_loop_options!(root_options::Vector{Any}, options::Options) where {Options<:Tuple}
+    for option in options
+        option isa AbstractWiring && continue
+        push!(root_options, option)
+    end
+    return root_options
+end
+
+"""Collect root options from a loop tree without materializing plan wiring."""
+function _append_plan_tree_root_options!(root_options::Vector{Any}, la::LA) where {LA<:AbstractLoopAlgorithm}
+    plan = if la isa LoopAlgorithm
+        _append_root_loop_options!(root_options, getoptions(la))
+        getplan(la)
+    else
+        la
+    end
+
+    # Concrete executable plans store only plan wiring locally, so do not call
+    # `getoptions(plan)` here. That would rebuild all route/share options just
+    # to discard them as non-root options.
+    for child in getalgos(plan)
+        child isa AbstractLoopAlgorithm && _append_plan_tree_root_options!(root_options, child)
+    end
+    return root_options
+end
+
+"""Return non-wiring options stored anywhere in an unresolved loop tree."""
+function _root_loop_options(la::LA) where {LA<:LoopAlgorithm}
+    root_options = Any[]
+    _append_plan_tree_root_options!(root_options, la)
+    return Tuple(root_options)
 end
 
 """Collect plan-wide route/share wiring into a `Wiring` value."""

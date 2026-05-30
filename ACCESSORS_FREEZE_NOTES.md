@@ -181,9 +181,9 @@ replace_namedtuple_field(nt, Val(name), value)
 The old Accessors and mutable `setfield!` alternatives are left as comments near
 the relevant code paths where useful for comparison.
 
-`src/Processes.jl` no longer imports `Accessors.@set` for these context rebuilds.
-`Project.toml` may still list Accessors as a dependency until dependency cleanup
-is done separately.
+`src/Processes.jl` no longer imports `Accessors.@set` for these context rebuilds,
+and Accessors is no longer a direct dependency in `Project.toml` or
+`Manifest.toml`.
 
 ## Remaining Uncertainty
 

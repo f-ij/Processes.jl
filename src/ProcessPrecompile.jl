@@ -49,15 +49,9 @@ function _schedule_loop_precompile!(
 end
 
 function schedule_loop_precompile!(p::Process, lt = lifetime(p); loopfunc = loop)
-    _schedule_loop_precompile!(
-        typeof(loopfunc),
-        typeof(p),
-        typeof(getalgo(p)),
-        _global_context_type(p),
-        typeof(lt),
-        NamedTuple{(),Tuple{}},
-        Resuming{false},
-    )
+    # Do not asynchronously precompile user-shaped process loops from the
+    # constructor. Immediate `run` calls otherwise compile the same large loop
+    # in the foreground while the background precompile is still active.
     return p
 end
 
