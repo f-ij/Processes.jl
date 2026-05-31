@@ -37,16 +37,44 @@ function _generated_step_subcontexts_expr(names::Tuple)
     return Expr(:tuple, Expr(:parameters, (Expr(:(=), name, name) for name in names)...))
 end
 
-"""Return assignments that refresh only subcontexts present in a child return."""
-function _generated_step_return_assignments(names::Tuple, returned_sym)
+"""Return assignments that refresh every active subcontext through direct backmerge."""
+function _generated_step_backmerge_assignments(names::Tuple, context_sym, retval_sym)
     return Any[
-        quote
-            if @inline hasproperty($returned_sym, $(QuoteNode(name)))
-                $name = @inline merge($name, getproperty($returned_sym, $(QuoteNode(name))))
-            end
-        end
+        :($name = @inline backmerge_subcontext_by_wiring($context_sym, $retval_sym, Val($(QuoteNode(name))), $name))
         for name in names
     ]
+end
+
+"""Return the `NamedTuple` type for a generated child-visible subcontext set."""
+function _generated_step_subcontexts_type(::Type{C}, names::Tuple) where {C<:ProcessContext}
+    subcontexts_type = C.parameters[1]
+    value_types = Tuple{(fieldtype(subcontexts_type, name) for name in names)...}
+    return NamedTuple{names, value_types}
+end
+
+"""Return a generated expression that reads one routed variable from live locals."""
+function _generated_on_demand_variable_value_expr(vl, inputs_sym::Symbol, globals_sym::Symbol)
+    target_subcontext = get_subcontextname(vl)
+    target_variables = get_originalname(vl)
+    varnames = target_variables isa Tuple ? target_variables : (target_variables,)
+    value_exprs = if target_subcontext === :_runtime
+        [:(getproperty($globals_sym, $(QuoteNode(varname)))) for varname in varnames]
+    elseif target_subcontext === :_input
+        [:(getproperty($inputs_sym, $(QuoteNode(varname)))) for varname in varnames]
+    else
+        [:(getproperty($target_subcontext, $(QuoteNode(varname)))) for varname in varnames]
+    end
+    return funcexpr(vl, value_exprs...)
+end
+
+"""Return the variables tuple and static location type for one generated child."""
+function _generated_on_demand_variables_expr(::Type{C}, available_names::Tuple, wiring_type::Type{<:Wiring}, namespace_type::Type{<:Namespace}, inputs_sym::Symbol, globals_sym::Symbol) where {C<:ProcessContext}
+    subcontexts_type = _generated_step_subcontexts_type(C, available_names)
+    locations = _on_demand_locations(subcontexts_type, wiring_type, namespace_type)
+    location_type = typeof(locations)
+    names = fieldnames(location_type)
+    values = Any[_generated_on_demand_variable_value_expr(getfield(locations, i), inputs_sym, globals_sym) for i in eachindex(names)]
+    return Expr(:tuple, Expr(:parameters, (Expr(:(=), names[i], values[i]) for i in eachindex(names))...)), location_type
 end
 
 """Return an expression that reconstructs a tuple of resolved route/share values."""
@@ -87,7 +115,7 @@ function _generated_step_child_expr(child_type::Type, context::Type{C}, child_na
     child_namespace_expr = :($child_namespace_type())
     child_available_names = get_available_subcontext_names(child_wiring_type(), child_namespace_type())
     if child_type <: Union{FuncWrapper, ProcessAlgorithm}
-        return _generated_process_algorithm_step_expr(child_type, C, child_name, child_wiring_expr, child_namespace_expr, state, child_available_names)
+        return _generated_process_algorithm_step_expr(child_type, C, child_name, child_wiring_type, child_wiring_expr, child_namespace_type, child_namespace_expr, state, child_available_names)
     end
     return step!_expr(child_type, C, child_name, child_wiring_expr, child_namespace_expr, state)
 end
@@ -197,29 +225,23 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiring_exp
 end
 
 """Build the generated leaf body shared by process-algorithm expression methods."""
-function _generated_process_algorithm_step_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiring_expr, namespace_expr, state::GeneratedStepState, available_names::Tuple = _generated_step_top_names(state)) where {T, C<:AbstractContext}
+function _generated_process_algorithm_step_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiring_type::Type{<:Wiring}, wiring_expr, namespace_type::Type{<:Namespace}, namespace_expr, state::GeneratedStepState, available_names::Tuple = _generated_step_top_names(state)) where {T, C<:ProcessContext}
     globals_sym = _generated_step_globals_sym(state)
     inputs_sym = _generated_step_inputs_sym(state)
-    available_subcontexts = gensym(:available_subcontexts)
     available_variables = gensym(:available_variables)
-    available_locations = gensym(:available_locations)
     on_demand_context = gensym(:on_demand_context)
     retval = gensym(:retval)
-    returned = gensym(:returned)
-    subcontexts_expr = _generated_step_subcontexts_expr(available_names)
-    assignments = _generated_step_return_assignments(available_names, returned)
+    variables_expr, locations_type = _generated_on_demand_variables_expr(C, available_names, wiring_type, namespace_type, inputs_sym, globals_sym)
+    assignments = _generated_step_backmerge_assignments(available_names, on_demand_context, retval)
 
     isnothing(wiring_expr) && error("Concrete generated child step requires resolved child wiring.")
     isnothing(namespace_expr) && error("Concrete generated child step requires a resolved child namespace.")
 
     return quote
-        local $available_subcontexts = $subcontexts_expr
-        local $available_locations = @inline on_demand_locations($available_subcontexts, $wiring_expr, $funcname, $namespace_expr)
-        local $available_variables = @inline on_demand_variables($available_subcontexts, $available_locations, $inputs_sym, $globals_sym)
-        local $on_demand_context = @inline OnDemandContext($available_variables, $available_locations, $wiring_expr, $inputs_sym, $globals_sym, $funcname, $namespace_expr)
+        local $available_variables = $variables_expr
+        local $on_demand_context = @inline OnDemandContext($available_variables, $locations_type, $wiring_expr, $inputs_sym, $globals_sym, $funcname, $namespace_expr)
         local $retval = @inline step!($funcname, $on_demand_context)
-        local $returned = @inline merge_by_wiring($on_demand_context, $retval)
-        $globals_sym = @inline getproperty($returned, :globals)
+        $globals_sym = @inline backmerge_globals_by_wiring($on_demand_context, $retval)
         $(assignments...)
     end
 end
@@ -232,7 +254,7 @@ wrappers should have been stripped from resolved execution plans before this
 point.
 """
 function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiring_expr, namespace_expr, state::GeneratedStepState) where {T<:FuncWrapper, C<:AbstractContext}
-    return _generated_process_algorithm_step_expr(T, C, funcname, wiring_expr, namespace_expr, state)
+    error("Generated FuncWrapper leaf expansion requires concrete wiring and namespace types.")
 end
 
 """Reject identifiable wrappers that leaked into a generated execution plan."""
@@ -249,7 +271,7 @@ generated loop; the resolved wiring decides which fields are actually exposed
 and where returned fields are merged.
 """
 function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiring_expr, namespace_expr, state::GeneratedStepState) where {T<:ProcessAlgorithm, C<:AbstractContext}
-    return _generated_process_algorithm_step_expr(T, C, funcname, wiring_expr, namespace_expr, state)
+    error("Generated ProcessAlgorithm leaf expansion requires concrete wiring and namespace types.")
 end
 
 """Reject generated leaf expansion for child types outside the process API."""

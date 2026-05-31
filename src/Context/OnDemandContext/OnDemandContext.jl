@@ -15,6 +15,11 @@ end
     return OnDemandContext{Variables, Locations, W, I, G, A, N}(variables, input, globals)
 end
 
+"""Construct an on-demand context when generated code already knows the location type."""
+@inline function OnDemandContext(variables::Variables, ::Type{Locations}, wiring::W, input::I, globals::G, algorithm::A, namespace::N) where {Variables, Locations, W, I, G, A, N}
+    return OnDemandContext{Variables, Locations, W, I, G, A, N}(variables, input, globals)
+end
+
 """
 Small context-like wrapper used for lifetime checks over active subcontexts.
 """
@@ -197,16 +202,8 @@ function _on_demand_names_for_location(::Type{ODC}, ::Type{VL}) where {ODC<:OnDe
     return Tuple(matches)
 end
 
-@inline function Base.getproperty(context::OnDemandContext, name::Symbol)
-    if name === :variables || name === :input || name === :globals
-        return getfield(context, name)
-    end
-    name === :locations && return get_locations(context)
-    name === :wiring && return typeof(context).parameters[3]()
-    name === :algorithm && return typeof(context).parameters[6]
-    name === :namespace && return typeof(context).parameters[7]()
-    return getproperty(context, Val(name))
-end
+Base.@constprop :aggressive @inline Base.getproperty(context::ODC, name::Symbol) where {ODC<:OnDemandContext} =
+    getproperty(context, Val(name))
 
 @inline @generated function Base.haskey(context::ODC, ::Val{name}) where {ODC<:OnDemandContext, name}
     Variables = ODC.parameters[1]
@@ -221,6 +218,14 @@ end
 end
 
 @inline @generated function Base.getproperty(context::ODC, ::Val{name}) where {ODC<:OnDemandContext, name}
+    name === :variables && return :(return getfield(context, :variables))
+    name === :input && return :(return getfield(context, :input))
+    name === :globals && return :(return getfield(context, :globals))
+    name === :locations && return :(return _on_demand_locations_from_type($(ODC.parameters[2])))
+    name === :wiring && return :(return $(ODC.parameters[3])())
+    name === :algorithm && return :(return $(ODC.parameters[6]))
+    name === :namespace && return :(return $(ODC.parameters[7])())
+
     Variables = ODC.parameters[1]
     if name in fieldnames(Variables)
         return quote
@@ -255,10 +260,23 @@ end
 @inline merge_by_wiring(context::OnDemandContext, ::Nothing) =
     (; globals = getglobals(context))
 
+"""Return unchanged active subcontexts for a generated child with no writeback."""
+@inline function backmerge_by_wiring(context::ODC, ::Nothing, subcontexts::S) where {ODC<:OnDemandContext, S<:NamedTuple}
+    return (; globals = getglobals(context), subcontexts...)
+end
+
+"""Return globals after merging only runtime-targeted child outputs."""
+@inline backmerge_globals_by_wiring(context::OnDemandContext, ::Nothing) =
+    getglobals(context)
+
 """Return globals with temporary runtime outputs produced inside an on-demand step."""
 @inline function merge_ondemand_runtime(context::ODC, patch::P) where {ODC<:OnDemandContext, P<:NamedTuple}
     return merge(getglobals(context), patch)
 end
+
+"""Return one active subcontext after merging only writes targeting that subcontext."""
+@inline backmerge_subcontext_by_wiring(context::OnDemandContext, ::Nothing, ::Val{name}, subcontext::S) where {name, S} =
+    subcontext
 
 """Return whether unlocated child return values should be written to runtime state."""
 @inline _merge_unlocated_returns_to_runtime(::Type{T}) where {T} = nameof(T) === :FuncWrapper
@@ -299,5 +317,101 @@ end
         push!(return_fields, Expr(:(=), subcontext_name, patch_expr))
     end
     push!(merge_exprs, :(return (; globals = _globals, $(return_fields...))))
+    return Expr(:block, merge_exprs...)
+end
+
+"""Return globals after merging only runtime-targeted child outputs."""
+@inline @generated function backmerge_globals_by_wiring(context::ODC, retval::R) where {ODC<:OnDemandContext, R<:NamedTuple}
+    A = ODC.parameters[6]
+    local_names = _namespace_names(ODC.parameters[7])
+    isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
+    local_subcontext = first(local_names)
+
+    runtime_fields = Expr[]
+    for retval_name in fieldnames(R)
+        location, subcontext_name = _on_demand_location(ODC, retval_name)
+        target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
+        target_variable = isnothing(location) ? subcontext_name : get_originalname(location)
+        target_variable isa Symbol || error("Algorithm returned $(retval_name), which maps to multiple target variables $(target_variable). Inverse transform merges are not supported.")
+        if target_subcontext == :_runtime || (isnothing(location) && _merge_unlocated_returns_to_runtime(A))
+            push!(runtime_fields, Expr(:(=), target_variable, :(getproperty(retval, $(QuoteNode(retval_name))))))
+        end
+    end
+
+    isempty(runtime_fields) && return :(return @inline getglobals(context))
+    runtime_patch_expr = Expr(:tuple, Expr(:parameters, runtime_fields...))
+    return quote
+        return @inline merge_ondemand_runtime(context, $runtime_patch_expr)
+    end
+end
+
+"""Return one active subcontext after merging only writes targeting that subcontext."""
+@inline @generated function backmerge_subcontext_by_wiring(context::ODC, retval::R, ::Val{name}, subcontext::S) where {ODC<:OnDemandContext, R<:NamedTuple, name, S}
+    A = ODC.parameters[6]
+    local_names = _namespace_names(ODC.parameters[7])
+    isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
+    local_subcontext = first(local_names)
+
+    fields = Expr[]
+    for retval_name in fieldnames(R)
+        location, subcontext_name = _on_demand_location(ODC, retval_name)
+        target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
+        target_variable = isnothing(location) ? subcontext_name : get_originalname(location)
+        target_variable isa Symbol || error("Algorithm returned $(retval_name), which maps to multiple target variables $(target_variable). Inverse transform merges are not supported.")
+        if target_subcontext == :_runtime || (isnothing(location) && _merge_unlocated_returns_to_runtime(A))
+            continue
+        end
+        target_subcontext == name || continue
+        push!(fields, Expr(:(=), target_variable, :(getproperty(retval, $(QuoteNode(retval_name))))))
+    end
+
+    isempty(fields) && return :(return subcontext)
+    patch_expr = Expr(:tuple, Expr(:parameters, fields...))
+    return quote
+        return @inline merge(subcontext, $patch_expr)
+    end
+end
+
+"""Merge a generated child return directly into the active subcontext tuple."""
+@inline @generated function backmerge_by_wiring(context::ODC, retval::R, subcontexts::S) where {ODC<:OnDemandContext, R<:NamedTuple, S<:NamedTuple}
+    A = ODC.parameters[6]
+    local_names = _namespace_names(ODC.parameters[7])
+    isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
+    local_subcontext = first(local_names)
+    active_names = fieldnames(S)
+
+    updates = Dict{Symbol, Vector{Expr}}()
+    runtime_fields = Expr[]
+    for retval_name in fieldnames(R)
+        location, subcontext_name = _on_demand_location(ODC, retval_name)
+        target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
+        target_variable = isnothing(location) ? subcontext_name : get_originalname(location)
+        target_variable isa Symbol || error("Algorithm returned $(retval_name), which maps to multiple target variables $(target_variable). Inverse transform merges are not supported.")
+        if target_subcontext == :_runtime || (isnothing(location) && _merge_unlocated_returns_to_runtime(A))
+            push!(runtime_fields, Expr(:(=), target_variable, :(getproperty(retval, $(QuoteNode(retval_name))))))
+            continue
+        end
+        target_subcontext in active_names || error("Generated child return writes to subcontext $(target_subcontext), but only $(active_names) are active.")
+        exprs = get!(updates, target_subcontext, Expr[])
+        push!(exprs, Expr(:(=), target_variable, :(getproperty(retval, $(QuoteNode(retval_name))))))
+    end
+
+    merge_exprs = Any[:(_globals = @inline getglobals(context))]
+    if !isempty(runtime_fields)
+        runtime_patch_expr = Expr(:tuple, Expr(:parameters, runtime_fields...))
+        push!(merge_exprs, :(_globals = @inline merge_ondemand_runtime(context, $runtime_patch_expr)))
+    end
+
+    return_fields = Any[Expr(:(=), :globals, :_globals)]
+    for subcontext_name in active_names
+        current_expr = :(getproperty(subcontexts, $(QuoteNode(subcontext_name))))
+        if haskey(updates, subcontext_name)
+            patch_expr = Expr(:tuple, Expr(:parameters, updates[subcontext_name]...))
+            push!(return_fields, Expr(:(=), subcontext_name, :(@inline merge($current_expr, $patch_expr))))
+        else
+            push!(return_fields, Expr(:(=), subcontext_name, current_expr))
+        end
+    end
+    push!(merge_exprs, :(return (; $(return_fields...))))
     return Expr(:block, merge_exprs...)
 end
