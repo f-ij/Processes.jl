@@ -68,7 +68,7 @@ function _cleanup_paused_process!(p::Process, fetched_result)
     cleanup_context = fetched_result isa AbstractContext ? fetched_result : context(p)
     cleaned_context = @inline cleanup(getalgo(p), cleanup_context)
     p.lastresult = @inline _loop_final_result(getalgo(p), cleaned_context)
-    context(p, _strip_runtime_inputs(cleaned_context, getstoredcontext(getalgo(p))))
+    commit_context!(p, _strip_runtime_inputs(cleaned_context, getstoredcontext(getalgo(p))))
     return p.lastresult
 end
 
@@ -94,7 +94,7 @@ function Base.close(p::Process)
         println("Process with error closed:")
         Base.showerror(stderr, err)
         p.task = nothing
-        context(p, context(init(getalgo(p); lifetime = lifetime(p))))
+        commit_context!(p, context(init(getalgo(p); lifetime = lifetime(p))))
 
     end
 
@@ -163,7 +163,7 @@ so that the new loop function is newly compiled
 """
 function reinit(p::Process)
     pause(p)
-    context(p, context(init(getalgo(p); lifetime = lifetime(p))))
+    commit_context!(p, context(init(getalgo(p); lifetime = lifetime(p))))
     run(p)
     return true
 end
@@ -177,7 +177,7 @@ afterwards.
 """
 function reinit(p::Process, target; inputs = (;), overrides = (;))
     pause(p)
-    context(p, initcontext(context(p), target; inputs, overrides))
+    commit_context!(p, initcontext(context(p), target; inputs, overrides))
     run(p)
     return true
 end

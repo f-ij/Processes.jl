@@ -10,9 +10,16 @@ end
     @inline set_starttime!(ip)
 end
 
-@inline function after_while(p::AbstractProcess, func::F, context::C, stored_context::SC = context) where {F, C, SC}
+"""
+Finalize one threaded/dynamic `Process` loop execution.
+
+Paused runs keep their live context in the dynamic runtime slot. Finished runs
+clean up runtime-only values and commit the persistent context back into the
+typed lifecycle when the concrete shape still matches.
+"""
+@inline function after_while(p::P, func::F, context::C, stored_context::SC = context) where {P<:Process, F, C, SC}
     @inline set_endtime!(p)
-    if p isa Process && ispaused(p)
+    if ispaused(p)
         # Pause is not finalization. Store the live context before cleanup,
         # because type-preserving context merges may mutate it in place.
         _store_runtime_context!(p, context)
@@ -22,17 +29,36 @@ end
         cleaned_context = @inline cleanup(func, context)
         visible_context = materialize_widened_context(cleaned_context)
         persistent_context = _strip_runtime_inputs(visible_context, stored_context)
-        Processes.context(p, persistent_context)
+        commit_context!(p, persistent_context)
         return @inline _loop_final_result(func, visible_context)
     end
 end
 
-@inline function after_while(ip::InlineProcess, func::F, context::C, stored_context::SC = context) where {F, C, SC}
+"""
+Finalize one `InlineProcess` loop execution.
+
+Inline processes always write their persistent context directly back into the
+concrete inline context field.
+"""
+@inline function after_while(ip::IP, func::F, context::C, stored_context::SC = context) where {IP<:InlineProcess, F, C, SC}
     @inline set_endtime!(ip)
     cleaned_context = @inline cleanup(func, context)
     visible_context = materialize_widened_context(cleaned_context)
-    persistent_context = _strip_runtime_inputs_preserve_context_type(cleaned_context, stored_context)
+    persistent_context = _strip_runtime_inputs(cleaned_context, stored_context)
     Processes.context(ip, persistent_context)
+    return @inline _loop_final_result(func, visible_context)
+end
+
+"""
+Finalize one direct `run(::LoopAlgorithm; ...)` execution.
+
+`LoopRunProcess` is only a transient loop driver, so it returns the visible
+result without storing a persistent context on itself.
+"""
+@inline function after_while(p::P, func::F, context::C, stored_context::SC = context) where {P<:LoopRunProcess, F, C, SC}
+    @inline set_endtime!(p)
+    cleaned_context = @inline cleanup(func, context)
+    visible_context = materialize_widened_context(cleaned_context)
     return @inline _loop_final_result(func, visible_context)
 end
 

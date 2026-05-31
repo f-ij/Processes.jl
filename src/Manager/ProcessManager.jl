@@ -173,13 +173,12 @@ pipeline, then return `slot`.
 
 This is different from `resetworker!`: it rebuilds context values by calling
 `init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))`
-and then assigning the resulting context with
-`context(slot.worker, context(init(...)))`. Use it from `prepare!` when a job
-needs freshly initialized context state instead of reusing the previous context
-object.
+and then committing the resulting persistent context back onto the worker. Use
+it from `prepare!` when a job needs freshly initialized context state instead
+of reusing the previous context object.
 """
 function reinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...; kwargs...)
-    context(slot.worker, context(init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))))
+    commit_context!(slot.worker, context(init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))))
     return slot
 end
 
@@ -203,7 +202,7 @@ function partialinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...)
         getstoredinits(getalgo(slot.worker)),
         getstoredoverrides(getalgo(slot.worker)),
     )
-    context(slot.worker, context(partialinit(algo, inputs_overrides...)))
+    commit_context!(slot.worker, context(partialinit(algo, inputs_overrides...)))
     return slot
 end
 
@@ -276,7 +275,7 @@ function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, rep
     result = loop(worker, algo, base_context, lt, inputs, Resuming{false}())
 
     worker.lastresult = result
-    result isa AbstractContext && context(worker, _strip_runtime_inputs(result, base_context))
+    result isa AbstractContext && commit_context!(worker, _strip_runtime_inputs(result, base_context))
     worker.task = nothing
     worker.loopidx = 1
     @atomic worker.shouldrun = false
