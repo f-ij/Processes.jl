@@ -81,6 +81,8 @@ module Processes
     include("LoopAlgorithms/Edit/Edit.jl")
     include("Packaging/Packaging.jl")
     include("Loops.jl")
+    include("GeneratedOld/GeneratedStepOld.jl")
+    include("GeneratedOld/GeneratedLoopsOld.jl")
     include("GeneratedCode/GeneratedLoops.jl")
     include("Trackers/Trackers.jl")
     include("TotalInc.jl")

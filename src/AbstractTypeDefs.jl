@@ -170,6 +170,7 @@ static_findkey(r::AbstractRegistry, obj) = error("static_findkey not implemented
 #### Processloop type
 abstract type FunctionType end
 struct Generated <: FunctionType end
+struct GeneratedOld <: FunctionType end
 struct RuntimeGenerated <: FunctionType end
 struct NonGenerated <: FunctionType end
 

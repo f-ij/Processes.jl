@@ -353,6 +353,10 @@ end
     local_subcontext = first(local_names)
 
     fields = Expr[]
+    replacements = Dict{Symbol, Expr}()
+    data_type = getdatatype(S)
+    data_names = fieldnames(data_type)
+    can_rebuild_stably = true
     for retval_name in fieldnames(R)
         location, subcontext_name = _on_demand_location(ODC, retval_name)
         target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
@@ -362,10 +366,32 @@ end
             continue
         end
         target_subcontext == name || continue
-        push!(fields, Expr(:(=), target_variable, :(getproperty(retval, $(QuoteNode(retval_name))))))
+        value_expr = :(getproperty(retval, $(QuoteNode(retval_name))))
+        push!(fields, Expr(:(=), target_variable, value_expr))
+
+        # The generated loop wants a stable subcontext type. Only use the direct
+        # rebuild when this write updates an existing field without changing its
+        # field type; otherwise keep the existing merge fallback for now.
+        target_variable in data_names || (can_rebuild_stably = false; continue)
+        fieldtype(R, retval_name) === fieldtype(data_type, target_variable) || (can_rebuild_stably = false; continue)
+        replacements[target_variable] = value_expr
     end
 
     isempty(fields) && return :(return subcontext)
+
+    if can_rebuild_stably
+        value_exprs = Any[
+            haskey(replacements, data_name) ?
+                replacements[data_name] :
+                :(getproperty(subcontext, $(QuoteNode(data_name))))
+            for data_name in data_names
+        ]
+        data_expr = :(NamedTuple{$data_names}(($(value_exprs...),)))
+        return quote
+            return @inline withdata(subcontext, $data_expr)
+        end
+    end
+
     patch_expr = Expr(:tuple, Expr(:parameters, fields...))
     return quote
         return @inline merge(subcontext, $patch_expr)
