@@ -68,10 +68,13 @@ Run a single function in a loop indefinitely
 @inline loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple = (;), resume::Resuming = Resuming{false}()) where {P<:AbstractProcess, F, C, LT} =
     loop(process, func, context, lt, inputs, resume, sys_looptype)
 
-@inline loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, resume::Resuming, ::Generated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT<:Lifetime} =
-    loop(process, func, context, lt, inputs, resume, NonGenerated())
+@inline loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, resume::Resuming, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT<:Lifetime} =
+    loop(process, func, context, lt, inputs, resume, RuntimeGenerated())
 
-Base.@constprop :aggressive function loop(process::P, algo::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT <: IndefiniteLifetime, isresuming}
+@inline loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, resume::Resuming, ::Generated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT<:Lifetime} =
+    loop(process, func, context, lt, inputs, resume, RuntimeGenerated())
+
+Base.@constprop :aggressive function loop(process::P, algo::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::RuntimeGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT <: IndefiniteLifetime, isresuming}
     @inline before_while(process)
 
     step_plan = @inline getplan(algo)
@@ -110,7 +113,7 @@ Run a single function in a loop for a given number of times
 @inline loop(process::P, algo::F, context::C, r::R, inputs::NamedTuple = (;), resume::Resuming = Resuming{false}()) where {P<:AbstractProcess, F, C, R <: RepeatLifetime} =
     loop(process, algo, context, r, inputs, resume, sys_looptype)
 
-Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, R <: RepeatLifetime, isresuming}
+Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R, inputs::NamedTuple, ::Resuming{isresuming}, ::RuntimeGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, R <: RepeatLifetime, isresuming}
     @DebugMode "Running process loop for $repeats times from thread $(Threads.threadid())"
     @assert isresolved(algo) "Algo must be resolved before running the loop. Got algo $(algo) which is not resolved."
     @inline before_while(process)

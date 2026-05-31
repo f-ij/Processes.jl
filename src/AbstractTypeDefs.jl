@@ -170,6 +170,7 @@ static_findkey(r::AbstractRegistry, obj) = error("static_findkey not implemented
 #### Processloop type
 abstract type FunctionType end
 struct Generated <: FunctionType end
+struct RuntimeGenerated <: FunctionType end
 struct NonGenerated <: FunctionType end
 
 struct Resuming{isresuming} end
@@ -181,7 +182,7 @@ The type of loop to use for a process. This is determined by the system and can 
 # else
 #     Generated()
 # end
-const sys_looptype = NonGenerated()
+const sys_looptype = Generated()
     
 
 #### Type Stabliity of steps
