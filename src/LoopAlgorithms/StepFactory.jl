@@ -77,11 +77,6 @@ end
 @inline get_child_step(plan::Union{CompositeAlgorithm, Routine}, idx::Int) = getfield(get_child_steps(plan), idx)
 @inline get_child_step(la::LoopAlgorithm, idx::Int) = get_child_step(getplan(la), idx)
 
-"""Return one resolved child context-step function."""
-@inline get_child_context_step(plan::Union{CompositeAlgorithm, Routine}, idx::Int) = get_child_step(plan, idx)
-
-@inline get_child_context_step(la::LoopAlgorithm, idx::Int) = get_child_context_step(getplan(la), idx)
-
 """Return the root step function owned by a resolved loop wrapper."""
 @inline function get_step(la::LoopAlgorithm)
     step = getfield(la, :step)
@@ -90,11 +85,6 @@ end
 end
 
 @inline get_step(fa::FinalizedAlgorithm) = get_step(inneralgorithm(fa))
-
-"""Return the root context-step function owned by a resolved loop wrapper."""
-@inline get_context_step(la::LoopAlgorithm) = get_step(la)
-
-@inline get_context_step(fa::FinalizedAlgorithm) = get_context_step(inneralgorithm(fa))
 
 """Return all subcontext names expected by a resolved plan step."""
 @inline step_available_names(plan::Union{CompositeAlgorithm, Routine}) =
@@ -116,20 +106,28 @@ end
 @inline step_available_names_val(fa::FinalizedAlgorithm) = step_available_names_val(inneralgorithm(fa))
 @inline step_available_names_val(plan::Union{CompositeAlgorithm, Routine}) = Val(step_available_names(plan))
 
-"""Generate a child step for either a concrete child or a nested plan child."""
-function generate_child_step(child::A, thiswiring::W, namespace::N) where {A, W<:Wiring, N<:Namespace}
-    return generate_process_algorithm_context_step(child, thiswiring, namespace)
-end
-
-function generate_child_step(child::LA, thiswiring::W, namespace::N) where {LA<:AbstractLoopAlgorithm, W<:PlanWiring, N<:Namespace}
-    return generate_plan_context_step(child, thiswiring, getfield(child, :namespaces))
-end
-
 """Run every child step factory for a resolved plan."""
 function generate_child_steps(plan::P, this_plan_wiring::W, namespaces::N) where {P<:Union{CompositeAlgorithm, Routine}, W<:PlanWiring, N<:Tuple}
     funcs = getalgos(plan)
     child_wirings = child_wiring(this_plan_wiring)
-    return ntuple(i -> generate_child_step(getfield(funcs, i), getfield(child_wirings, i), getfield(namespaces, i)), length(funcs))
+    return ntuple(length(funcs)) do i
+        child = getfield(funcs, i)
+        child_wiring = getfield(child_wirings, i)
+        namespace = getfield(namespaces, i)
+
+        # Resolve-time step factory choice. Plan children use their own stored
+        # generated step; process children compile wiring and namespace into a
+        # direct view/step/merge boundary.
+        if child isa FuncWrapper
+            generate_funcwrapper_context_step(child, child_wiring, namespace)
+        elseif child isa AbstractLoopAlgorithm
+            generate_plan_context_step(child, child_wiring, getfield(child, :namespaces))
+        elseif child isa ProcessAlgorithm
+            generate_process_algorithm_context_step(child, child_wiring, namespace)
+        else
+            error("Cannot generate a child step for $(typeof(child)). Expected a plan child or ProcessAlgorithm.")
+        end
+    end
 end
 
 """Generate context-threaded child call expressions for a composite plan step."""
@@ -140,7 +138,7 @@ function _composite_context_child_exprs(child_wirings::Tuple)
                 _this_interval = @inline interval(_plan, $i)
                 if @inline divides(_this_inc, _this_interval)
                     _child_algo = @inline getalgo(_plan, $i)
-                    _child_step = @inline get_child_context_step(_plan, $i)
+                    _child_step = @inline get_child_step(_plan, $i)
                     _context = @inline _child_step(_child_algo, _context, _process, _lifetime)
                 end
             end)
@@ -166,7 +164,7 @@ function _routine_context_child_exprs(child_wirings::Tuple, lifetime_values::Tup
                         break
                     end
                     _child_algo = @inline getalgo(_plan, _this_child_idx)
-                    _child_step = @inline get_child_context_step(_plan, _this_child_idx)
+                    _child_step = @inline get_child_step(_plan, _this_child_idx)
                     _context = @inline _child_step(_child_algo, _context, _process, _lifetime)
                     @inline tick!(_process)
                 end
@@ -402,7 +400,7 @@ function generate_root_context_step(la::LA) where {LA<:LoopAlgorithm}
 end
 
 """Generate a context-threaded concrete child step with wiring and namespace embedded."""
-function generate_process_algorithm_context_step(child::A, thiswiring::W, namespace::N = Namespace{nothing}()) where {A, W<:Wiring, N<:Namespace}
+function generate_process_algorithm_context_step(child::A, thiswiring::W, namespace::N = Namespace{nothing}()) where {A<:ProcessAlgorithm, W<:Wiring, N<:Namespace}
     funcbody = quote
         function (
             _algorithm::Algo,
@@ -423,6 +421,34 @@ function generate_process_algorithm_context_step(child::A, thiswiring::W, namesp
             )
             _retval = @inline step!(_algorithm, _context_view)
             return @inline merge(_context_view, _retval)
+        end
+    end
+
+    return @RuntimeGeneratedFunction(funcbody.args[end])
+end
+
+"""Generate a context-threaded function-wrapper child step with wiring and namespace embedded."""
+function generate_funcwrapper_context_step(child::FW, thiswiring::W, namespace::N = Namespace{nothing}()) where {FW<:FuncWrapper, W<:Wiring, N<:Namespace}
+    funcbody = quote
+        function (
+            _algorithm::Algo,
+            _context::C,
+            _process::Proc,
+            _lifetime::LT,
+        ) where {Algo<:$(typeof(child)), C<:ProcessContext, Proc<:AbstractProcess, LT<:Lifetime}
+            # FuncWrapper returns unresolved DSL outputs through runtime state,
+            # so it needs its own generated merge boundary.
+            _this_wiring = @inline $W()
+            _this_namespace = @inline $N()
+            _context_view = @inline view(
+                _context,
+                _algorithm,
+                _this_namespace;
+                sharedcontexts = (@inline shares(_this_wiring)),
+                sharedvars = (@inline routes(_this_wiring)),
+            )
+            _retval = @inline step!(_algorithm, _context_view)
+            return @inline merge_funcwrapper_return(_context_view, _context, _retval, Stable())
         end
     end
 
