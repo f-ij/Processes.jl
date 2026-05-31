@@ -145,7 +145,7 @@ function _step_return_expr(names::Tuple)
 end
 
 """Generate child call expressions for a composite plan step."""
-function _composite_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings::Tuple, namespaces::Tuple, interval_values::Tuple)
+function _composite_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings::Tuple, namespaces::Tuple)
     exprs = Any[]
     for i in eachindex(child_wirings)
         child_subcontext_names = get_child_available_subcontext_names(getfield(funcs, i), getfield(child_wirings, i), getfield(namespaces, i))
@@ -156,7 +156,8 @@ function _composite_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings
             push!(update_exprs, :($child_subcontext_name = @inline getproperty(_returned, $(QuoteNode(child_subcontext_name)))))
         end
         push!(exprs, quote
-            if @inline divides(_this_inc, $(interval_values[i]))
+            _this_interval = @inline interval(_plan, $i)
+            if @inline divides(_this_inc, _this_interval)
                 _child_algo = @inline getalgo(_plan, $i)
                 _child_step = @inline get_child_step(_plan, $i)
                 _returned = @inline RuntimeGeneratedFunctions.generated_callfunc(_child_step, _child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
@@ -246,7 +247,7 @@ function generate_plan_step(plan::P, this_plan_wiring::W = getwiring(plan), name
     funcs = getalgos(plan)
     child_wirings = child_wiring(this_plan_wiring)
     if plan isa CompositeAlgorithm
-        child_exprs = _composite_child_exprs(funcs, this_available_subcontexts_from_parent, child_wirings, namespaces, intervals(plan))
+        child_exprs = _composite_child_exprs(funcs, this_available_subcontexts_from_parent, child_wirings, namespaces)
         plan_prelude = Any[:(_this_inc = @inline inc(_plan))]
         plan_epilogue = Any[:(@inline inc!(_plan))]
     elseif plan isa Routine

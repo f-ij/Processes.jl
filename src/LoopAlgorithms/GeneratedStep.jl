@@ -78,6 +78,10 @@ function _generated_step_child_expr(child_type::Type, context::Type{C}, child_na
     end
     child_wiring_expr = _generated_step_wiring_value_expr(child_wiring_type)
     child_namespace_expr = :($child_namespace_type())
+    child_available_names = get_available_subcontext_names(child_wiring_type(), child_namespace_type())
+    if child_type <: Union{FuncWrapper, ProcessAlgorithm}
+        return _generated_process_algorithm_step_expr(child_type, C, child_name, child_wiring_expr, child_namespace_expr, state, child_available_names)
+    end
     return step!_expr(child_type, C, child_name, child_wiring_expr, child_namespace_expr, state)
 end
 
@@ -144,6 +148,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiring_exp
     exprs = Any[]
     algo_count = numalgos(routine)
     funcs = tuple(algotypes(routine)...)
+    lifetime_values = lifetimes(routine)
     process_sym = _generated_step_process_sym(state)
     lifetime_sym = _generated_step_lifetime_sym(state)
     sizehint!(exprs, algo_count)
@@ -152,6 +157,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiring_exp
         child_type = funcs[i]
         child_wiring_type = _generated_step_child_wiring_type(routine, i)
         child_namespace_type = _generated_step_child_namespace_type(routine, i)
+        lifetime_value = lifetime_values[i]
         child_name = gensym(:algo)
         child_idx = gensym(:child_idx)
         child_lifetime = gensym(:child_lifetime)
@@ -162,7 +168,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiring_exp
         push!(exprs, quote
             local $child_idx = $i
             local $child_name = @inline getalgo($name, $child_idx)
-            local $child_lifetime = @inline lifetimes($name, $child_idx)
+            local $child_lifetime = $lifetime_value
             local $repeat_count = @inline routine_repeat_count($child_lifetime)
             local $resume_point = @inline get_resume_point($name, $child_idx)
             if $resume_point <= $repeat_count
@@ -184,16 +190,15 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiring_exp
 end
 
 """Build the generated leaf body shared by process-algorithm expression methods."""
-function _generated_process_algorithm_step_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiring_expr, namespace_expr, state::GeneratedStepState) where {T, C<:AbstractContext}
-    top_names = _generated_step_top_names(state)
+function _generated_process_algorithm_step_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiring_expr, namespace_expr, state::GeneratedStepState, available_names::Tuple = _generated_step_top_names(state)) where {T, C<:AbstractContext}
     globals_sym = _generated_step_globals_sym(state)
     inputs_sym = _generated_step_inputs_sym(state)
     available_subcontexts = gensym(:available_subcontexts)
     on_demand_context = gensym(:on_demand_context)
     retval = gensym(:retval)
     returned = gensym(:returned)
-    subcontexts_expr = _generated_step_subcontexts_expr(top_names)
-    assignments = _generated_step_return_assignments(top_names, returned)
+    subcontexts_expr = _generated_step_subcontexts_expr(available_names)
+    assignments = _generated_step_return_assignments(available_names, returned)
 
     isnothing(wiring_expr) && error("Concrete generated child step requires resolved child wiring.")
     isnothing(namespace_expr) && error("Concrete generated child step requires a resolved child namespace.")

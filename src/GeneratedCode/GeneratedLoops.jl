@@ -93,7 +93,8 @@ end
         stored_context = context
         initial_context = @inline _merge_runtime_inputs(context, inputs)
         runtime_inputs = @inline getruntimeinput(initial_context)
-        runtime_globals = @inline getglobals(initial_context)
+        initial_globals = @inline getglobals(initial_context)
+        runtime_globals = @inline deletekeys(initial_globals, :algo, :lifetime, :process)
         subcontexts = @inline get_subcontexts(initial_context)
         $(bindings...)
         $resume_expr
@@ -109,7 +110,8 @@ end
             end
         end
 
-        final_context = @inline withruntime_if_changed(initial_context, runtime_globals)
+        final_globals = @inline merge(initial_globals, runtime_globals)
+        final_context = @inline withruntime_if_changed(initial_context, final_globals)
         newcontext = @inline withsubcontexts(final_context, $subcontexts_expr)
         return @inline after_while(process, algo, newcontext, stored_context)
     end
@@ -140,7 +142,8 @@ end
         stored_context = context
         initial_context = @inline _merge_runtime_inputs(context, inputs)
         runtime_inputs = @inline getruntimeinput(initial_context)
-        runtime_globals = @inline getglobals(initial_context)
+        initial_globals = @inline getglobals(initial_context)
+        runtime_globals = @inline deletekeys(initial_globals, :algo, :lifetime, :process)
         subcontexts = @inline get_subcontexts(initial_context)
         $(bindings...)
         $resume_expr
@@ -154,7 +157,8 @@ end
             end
         end
 
-        final_context = @inline withruntime_if_changed(initial_context, runtime_globals)
+        final_globals = @inline merge(initial_globals, runtime_globals)
+        final_context = @inline withruntime_if_changed(initial_context, final_globals)
         newcontext = @inline withsubcontexts(final_context, $subcontexts_expr)
         return @inline after_while(process, algo, newcontext, stored_context)
     end
