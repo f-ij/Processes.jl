@@ -10,11 +10,12 @@ Execution plan that steps child algorithms on fixed intervals.
 the registry, root process states, stored context, inputs, and overrides belongs
 to the concrete `LoopAlgorithm` wrapper created by `resolve`/`init`.
 """
-struct CompositeAlgorithm{T, Intervals, Namespaces, W, id} <: AbstractLoopAlgorithm
+struct CompositeAlgorithm{T, Intervals, Namespaces, W, RuntimeSteps, id} <: AbstractLoopAlgorithm
     funcs::T
     intervals
     namespaces::Namespaces
     wiring::W
+    runtime_steps::RuntimeSteps
     inc::Base.RefValue{Int} # Runtime interval cursor.
 end
 
@@ -33,21 +34,24 @@ plain route/share wiring is stored on the plan. States and other
 non-plan options stay on the `LoopAlgorithm` wrapper.
 """
 function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
+    chunked = _constructor_chunked_loopalgorithm(CompositeAlgorithm, funcs, states, options, intervals; id)
+    isnothing(chunked) || return chunked
+
     namespaces = ntuple(_ -> Namespace{nothing}(), length(funcs))
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(funcs, options))
-    plan = CompositeAlgorithm{typeof(funcs), intervals, typeof(namespaces), typeof(wiring), id}(funcs, intervals, namespaces, wiring, Ref(1))
+    plan = CompositeAlgorithm{typeof(funcs), intervals, typeof(namespaces), typeof(wiring), Nothing, id}(funcs, intervals, namespaces, wiring, nothing, Ref(1))
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end
 
 function newfuncs(ca::CompositeAlgorithm, funcs)
     # CompositeAlgorithm{typeof(funcs), intervals(ca), typeof(ca.registry), typeof(ca.options)}(funcs, ca.inc, ca.registry , ca.options)
-    setfield(ca, :funcs, funcs)
+    return @inline clear_runtime_steps(setfield(ca, :funcs, funcs))
 end
 
 function setoptions(ca::CompositeAlgorithm, options)
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(getalgos(ca), options))
-    return setfield(ca, :wiring, wiring)
+    return @inline clear_runtime_steps(setfield(ca, :wiring, wiring))
 end
 
 subalgorithms(ca::CompositeAlgorithm) = getalgos(ca)
@@ -60,10 +64,11 @@ subalgotypes(::Type{CA}) where {FT, CA<:CompositeAlgorithm{FT}} = FT.parameters
 
 getinc(ca::CompositeAlgorithm) = getfield(ca, :inc)
 getwiring(ca::CompositeAlgorithm) = getfield(ca, :wiring)
+getruntime_steps(ca::CompositeAlgorithm) = getfield(ca, :runtime_steps)
 getoptions(ca::CompositeAlgorithm) = _all_plan_wiring(global_wiring(getwiring(ca)), child_wiring(getwiring(ca)))
 
-getid(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = id
-setid(ca::CA, id = uuid4()) where {CA<:CompositeAlgorithm} = setparameter(ca, 5, id)
+getid(ca::Union{CompositeAlgorithm{T,I,NS,W,RS,id}, Type{<:CompositeAlgorithm{T,I,NS,W,RS,id}}}) where {T,I,NS,W,RS,id} = id
+setid(ca::CA, id = uuid4()) where {CA<:CompositeAlgorithm} = setparameter(ca, 6, id)
 
 # setname(ca::CA, name::Symbol) where CA <: CompositeAlgorithm = setparameter(ca, 6, name)
 # getname(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}}}) where {T,I,NSR,O,R,id,CustomName} = CustomName
@@ -103,8 +108,8 @@ end
 # intervals(ca::C) where {C<:CompositeAlgorithm} = getfield(ca, :intervals)
 get_intervals(ca) = intervals(ca)
 
-hasid(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = !isnothing(id)
-id(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = id
+hasid(ca::Union{CompositeAlgorithm{T,I,NS,W,RS,id}, Type{<:CompositeAlgorithm{T,I,NS,W,RS,id}}}) where {T,I,NS,W,RS,id} = !isnothing(id)
+id(ca::Union{CompositeAlgorithm{T,I,NS,W,RS,id}, Type{<:CompositeAlgorithm{T,I,NS,W,RS,id}}}) where {T,I,NS,W,RS,id} = id
 
 
 

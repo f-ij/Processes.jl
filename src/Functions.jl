@@ -812,6 +812,27 @@ statically-known `NamedTuple` field.
 end
 
 """
+    replace_namedtuple_fields(nt, updates)
+
+Return a new `NamedTuple` after applying all fields from `updates`.
+
+The update names are compile-time fields, so context rebuilds can merge a
+bounded local subset without constructing each intermediate full context.
+"""
+@inline function replace_namedtuple_fields(nt::NT, updates::U) where {NT<:NamedTuple, U<:NamedTuple}
+    return replace_namedtuple_fields(nt, Val(fieldnames(U)), updates)
+end
+
+@inline @generated function replace_namedtuple_fields(nt::NT, ::Val{Names}, updates::U) where {NT<:NamedTuple, Names, U<:NamedTuple}
+    exprs = Any[:(merged = nt)]
+    for name in Names
+        push!(exprs, :(merged = @inline replace_namedtuple_field(merged, Val($(QuoteNode(name))), getproperty(updates, $(QuoteNode(name))))))
+    end
+    push!(exprs, :(return merged))
+    return Expr(:block, exprs...)
+end
+
+"""
 General replacing setfield
 """
 function _setfield_debug_message(

@@ -8,12 +8,13 @@ algorithms, repeat metadata, resume counters, and plan wiring. The runtime
 registry, root states, context, inputs, and overrides are carried by the concrete
 `LoopAlgorithm` wrapper.
 """
-struct Routine{T, Repeats, Namespaces, MV, W, id} <: AbstractLoopAlgorithm
+struct Routine{T, Repeats, Namespaces, MV, W, RuntimeSteps, id} <: AbstractLoopAlgorithm
     funcs::T     
     repeats
     namespaces::Namespaces
     resume_idxs::MV
     wiring::W
+    runtime_steps::RuntimeSteps
 end
 
 const RoutinePlan = Routine
@@ -30,26 +31,30 @@ route/share wiring is stored on the plan. Root states and other
 non-plan options remain on the `LoopAlgorithm` wrapper.
 """
 function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple, repeats; id = nothing) where F
+    chunked = _constructor_chunked_loopalgorithm(Routine, funcs, states, options, repeats; id)
+    isnothing(chunked) || return chunked
+
     namespaces = ntuple(_ -> Namespace{nothing}(), length(funcs))
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(funcs, options))
-    plan = Routine{typeof(funcs), repeats, typeof(namespaces), typeof(resume_idxs), typeof(wiring), id}(funcs, repeats, namespaces, resume_idxs, wiring)
+    plan = Routine{typeof(funcs), repeats, typeof(namespaces), typeof(resume_idxs), typeof(wiring), Nothing, id}(funcs, repeats, namespaces, resume_idxs, wiring, nothing)
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end
 
 function newfuncs(r::Routine, funcs)
-    setfield(r, :funcs, funcs)
+    return @inline clear_runtime_steps(setfield(r, :funcs, funcs))
 end
 
 function setoptions(r::Routine, options)
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(getalgos(r), options))
-    return setfield(r, :wiring, wiring)
+    return @inline clear_runtime_steps(setfield(r, :wiring, wiring))
 end
 
 @inline getalgos(r::Routine) = getfield(r, :funcs)
 @inline getalgo(r::Routine, idx) = getalgos(r)[idx]
 @inline getwiring(r::Routine) = getfield(r, :wiring)
+@inline getruntime_steps(r::Routine) = getfield(r, :runtime_steps)
 @inline getoptions(r::Routine) = _all_plan_wiring(global_wiring(getwiring(r)), child_wiring(getwiring(r)))
 @inline subalgorithms(r::Routine) = getalgos(r)
 @inline getstates(r::Routine) = ()
@@ -120,7 +125,7 @@ end
 """Return registry multiplier weights for each routine child."""
 multipliers(r::R) where {R<:Routine} = map(_routine_schedule_multiplier, lifetimes(r))
 multipliers(rT::Type{R}) where {R<:Routine} = map(_routine_schedule_multiplier, lifetimes(rT))
-getid(r::Union{Routine{T,R,NS,MV,W,id},Type{<:Routine{T,R,NS,MV,W,id}}}) where {T,R,NS,MV,W,id} = id
+getid(r::Union{Routine{T,R,NS,MV,W,RS,id},Type{<:Routine{T,R,NS,MV,W,RS,id}}}) where {T,R,NS,MV,W,RS,id} = id
 
 """Return the child lifetime schedule tuple for a routine."""
 @inline lifetimes(r::Routine) = typeof(r).parameters[2]
