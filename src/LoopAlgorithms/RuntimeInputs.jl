@@ -349,15 +349,16 @@ end
 Run an initialized loop algorithm with per-run runtime inputs. The inputs are
 validated, merged into the transient `ProcessContext._input` field for the loop
 call, and removed before the returned loop algorithm stores its next persistent
-context.
+context. Pass `looptype = RuntimeGenerated()` to force the resolve-time step
+factory loop entrypoint for diagnostics.
 """
-function Base.run(la::LA; repeats = 1, lifetime = nothing, kwargs...) where {LA<:AbstractLoopAlgorithm}
+function Base.run(la::LA; repeats = 1, lifetime = nothing, looptype::LT = sys_looptype, kwargs...) where {LA<:AbstractLoopAlgorithm, LT<:FunctionType}
     initialized = isnothing(getstoredcontext(la)) ? init(la) : la
     stored_context = getstoredcontext(initialized)
     lt = isnothing(lifetime) ? normalize_process_lifetime(initialized, repeats) : normalize_process_lifetime(initialized, lifetime)
     inputs = _validate_runtime_inputs(initialized, (; kwargs...))
     process = LoopRunProcess(lt)
-    result = loop(process, initialized, stored_context, lt, inputs)
+    result = loop(process, initialized, stored_context, lt, inputs, Resuming{false}(), looptype)
     runtime_context = result isa AbstractContext ? result : stored_context
     persistent_context = _strip_runtime_inputs(runtime_context, stored_context)
     return _with_lifecycle(initialized, persistent_context, getstoredinits(initialized), getstoredoverrides(initialized))

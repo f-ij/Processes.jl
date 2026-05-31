@@ -68,11 +68,44 @@ Run a single function in a loop indefinitely
 @inline loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple = (;), resume::Resuming = Resuming{false}()) where {P<:AbstractProcess, F, C, LT} =
     loop(process, func, context, lt, inputs, resume, sys_looptype)
 
-@inline loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, resume::Resuming, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT<:Lifetime} =
-    loop(process, func, context, lt, inputs, resume, RuntimeGenerated())
+@inline function loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT<:IndefiniteLifetime, isresuming}
+    @inline before_while(process)
 
-@inline loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, resume::Resuming, ::Generated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT<:Lifetime} =
-    loop(process, func, context, lt, inputs, resume, RuntimeGenerated())
+    step_plan = @inline getplan(func)
+    step_wiring = @inline getwiring(step_plan)
+    runtime_context = @inline _merge_runtime_inputs(context, inputs)
+    if isresuming
+        @atomic process.paused = false
+    else
+        runtime_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
+        @inline tick!(process)
+        @inline inc!(process)
+    end
+
+    while true
+        nextcontext = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
+        runtime_context = nextcontext
+        @inline tick!(process)
+        @inline inc!(process)
+        if @inline breakcondition(lt, process, runtime_context)
+            break
+        end
+    end
+
+    return @inline after_while(process, func, runtime_context, context)
+end
+
+"""
+Reject unsupported generated-loop schedules instead of crossing into another
+loop backend.
+
+`Generated()` is intentionally separate from `RuntimeGenerated()`: the generated
+backend expands the plan into the top-level loop body, while the runtime
+generated backend calls resolve-time step functions.
+"""
+@inline function loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, resume::Resuming, ::Generated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT<:Lifetime}
+    error("Generated() only supports Repeat and Indefinite lifetimes for now. Got $(typeof(lt)). Use RuntimeGenerated() explicitly for this schedule.")
+end
 
 Base.@constprop :aggressive function loop(process::P, algo::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::RuntimeGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT <: IndefiniteLifetime, isresuming}
     @inline before_while(process)
@@ -112,6 +145,41 @@ Run a single function in a loop for a given number of times
 """
 @inline loop(process::P, algo::F, context::C, r::R, inputs::NamedTuple = (;), resume::Resuming = Resuming{false}()) where {P<:AbstractProcess, F, C, R <: RepeatLifetime} =
     loop(process, algo, context, r, inputs, resume, sys_looptype)
+
+Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, R<:RepeatLifetime, isresuming}
+    @DebugMode "Running process loop for $repeats times from thread $(Threads.threadid())"
+    @assert isresolved(algo) "Algo must be resolved before running the loop. Got algo $(algo) which is not resolved."
+    @inline before_while(process)
+
+    step_plan = @inline getplan(algo)
+    step_wiring = @inline getwiring(step_plan)
+
+    runtime_context = @inline _merge_runtime_inputs(context, inputs)
+    stablecontext = if isresuming
+        @atomic process.paused = false
+        runtime_context
+    else
+        stepped_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, r, Stable())
+        @inline tick!(process)
+        @inline inc!(process)
+        stepped_context
+    end
+
+    start_idx = @inline loopidx(process)
+    end_idx = @inline repeats(r)
+
+    for _ in start_idx:end_idx
+        nextcontext = @inline _step!(step_plan, stablecontext, step_wiring, Namespace{nothing}(), process, r, Stable())
+        stablecontext = nextcontext
+        @inline tick!(process)
+        @inline inc!(process)
+        if @inline breakcondition(r, process, stablecontext)
+            break
+        end
+    end
+
+    return @inline after_while(process, algo, stablecontext, context)
+end
 
 Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R, inputs::NamedTuple, ::Resuming{isresuming}, ::RuntimeGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, R <: RepeatLifetime, isresuming}
     @DebugMode "Running process loop for $repeats times from thread $(Threads.threadid())"

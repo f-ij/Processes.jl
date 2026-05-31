@@ -79,7 +79,7 @@ end
 ) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:ProcessContext, RL<:Repeat, I<:NamedTuple, isresuming}
     if !_generated_loop_plan_supported(F)
         return quote
-            return @inline loop(process, algo, context, lifetime, inputs, resume, RuntimeGenerated())
+            error("Generated() does not support this plan tree yet. Use RuntimeGenerated() explicitly for plans with unsupported child lifetimes.")
         end
     end
     top_names, bindings, state = _generated_loop_setup(F, C)
@@ -129,7 +129,7 @@ end
 ) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:ProcessContext, LT<:Indefinite, I<:NamedTuple, isresuming}
     if !_generated_loop_plan_supported(F)
         return quote
-            return @inline loop(process, algo, context, lifetime, inputs, resume, RuntimeGenerated())
+            error("Generated() does not support this plan tree yet. Use RuntimeGenerated() explicitly for plans with unsupported child lifetimes.")
         end
     end
     top_names, bindings, state = _generated_loop_setup(F, C)

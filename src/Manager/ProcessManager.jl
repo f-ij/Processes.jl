@@ -251,9 +251,10 @@ end
 
 Run a `Process` worker synchronously in the current task and store the resulting
 runtime context back on the worker. This avoids per-job `Task` allocation for
-threaded manager jobs.
+threaded manager jobs. Pass `looptype = RuntimeGenerated()` to force the
+resolve-time step factory loop entrypoint for diagnostics.
 """
-function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, repeat = nothing, kwargs...) where {P<:Process}
+function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, repeat = nothing, looptype::LT = sys_looptype, kwargs...) where {P<:Process, LT<:FunctionType}
     @assert isidle(worker) "Process is already in use"
     @atomic worker.shouldrun = true
     @atomic worker.paused = false
@@ -272,7 +273,7 @@ function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, rep
     inputs = _validate_runtime_inputs(algo, (; kwargs...))
     base_context = _has_typed_runtime_context(worker) ? _typed_runtime_context(worker) : context(worker)
     lt = _has_typed_runtime_context(worker) ? _context_lifetime(base_context) : get(getglobals(base_context), :lifetime, Indefinite())
-    result = loop(worker, algo, base_context, lt, inputs, Resuming{false}())
+    result = loop(worker, algo, base_context, lt, inputs, Resuming{false}(), looptype)
 
     worker.lastresult = result
     result isa AbstractContext && commit_context!(worker, _strip_runtime_inputs(result, base_context))

@@ -255,8 +255,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
             _ProcessPrecompileCounter();
             lifetime = RepeatOrUntil(_ -> true, 2, :globals),
         )
-        run(until_process)
-        wait(until_process)
+        runprocessinline!(until_process; looptype = RuntimeGenerated())
         close(until_process)
 
         until_runtime_process = Process(
@@ -264,8 +263,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
             Input(_ProcessPrecompileCounter, :value => 0);
             lifetime = Until(x -> x >= 2, Var(_ProcessPrecompileCounter, :value)),
         )
-        run(until_runtime_process)
-        wait(until_runtime_process)
+        runprocessinline!(until_runtime_process; looptype = RuntimeGenerated())
         close(until_runtime_process)
 
         atleast_process = Process(
@@ -273,8 +271,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
             Input(_ProcessPrecompileCounter, :value => 0);
             lifetime = AtLeast(x -> x >= 2, 1, Var(_ProcessPrecompileCounter, :value)),
         )
-        run(atleast_process)
-        wait(atleast_process)
+        runprocessinline!(atleast_process; looptype = RuntimeGenerated())
         close(atleast_process)
 
         atleast_atmost_process = Process(
@@ -282,8 +279,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
             Input(_ProcessPrecompileCounter, :value => 0);
             lifetime = AtLeastAtMost(x -> x >= 2, 1, 3, Var(_ProcessPrecompileCounter, :value)),
         )
-        run(atleast_atmost_process)
-        wait(atleast_atmost_process)
+        runprocessinline!(atleast_atmost_process; looptype = RuntimeGenerated())
         close(atleast_atmost_process)
 
         base_process = Process(

@@ -6,12 +6,13 @@ step. The resolved wiring and namespace decide where returned values are merged.
 """
 struct OnDemandContext{Variables, Locations, W, I, G, A, N} <: AbstractContext
     variables::Variables
-    locations::Locations
-    wiring::W
     input::I
     globals::G
-    algorithm::A
-    namespace::N
+end
+
+"""Construct an on-demand context while keeping routing metadata in the type."""
+@inline function OnDemandContext(variables::Variables, locations::Locations, wiring::W, input::I, globals::G, algorithm::A, namespace::N) where {Variables, Locations, W, I, G, A, N}
+    return OnDemandContext{Variables, Locations, W, I, G, A, N}(variables, input, globals)
 end
 
 """
@@ -23,7 +24,8 @@ struct SubcontextsContext{Subcontexts, I} <: AbstractContext
 end
 
 @inline get_variables(context::OnDemandContext) = getfield(context, :variables)
-@inline get_locations(context::OnDemandContext) = getfield(context, :locations)
+@inline get_locations(context::ODC) where {ODC<:OnDemandContext} =
+    _on_demand_locations_from_type(ODC.parameters[2])
 @inline getruntimeinput(context::OnDemandContext) = getfield(context, :input)
 @inline getglobals(context::OnDemandContext) = getfield(context, :globals)
 @inline get_subcontexts(context::SubcontextsContext) = getfield(context, :subcontexts)
@@ -196,9 +198,13 @@ function _on_demand_names_for_location(::Type{ODC}, ::Type{VL}) where {ODC<:OnDe
 end
 
 @inline function Base.getproperty(context::OnDemandContext, name::Symbol)
-    if name === :variables || name === :locations || name === :wiring || name === :input || name === :globals || name === :algorithm || name === :namespace
+    if name === :variables || name === :input || name === :globals
         return getfield(context, name)
     end
+    name === :locations && return get_locations(context)
+    name === :wiring && return typeof(context).parameters[3]()
+    name === :algorithm && return typeof(context).parameters[6]
+    name === :namespace && return typeof(context).parameters[7]()
     return getproperty(context, Val(name))
 end
 
