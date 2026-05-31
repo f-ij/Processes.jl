@@ -2,9 +2,8 @@
 Old generated expression path for resolved loop algorithms.
 
 This file intentionally keeps the pre-OnDemand generated backend available
-under `_old` names. It threads the full `context` through generated `_step!`
-calls so `GeneratedOld()` can be benchmarked against the new `Generated()` and
-`RuntimeGenerated()` paths without changing their implementations.
+under `_old` names. It expands child step blocks in the top-level generated
+loop while keeping one loop-level `context` aggregate as the merge target.
 """
 
 """Return the singleton value represented by a schedule field type."""
@@ -35,32 +34,87 @@ function step!_expr_old(::Type{FA}, context::Type{C}, name::Symbol, wiringname::
     end
 end
 
+"""Return a routed variable read from the loop-level generated context."""
+function _generated_old_context_variable_value_expr(vl, context_sym::Symbol, inputs_sym::Symbol, globals_sym::Symbol)
+    target_subcontext = get_subcontextname(vl)
+    target_variables = get_originalname(vl)
+    varnames = target_variables isa Tuple ? target_variables : (target_variables,)
+    value_exprs = if target_subcontext === :_runtime
+        [:(getproperty($globals_sym, $(QuoteNode(varname)))) for varname in varnames]
+    elseif target_subcontext === :_input
+        [:(getproperty($inputs_sym, $(QuoteNode(varname)))) for varname in varnames]
+    else
+        [:(getproperty(getproperty($context_sym, $(QuoteNode(target_subcontext))), $(QuoteNode(varname)))) for varname in varnames]
+    end
+    return funcexpr(vl, value_exprs...)
+end
+
+"""Return the routed variables tuple for one block-expanded old child."""
+function _generated_old_context_variables_expr(::Type{C}, available_names::Tuple, wiring_type::Type{<:Wiring}, namespace_type::Type{<:Namespace}, context_sym::Symbol, inputs_sym::Symbol, globals_sym::Symbol) where {C<:ProcessContext}
+    subcontexts_type = _generated_step_subcontexts_type(C, available_names)
+    locations = _on_demand_locations(subcontexts_type, wiring_type, namespace_type)
+    location_type = typeof(locations)
+    names = fieldnames(location_type)
+    values = Any[_generated_old_context_variable_value_expr(getfield(locations, i), context_sym, inputs_sym, globals_sym) for i in eachindex(names)]
+    return Expr(:tuple, Expr(:parameters, (Expr(:(=), names[i], values[i]) for i in eachindex(names))...)), location_type
+end
+
+"""Build one old generated child block without calling child `_step!`."""
+function _generated_old_context_child_expr(child_type::Type, context::Type{C}, child_name::Symbol, child_wiring_type::Type, child_namespace_type::Type, stability::Symbol) where {C<:AbstractContext}
+    if child_type <: AbstractLoopAlgorithm
+        return step!_expr_old(child_type, C, child_name, nothing, stability)
+    end
+    if child_type <: Union{FuncWrapper, ProcessAlgorithm}
+        child_wiring_expr = _generated_step_wiring_value_expr(child_wiring_type)
+        child_namespace_expr = :($child_namespace_type())
+        child_available_names = get_available_subcontext_names(child_wiring_type(), child_namespace_type())
+        return _generated_old_process_algorithm_step_expr(child_type, C, child_name, child_wiring_type, child_wiring_expr, child_namespace_type, child_namespace_expr, child_available_names)
+    end
+    return step!_expr_old(child_type, C, child_name, nothing, stability)
+end
+
+"""Build the old generated leaf body that merges back into global `context`."""
+function _generated_old_process_algorithm_step_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiring_type::Type{<:Wiring}, wiring_expr, namespace_type::Type{<:Namespace}, namespace_expr, available_names::Tuple) where {T, C<:ProcessContext}
+    inputs_sym = gensym(:inputs)
+    globals_sym = gensym(:globals)
+    available_variables = gensym(:available_variables)
+    on_demand_context = gensym(:on_demand_context)
+    retval = gensym(:retval)
+    variables_expr, locations_type = _generated_old_context_variables_expr(C, available_names, wiring_type, namespace_type, :context, inputs_sym, globals_sym)
+
+    return quote
+        local $inputs_sym = @inline getruntimeinput(context)
+        local $globals_sym = @inline getglobals(context)
+        local $available_variables = $variables_expr
+        local $on_demand_context = @inline OnDemandContext($available_variables, $locations_type, $wiring_expr, $inputs_sym, $globals_sym, $funcname, $namespace_expr)
+        local $retval = @inline step!($funcname, $on_demand_context)
+        context = @inline backmerge_context_by_wiring($on_demand_context, $retval, context)
+    end
+end
+
 """Generated expression form of the old composite step."""
 function step!_expr_old(ca::Type{CA}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {CA<:CompositeAlgorithm, C<:AbstractContext}
     exprs = Any[]
     algo_count = numalgos(ca)
-    interval_type = ca.parameters[2]
+    funcs = tuple(algotypes(ca)...)
     child_namespace_tuple_type = ca.parameters[3]
     child_wiring_type = ca.parameters[4].parameters[2]
-    stability_expr = stability === :stable ? :(Stable()) : stability === :unstable ? :(Stable()) :
-        error("Unknown step!_expr_old stability $(stability). Expected :stable or :unstable.")
     sizehint!(exprs, algo_count + 4)
 
     # Read the composite cursor once so every child sees the same interval tick.
+    push!(exprs, :(local algos = @inline getalgos($name)))
     push!(exprs, :(local this_inc = @inline inc($name)))
     for i in 1:algo_count
-        interval_value = _generated_old_schedule_value(interval_type, i)
+        child_type = funcs[i]
         child_step_wiring_type = fieldtype(child_wiring_type, i)
         child_namespace_type = fieldtype(child_namespace_tuple_type, i)
         local_name = gensym(:algo)
-        local_wiring = gensym(:child_step_wiring)
-        local_namespace = gensym(:child_namespace)
+        child_expr = _generated_old_context_child_expr(child_type, C, local_name, child_step_wiring_type, child_namespace_type, stability)
         push!(exprs, quote
-            if @inline divides(this_inc, $interval_value)
-                local $local_name = @inline getalgo($name, $i)
-                local $local_wiring = $child_step_wiring_type()
-                local $local_namespace = $child_namespace_type()
-                context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime, $stability_expr)
+            local this_interval = @inline interval($name, $i)
+            if @inline divides(this_inc, this_interval)
+                local $local_name = @inline getfield(algos, $i)
+                $child_expr
             end
         end)
     end
@@ -73,30 +127,27 @@ end
 function step!_expr_old(routine::Type{R}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {R<:Routine, C<:AbstractContext}
     exprs = Any[]
     algo_count = numalgos(routine)
+    funcs = tuple(algotypes(routine)...)
     repeat_type = routine.parameters[2]
     child_namespace_tuple_type = routine.parameters[3]
     child_wiring_type = routine.parameters[5].parameters[2]
-    stability_expr = stability === :stable ? :(Stable()) : stability === :unstable ? :(Stable()) :
-        error("Unknown step!_expr_old stability $(stability). Expected :stable or :unstable.")
     sizehint!(exprs, algo_count + 3)
 
     for i in 1:algo_count
+        child_type = funcs[i]
         child_lifetime = _generated_old_schedule_value(repeat_type, i)
         child_lifetime isa Lifetime || error("Routine schedules must be `Lifetime` values after construction. Got $(typeof(child_lifetime)).")
         child_step_wiring_type = fieldtype(child_wiring_type, i)
         child_namespace_type = fieldtype(child_namespace_tuple_type, i)
         local_name = gensym(:algo)
-        local_wiring = gensym(:child_step_wiring)
-        local_namespace = gensym(:child_namespace)
+        child_expr = _generated_old_context_child_expr(child_type, C, local_name, child_step_wiring_type, child_namespace_type, stability)
 
         push!(exprs, quote
             local $local_name = @inline getalgo($name, $i)
-            local $local_wiring = $child_step_wiring_type()
-            local $local_namespace = $child_namespace_type()
             local _subroutine_lifetime = $child_lifetime
             local _routine_repeat_count = @inline routine_repeat_count(_subroutine_lifetime)
             if resume_idx($name, $i) <= _routine_repeat_count
-                context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime, $stability_expr)
+                $child_expr
                 @inline tick!(process)
 
                 local _routine_next_idx = resume_idx($name, $i) + 1
@@ -115,7 +166,7 @@ function step!_expr_old(routine::Type{R}, context::Type{C}, name::Symbol, wiring
                         end
                         return context
                     end
-                    context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime, $stability_expr)
+                    $child_expr
                     @inline tick!(process)
                 end
             end
@@ -127,12 +178,5 @@ end
 
 """Fallback old expression form for concrete non-plan algorithms."""
 function step!_expr_old(::Type{T}, ::Type{C}, funcname::Symbol, wiringname::Symbol, stability::Symbol) where {T, C<:AbstractContext}
-    stability_expr = if stability === :stable
-        :(Stable())
-    elseif stability === :unstable
-        :(Stable())
-    else
-        error("Unknown step!_expr_old stability $(stability). Expected :stable or :unstable.")
-    end
-    return :(context = @inline _step!($funcname, context, $wiringname, Namespace{nothing}(), process, lifetime, $stability_expr))
+    error("GeneratedOld block expansion requires concrete child wiring and namespace types. Got child type $(T).")
 end

@@ -109,3 +109,147 @@ For the 3D Graph optimized LLVM, this direct stable backmerge did not change the
 I also tested carrying a `subcontexts` aggregate through the Generated loop while still exposing top-level subcontext names to child blocks. That also optimized to the same LLVM shape, so I reverted that experiment rather than keeping a source-level change with no codegen effect.
 
 So the remaining gap is not fixed by replacing the local patch merge alone. The next likely experiment would need to be more structural, probably making the Generated path deliberately preserve a whole-context or whole-subcontexts aggregate shape closer to `NonGenerated()`. That should be discussed before changing because it pushes against the current design constraint that the generated loop body should avoid a full `context` inside the loop.
+
+## GeneratedOld Check
+
+I added and dumped the old full-context generated path as `GeneratedOld()`:
+
+- `diagnostics/llvm/3d_graph_generatedold.ll`
+- `diagnostics/llvm/3d_graph_generatedold_after_plan.ll`
+- `diagnostics/llvm/3d_graph_generatedold_after_runtime_interval.ll`
+- `diagnostics/llvm/3d_graph_generatedold_nongenerated_ref.ll`
+
+The first two attempted source nudges did not change optimized LLVM for this workload:
+
+- Bind `step_plan = getplan(algo)` in the generated loop and expand `step!_expr_old` from the plan type instead of the root `LoopAlgorithm` type.
+- Make the old composite expression load `algos` and `interval(plan, i)` from the plan value, matching `NonGenerated()` instead of embedding interval values from type data.
+
+The optimized counts stayed identical for `GeneratedOld()` after both changes:
+
+| path | lines | call | br | load | store | getelementptr | alloca | memcpy |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `GeneratedOld()` | 1574 | 153 | 73 | 174 | 249 | 364 | 49 | 78 |
+| `NonGenerated()` reference | 1491 | 125 | 73 | 171 | 231 | 338 | 43 | 56 |
+
+The arithmetic/control-flow shape is basically the same as `NonGenerated()` for this case, but the aggregate state is worse:
+
+`GeneratedOld()`:
+
+| size | count |
+| ---: | ---: |
+| 7 | 18 |
+| 16 | 6 |
+| 24 | 4 |
+| 32 | 18 |
+| 56 | 8 |
+| 64 | 9 |
+| 80 | 2 |
+| 88 | 2 |
+| 96 | 9 |
+| 112 | 2 |
+
+`NonGenerated()` reference:
+
+| size | count |
+| ---: | ---: |
+| 7 | 14 |
+| 16 | 11 |
+| 24 | 4 |
+| 56 | 5 |
+| 80 | 5 |
+| 88 | 2 |
+| 96 | 7 |
+| 104 | 8 |
+
+The main SROA difference is that `GeneratedOld()` splits the context/subcontext tail into separate 32-, 64-, and 32-byte pieces:
+
+- `new::NamedTuple.sroa.0.sroa.5`
+- `new::NamedTuple.sroa.0.sroa.5.144.sroa_idx`
+- `new::NamedTuple.sroa.0.sroa.5.208.sroa_idx`
+- matching loop-carried copies such as `%.sroa.0.sroa.11`, `%.sroa.0.sroa.12`, and `%.sroa.0.sroa.13`
+
+The `NonGenerated()` reference keeps the analogous region coalesced as a 16-byte piece plus a 104-byte piece:
+
+- `new::NamedTuple.sroa.0.sroa.5.8..sroa_idx`
+- `new::NamedTuple.sroa.5.128..sroa_idx`
+- matching loop-carried copies such as `%.sroa.0775.sroa.0.sroa.11` and `%.sroa.0775.sroa.12.sroa.0`
+
+So `GeneratedOld()` is not recovering the old merge quality just by using the whole-context `_step!` calls inside a fully generated loop. The likely reason is the fully spliced generated block changes LLVM's SROA partitioning compared with the separate generated `_step!` function boundary used by `NonGenerated()`. A more aggressive experiment would be to make `GeneratedOld()` call the plan `_step!` function directly from the generated loop, but that is structurally much closer to `NonGenerated()` than to the revived old fully-expanded generated path, so I did not make that change without discussion.
+
+## GeneratedOld Global-Context Block Merge
+
+I then changed `GeneratedOld()` to avoid concrete child `_step!` calls. The path now expands child blocks directly, builds an `OnDemandContext` for the leaf, calls the public `step!(algo, context)` extension point, and merges the child return into one loop-level `context` variable.
+
+Two merge forms were tested:
+
+- `3d_graph_generatedold_global_context.ll`: merge the returned child patch through the existing context merge helpers.
+- `3d_graph_generatedold_global_context_direct.ll`: merge by directly rebuilding updated `SubContext` values and calling `withsubcontexts` once, with no widening or type-changing writes allowed.
+
+Both optimized to the same LLVM for this workload:
+
+| path | lines | call | br | load | store | getelementptr | alloca | memcpy |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| previous `GeneratedOld()` | 1574 | 153 | 73 | 174 | 249 | 364 | 49 | 78 |
+| global-context block merge | 3367 | 345 | 115 | 275 | 927 | 924 | 55 | 154 |
+| `NonGenerated()` reference | 1491 | 125 | 73 | 171 | 231 | 338 | 43 | 56 |
+
+The global-context block form is therefore much worse for this case. It keeps the semantic shape requested for the experiment, but LLVM does not turn it into the old `NonGenerated()` merge shape. Instead, the repeated context rebuild inside the fully expanded block creates substantially more aggregate traffic:
+
+| size | count |
+| ---: | ---: |
+| 7 | 19 |
+| 16 | 34 |
+| 24 | 32 |
+| 32 | 20 |
+| 40 | 14 |
+| 56 | 9 |
+| 64 | 10 |
+| 80 | 2 |
+| 88 | 2 |
+| 96 | 10 |
+| 112 | 2 |
+
+So the global-context block-write idea did not nudge the generated code toward `NonGenerated()`. It suggests that simply preserving a single source-level `context` name is not enough; in the fully expanded generated loop, each merge still materializes as a large context reconstruction site before LLVM can coalesce it.
+
+## RuntimeGenerated Full-Context Check
+
+I overwrote `RuntimeGenerated()` to keep the runtime-generated function
+boundaries, but changed the generated step contract:
+
+- The generated function signature passes the plan or child, the full
+  `ProcessContext`, process, and lifetime.
+- Child wiring and namespaces are embedded in the generated function body.
+- Concrete children use the old `SubContextView` machinery through `_step!`.
+- The loop no longer extracts top-level subcontexts or carries patch-returning
+  steps.
+- The root step is owned by the resolved `algo` and is called as
+  `generated_callfunc(step, algo, context, process, lifetime)`. The generated
+  function gets its plan from the algo.
+
+For 3D Graph, this did not recover the old `NonGenerated()` shape:
+
+| path | lines | call | br | load | store | getelementptr | alloca | memcpy |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `NonGenerated()` reference | 1491 | 125 | 73 | 171 | 231 | 338 | 43 | 56 |
+| `RuntimeGenerated()` | 1208 | 107 | 45 | 151 | 206 | 338 | 33 | 65 |
+| full-context `RuntimeGenerated()` | 1217 | 112 | 45 | 151 | 206 | 341 | 34 | 70 |
+
+Memcpy sizes for full-context `RuntimeGenerated()`:
+
+| size | count |
+| ---: | ---: |
+| 7 | 14 |
+| 16 | 5 |
+| 24 | 4 |
+| 32 | 18 |
+| 56 | 8 |
+| 64 | 9 |
+| 80 | 1 |
+| 88 | 1 |
+| 96 | 9 |
+| 112 | 1 |
+
+This is much closer to the patch/subcontext `RuntimeGenerated()` than to
+`NonGenerated()`. The old view machinery and full-context function signature are
+not enough by themselves; the function boundary still does not produce the
+`NonGenerated()` coalesced `104`-byte merge chunks for this case.

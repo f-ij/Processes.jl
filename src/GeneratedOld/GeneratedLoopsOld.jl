@@ -16,8 +16,9 @@ generated loop body.
     ::Resuming{isresuming},
     ::GeneratedOld,
 ) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:AbstractContext, RL<:RepeatLifetime, I<:NamedTuple, isresuming}
-    first_step_expr = step!_expr_old(F, C, :algo, :step_wiring, :unstable)
-    for_step_expr = step!_expr_old(F, C, :algo, :step_wiring, :stable)
+    Plan = getplan(F)
+    first_step_expr = step!_expr_old(Plan, C, :step_plan, :step_wiring, :unstable)
+    for_step_expr = step!_expr_old(Plan, C, :step_plan, :step_wiring, :stable)
 
     bootstrap_expr = if isresuming
         quote
@@ -34,7 +35,8 @@ generated loop body.
     return quote
         @inline before_while(process)
         stored_context = context
-        step_wiring = @inline getwiring(algo)
+        step_plan = @inline getplan(algo)
+        step_wiring = @inline getwiring(step_plan)
         context = @inline _merge_runtime_inputs(context, inputs)
         $bootstrap_expr
 
@@ -62,8 +64,9 @@ end
     ::Resuming{isresuming},
     ::GeneratedOld,
 ) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:AbstractContext, LT<:IndefiniteLifetime, I<:NamedTuple, isresuming}
-    unstable_step_expr = step!_expr_old(F, C, :func, :step_wiring, :unstable)
-    stable_step_expr = step!_expr_old(F, C, :func, :step_wiring, :stable)
+    Plan = getplan(F)
+    unstable_step_expr = step!_expr_old(Plan, C, :step_plan, :step_wiring, :unstable)
+    stable_step_expr = step!_expr_old(Plan, C, :step_plan, :step_wiring, :stable)
     bootstrap_expr = if isresuming
         quote
             @atomic process.paused = false
@@ -79,7 +82,8 @@ end
     return quote
         @inline before_while(process)
         stored_context = context
-        step_wiring = @inline getwiring(func)
+        step_plan = @inline getplan(func)
+        step_wiring = @inline getwiring(step_plan)
         context = @inline _merge_runtime_inputs(context, inputs)
         $bootstrap_expr
 

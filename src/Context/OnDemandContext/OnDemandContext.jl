@@ -278,6 +278,17 @@ end
 @inline backmerge_subcontext_by_wiring(context::OnDemandContext, ::Nothing, ::Val{name}, subcontext::S) where {name, S} =
     subcontext
 
+"""Merge one generated block return into the loop-level `ProcessContext`.
+
+This is used by generated block paths that keep a single context aggregate live
+through the loop. Returned runtime values update `_runtime`; returned
+subcontext values must update existing fields without changing their concrete
+types.
+"""
+@inline function backmerge_context_by_wiring(context::ODC, ::Nothing, process_context::PC) where {ODC<:OnDemandContext, PC<:ProcessContext}
+    return process_context
+end
+
 """Return whether unlocated child return values should be written to runtime state."""
 @inline _merge_unlocated_returns_to_runtime(::Type{T}) where {T} = nameof(T) === :FuncWrapper
 
@@ -396,6 +407,75 @@ end
     return quote
         return @inline merge(subcontext, $patch_expr)
     end
+end
+
+"""Merge one generated block return into the loop-level `ProcessContext`."""
+@inline @generated function backmerge_context_by_wiring(context::ODC, retval::R, process_context::PC) where {ODC<:OnDemandContext, R<:NamedTuple, PC<:ProcessContext}
+    A = ODC.parameters[6]
+    local_names = _namespace_names(ODC.parameters[7])
+    isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
+    local_subcontext = first(local_names)
+    subcontext_type = PC.parameters[1]
+    subcontext_names = fieldnames(subcontext_type)
+
+    updates = Dict{Symbol, Dict{Symbol, Expr}}()
+    runtime_fields = Expr[]
+    for retval_name in fieldnames(R)
+        location, subcontext_name = _on_demand_location(ODC, retval_name)
+        target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
+        target_variable = isnothing(location) ? subcontext_name : get_originalname(location)
+        target_variable isa Symbol || error("Algorithm returned $(retval_name), which maps to multiple target variables $(target_variable). Inverse transform merges are not supported.")
+        if target_subcontext == :_runtime || (isnothing(location) && _merge_unlocated_returns_to_runtime(A))
+            push!(runtime_fields, Expr(:(=), target_variable, :(getproperty(retval, $(QuoteNode(retval_name))))))
+            continue
+        end
+
+        target_subcontext in subcontext_names || error("Generated block return writes to unknown subcontext $(target_subcontext). Available subcontexts are $(subcontext_names).")
+        target_data_type = getdatatype(fieldtype(subcontext_type, target_subcontext))
+        target_variable in fieldnames(target_data_type) || error("Generated block return would widen subcontext $(target_subcontext) with $(target_variable). Widening is disallowed on this path.")
+        fieldtype(R, retval_name) === fieldtype(target_data_type, target_variable) || error("Generated block return changes $(target_subcontext).$(target_variable) from $(fieldtype(target_data_type, target_variable)) to $(fieldtype(R, retval_name)). Type-changing writes are disallowed on this path.")
+
+        replacements = get!(updates, target_subcontext, Dict{Symbol, Expr}())
+        replacements[target_variable] = :(getproperty(retval, $(QuoteNode(retval_name))))
+    end
+
+    merge_exprs = Any[:(_updated_context = process_context)]
+    if !isempty(runtime_fields)
+        runtime_patch_expr = Expr(:tuple, Expr(:parameters, runtime_fields...))
+        push!(merge_exprs, :(_updated_context = @inline withruntime_if_changed(_updated_context, @inline merge_ondemand_runtime(context, $runtime_patch_expr))))
+    end
+
+    if !isempty(updates)
+        old_subcontexts = gensym(:old_subcontexts)
+        push!(merge_exprs, :(local $old_subcontexts = @inline get_subcontexts(_updated_context)))
+        subcontext_value_exprs = Any[]
+        for subcontext_name in subcontext_names
+            old_subcontext_expr = :(getproperty($old_subcontexts, $(QuoteNode(subcontext_name))))
+            if haskey(updates, subcontext_name)
+                old_subcontext = gensym(:old_subcontext)
+                data_type = getdatatype(fieldtype(subcontext_type, subcontext_name))
+                data_names = fieldnames(data_type)
+                replacements = updates[subcontext_name]
+                data_values = Any[
+                    haskey(replacements, data_name) ?
+                        replacements[data_name] :
+                        :(getproperty($old_subcontext, $(QuoteNode(data_name))))
+                    for data_name in data_names
+                ]
+                data_expr = :(NamedTuple{$data_names}(($(data_values...),)))
+                push!(merge_exprs, quote
+                    local $old_subcontext = $old_subcontext_expr
+                end)
+                push!(subcontext_value_exprs, :(@inline withdata($old_subcontext, $data_expr)))
+            else
+                push!(subcontext_value_exprs, old_subcontext_expr)
+            end
+        end
+        new_subcontexts_expr = :(NamedTuple{$subcontext_names}(($(subcontext_value_exprs...),)))
+        push!(merge_exprs, :(_updated_context = @inline withsubcontexts(_updated_context, $new_subcontexts_expr)))
+    end
+    push!(merge_exprs, :(return _updated_context))
+    return Expr(:block, merge_exprs...)
 end
 
 """Merge a generated child return directly into the active subcontext tuple."""

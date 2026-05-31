@@ -153,18 +153,8 @@ then enters the same `_step!` chain used by `run`.
 @inline function _step!(la::LA, context::C, typestable::S = Stable()) where {LA<:AbstractLoopAlgorithm, C<:AbstractContext, S<:Stability}
     lifetime = get(getglobals(context), :lifetime, Indefinite())
     process = LoopRunProcess(lifetime)
-    plan = @inline getplan(la)
     plan_step = @inline get_step(la)
-    available_names_val = @inline step_available_names_val(la)
-    all_subcontexts = @inline get_subcontexts(context)
-    active_subcontexts = @inline select_subcontexts(all_subcontexts, available_names_val)
-    runtime_globals = @inline getglobals(context)
-    returned = @inline RuntimeGeneratedFunctions.generated_callfunc(plan_step, plan, process, lifetime, runtime_globals, getruntimeinput(context), active_subcontexts...)
-    returned_subcontexts = @inline deletekeys(returned, :globals)
-    runtime_globals = @inline getproperty(returned, :globals)
-    subcontexts = @inline merge_subcontexts_by_name(all_subcontexts, returned_subcontexts)
-    stepped_context = @inline withsubcontexts(context, subcontexts)
-    return @inline withruntime_if_changed(stepped_context, runtime_globals)
+    return @inline RuntimeGeneratedFunctions.generated_callfunc(plan_step, la, context, process, lifetime)
 end
 
 """

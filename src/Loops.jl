@@ -110,34 +110,22 @@ end
 Base.@constprop :aggressive function loop(process::P, algo::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::RuntimeGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT <: IndefiniteLifetime, isresuming}
     @inline before_while(process)
 
-    step_plan = @inline getplan(algo)
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
-    runtime_inputs = @inline getruntimeinput(runtime_context)
-    runtime_globals = @inline getglobals(runtime_context)
-    subcontexts = @inline get_subcontexts(runtime_context)
     if isresuming
         @atomic process.paused = false
     end
 
-    generated_plan_step = @inline get_step(algo)
-    available_names_val = @inline step_available_names_val(algo)
+    generated_context_step = @inline get_step(algo)
     while true
-        active_subcontexts = @inline select_subcontexts(subcontexts, available_names_val)
-        returned = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_plan_step, step_plan, process, lt, runtime_globals, runtime_inputs, active_subcontexts...)
-        runtime_globals = @inline getproperty(returned, :globals)
-        returned_subcontexts = @inline deletekeys(returned, :globals)
-        subcontexts = @inline merge_subcontexts_by_name(subcontexts, returned_subcontexts)
-        runtime_context = @inline withruntime_if_changed(runtime_context, runtime_globals)
+        runtime_context = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_context_step, algo, runtime_context, process, lt)
         @inline tick!(process)
         @inline inc!(process)
-        break_context = @inline withsubcontexts(runtime_context, subcontexts)
-        if @inline breakcondition(lt, process, break_context)
+        if @inline breakcondition(lt, process, runtime_context)
             break
         end
     end
 
-    newcontext = @inline withsubcontexts(runtime_context, subcontexts)
-    return @inline after_while(process, algo, newcontext, context)
+    return @inline after_while(process, algo, runtime_context, context)
 end
 
 """
@@ -186,40 +174,24 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     @assert isresolved(algo) "Algo must be resolved before running the loop. Got algo $(algo) which is not resolved."
     @inline before_while(process)
     
-    step_plan = @inline getplan(algo)
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
-    runtime_inputs = @inline getruntimeinput(runtime_context)
-    runtime_globals = @inline getglobals(runtime_context)
-    subcontexts = @inline get_subcontexts(runtime_context)
     if isresuming
         @atomic process.paused = false
     end
     
-    # Top level step gets all available subcontexts.
-    generated_plan_step = @inline get_step(algo)
-    available_names_val = @inline step_available_names_val(algo)
+    generated_context_step = @inline get_step(algo)
     start_idx = @inline loopidx(process)
     end_idx = @inline repeats(r)
 
     for _ in start_idx:end_idx
-        # Top level algo always gets all available subcontexts
-        active_subcontexts = @inline select_subcontexts(subcontexts, available_names_val)
-        returned = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_plan_step, step_plan, process, r, runtime_globals, runtime_inputs, active_subcontexts...)
-        runtime_globals = @inline getproperty(returned, :globals)
-        returned_subcontexts = @inline deletekeys(returned, :globals)
-        subcontexts = @inline merge_subcontexts_by_name(subcontexts, returned_subcontexts)
-        runtime_context = @inline withruntime_if_changed(runtime_context, runtime_globals)
+        runtime_context = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_context_step, algo, runtime_context, process, r)
         @inline tick!(process)
         @inline inc!(process)
-        # TODO Breakcondition needs to read directly from the subcontexts, as a namedtuple, instead of the whole context
-        break_context = @inline withsubcontexts(runtime_context, subcontexts)
-        if @inline breakcondition(r, process, break_context)
+        if @inline breakcondition(r, process, runtime_context)
             break
         end
 
     end
-    # TODO generate newcontext here from the new subcontexts
-    newcontext = @inline withsubcontexts(runtime_context, subcontexts)
 
-    return @inline after_while(process, algo, newcontext, context)
+    return @inline after_while(process, algo, runtime_context, context)
 end
