@@ -77,19 +77,21 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, lt::L
     step_plan = @inline getplan(algo)
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
     runtime_inputs = @inline getruntimeinput(runtime_context)
-    runtime_ref = Ref{Any}(@inline getglobals(runtime_context))
+    runtime_globals = @inline getglobals(runtime_context)
     subcontexts = @inline get_subcontexts(runtime_context)
     if isresuming
         @atomic process.paused = false
     end
 
     generated_plan_step = @inline get_step(algo)
-    available_names = @inline step_available_names(algo)
+    available_names_val = @inline step_available_names_val(algo)
     while true
-        active_subcontexts = @inline select_subcontexts(subcontexts, Val(available_names))
-        returned_subcontexts = @inline generated_plan_step(step_plan, process, lt, runtime_ref, runtime_inputs, active_subcontexts...)
+        active_subcontexts = @inline select_subcontexts(subcontexts, available_names_val)
+        returned = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_plan_step, step_plan, process, lt, runtime_globals, runtime_inputs, active_subcontexts...)
+        runtime_globals = @inline getproperty(returned, :globals)
+        returned_subcontexts = @inline deletekeys(returned, :globals)
         subcontexts = @inline merge_subcontexts_by_name(subcontexts, returned_subcontexts)
-        runtime_context = @inline withruntime(runtime_context, runtime_ref[])
+        runtime_context = @inline withruntime_if_changed(runtime_context, runtime_globals)
         @inline tick!(process)
         @inline inc!(process)
         break_context = @inline withsubcontexts(runtime_context, subcontexts)
@@ -116,7 +118,7 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     step_plan = @inline getplan(algo)
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
     runtime_inputs = @inline getruntimeinput(runtime_context)
-    runtime_ref = Ref{Any}(@inline getglobals(runtime_context))
+    runtime_globals = @inline getglobals(runtime_context)
     subcontexts = @inline get_subcontexts(runtime_context)
     if isresuming
         @atomic process.paused = false
@@ -124,16 +126,18 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     
     # Top level step gets all available subcontexts.
     generated_plan_step = @inline get_step(algo)
-    available_names = @inline step_available_names(algo)
+    available_names_val = @inline step_available_names_val(algo)
     start_idx = @inline loopidx(process)
     end_idx = @inline repeats(r)
 
     for _ in start_idx:end_idx
         # Top level algo always gets all available subcontexts
-        active_subcontexts = @inline select_subcontexts(subcontexts, Val(available_names))
-        returned_subcontexts = @inline generated_plan_step(step_plan, process, r, runtime_ref, runtime_inputs, active_subcontexts...)
+        active_subcontexts = @inline select_subcontexts(subcontexts, available_names_val)
+        returned = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_plan_step, step_plan, process, r, runtime_globals, runtime_inputs, active_subcontexts...)
+        runtime_globals = @inline getproperty(returned, :globals)
+        returned_subcontexts = @inline deletekeys(returned, :globals)
         subcontexts = @inline merge_subcontexts_by_name(subcontexts, returned_subcontexts)
-        runtime_context = @inline withruntime(runtime_context, runtime_ref[])
+        runtime_context = @inline withruntime_if_changed(runtime_context, runtime_globals)
         @inline tick!(process)
         @inline inc!(process)
         # TODO Breakcondition needs to read directly from the subcontexts, as a namedtuple, instead of the whole context

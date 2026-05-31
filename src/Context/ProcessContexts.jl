@@ -67,6 +67,15 @@ This is the package-local replacement for `@set pc._runtime = runtime`.
 end
 
 """
+    withruntime_if_changed(pc, runtime)
+
+Keep the existing `ProcessContext` when runtime globals are unchanged.
+"""
+@inline function withruntime_if_changed(pc::PC, runtime::R) where {PC<:ProcessContext, R<:NamedTuple}
+    return runtime === getglobals(pc) ? pc : (@inline withruntime(pc, runtime))
+end
+
+"""
     withsubcontexts(pc, subcontexts)
 
 Return an immutable `ProcessContext` rebuild with updated subcontexts. This is

@@ -4,6 +4,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 using Printf
 using Test
 using Processes
+using RuntimeGeneratedFunctions
 
 const SCALAR_DEPENDENCY_STEPS = parse(Int, get(ENV, "SCALAR_DEPENDENCY_STEPS", "100000"))
 const SCALAR_DEPENDENCY_TRIALS = parse(Int, get(ENV, "SCALAR_DEPENDENCY_TRIALS", "100"))
@@ -248,40 +249,31 @@ function scalar_dependency_plain(steps::I) where {I<:Integer}
     )
 end
 
-"""Run the dependency workload through the direct plan entrypoint."""
-function scalar_dependency_direct_plan_loop(process::IP) where {IP<:Processes.InlineProcess}
-    algo = Processes.getalgo(process)
-    lifetime = Processes.lifetime(process)
-    plan = Processes.getplan(algo)
-    wiring = Processes.getwiring(plan)
-    context = Processes.context(process)
-
-    context = Processes._step!(
-        plan,
-        context,
-        wiring,
-        Processes.Namespace{nothing}(),
-        process,
-        lifetime,
-        Processes.Unstable(),
-    )
-    Processes.inc!(process)
+"""Run the dependency workload through the resolved root-step entrypoint."""
+Base.@constprop :aggressive function scalar_dependency_direct_plan_loop(process::IP) where {IP<:Processes.InlineProcess}
+    algo = @inline Processes.getalgo(process)
+    lifetime = @inline Processes.lifetime(process)
+    plan = @inline Processes.getplan(algo)
+    context = @inline Processes._merge_runtime_inputs(Processes.context(process), (;))
+    runtime_inputs = @inline Processes.getruntimeinput(context)
+    runtime_globals = @inline Processes.getglobals(context)
+    subcontexts = @inline Processes.get_subcontexts(context)
+    generated_plan_step = @inline Processes.get_step(algo)
+    available_names_val = @inline Processes.step_available_names_val(algo)
 
     for _ in Processes.loopidx(process):Processes.repeats(lifetime)
-        context = Processes._step!(
-            plan,
-            context,
-            wiring,
-            Processes.Namespace{nothing}(),
-            process,
-            lifetime,
-            Processes.Stable(),
-        )
-        Processes.inc!(process)
-        Processes.breakcondition(lifetime, process, context) && break
+        active_subcontexts = @inline Processes.select_subcontexts(subcontexts, available_names_val)
+        returned = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_plan_step, plan, process, lifetime, runtime_globals, runtime_inputs, active_subcontexts...)
+        runtime_globals = @inline getproperty(returned, :globals)
+        returned_subcontexts = @inline Processes.deletekeys(returned, :globals)
+        subcontexts = @inline Processes.merge_subcontexts_by_name(subcontexts, returned_subcontexts)
+        context = @inline Processes.withruntime_if_changed(context, runtime_globals)
+        @inline Processes.inc!(process)
+        break_context = @inline Processes.withsubcontexts(context, subcontexts)
+        @inline Processes.breakcondition(lifetime, process, break_context) && break
     end
 
-    return context
+    return @inline Processes.withsubcontexts(context, subcontexts)
 end
 
 """Run the dependency workload through `Processes.loop` for an already reset inline process."""

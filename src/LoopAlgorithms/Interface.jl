@@ -155,14 +155,16 @@ then enters the same `_step!` chain used by `run`.
     process = LoopRunProcess(lifetime)
     plan = @inline getplan(la)
     plan_step = @inline get_step(la)
-    available_names = @inline step_available_names(la)
+    available_names_val = @inline step_available_names_val(la)
     all_subcontexts = @inline get_subcontexts(context)
-    active_subcontexts = @inline select_subcontexts(all_subcontexts, Val(available_names))
-    runtime_ref = Ref{Any}(@inline getglobals(context))
-    returned_subcontexts = @inline plan_step(plan, process, lifetime, runtime_ref, getruntimeinput(context), active_subcontexts...)
+    active_subcontexts = @inline select_subcontexts(all_subcontexts, available_names_val)
+    runtime_globals = @inline getglobals(context)
+    returned = @inline RuntimeGeneratedFunctions.generated_callfunc(plan_step, plan, process, lifetime, runtime_globals, getruntimeinput(context), active_subcontexts...)
+    returned_subcontexts = @inline deletekeys(returned, :globals)
+    runtime_globals = @inline getproperty(returned, :globals)
     subcontexts = @inline merge_subcontexts_by_name(all_subcontexts, returned_subcontexts)
     stepped_context = @inline withsubcontexts(context, subcontexts)
-    return @inline withruntime(stepped_context, runtime_ref[])
+    return @inline withruntime_if_changed(stepped_context, runtime_globals)
 end
 
 """

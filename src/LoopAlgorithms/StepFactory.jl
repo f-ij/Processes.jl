@@ -92,6 +92,20 @@ end
 @inline step_available_names(la::LoopAlgorithm) = step_available_names(getplan(la))
 @inline step_available_names(fa::FinalizedAlgorithm) = step_available_names(inneralgorithm(fa))
 
+"""Return the root-step subcontext names as a concrete `Val` when the step is typed."""
+@inline @generated function step_available_names_val(la::LA) where {LA<:LoopAlgorithm}
+    RootStep = LA.parameters[2]
+    if RootStep <: RuntimeGeneratedFunction && length(RootStep.parameters) >= 1
+        argnames = RootStep.parameters[1]
+        subcontext_names = argnames[6:end]
+        return :(Val{$subcontext_names}())
+    end
+    return :(Val(step_available_names(la)))
+end
+
+@inline step_available_names_val(fa::FinalizedAlgorithm) = step_available_names_val(inneralgorithm(fa))
+@inline step_available_names_val(plan::Union{CompositeAlgorithm, Routine}) = Val(step_available_names(plan))
+
 """Generate a child step for either a concrete child or a nested plan child."""
 function generate_child_step(child::A, thiswiring::W, namespace::N) where {A, W<:Wiring, N<:Namespace}
     return generate_process_algorithm_step(thiswiring, namespace)
@@ -123,6 +137,13 @@ function _subcontexts_tuple_expr(names::Tuple)
     return Expr(:tuple, Expr(:parameters, (Expr(:(=), name, name) for name in names)...))
 end
 
+"""Return the generated step result with globals first and subcontexts splatted."""
+function _step_return_expr(names::Tuple)
+    fields = Any[Expr(:(=), :globals, :_globals)]
+    append!(fields, (Expr(:(=), name, name) for name in names))
+    return Expr(:tuple, Expr(:parameters, fields...))
+end
+
 """Generate child call expressions for a composite plan step."""
 function _composite_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings::Tuple, namespaces::Tuple, interval_values::Tuple)
     exprs = Any[]
@@ -132,13 +153,14 @@ function _composite_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings
         update_exprs = Any[]
         for child_subcontext_name in child_subcontext_names
             child_subcontext_name in parent_names || continue
-            push!(update_exprs, :($child_subcontext_name = @inline getproperty(_returned_subcontexts, $(QuoteNode(child_subcontext_name)))))
+            push!(update_exprs, :($child_subcontext_name = @inline getproperty(_returned, $(QuoteNode(child_subcontext_name)))))
         end
         push!(exprs, quote
             if @inline divides(_this_inc, $(interval_values[i]))
                 _child_algo = @inline getalgo(_plan, $i)
                 _child_step = @inline get_child_step(_plan, $i)
-                _returned_subcontexts = @inline _child_step(_child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
+                _returned = @inline RuntimeGeneratedFunctions.generated_callfunc(_child_step, _child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
+                _globals = @inline getproperty(_returned, :globals)
                 $(update_exprs...)
             end
         end)
@@ -156,7 +178,7 @@ function _routine_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings::
         update_exprs = Any[]
         for child_subcontext_name in child_subcontext_names
             child_subcontext_name in parent_names || continue
-            push!(update_exprs, :($child_subcontext_name = @inline getproperty(_returned_subcontexts, $(QuoteNode(child_subcontext_name)))))
+            push!(update_exprs, :($child_subcontext_name = @inline getproperty(_returned, $(QuoteNode(child_subcontext_name)))))
         end
         push!(exprs, quote
             # Wiring should have a getindex method that returns the appropriate wiring for the child algorithm, 
@@ -179,7 +201,8 @@ function _routine_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings::
                     _child_step = @inline get_child_step(_plan, _this_child_idx)
 
                     # call the child step with the appropriate arguments, including the available subcontexts for this child
-                    _returned_subcontexts = @inline _child_step(_child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
+                    _returned = @inline RuntimeGeneratedFunctions.generated_callfunc(_child_step, _child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
+                    _globals = @inline getproperty(_returned, :globals)
                     $(update_exprs...)
                     @inline tick!(_process)
                 end
@@ -219,7 +242,7 @@ function generate_plan_step(plan::P, this_plan_wiring::W = getwiring(plan), name
     this_available_subcontexts_from_parent = get_available_subcontext_names(plan, this_plan_wiring, namespaces)
     subcontext_args = _subcontext_arg_exprs(this_available_subcontexts_from_parent)
     subcontext_typevars = _subcontext_typevars(this_available_subcontexts_from_parent)
-    return_expr = _subcontexts_tuple_expr(this_available_subcontexts_from_parent)
+    step_return_expr = _step_return_expr(this_available_subcontexts_from_parent)
     funcs = getalgos(plan)
     child_wirings = child_wiring(this_plan_wiring)
     if plan isa CompositeAlgorithm
@@ -244,7 +267,7 @@ function generate_plan_step(plan::P, this_plan_wiring::W = getwiring(plan), name
             $(plan_prelude...)
             $(child_exprs...)
             $(plan_epilogue...)
-            return $return_expr
+            return $step_return_expr
         end
     end
 

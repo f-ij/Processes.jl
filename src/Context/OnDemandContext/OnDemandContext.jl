@@ -24,9 +24,7 @@ end
 
 @inline get_subcontexts(context::OnDemandContext) = getfield(context, :subcontexts)
 @inline getruntimeinput(context::OnDemandContext) = getfield(context, :input)
-@inline _runtime_value(runtime) = runtime
-@inline _runtime_value(runtime::Base.RefValue) = runtime[]
-@inline getglobals(context::OnDemandContext) = _runtime_value(getfield(context, :globals))
+@inline getglobals(context::OnDemandContext) = getfield(context, :globals)
 @inline get_subcontexts(context::SubcontextsContext) = getfield(context, :subcontexts)
 @inline getruntimeinput(context::SubcontextsContext) = getfield(context, :input)
 
@@ -232,14 +230,12 @@ end
 @inline Base.propertynames(context::OnDemandContext) = (keys(_on_demand_locations(typeof(context)))..., fieldnames(typeof(getruntimeinput(context)))...)
 @inline Base.keys(context::OnDemandContext) = propertynames(context)
 
-@inline merge_by_wiring(context::OnDemandContext, ::Nothing) = get_subcontexts(context)
+@inline merge_by_wiring(context::OnDemandContext, ::Nothing) =
+    (; globals = getglobals(context), get_subcontexts(context)...)
 
-"""Merge temporary runtime outputs produced inside an on-demand step."""
-@inline function merge_ondemand_runtime!(context::OnDemandContext, patch::NamedTuple)
-    runtime = getfield(context, :globals)
-    runtime isa Base.RefValue || error("On-demand runtime writes require a runtime Ref.")
-    runtime[] = merge(runtime[], patch)
-    return nothing
+"""Return globals with temporary runtime outputs produced inside an on-demand step."""
+@inline function merge_ondemand_runtime(context::ODC, patch::P) where {ODC<:OnDemandContext, P<:NamedTuple}
+    return merge(getglobals(context), patch)
 end
 
 """Return whether unlocated child return values should be written to runtime state."""
@@ -269,10 +265,13 @@ end
         push!(exprs, Expr(:(=), target_variable, :(getproperty(retval, $(QuoteNode(retval_name))))))
     end
 
-    merge_exprs = Any[:(_subcontexts = @inline get_subcontexts(context))]
+    merge_exprs = Any[
+        :(_subcontexts = @inline get_subcontexts(context)),
+        :(_globals = @inline getglobals(context)),
+    ]
     if !isempty(runtime_fields)
         runtime_patch_expr = Expr(:tuple, Expr(:parameters, runtime_fields...))
-        push!(merge_exprs, :(@inline merge_ondemand_runtime!(context, $runtime_patch_expr)))
+        push!(merge_exprs, :(_globals = @inline merge_ondemand_runtime(context, $runtime_patch_expr)))
     end
     for (subcontext_name, fields) in updates
         patch_expr = Expr(:tuple, Expr(:parameters, fields...))
@@ -282,6 +281,6 @@ end
             _subcontexts = @inline replace_namedtuple_field(_subcontexts, Val($(QuoteNode(subcontext_name))), _new_subcontext)
         end)
     end
-    push!(merge_exprs, :(return _subcontexts))
+    push!(merge_exprs, :(return (; globals = _globals, _subcontexts...)))
     return Expr(:block, merge_exprs...)
 end
