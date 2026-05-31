@@ -163,6 +163,59 @@ end
     return setfield(la, :plan, _resolve_plan_wiring_tree(getplan(la), registry, (;)))
 end
 
+"""Append one subcontext name while preserving first occurrence order."""
+@inline function _push_used_subcontext!(used::Vector{Symbol}, name::Symbol)
+    name in used || push!(used, name)
+    return used
+end
+
+"""Append a tuple of used subcontext names while preserving first occurrence order."""
+@inline function _append_used_subcontexts!(used::Vector{Symbol}, names::Names) where {Names<:Tuple}
+    for name in names
+        _push_used_subcontext!(used, name)
+    end
+    return used
+end
+
+"""Collect subcontext dependencies carried by one resolved concrete child bucket."""
+@inline function _append_wiring_subcontext_usage!(used::Vector{Symbol}, bucket::W) where {W<:Wiring}
+    for route in routes(bucket)
+        fromname = get_fromname(route)
+        fromname === :_runtime && continue
+        _push_used_subcontext!(used, fromname)
+    end
+    for share in shares(bucket)
+        shared_name = contextname(share)
+        shared_name isa Symbol || continue
+        _push_used_subcontext!(used, shared_name)
+    end
+    return used
+end
+
+"""Compute the resolved child and plan-wide used subcontexts for one plan node."""
+function _resolved_plan_subcontext_usage(la::LA, funcs::Funcs, resolved_children::ResolvedChildren) where {LA<:Union{CompositeAlgorithm, Routine}, Funcs<:Tuple, ResolvedChildren<:Tuple}
+    child_used = ntuple(length(funcs)) do i
+        child = getfield(funcs, i)
+        used = Symbol[]
+        target = plan_child_namespace(la, i)
+        target isa Symbol && _push_used_subcontext!(used, target)
+
+        if child isa AbstractLoopAlgorithm
+            _append_used_subcontexts!(used, plan_used_subcontexts(child))
+        else
+            _append_wiring_subcontext_usage!(used, getfield(resolved_children, i))
+        end
+
+        return Tuple(used)
+    end
+
+    plan_used = Symbol[]
+    for names in child_used
+        _append_used_subcontexts!(plan_used, names)
+    end
+    return NonGeneratedSubcontextUsage(Tuple(plan_used), child_used)
+end
+
 """Resolve a plan tree and inlay inherited global wiring into concrete children."""
 function _resolve_plan_wiring_tree(la::LA, registry::NameSpaceRegistry, inherited_global::NamedTuple) where {LA<:Union{CompositeAlgorithm, Routine}}
     raw_wiring = getwiring(la)
@@ -200,7 +253,9 @@ function _resolve_plan_wiring_tree(la::LA, registry::NameSpaceRegistry, inherite
         return resolved
     end
 
-    return setfield(la, :wiring, PlanWiring(combined_global, resolved_children))
+    usage = _resolved_plan_subcontext_usage(la, funcs, resolved_children)
+    la = setfield(la, :wiring, PlanWiring(combined_global, resolved_children))
+    return setfield(la, :subcontext_usage, usage)
 end
 
 @inline function resolve_plan_wiring(fa::FA, registry::NameSpaceRegistry) where {FA<:FinalizedAlgorithm}

@@ -33,6 +33,18 @@ LoopAlgorithm(plan::Union{CompositeAlgorithm, Routine}; states = (), options = (
 """Return child-indexed wiring passed directly to each child."""
 @inline child_wiring(wiring::PlanWiring) = getfield(wiring, :child_wiring)
 
+"""Return the resolved subcontext-usage metadata stored on a plan node."""
+@inline non_generated_subcontext_usage(la::Union{CompositeAlgorithm, Routine}) = getfield(la, :subcontext_usage)
+
+"""Return the plan-wide union of subcontexts touched by a resolved plan node."""
+@inline plan_used_subcontexts(la::Union{CompositeAlgorithm, Routine}) = all_used_subcontexts(non_generated_subcontext_usage(la))
+
+"""Return the per-child used subcontexts stored for a resolved plan node."""
+@inline plan_child_used_subcontexts(la::Union{CompositeAlgorithm, Routine}) = child_used_subcontexts(non_generated_subcontext_usage(la))
+
+"""Return the forwarded subcontexts for one child branch of a resolved plan."""
+@inline plan_child_used_subcontexts(la::Union{CompositeAlgorithm, Routine}, idx::Int) = getfield(plan_child_used_subcontexts(la), idx)
+
 """Return whether a plan wiring object carries no usable wiring."""
 Base.isempty(wiring::PlanWiring) =
     isempty(global_wiring(wiring)) && all(isempty, child_wiring(wiring))
@@ -68,8 +80,7 @@ Base.isempty(wiring::PlanWiring) =
 
 """Return the namespace symbol stored for one child of a resolved plan."""
 @inline function plan_child_namespace(la::Union{CompositeAlgorithm, Routine}, idx::Int)
-    name = namesymbol(getfield(getfield(la, :namespaces), idx))
-    return isnothing(name) ? trykey(getalgo(la, idx)) : name
+    return namesymbol(getfield(getfield(la, :namespaces), idx))
 end
 
 @inline plan_child_namespace(la::LoopAlgorithm, idx::Int) = plan_child_namespace(getplan(la), idx)

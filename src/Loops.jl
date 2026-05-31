@@ -68,22 +68,52 @@ Run a single function in a loop indefinitely
 @inline loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple = (;), resume::Resuming = Resuming{false}()) where {P<:AbstractProcess, F, C, LT} =
     loop(process, func, context, lt, inputs, resume, sys_looptype)
 
+"""Run an indefinite loop through the split-context `NonGenerated()` step path."""
 @inline function loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT <: IndefiniteLifetime, isresuming}
     @inline before_while(process)
 
     step_plan = @inline getplan(func)
     step_wiring = @inline getwiring(step_plan)
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
+    runtime_parts = NonGeneratedStepContextParts(runtime_context)
     if isresuming
         @atomic process.paused = false
     else
-        runtime_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
+        runtime_parts = @inline _step_nongen!(
+            step_plan,
+            getfield(runtime_parts, :registry),
+            getfield(runtime_parts, :runtime),
+            getfield(runtime_parts, :input),
+            getfield(runtime_parts, :widened),
+            step_wiring,
+            Namespace{nothing}(),
+            process,
+            lt,
+            Stable(),
+            Val(fieldnames(typeof(getfield(runtime_parts, :subcontexts)))),
+            values(getfield(runtime_parts, :subcontexts))...,
+        )
+        runtime_context = @inline _nongen_process_context(runtime_parts)
         @inline tick!(process)
         @inline inc!(process)
     end
 
     while true
-        nextcontext = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
+        runtime_parts = @inline _step_nongen!(
+            step_plan,
+            getfield(runtime_parts, :registry),
+            getfield(runtime_parts, :runtime),
+            getfield(runtime_parts, :input),
+            getfield(runtime_parts, :widened),
+            step_wiring,
+            Namespace{nothing}(),
+            process,
+            lt,
+            Stable(),
+            Val(fieldnames(typeof(getfield(runtime_parts, :subcontexts)))),
+            values(getfield(runtime_parts, :subcontexts))...,
+        )
+        nextcontext = @inline _nongen_process_context(runtime_parts)
         # typeof(nextcontext) === typeof(runtime_context) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(runtime_context)).")
         runtime_context = nextcontext
         @inline tick!(process)
@@ -102,6 +132,7 @@ Run a single function in a loop for a given number of times
 @inline loop(process::P, algo::F, context::C, r::R, inputs::NamedTuple = (;), resume::Resuming = Resuming{false}()) where {P<:AbstractProcess, F, C, R <: RepeatLifetime} =
     loop(process, algo, context, r, inputs, resume, sys_looptype)
 
+"""Run a counted loop through the split-context `NonGenerated()` step path."""
 Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, R <: RepeatLifetime, isresuming}
     @DebugMode "Running process loop for $repeats times from thread $(Threads.threadid())"
     @assert isresolved(algo) "Algo must be resolved before running the loop. Got algo $(algo) which is not resolved."
@@ -111,11 +142,26 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     step_wiring = @inline getwiring(step_plan)
 
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
+    runtime_parts = NonGeneratedStepContextParts(runtime_context)
     stablecontext = if isresuming
         @atomic process.paused = false
         runtime_context
     else
-        stepped_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, r, Stable())
+        runtime_parts = @inline _step_nongen!(
+            step_plan,
+            getfield(runtime_parts, :registry),
+            getfield(runtime_parts, :runtime),
+            getfield(runtime_parts, :input),
+            getfield(runtime_parts, :widened),
+            step_wiring,
+            Namespace{nothing}(),
+            process,
+            r,
+            Stable(),
+            Val(fieldnames(typeof(getfield(runtime_parts, :subcontexts)))),
+            values(getfield(runtime_parts, :subcontexts))...,
+        )
+        stepped_context = @inline _nongen_process_context(runtime_parts)
         @inline tick!(process)
         @inline inc!(process)
         stepped_context
@@ -126,7 +172,21 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     
     for _ in start_idx:end_idx
     
-        nextcontext = @inline _step!(step_plan, stablecontext, step_wiring, Namespace{nothing}(), process, r, Stable())
+        runtime_parts = @inline _step_nongen!(
+            step_plan,
+            getfield(runtime_parts, :registry),
+            getfield(runtime_parts, :runtime),
+            getfield(runtime_parts, :input),
+            getfield(runtime_parts, :widened),
+            step_wiring,
+            Namespace{nothing}(),
+            process,
+            r,
+            Stable(),
+            Val(fieldnames(typeof(getfield(runtime_parts, :subcontexts)))),
+            values(getfield(runtime_parts, :subcontexts))...,
+        )
+        nextcontext = @inline _nongen_process_context(runtime_parts)
         # typeof(nextcontext) === typeof(stablecontext) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(stablecontext)).")
         stablecontext = nextcontext
         @inline tick!(process)

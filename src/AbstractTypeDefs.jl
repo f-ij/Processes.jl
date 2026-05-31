@@ -126,11 +126,41 @@ PlanWiring(global_wiring::GlobalWiring, child_wiring::ChildWiring) where {Global
     PlanWiring{GlobalWiring, ChildWiring}(global_wiring, child_wiring)
 PlanWiring() = PlanWiring(Wiring(), ())
 
+"""
+Resolved subcontext usage metadata for the `NonGenerated()` step path.
+
+`all_used` is the plan-wide union of subcontexts any child may touch. `child_used`
+stores one tuple per child with the exact forwarded subcontexts needed for that
+branch.
+"""
+struct NonGeneratedSubcontextUsage{AllUsed, ChildUsed}
+end
+
+"""Construct subcontext-usage metadata from concrete tuple values."""
+@inline function NonGeneratedSubcontextUsage(all_used::AllUsed, child_used::ChildUsed) where {AllUsed<:Tuple, ChildUsed<:Tuple}
+    return NonGeneratedSubcontextUsage{all_used, child_used}()
+end
+
+"""Return the plan-wide union of subcontexts used by a resolved plan."""
+@inline all_used_subcontexts(::NonGeneratedSubcontextUsage{AllUsed, ChildUsed}) where {AllUsed, ChildUsed} = AllUsed
+
+"""Return the per-child forwarded subcontext tuple stored for a resolved plan."""
+@inline child_used_subcontexts(::NonGeneratedSubcontextUsage{AllUsed, ChildUsed}) where {AllUsed, ChildUsed} = ChildUsed
+
 Base.iterate(la::ALA) where {ALA<:AbstractLoopAlgorithm} = iterate(getalgos(la))
 
 
 
 abstract type AbstractContext end
+
+"""
+Context shape that carries a registry plus concrete subcontext bindings.
+
+`ProcessContext` is the full persistent runtime context. `OnDemandContext` is a
+smaller transient scoped context assembled only when a leaf `ProcessAlgorithm`
+needs the public two-argument `step!(algo, context)` interface.
+"""
+abstract type AbstractScopedContext <: AbstractContext end
 abstract type AbstractSubContext end
 
 

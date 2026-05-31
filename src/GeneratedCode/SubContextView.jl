@@ -1,12 +1,12 @@
 
-@inline function Base.merge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:ProcessContext, SubKey}
+@inline function Base.merge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:AbstractScopedContext, SubKey}
     return @inline getcontext(scv)
 end
-@inline function Base.merge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
+@inline function Base.merge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:AbstractScopedContext, SubKey}
     return @inline stablemerge(scv, args)
 end
 
-@inline function stablemerge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:ProcessContext, SubKey}
+@inline function stablemerge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:AbstractScopedContext, SubKey}
     return @inline getcontext(scv)
 end
 
@@ -73,7 +73,7 @@ end
 """
 Merge but error if a var would be overwritten and only allow local merging
 """
-@inline @generated function stablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
+@inline @generated function stablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:AbstractScopedContext, SubKey}
     mergetuple_expr, widenedtuple_expr = _subcontext_view_merge_exprs(scv, args)
 
     # Return the expression that does the merge
@@ -93,7 +93,7 @@ Returns a merged context by merging the provided named tuple into the appropriat
 This doesn't check for type stability, and allows overwriting existing variables. 
 
 """
-@inline @generated function unstablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
+@inline @generated function unstablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:AbstractScopedContext, SubKey}
     mergetuple_expr, widenedtuple_expr = _subcontext_view_merge_exprs(scv, args)
 
     # Return the expression that does the merge
@@ -117,7 +117,7 @@ Returns new context
 
 This is to be used during the init phase, where entire subcontexts are replaced
 """
-@inline @generated function Base.replace(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
+@inline @generated function Base.replace(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:AbstractScopedContext, SubKey}
     names = fieldnames(args)
     if any( n -> n != SubKey, names) # Static check that only the correct subcontext is being replaced
         error("Trying to replace subcontext $(n) from SubContextView $(SubKey), only $(SubKey) can be replaced")

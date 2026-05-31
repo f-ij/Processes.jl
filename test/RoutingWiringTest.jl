@@ -1,6 +1,22 @@
 using Test
 using Processes
 
+struct UsageSourceAlgo <: Processes.ProcessAlgorithm end
+struct UsageInnerSharedAlgo <: Processes.ProcessAlgorithm end
+struct UsageInnerConsumerAlgo <: Processes.ProcessAlgorithm end
+struct UsageOuterSinkAlgo <: Processes.ProcessAlgorithm end
+struct UsageUnusedAlgo <: Processes.ProcessAlgorithm end
+
+Processes.init(::UsageSourceAlgo, context) = (; seed = 4)
+Processes.init(::UsageInnerSharedAlgo, context) = (; shared = 3)
+Processes.init(::UsageUnusedAlgo, context) = (; marker = 1)
+
+Processes.step!(::UsageSourceAlgo, context) = (; produced = context.seed + 1)
+Processes.step!(::UsageInnerSharedAlgo, context) = (; shared = context.shared)
+Processes.step!(::UsageInnerConsumerAlgo, context) = (; total = context.produced + context.shared)
+Processes.step!(::UsageOuterSinkAlgo, context) = (; seen = context.total)
+Processes.step!(::UsageUnusedAlgo, context) = (; marker = context.marker)
+
 @testset "Routing wiring types" begin
     struct WiringSource <: ProcessAlgorithm end
     struct WiringTarget <: ProcessAlgorithm end
@@ -85,4 +101,74 @@ using Processes
         all(all_resolved, Processes.child_wiring(w))
 
     @test all_resolved(resolved_wiring)
+end
+
+@testset "Resolved plan subcontext usage" begin
+    inner = CompositeAlgorithm(
+        UsageInnerSharedAlgo,
+        UsageInnerConsumerAlgo,
+        (1, 1),
+        Share(UsageInnerSharedAlgo, UsageInnerConsumerAlgo),
+    )
+    outer = CompositeAlgorithm(
+        UsageSourceAlgo,
+        inner,
+        UsageUnusedAlgo,
+        UsageOuterSinkAlgo,
+        (1, 1, 1, 1),
+        Route(UsageSourceAlgo => UsageInnerConsumerAlgo, :produced),
+        Route(UsageInnerConsumerAlgo => UsageOuterSinkAlgo, :total),
+    )
+
+    resolved = resolve(outer)
+    outer_plan = Processes.getplan(resolved)
+    inner_plan = Processes.getalgo(outer_plan, 2)
+
+    @test Processes.plan_child_used_subcontexts(inner_plan) == (
+        (:UsageInnerSharedAlgo_1, :UsageInnerConsumerAlgo_1),
+        (:UsageInnerConsumerAlgo_1, :UsageSourceAlgo_1, :UsageInnerSharedAlgo_1),
+    )
+    @test Processes.plan_used_subcontexts(inner_plan) == (
+        :UsageInnerSharedAlgo_1,
+        :UsageInnerConsumerAlgo_1,
+        :UsageSourceAlgo_1,
+    )
+
+    @test Processes.plan_child_used_subcontexts(outer_plan) == (
+        (:UsageSourceAlgo_1,),
+        (:UsageInnerSharedAlgo_1, :UsageInnerConsumerAlgo_1, :UsageSourceAlgo_1),
+        (:UsageUnusedAlgo_1,),
+        (:UsageOuterSinkAlgo_1, :UsageInnerConsumerAlgo_1),
+    )
+    @test Processes.plan_used_subcontexts(outer_plan) == (
+        :UsageSourceAlgo_1,
+        :UsageInnerSharedAlgo_1,
+        :UsageInnerConsumerAlgo_1,
+        :UsageUnusedAlgo_1,
+        :UsageOuterSinkAlgo_1,
+    )
+end
+
+@testset "run_nogen forwards only used nested subcontexts" begin
+    inner = CompositeAlgorithm(
+        UsageInnerSharedAlgo,
+        UsageInnerConsumerAlgo,
+        (1, 1),
+        Share(UsageInnerSharedAlgo, UsageInnerConsumerAlgo),
+    )
+    outer = CompositeAlgorithm(
+        UsageSourceAlgo,
+        inner,
+        UsageUnusedAlgo,
+        UsageOuterSinkAlgo,
+        (1, 1, 1, 1),
+        Route(UsageSourceAlgo => UsageInnerConsumerAlgo, :produced),
+        Route(UsageInnerConsumerAlgo => UsageOuterSinkAlgo, :total),
+    )
+
+    inline_process = InlineProcess(init(resolve(outer)); repeats = 1)
+    result = Processes.run_nogen(inline_process)
+
+    @test result[UsageOuterSinkAlgo].seen == 8
+    @test result[UsageUnusedAlgo].marker == 1
 end

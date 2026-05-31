@@ -8,12 +8,13 @@ algorithms, repeat metadata, resume counters, and plan wiring. The runtime
 registry, root states, context, inputs, and overrides are carried by the concrete
 `LoopAlgorithm` wrapper.
 """
-struct Routine{T, Repeats, Namespaces, MV, W, id} <: AbstractLoopAlgorithm
+struct Routine{T, Repeats, Namespaces, MV, W, U, id} <: AbstractLoopAlgorithm
     funcs::T     
     repeats
     namespaces::Namespaces
     resume_idxs::MV
     wiring::W
+    subcontext_usage::U
 end
 
 const RoutinePlan = Routine
@@ -33,7 +34,8 @@ function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple,
     namespaces = ntuple(_ -> Namespace{nothing}(), length(funcs))
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(funcs, options))
-    plan = Routine{typeof(funcs), repeats, typeof(namespaces), typeof(resume_idxs), typeof(wiring), id}(funcs, repeats, namespaces, resume_idxs, wiring)
+    usage = NonGeneratedSubcontextUsage((), ntuple(_ -> (), length(funcs)))
+    plan = Routine{typeof(funcs), repeats, typeof(namespaces), typeof(resume_idxs), typeof(wiring), typeof(usage), id}(funcs, repeats, namespaces, resume_idxs, wiring, usage)
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end
@@ -44,7 +46,8 @@ end
 
 function setoptions(r::Routine, options)
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(getalgos(r), options))
-    return setfield(r, :wiring, wiring)
+    usage = NonGeneratedSubcontextUsage((), ntuple(_ -> (), length(getalgos(r))))
+    return setfield(setfield(r, :wiring, wiring), :subcontext_usage, usage)
 end
 
 @inline getalgos(r::Routine) = getfield(r, :funcs)
@@ -120,7 +123,7 @@ end
 """Return registry multiplier weights for each routine child."""
 multipliers(r::R) where {R<:Routine} = map(_routine_schedule_multiplier, lifetimes(r))
 multipliers(rT::Type{R}) where {R<:Routine} = map(_routine_schedule_multiplier, lifetimes(rT))
-getid(r::Union{Routine{T,R,NS,MV,W,id},Type{<:Routine{T,R,NS,MV,W,id}}}) where {T,R,NS,MV,W,id} = id
+getid(r::Union{Routine{T,R,NS,MV,W,U,id},Type{<:Routine{T,R,NS,MV,W,U,id}}}) where {T,R,NS,MV,W,U,id} = id
 
 """Return the child lifetime schedule tuple for a routine."""
 @inline lifetimes(r::Routine) = typeof(r).parameters[2]

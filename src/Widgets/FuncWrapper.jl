@@ -115,7 +115,7 @@ DSL temporaries and remain in `ProcessContext._runtime` for later statements.
     context::C,
     retval::R,
     stability::S,
-) where {SCV<:SubContextView, C<:ProcessContext, R<:NamedTuple, S<:Stability}
+) where {SCV<:SubContextView, C<:AbstractScopedContext, R<:NamedTuple, S<:Stability}
     view_names = Symbol[]
     runtime_names = Symbol[]
 
@@ -162,7 +162,7 @@ end
 """
 Treat a `FuncWrapper` with no return value as a pure side-effecting step.
 """
-@inline merge_funcwrapper_return(contextview::SCV, context::C, ::Nothing, stability::S) where {SCV<:SubContextView, C<:ProcessContext, S<:Stability} = context
+@inline merge_funcwrapper_return(contextview::SCV, context::C, ::Nothing, stability::S) where {SCV<:SubContextView, C<:AbstractScopedContext, S<:Stability} = context
 
 @inline _funcwrapper_render_value(value; io::IO = stdout) = sprint(show, value; context = io)
 
