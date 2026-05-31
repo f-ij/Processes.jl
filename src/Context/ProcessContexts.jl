@@ -308,12 +308,8 @@ end
         old_subcontexts = @inline get_subcontexts(pc)
         subcontext = @inline getproperty(old_subcontexts, $(QuoteNode(name)))
         new_data = @inline merge(getdata(subcontext), args)
-        new_subcontext = @inline withdata(subcontext, new_data)
-        new_subcontexts = @inline replace_namedtuple_field(old_subcontexts, Val($(QuoteNode(name))), new_subcontext)
-        return @inline withsubcontexts(pc, new_subcontexts)
-        # Mutable SubContext path kept for comparison:
-        # @inline setfield!(subcontext, :data, new_data)
-        # return pc
+        @inline withdata(subcontext, new_data)
+        return pc
     end
 end
 
@@ -346,8 +342,6 @@ Args should name subcontext they want to replace, check if all names are in the 
         new_subcontexts = @inline get_subcontexts(pc)
         $(replace_exprs...)
         return @inline withsubcontexts(pc, new_subcontexts)
-        # Accessors path kept for comparison:
-        # return @inline @set pc.subcontexts = new_subcontexts
     end
 end
 

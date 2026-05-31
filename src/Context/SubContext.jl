@@ -3,18 +3,22 @@
 """
     withdata(sc, data)
 
-Return an immutable `SubContext` rebuild with the same logical key and new local
-data. This is the package-local replacement for `@set sc.data = data`.
+Return `sc` with updated local data.
+
+Type-preserving writes mutate the existing `SubContext`. Shape-changing writes
+rebuild a new typed `SubContext`, which keeps widening explicit and rare.
 """
+@inline function withdata(sc::SubContext{T}, data::T) where {T<:NamedTuple}
+    setfield!(sc, :data, data)
+    return sc
+end
+
 @inline function withdata(sc::SC, data::D) where {SC<:SubContext, D<:NamedTuple}
     return SubContext(getkey(sc), data)
 end
 
 function newdata(sc::SubContext, data::NamedTuple)
     return @inline withdata(sc, data)
-    # Mutable SubContext path kept for comparison:
-    # setfield!(sc, :data, data)
-    # return sc
 end
 
 @inline Base.isempty(sc::SubContext) = isempty(getdata(sc))
@@ -47,8 +51,6 @@ end
 
 @inline function Base.replace(sc::SubContext{T}, args::NamedTuple = (;)) where {T}
     return @inline withdata(sc, args)
-    # Accessors path kept for comparison:
-    # return @inline @set sc.data = args
 end
 
 @inline Base.keys(sct::Type{<:SubContext}) = fieldnames(getdatatype(sct))
