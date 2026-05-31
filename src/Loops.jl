@@ -117,7 +117,7 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, lt::L
 
     generated_context_step = @inline get_step(algo)
     while true
-        runtime_context = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_context_step, algo, runtime_context, process, lt)
+        runtime_context = @inline generated_context_step(algo, runtime_context, process, lt)
         @inline tick!(process)
         @inline inc!(process)
         if @inline breakcondition(lt, process, runtime_context)
@@ -184,7 +184,7 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     end_idx = @inline repeats(r)
 
     for _ in start_idx:end_idx
-        runtime_context = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_context_step, algo, runtime_context, process, r)
+        runtime_context = @inline generated_context_step(algo, runtime_context, process, r)
         @inline tick!(process)
         @inline inc!(process)
         if @inline breakcondition(r, process, runtime_context)

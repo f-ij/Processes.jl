@@ -257,7 +257,7 @@ Base.@constprop :aggressive function scalar_dependency_direct_plan_loop(process:
     generated_plan_step = @inline Processes.get_step(algo)
 
     for _ in Processes.loopidx(process):Processes.repeats(lifetime)
-        context = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_plan_step, algo, context, process, lifetime)
+        context = @inline generated_plan_step(algo, context, process, lifetime)
         @inline Processes.inc!(process)
         @inline Processes.breakcondition(lifetime, process, context) && break
     end

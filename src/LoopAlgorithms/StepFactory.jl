@@ -137,13 +137,13 @@ function _composite_context_child_exprs(child_wirings::Tuple)
     exprs = Any[]
     for i in eachindex(child_wirings)
         push!(exprs, quote
-            _this_interval = @inline interval(_plan, $i)
-            if @inline divides(_this_inc, _this_interval)
-                _child_algo = @inline getalgo(_plan, $i)
-                _child_step = @inline get_child_context_step(_plan, $i)
-                _context = @inline RuntimeGeneratedFunctions.generated_callfunc(_child_step, _child_algo, _context, _process, _lifetime)
-            end
-        end)
+                _this_interval = @inline interval(_plan, $i)
+                if @inline divides(_this_inc, _this_interval)
+                    _child_algo = @inline getalgo(_plan, $i)
+                    _child_step = @inline get_child_context_step(_plan, $i)
+                    _context = @inline _child_step(_child_algo, _context, _process, _lifetime)
+                end
+            end)
     end
     return exprs
 end
@@ -167,7 +167,7 @@ function _routine_context_child_exprs(child_wirings::Tuple, lifetime_values::Tup
                     end
                     _child_algo = @inline getalgo(_plan, _this_child_idx)
                     _child_step = @inline get_child_context_step(_plan, _this_child_idx)
-                    _context = @inline RuntimeGeneratedFunctions.generated_callfunc(_child_step, _child_algo, _context, _process, _lifetime)
+                    _context = @inline _child_step(_child_algo, _context, _process, _lifetime)
                     @inline tick!(_process)
                 end
             end
@@ -219,7 +219,7 @@ function _composite_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings
             if @inline divides(_this_inc, _this_interval)
                 _child_algo = @inline getalgo(_plan, $i)
                 _child_step = @inline get_child_step(_plan, $i)
-                _returned = @inline RuntimeGeneratedFunctions.generated_callfunc(_child_step, _child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
+                _returned = @inline _child_step(_child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
                 _globals = @inline getproperty(_returned, :globals)
                 $(update_exprs...)
             end
@@ -265,7 +265,7 @@ function _routine_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings::
                     _child_step = @inline get_child_step(_plan, _this_child_idx)
 
                     # call the child step with the appropriate arguments, including the available subcontexts for this child
-                    _returned = @inline RuntimeGeneratedFunctions.generated_callfunc(_child_step, _child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
+                    _returned = @inline _child_step(_child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
                     _globals = @inline getproperty(_returned, :globals)
                     $(update_exprs...)
                     @inline tick!(_process)
@@ -410,7 +410,19 @@ function generate_process_algorithm_context_step(child::A, thiswiring::W, namesp
             _process::Proc,
             _lifetime::LT,
         ) where {Algo<:$(typeof(child)), C<:ProcessContext, Proc<:AbstractProcess, LT<:Lifetime}
-            return @inline _step!(_algorithm, _context, $W(), $N(), _process, _lifetime, Stable())
+            # Keep the generated child boundary explicit: view, public step!,
+            # then merge. Do not call the normal _step! wrapper from here.
+            _this_wiring = @inline $W()
+            _this_namespace = @inline $N()
+            _context_view = @inline view(
+                _context,
+                _algorithm,
+                _this_namespace;
+                sharedcontexts = (@inline shares(_this_wiring)),
+                sharedvars = (@inline routes(_this_wiring)),
+            )
+            _retval = @inline step!(_algorithm, _context_view)
+            return @inline merge(_context_view, _retval)
         end
     end
 

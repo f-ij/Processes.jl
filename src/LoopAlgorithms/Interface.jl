@@ -154,7 +154,7 @@ then enters the same `_step!` chain used by `run`.
     lifetime = get(getglobals(context), :lifetime, Indefinite())
     process = LoopRunProcess(lifetime)
     plan_step = @inline get_step(la)
-    return @inline RuntimeGeneratedFunctions.generated_callfunc(plan_step, la, context, process, lifetime)
+    return @inline plan_step(la, context, process, lifetime)
 end
 
 """

@@ -50,7 +50,7 @@ Base.@constprop :aggressive function root_step_loop(process::IP) where {IP<:Proc
 
     for _ in Processes.loopidx(process):Processes.repeats(lifetime)
         active_subcontexts = @inline Processes.select_subcontexts(subcontexts, available_names_val)
-        returned = @inline RuntimeGeneratedFunctions.generated_callfunc(generated_plan_step, plan, process, lifetime, runtime_globals, runtime_inputs, active_subcontexts...)
+        returned = @inline generated_plan_step(plan, process, lifetime, runtime_globals, runtime_inputs, active_subcontexts...)
         runtime_globals = @inline getproperty(returned, :globals)
         returned_subcontexts = @inline Processes.deletekeys(returned, :globals)
         subcontexts = @inline Processes.merge_subcontexts_by_name(subcontexts, returned_subcontexts)
