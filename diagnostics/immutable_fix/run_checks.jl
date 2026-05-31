@@ -26,6 +26,7 @@ function main()
     checks = (
         "test/CompositeDSLTest.jl",
         "test/RuntimeInputsLifecycleTest.jl",
+        "test/RuntimeGeneratedPartialStepTest.jl",
         "test/ContextInjectorTest.jl",
     )
     results = Dict{String,Bool}()
@@ -48,4 +49,3 @@ end
 if abspath(PROGRAM_FILE) == @__FILE__
     ImmutableFixChecks.main()
 end
-

@@ -8,12 +8,13 @@ algorithms, repeat metadata, resume counters, and plan wiring. The runtime
 registry, root states, context, inputs, and overrides are carried by the concrete
 `LoopAlgorithm` wrapper.
 """
-struct Routine{T, Repeats, Namespaces, MV, W, id} <: AbstractLoopAlgorithm
+struct Routine{T, Repeats, Namespaces, MV, W, RuntimeBundle, id} <: AbstractLoopAlgorithm
     funcs::T     
     repeats
     namespaces::Namespaces
     resume_idxs::MV
     wiring::W
+    runtime_bundle::RuntimeBundle
 end
 
 const RoutinePlan = Routine
@@ -33,23 +34,28 @@ function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple,
     namespaces = ntuple(_ -> Namespace{nothing}(), length(funcs))
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(funcs, options))
-    plan = Routine{typeof(funcs), repeats, typeof(namespaces), typeof(resume_idxs), typeof(wiring), id}(funcs, repeats, namespaces, resume_idxs, wiring)
+    runtime_bundle = _plan_runtime_bundle(funcs, child_wiring(wiring), namespaces)
+    plan = Routine{typeof(funcs), repeats, typeof(namespaces), typeof(resume_idxs), typeof(wiring), typeof(runtime_bundle), id}(funcs, repeats, namespaces, resume_idxs, wiring, runtime_bundle)
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end
 
+"""Rebuild a routine with new child funcs and a refreshed runtime bundle."""
 function newfuncs(r::Routine, funcs)
-    setfield(r, :funcs, funcs)
+    return @inline refresh_runtime_bundle(setfield(r, :funcs, funcs))
 end
 
+"""Rebuild a routine with new wiring and a refreshed runtime bundle."""
 function setoptions(r::Routine, options)
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(getalgos(r), options))
-    return setfield(r, :wiring, wiring)
+    return @inline refresh_runtime_bundle(setfield(r, :wiring, wiring))
 end
 
 @inline getalgos(r::Routine) = getfield(r, :funcs)
 @inline getalgo(r::Routine, idx) = getalgos(r)[idx]
 @inline getwiring(r::Routine) = getfield(r, :wiring)
+"""Return the runtime-generated child-step bundle stored on a routine plan."""
+@inline getruntime_bundle(r::Routine) = getfield(r, :runtime_bundle)
 @inline getoptions(r::Routine) = _all_plan_wiring(global_wiring(getwiring(r)), child_wiring(getwiring(r)))
 @inline subalgorithms(r::Routine) = getalgos(r)
 @inline getstates(r::Routine) = ()
@@ -120,7 +126,7 @@ end
 """Return registry multiplier weights for each routine child."""
 multipliers(r::R) where {R<:Routine} = map(_routine_schedule_multiplier, lifetimes(r))
 multipliers(rT::Type{R}) where {R<:Routine} = map(_routine_schedule_multiplier, lifetimes(rT))
-getid(r::Union{Routine{T,R,NS,MV,W,id},Type{<:Routine{T,R,NS,MV,W,id}}}) where {T,R,NS,MV,W,id} = id
+getid(r::Union{Routine{T,R,NS,MV,W,RB,id},Type{<:Routine{T,R,NS,MV,W,RB,id}}}) where {T,R,NS,MV,W,RB,id} = id
 
 """Return the child lifetime schedule tuple for a routine."""
 @inline lifetimes(r::Routine) = typeof(r).parameters[2]

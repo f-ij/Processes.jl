@@ -131,6 +131,7 @@ Base.iterate(la::ALA) where {ALA<:AbstractLoopAlgorithm} = iterate(getalgos(la))
 
 
 abstract type AbstractContext end
+abstract type AbstractScopedContext <: AbstractContext end
 abstract type AbstractSubContext end
 
 

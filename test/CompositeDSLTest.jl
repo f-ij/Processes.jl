@@ -341,7 +341,7 @@ end
         ctx = fetch(p)
         @test ctx[:sink].seen == 2
         @test getkey(ctx[:sink]) == :sink
-        @test only(typeof(ctx[:sink]).parameters) <: NamedTuple
+        @test Processes.getdatatype(typeof(ctx[:sink])) <: NamedTuple
     end
 
     @testset "Local routes occlude top-level @route aliases" begin
@@ -366,7 +366,7 @@ end
         ctx = fetch(p)
         @test ctx[:sink].seen == 7
         @test getkey(ctx[:sink]) == :sink
-        @test only(typeof(ctx[:sink]).parameters) <: NamedTuple
+        @test Processes.getdatatype(typeof(ctx[:sink])) <: NamedTuple
     end
 
     @testset "Transform routes use explicit @transform syntax" begin

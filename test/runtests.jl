@@ -10,6 +10,7 @@ using Processes
     include("CopyManagerTest.jl")
     include("ProcessManagerTest.jl")
     include("RuntimeInputsLifecycleTest.jl")
+    include("RuntimeGeneratedPartialStepTest.jl")
     include("PackageTest.jl")
     include("RouteWalkerTest.jl")
     include("ShareContextTest.jl")

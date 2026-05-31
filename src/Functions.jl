@@ -812,6 +812,30 @@ statically-known `NamedTuple` field.
 end
 
 """
+    replace_namedtuple_fields(nt, patch)
+
+Return a new `NamedTuple` with every field present in `patch` replaced in one
+rebuild pass.
+"""
+@inline @generated function replace_namedtuple_fields(nt::NT, patch::PT) where {NT<:NamedTuple, PT<:NamedTuple}
+    names = fieldnames(NT)
+    patch_names = fieldnames(PT)
+    replacement_set = Set(patch_names)
+
+    for name in patch_names
+        if !(name in names)
+            error("Trying to replace unknown NamedTuple field $(QuoteNode(name)). Available fields are: $(names)")
+        end
+    end
+
+    value_exprs = Any[
+        name in replacement_set ? :(getproperty(patch, $(QuoteNode(name)))) : :(getfield(nt, $(QuoteNode(name))))
+        for name in names
+    ]
+    return :(NamedTuple{$names}(tuple($(value_exprs...))))
+end
+
+"""
 General replacing setfield
 """
 function _setfield_debug_message(

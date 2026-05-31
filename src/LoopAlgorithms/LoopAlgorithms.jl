@@ -21,6 +21,7 @@ include("GetFirst.jl")
 include("PlanOptions.jl")
 include("CompositeAlgorithms.jl")
 include("Routines.jl")
+include("RuntimeGeneratedSteps.jl")
 include("Recipes.jl")
 include("FinalizedAlgorithm.jl")
 include("Setup.jl")
@@ -50,4 +51,3 @@ include("Showing.jl")
 #     end
 #     return getid(claT1) == getid(checkobj)
 # end
-

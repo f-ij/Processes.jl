@@ -10,11 +10,12 @@ Execution plan that steps child algorithms on fixed intervals.
 the registry, root process states, stored context, inputs, and overrides belongs
 to the concrete `LoopAlgorithm` wrapper created by `resolve`/`init`.
 """
-struct CompositeAlgorithm{T, Intervals, Namespaces, W, id} <: AbstractLoopAlgorithm
+struct CompositeAlgorithm{T, Intervals, Namespaces, W, RuntimeBundle, id} <: AbstractLoopAlgorithm
     funcs::T
     intervals
     namespaces::Namespaces
     wiring::W
+    runtime_bundle::RuntimeBundle
     inc::Base.RefValue{Int} # Runtime interval cursor.
 end
 
@@ -35,19 +36,22 @@ non-plan options stay on the `LoopAlgorithm` wrapper.
 function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
     namespaces = ntuple(_ -> Namespace{nothing}(), length(funcs))
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(funcs, options))
-    plan = CompositeAlgorithm{typeof(funcs), intervals, typeof(namespaces), typeof(wiring), id}(funcs, intervals, namespaces, wiring, Ref(1))
+    runtime_bundle = _plan_runtime_bundle(funcs, child_wiring(wiring), namespaces)
+    plan = CompositeAlgorithm{typeof(funcs), intervals, typeof(namespaces), typeof(wiring), typeof(runtime_bundle), id}(funcs, intervals, namespaces, wiring, runtime_bundle, Ref(1))
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end
 
+"""Rebuild a composite with new child funcs and a refreshed runtime bundle."""
 function newfuncs(ca::CompositeAlgorithm, funcs)
     # CompositeAlgorithm{typeof(funcs), intervals(ca), typeof(ca.registry), typeof(ca.options)}(funcs, ca.inc, ca.registry , ca.options)
-    setfield(ca, :funcs, funcs)
+    return @inline refresh_runtime_bundle(setfield(ca, :funcs, funcs))
 end
 
+"""Rebuild a composite with new wiring and a refreshed runtime bundle."""
 function setoptions(ca::CompositeAlgorithm, options)
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(getalgos(ca), options))
-    return setfield(ca, :wiring, wiring)
+    return @inline refresh_runtime_bundle(setfield(ca, :wiring, wiring))
 end
 
 subalgorithms(ca::CompositeAlgorithm) = getalgos(ca)
@@ -62,8 +66,8 @@ getinc(ca::CompositeAlgorithm) = getfield(ca, :inc)
 getwiring(ca::CompositeAlgorithm) = getfield(ca, :wiring)
 getoptions(ca::CompositeAlgorithm) = _all_plan_wiring(global_wiring(getwiring(ca)), child_wiring(getwiring(ca)))
 
-getid(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = id
-setid(ca::CA, id = uuid4()) where {CA<:CompositeAlgorithm} = setparameter(ca, 5, id)
+getid(ca::Union{CompositeAlgorithm{T,I,NS,W,RB,id}, Type{<:CompositeAlgorithm{T,I,NS,W,RB,id}}}) where {T,I,NS,W,RB,id} = id
+setid(ca::CA, id = uuid4()) where {CA<:CompositeAlgorithm} = setparameter(ca, 6, id)
 
 # setname(ca::CA, name::Symbol) where CA <: CompositeAlgorithm = setparameter(ca, 6, name)
 # getname(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}}}) where {T,I,NSR,O,R,id,CustomName} = CustomName
@@ -103,8 +107,8 @@ end
 # intervals(ca::C) where {C<:CompositeAlgorithm} = getfield(ca, :intervals)
 get_intervals(ca) = intervals(ca)
 
-hasid(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = !isnothing(id)
-id(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = id
+hasid(ca::Union{CompositeAlgorithm{T,I,NS,W,RB,id}, Type{<:CompositeAlgorithm{T,I,NS,W,RB,id}}}) where {T,I,NS,W,RB,id} = !isnothing(id)
+id(ca::Union{CompositeAlgorithm{T,I,NS,W,RB,id}, Type{<:CompositeAlgorithm{T,I,NS,W,RB,id}}}) where {T,I,NS,W,RB,id} = id
 
 
 
@@ -113,6 +117,8 @@ Base.length(ca::CompositeAlgorithm) = length(getalgos(ca))
 Base.eachindex(ca::CompositeAlgorithm) = eachindex(getalgos(ca))
 getalgo(ca::CompositeAlgorithm, idx) = getalgos(ca)[idx]
 getalgos(ca::CompositeAlgorithm) = getfield(ca, :funcs)
+"""Return the runtime-generated child-step bundle stored on a composite plan."""
+getruntime_bundle(ca::CompositeAlgorithm) = getfield(ca, :runtime_bundle)
 hasflag(ca::CompositeAlgorithm, flag) = flag in getfield(ca, :flags)
 track_algo(ca::CompositeAlgorithm) = hasflag(ca, :trackalgo)
 """

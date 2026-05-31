@@ -46,7 +46,7 @@ end
     funcs = getalgos(la)
     algo_multipliers = multiplier .* multipliers(la)
     registry, raw_funcs, namespaces = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
-    return registry, setfield(rebuild_loopalgorithm_funcs(la, raw_funcs), :namespaces, namespaces)
+    return registry, @inline refresh_runtime_bundle(setfield(rebuild_loopalgorithm_funcs(la, raw_funcs), :namespaces, namespaces))
 end
 
 @inline function add_algos_to_registry(registry::R, la::LA, multiplier) where {R<:NameSpaceRegistry, LA<:AbstractLoopAlgorithm}
@@ -126,7 +126,7 @@ end
 end
 
 @inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:Union{CompositeAlgorithm, Routine}, F<:Tuple}
-    return setfield(la, :funcs, funcs)
+    return @inline refresh_runtime_bundle(setfield(la, :funcs, funcs))
 end
 
 @inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:AbstractLoopAlgorithm, F}
@@ -200,7 +200,7 @@ function _resolve_plan_wiring_tree(la::LA, registry::NameSpaceRegistry, inherite
         return resolved
     end
 
-    return setfield(la, :wiring, PlanWiring(combined_global, resolved_children))
+    return @inline refresh_runtime_bundle(setfield(la, :wiring, PlanWiring(combined_global, resolved_children)))
 end
 
 @inline function resolve_plan_wiring(fa::FA, registry::NameSpaceRegistry) where {FA<:FinalizedAlgorithm}
