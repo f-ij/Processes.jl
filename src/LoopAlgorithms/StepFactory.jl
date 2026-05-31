@@ -153,7 +153,11 @@ function _composite_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings
         update_exprs = Any[]
         for child_subcontext_name in child_subcontext_names
             child_subcontext_name in parent_names || continue
-            push!(update_exprs, :($child_subcontext_name = @inline getproperty(_returned, $(QuoteNode(child_subcontext_name)))))
+            push!(update_exprs, quote
+                if @inline hasproperty(_returned, $(QuoteNode(child_subcontext_name)))
+                    $child_subcontext_name = @inline merge($child_subcontext_name, getproperty(_returned, $(QuoteNode(child_subcontext_name))))
+                end
+            end)
         end
         push!(exprs, quote
             _this_interval = @inline interval(_plan, $i)
@@ -179,7 +183,11 @@ function _routine_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings::
         update_exprs = Any[]
         for child_subcontext_name in child_subcontext_names
             child_subcontext_name in parent_names || continue
-            push!(update_exprs, :($child_subcontext_name = @inline getproperty(_returned, $(QuoteNode(child_subcontext_name)))))
+            push!(update_exprs, quote
+                if @inline hasproperty(_returned, $(QuoteNode(child_subcontext_name)))
+                    $child_subcontext_name = @inline merge($child_subcontext_name, getproperty(_returned, $(QuoteNode(child_subcontext_name))))
+                end
+            end)
         end
         push!(exprs, quote
             # Wiring should have a getindex method that returns the appropriate wiring for the child algorithm, 

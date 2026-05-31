@@ -37,9 +37,16 @@ function _generated_step_subcontexts_expr(names::Tuple)
     return Expr(:tuple, Expr(:parameters, (Expr(:(=), name, name) for name in names)...))
 end
 
-"""Return assignments that refresh live root subcontext variables from a child return."""
+"""Return assignments that refresh only subcontexts present in a child return."""
 function _generated_step_return_assignments(names::Tuple, returned_sym)
-    return Any[:($name = @inline getproperty($returned_sym, $(QuoteNode(name)))) for name in names]
+    return Any[
+        quote
+            if @inline hasproperty($returned_sym, $(QuoteNode(name)))
+                $name = @inline merge($name, getproperty($returned_sym, $(QuoteNode(name))))
+            end
+        end
+        for name in names
+    ]
 end
 
 """Return an expression that reconstructs a tuple of resolved route/share values."""
@@ -194,6 +201,8 @@ function _generated_process_algorithm_step_expr(::Type{T}, ::Type{C}, funcname::
     globals_sym = _generated_step_globals_sym(state)
     inputs_sym = _generated_step_inputs_sym(state)
     available_subcontexts = gensym(:available_subcontexts)
+    available_variables = gensym(:available_variables)
+    available_locations = gensym(:available_locations)
     on_demand_context = gensym(:on_demand_context)
     retval = gensym(:retval)
     returned = gensym(:returned)
@@ -205,7 +214,9 @@ function _generated_process_algorithm_step_expr(::Type{T}, ::Type{C}, funcname::
 
     return quote
         local $available_subcontexts = $subcontexts_expr
-        local $on_demand_context = @inline OnDemandContext($available_subcontexts, $wiring_expr, $inputs_sym, $globals_sym, $funcname, $namespace_expr)
+        local $available_locations = @inline on_demand_locations($available_subcontexts, $wiring_expr, $funcname, $namespace_expr)
+        local $available_variables = @inline on_demand_variables($available_subcontexts, $available_locations, $inputs_sym, $globals_sym)
+        local $on_demand_context = @inline OnDemandContext($available_variables, $available_locations, $wiring_expr, $inputs_sym, $globals_sym, $funcname, $namespace_expr)
         local $retval = @inline step!($funcname, $on_demand_context)
         local $returned = @inline merge_by_wiring($on_demand_context, $retval)
         $globals_sym = @inline getproperty($returned, :globals)

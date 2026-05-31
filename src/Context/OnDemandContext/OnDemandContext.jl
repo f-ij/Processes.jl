@@ -1,12 +1,12 @@
 """
 Context view used by resolve-time step factories.
 
-`OnDemandContext` contains only the subcontexts passed to one generated child
-step. The resolved wiring and namespace decide which variables the algorithm can
-read and where returned values are merged.
+`OnDemandContext` contains only the variables visible to one generated child
+step. The resolved wiring and namespace decide where returned values are merged.
 """
-struct OnDemandContext{Subcontexts, W, I, G, A, N} <: AbstractContext
-    subcontexts::Subcontexts
+struct OnDemandContext{Variables, Locations, W, I, G, A, N} <: AbstractContext
+    variables::Variables
+    locations::Locations
     wiring::W
     input::I
     globals::G
@@ -22,7 +22,8 @@ struct SubcontextsContext{Subcontexts, I} <: AbstractContext
     input::I
 end
 
-@inline get_subcontexts(context::OnDemandContext) = getfield(context, :subcontexts)
+@inline get_variables(context::OnDemandContext) = getfield(context, :variables)
+@inline get_locations(context::OnDemandContext) = getfield(context, :locations)
 @inline getruntimeinput(context::OnDemandContext) = getfield(context, :input)
 @inline getglobals(context::OnDemandContext) = getfield(context, :globals)
 @inline get_subcontexts(context::SubcontextsContext) = getfield(context, :subcontexts)
@@ -89,9 +90,8 @@ end
     ntuple(i -> getindex(context, vars[i]), length(vars))
 
 """Return local variable names available in the on-demand local subcontext."""
-function _on_demand_local_locations(::Type{ODC}) where {ODC<:OnDemandContext}
-    Subcontexts = ODC.parameters[1]
-    namespace = ODC.parameters[6]
+function _on_demand_local_locations(::Type{Subcontexts}, ::Type{N}) where {Subcontexts<:NamedTuple, N<:Namespace}
+    namespace = N
     names = _namespace_names(namespace)
     isempty(names) && return (;)
     subcontext_name = first(names)
@@ -103,9 +103,7 @@ function _on_demand_local_locations(::Type{ODC}) where {ODC<:OnDemandContext}
 end
 
 """Return shared variable locations available in an on-demand child context."""
-function _on_demand_shared_locations(::Type{ODC}) where {ODC<:OnDemandContext}
-    Subcontexts = ODC.parameters[1]
-    W = ODC.parameters[2]
+function _on_demand_shared_locations(::Type{Subcontexts}, ::Type{W}) where {Subcontexts<:NamedTuple, W<:Wiring}
     shared_context_names = contextname.(shares(W()))
     return named_flat_collect_broadcast(shared_context_names) do name
         name isa Symbol || return (;)
@@ -118,44 +116,96 @@ function _on_demand_shared_locations(::Type{ODC}) where {ODC<:OnDemandContext}
 end
 
 """Return routed variable locations available in an on-demand child context."""
-function _on_demand_routed_locations(::Type{ODC}) where {ODC<:OnDemandContext}
-    W = ODC.parameters[2]
+function _on_demand_routed_locations(::Type{W}) where {W<:Wiring}
     return named_flat_collect_broadcast(routes(W())) do route
         fromname = get_fromname(route)
         _localnames = localnames(route)
         _subvarcontextnames = subvarcontextnames(route)
         _transform = gettransform(route)
-        location_type = fromname == :_runtime ? :runtime : :subcontext
+        location_type = fromname == :_runtime ? :runtime : fromname == :_input ? :input : :subcontext
         pairs = (_localnames[i] => VarLocation{location_type}(fromname, _subvarcontextnames[i], _transform) for i in 1:length(_localnames))
         return NamedTuple(pairs)
     end
 end
 
 """Return all readable and writable variable locations for an on-demand context."""
+function _on_demand_locations(::Type{Subcontexts}, ::Type{W}, ::Type{N}) where {Subcontexts<:NamedTuple, W<:Wiring, N<:Namespace}
+    return (; _on_demand_shared_locations(Subcontexts, W)..., _on_demand_routed_locations(W)..., _on_demand_local_locations(Subcontexts, N)...)
+end
+
+"""Return singleton values from a locations `NamedTuple` type."""
+function _on_demand_locations_from_type(::Type{L}) where {L<:NamedTuple}
+    names = fieldnames(L)
+    values = ntuple(i -> fieldtype(L, i)(), fieldcount(L))
+    return NamedTuple{names}(values)
+end
+
+"""Return location metadata for the variables visible to one child step."""
+@inline @generated function on_demand_locations(subcontexts::S, wiring::W, algorithm::A, namespace::N) where {S<:NamedTuple, W<:Wiring, A, N<:Namespace}
+    locations = _on_demand_locations(S, W, N)
+    return :($locations)
+end
+
+"""Return a value expression that reads one variable location from live sources."""
+function _on_demand_variable_value_expr(vl)
+    target_subcontext = get_subcontextname(vl)
+    target_variables = get_originalname(vl)
+    varnames = target_variables isa Tuple ? target_variables : (target_variables,)
+    value_exprs = if target_subcontext === :_runtime
+        [:(getproperty(globals, $(QuoteNode(varname)))) for varname in varnames]
+    elseif target_subcontext === :_input
+        [:(getproperty(inputs, $(QuoteNode(varname)))) for varname in varnames]
+    else
+        [:(getproperty(getproperty(subcontexts, $(QuoteNode(target_subcontext))), $(QuoteNode(varname)))) for varname in varnames]
+    end
+    return funcexpr(vl, value_exprs...)
+end
+
+"""Flatten child-visible subcontext variables into an algorithm-facing tuple."""
+@inline @generated function on_demand_variables(subcontexts::S, locations::L, inputs::I, globals::G) where {S<:NamedTuple, L<:NamedTuple, I<:NamedTuple, G}
+    location_values = _on_demand_locations_from_type(L)
+    names = fieldnames(L)
+    values = Any[_on_demand_variable_value_expr(getfield(location_values, i)) for i in eachindex(names)]
+    return :(NamedTuple{$names}(($(values...),)))
+end
+
+"""Return all readable and writable variable locations for an on-demand context."""
 function _on_demand_locations(::Type{ODC}) where {ODC<:OnDemandContext}
-    return (; _on_demand_shared_locations(ODC)..., _on_demand_routed_locations(ODC)..., _on_demand_local_locations(ODC)...)
+    return _on_demand_locations_from_type(ODC.parameters[2])
 end
 
 """Resolve one algorithm-visible name to its on-demand storage location."""
 function _on_demand_location(::Type{ODC}, name::Symbol) where {ODC<:OnDemandContext}
-    aliases = _step_varaliases(ODC.parameters[5])
+    aliases = _step_varaliases(ODC.parameters[6])
     subcontext_name = algo_to_subcontext_names(aliases, name)
     locations = _on_demand_locations(ODC)
     hasproperty(locations, subcontext_name) && return getproperty(locations, subcontext_name), subcontext_name
     return nothing, subcontext_name
 end
 
+"""Return the on-demand variable names that store one resolved location."""
+function _on_demand_names_for_location(::Type{ODC}, ::Type{VL}) where {ODC<:OnDemandContext, VL<:VarLocation}
+    Locations = ODC.parameters[2]
+    names = fieldnames(Locations)
+    matches = Symbol[]
+    for name in names
+        fieldtype(Locations, name) === VL && push!(matches, name)
+    end
+    isempty(matches) && error("Location $(VL) is not available in this on-demand context. Available names are $(names).")
+    return Tuple(matches)
+end
+
 @inline function Base.getproperty(context::OnDemandContext, name::Symbol)
-    if name === :subcontexts || name === :wiring || name === :input || name === :globals || name === :algorithm || name === :namespace
+    if name === :variables || name === :locations || name === :wiring || name === :input || name === :globals || name === :algorithm || name === :namespace
         return getfield(context, name)
     end
     return getproperty(context, Val(name))
 end
 
 @inline @generated function Base.haskey(context::ODC, ::Val{name}) where {ODC<:OnDemandContext, name}
-    location, _ = _on_demand_location(ODC, name)
-    has_input = name in fieldnames(ODC.parameters[3])
-    return :($( !isnothing(location) || has_input ))
+    Variables = ODC.parameters[1]
+    has_input = name in fieldnames(ODC.parameters[4])
+    return :($( name in fieldnames(Variables) || has_input ))
 end
 
 @inline Base.haskey(context::OnDemandContext, name::Symbol) = haskey(context, Val(name))
@@ -165,73 +215,39 @@ end
 end
 
 @inline @generated function Base.getproperty(context::ODC, ::Val{name}) where {ODC<:OnDemandContext, name}
-    location, _ = _on_demand_location(ODC, name)
-    if !isnothing(location)
+    Variables = ODC.parameters[1]
+    if name in fieldnames(Variables)
         return quote
-            return @inline getproperty(context, $location)
+            return @inline getproperty(get_variables(context), $(QuoteNode(name)))
         end
     end
-    if name in fieldnames(ODC.parameters[3])
+    if name in fieldnames(ODC.parameters[4])
         return quote
             return @inline getproperty(getruntimeinput(context), $(QuoteNode(name)))
         end
     end
-    available = (keys(_on_demand_locations(ODC))..., fieldnames(ODC.parameters[3])...)
+    available = (fieldnames(Variables)..., fieldnames(ODC.parameters[4])...)
     return :(error("Variable $(name) requested from on-demand context, but it is not available. Available names are $available."))
 end
 
-@inline @generated function Base.getproperty(context::ODC, vl::Union{VarLocation{:subcontext}, VarLocation{:local}}) where {ODC<:OnDemandContext}
-    target_subcontext = get_subcontextname(vl)
-    target_variable = get_originalname(vl)
-    if isnothing(getfunc(vl)) && target_variable isa Symbol
-        if target_subcontext === :_input
-            return quote
-                return @inline getproperty(getruntimeinput(context), $(QuoteNode(target_variable)))
-            end
-        end
+@inline @generated function Base.getproperty(context::ODC, vl::VL) where {ODC<:OnDemandContext, VL<:Union{VarLocation{:subcontext}, VarLocation{:local}, VarLocation{:input}, VarLocation{:runtime}}}
+    variable_names = _on_demand_names_for_location(ODC, VL)
+    if length(variable_names) == 1
+        variable_name = only(variable_names)
         return quote
-            subcontext = @inline getproperty(get_subcontexts(context), $(QuoteNode(target_subcontext)))
-            return @inline getproperty(subcontext, $(QuoteNode(target_variable)))
+            return @inline getproperty(get_variables(context), $(QuoteNode(variable_name)))
         end
     end
 
-    varnames = target_variable isa Tuple ? target_variable : (target_variable,)
-    varsymbols = ntuple(i -> gensym(:var), length(varnames))
-    assign_exprs = if target_subcontext === :_input
-        [ :($(varsymbols[i]) = @inline getproperty(getruntimeinput(context), $(QuoteNode(varnames[i])))) for i in eachindex(varnames) ]
-    else
-        [ :($(varsymbols[i]) = @inline getproperty(getproperty(get_subcontexts(context), $(QuoteNode(target_subcontext))), $(QuoteNode(varnames[i])))) for i in eachindex(varnames) ]
-    end
-    fexpr = funcexpr(vl, varsymbols...)
-    return quote
-        $(assign_exprs...)
-        return $fexpr
-    end
+    value_exprs = [:(getproperty(get_variables(context), $(QuoteNode(variable_names[i])))) for i in eachindex(variable_names)]
+    return :(return ($(value_exprs...),))
 end
 
-@inline @generated function Base.getproperty(context::ODC, vl::VarLocation{:runtime}) where {ODC<:OnDemandContext}
-    target_variables = get_originalname(vl)
-    if isnothing(getfunc(vl)) && target_variables isa Symbol
-        return quote
-            return @inline getproperty(getglobals(context), $(QuoteNode(target_variables)))
-        end
-    end
-
-    varnames = target_variables isa Tuple ? target_variables : (target_variables,)
-    varsymbols = ntuple(i -> gensym(:runtime_var), length(varnames))
-    assign_exprs = [ :($(varsymbols[i]) = @inline getproperty(getglobals(context), $(QuoteNode(varnames[i])))) for i in eachindex(varnames) ]
-    fexpr = funcexpr(vl, varsymbols...)
-    return quote
-        $(assign_exprs...)
-        return $fexpr
-    end
-end
-
-@inline Base.propertynames(context::OnDemandContext) = (keys(_on_demand_locations(typeof(context)))..., fieldnames(typeof(getruntimeinput(context)))...)
+@inline Base.propertynames(context::OnDemandContext) = (fieldnames(typeof(get_variables(context)))..., fieldnames(typeof(getruntimeinput(context)))...)
 @inline Base.keys(context::OnDemandContext) = propertynames(context)
 
 @inline merge_by_wiring(context::OnDemandContext, ::Nothing) =
-    (; globals = getglobals(context), get_subcontexts(context)...)
+    (; globals = getglobals(context))
 
 """Return globals with temporary runtime outputs produced inside an on-demand step."""
 @inline function merge_ondemand_runtime(context::ODC, patch::P) where {ODC<:OnDemandContext, P<:NamedTuple}
@@ -243,9 +259,8 @@ end
 
 """Merge a child `step!` return into the subcontexts available to that child."""
 @inline @generated function merge_by_wiring(context::ODC, retval::R) where {ODC<:OnDemandContext, R<:NamedTuple}
-    Subcontexts = ODC.parameters[1]
-    A = ODC.parameters[5]
-    local_names = _namespace_names(ODC.parameters[6])
+    A = ODC.parameters[6]
+    local_names = _namespace_names(ODC.parameters[7])
     isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
     local_subcontext = first(local_names)
 
@@ -260,27 +275,23 @@ end
             push!(runtime_fields, Expr(:(=), target_variable, :(getproperty(retval, $(QuoteNode(retval_name))))))
             continue
         end
-        target_subcontext in fieldnames(Subcontexts) || error("Generated step tried to merge into unavailable subcontext $(target_subcontext). Available subcontexts are $(fieldnames(Subcontexts)).")
         exprs = get!(updates, target_subcontext, Expr[])
         push!(exprs, Expr(:(=), target_variable, :(getproperty(retval, $(QuoteNode(retval_name))))))
     end
 
     merge_exprs = Any[
-        :(_subcontexts = @inline get_subcontexts(context)),
         :(_globals = @inline getglobals(context)),
     ]
     if !isempty(runtime_fields)
         runtime_patch_expr = Expr(:tuple, Expr(:parameters, runtime_fields...))
         push!(merge_exprs, :(_globals = @inline merge_ondemand_runtime(context, $runtime_patch_expr)))
     end
-    for (subcontext_name, fields) in updates
+    return_fields = Expr[]
+    for subcontext_name in sort!(collect(keys(updates)); by = string)
+        fields = updates[subcontext_name]
         patch_expr = Expr(:tuple, Expr(:parameters, fields...))
-        push!(merge_exprs, quote
-            _old_subcontext = @inline getproperty(_subcontexts, $(QuoteNode(subcontext_name)))
-            _new_subcontext = @inline merge(_old_subcontext, $patch_expr)
-            _subcontexts = @inline replace_namedtuple_field(_subcontexts, Val($(QuoteNode(subcontext_name))), _new_subcontext)
-        end)
+        push!(return_fields, Expr(:(=), subcontext_name, patch_expr))
     end
-    push!(merge_exprs, :(return (; globals = _globals, _subcontexts...)))
+    push!(merge_exprs, :(return (; globals = _globals, $(return_fields...))))
     return Expr(:block, merge_exprs...)
 end

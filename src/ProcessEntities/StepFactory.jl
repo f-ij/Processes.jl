@@ -24,7 +24,9 @@ function generate_process_algorithm_step(thiswiring::W, namespace::N = Namespace
         _available_subcontexts = (; $(subcontext_pairs...))
         _this_wiring = @inline $W()
         _this_namespace = @inline $N()
-        on_demand_context = @inline OnDemandContext(_available_subcontexts, _this_wiring, _inputs, _globals, _algorithm, _this_namespace)
+        _available_locations = @inline on_demand_locations(_available_subcontexts, _this_wiring, _algorithm, _this_namespace)
+        _available_variables = @inline on_demand_variables(_available_subcontexts, _available_locations, _inputs, _globals)
+        on_demand_context = @inline OnDemandContext(_available_variables, _available_locations, _this_wiring, _inputs, _globals, _algorithm, _this_namespace)
         retval = @inline step!(_algorithm, on_demand_context)
         # Merge the returned values into the appropriate subcontexts using the resolved wiring.
         # Line by line, so for each available subcontext here by name, we have a merge line
