@@ -68,33 +68,33 @@ Run a single function in a loop indefinitely
 @inline loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple = (;), resume::Resuming = Resuming{false}()) where {P<:AbstractProcess, F, C, LT} =
     loop(process, func, context, lt, inputs, resume, sys_looptype)
 
-@inline function loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT <: IndefiniteLifetime, isresuming}
-    @inline before_while(process)
+# @inline function loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT <: IndefiniteLifetime, isresuming}
+#     @inline before_while(process)
 
-    step_plan = @inline getplan(func)
-    step_wiring = @inline getwiring(step_plan)
-    runtime_context = @inline _merge_runtime_inputs(context, inputs)
-    if isresuming
-        @atomic process.paused = false
-    else
-        runtime_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
-        @inline tick!(process)
-        @inline inc!(process)
-    end
+#     step_plan = @inline getplan(func)
+#     step_wiring = @inline getwiring(step_plan)
+#     runtime_context = @inline _merge_runtime_inputs(context, inputs)
+#     if isresuming
+#         @atomic process.paused = false
+#     else
+#         runtime_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
+#         @inline tick!(process)
+#         @inline inc!(process)
+#     end
 
-    while true
-        nextcontext = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
-        # typeof(nextcontext) === typeof(runtime_context) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(runtime_context)).")
-        runtime_context = nextcontext
-        @inline tick!(process)
-        @inline inc!(process) 
-        if @inline breakcondition(lt, process, runtime_context)
-            break
-        end
-    end
+#     while true
+#         nextcontext = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
+#         # typeof(nextcontext) === typeof(runtime_context) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(runtime_context)).")
+#         runtime_context = nextcontext
+#         @inline tick!(process)
+#         @inline inc!(process) 
+#         if @inline breakcondition(lt, process, runtime_context)
+#             break
+#         end
+#     end
 
-    return @inline after_while(process, func, runtime_context, context)
-end
+#     return @inline after_while(process, func, runtime_context, context)
+# end
 
 """
 Run a single function in a loop for a given number of times
@@ -115,7 +115,7 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
         @atomic process.paused = false
         runtime_context
     else
-        stepped_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, r, Stable())
+        # TODO Appropriate step
         @inline tick!(process)
         @inline inc!(process)
         stepped_context
@@ -124,17 +124,25 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     start_idx = @inline loopidx(process)
     end_idx = @inline repeats(r)
     
+    # Top level step gets all available subcontexts 
+    # Implement widened later
+    # _widened = @inline widened_context(runtime_context, step_wiring)
+    # Get the runtime variables
+    subcontexts = get_subcontexts(context)
     for _ in start_idx:end_idx
-    
-        nextcontext = @inline _step!(step_plan, stablecontext, step_wiring, Namespace{nothing}(), process, r, Stable())
-        # typeof(nextcontext) === typeof(stablecontext) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(stablecontext)).")
-        stablecontext = nextcontext
+        generated_plan_step = @inline get_step(algo)
+        # Top level algo always gets all available subcontexts
+        subcontexts = @inline generated_plan_step(algo, process, inputs, subcontexts...)
         @inline tick!(process)
         @inline inc!(process)
-        if @inline breakcondition(r, process, stablecontext)
+        # TODO Breakcondition needs to read directly from the subcontexts, as a namedtuple, instead of the whole context
+        if @inline breakcondition(r, process, subcontexts)
             break
         end
 
     end
-    return @inline after_while(process, algo, stablecontext, context)
+    # TODO generate newcontext here from the new subcontexts
+    # newcontext = ...
+
+    return @inline after_while(process, algo, newcontext, context)
 end
