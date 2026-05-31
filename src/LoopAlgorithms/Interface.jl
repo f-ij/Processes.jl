@@ -21,11 +21,11 @@ Build or rebuild a concrete `LoopAlgorithm` runtime wrapper.
 This constructor keeps the plan type stable and swaps only runtime/lifecycle
 fields such as states, registry, context, inputs, and overrides.
 """
-LoopAlgorithm(plan::LoopAlgorithm; states = getstates(plan), options = getoptions(plan), registry = getregistry(plan), context = getstoredcontext(plan), inits = getstoredinits(plan), overrides = getstoredoverrides(plan), id = getid(plan)) =
-    LoopAlgorithm{typeof(getplan(plan)), typeof(states), typeof(options), typeof(registry), typeof(context), typeof(inits), typeof(overrides), id}(getplan(plan), states, options, registry, context, inits, overrides)
+LoopAlgorithm(plan::LoopAlgorithm; step = getfield(plan, :step), states = getstates(plan), options = getoptions(plan), registry = getregistry(plan), context = getstoredcontext(plan), inits = getstoredinits(plan), overrides = getstoredoverrides(plan), id = getid(plan)) =
+    LoopAlgorithm{typeof(getplan(plan)), typeof(step), typeof(states), typeof(options), typeof(registry), typeof(context), typeof(inits), typeof(overrides), id}(getplan(plan), step, states, options, registry, context, inits, overrides)
 
-LoopAlgorithm(plan::Union{CompositeAlgorithm, Routine}; states = (), options = (), registry = nothing, context = nothing, inits = (), overrides = (), id = getid(plan)) =
-    LoopAlgorithm{typeof(plan), typeof(states), typeof(options), typeof(registry), typeof(context), typeof(inits), typeof(overrides), id}(plan, states, options, registry, context, inits, overrides)
+LoopAlgorithm(plan::Union{CompositeAlgorithm, Routine}; step = nothing, states = (), options = (), registry = nothing, context = nothing, inits = (), overrides = (), id = getid(plan)) =
+    LoopAlgorithm{typeof(plan), typeof(step), typeof(states), typeof(options), typeof(registry), typeof(context), typeof(inits), typeof(overrides), id}(plan, step, states, options, registry, context, inits, overrides)
 
 """Return plan-global wiring inherited by every child."""
 @inline global_wiring(wiring::PlanWiring) = getfield(wiring, :global_wiring)
@@ -80,21 +80,21 @@ get_routes(cla::LA) where {LA<:AbstractLoopAlgorithm} = @inline filter_by_type(R
 @inline getoptions(la::LA, T::Type{O}) where {LA<:AbstractLoopAlgorithm, O} = filter_by_type(O, getoptions(la))
 setoptions(la::LA, options) where {LA<:AbstractLoopAlgorithm} = error("setoptions not implemented for $(typeof(la))")
 
-function setoptions(la::LoopAlgorithm{Plan, S, O, R, C, Inits, Overrides, id}, options) where {Plan, S, O, R, C, Inits, Overrides, id}
-    LoopAlgorithm{Plan, S, typeof(options), R, C, Inits, Overrides, id}(getplan(la), getstates(la), options, getregistry(la), getstoredcontext(la), getstoredinits(la), getstoredoverrides(la))
+function setoptions(la::LoopAlgorithm{Plan, RootStep, S, O, R, C, Inits, Overrides, id}, options) where {Plan, RootStep, S, O, R, C, Inits, Overrides, id}
+    LoopAlgorithm{Plan, RootStep, S, typeof(options), R, C, Inits, Overrides, id}(getplan(la), getfield(la, :step), getstates(la), options, getregistry(la), getstoredcontext(la), getstoredinits(la), getstoredoverrides(la))
 end
 
-function _with_lifecycle(la::LoopAlgorithm{Plan, S, O, R, OldC, OldI, OldOv, id}, context::C, inits::I, overrides::Ov) where {Plan, S, O, R, OldC, OldI, OldOv, id, C, I, Ov}
-    LoopAlgorithm{Plan, S, O, R, C, I, Ov, id}(getplan(la), getstates(la), getoptions(la), getregistry(la), context, inits, overrides)
+function _with_lifecycle(la::LoopAlgorithm{Plan, RootStep, S, O, R, OldC, OldI, OldOv, id}, context::C, inits::I, overrides::Ov) where {Plan, RootStep, S, O, R, OldC, OldI, OldOv, id, C, I, Ov}
+    LoopAlgorithm{Plan, RootStep, S, O, R, C, I, Ov, id}(getplan(la), getfield(la, :step), getstates(la), getoptions(la), getregistry(la), context, inits, overrides)
 end
 
-@inline _attach_registry(la::LoopAlgorithm{Plan, S, O, OldR, C, Inits, Overrides, id}, registry::R) where {Plan, S, O, OldR, C, Inits, Overrides, id, R<:NameSpaceRegistry} =
-    LoopAlgorithm{Plan, S, O, R, C, Inits, Overrides, id}(getplan(la), getstates(la), getoptions(la), registry, getstoredcontext(la), getstoredinits(la), getstoredoverrides(la))
+@inline _attach_registry(la::LoopAlgorithm{Plan, RootStep, S, O, OldR, C, Inits, Overrides, id}, registry::R) where {Plan, RootStep, S, O, OldR, C, Inits, Overrides, id, R<:NameSpaceRegistry} =
+    LoopAlgorithm{Plan, RootStep, S, O, R, C, Inits, Overrides, id}(getplan(la), getfield(la, :step), getstates(la), getoptions(la), registry, getstoredcontext(la), getstoredinits(la), getstoredoverrides(la))
 
 @inline isresolved(la::LoopAlgorithm) = !isnothing(getregistry(la))
-@inline getid(la::Union{LoopAlgorithm{Plan,S,O,R,C,I,Ov,id}, Type{<:LoopAlgorithm{Plan,S,O,R,C,I,Ov,id}}}) where {Plan,S,O,R,C,I,Ov,id} = id
-@inline hasid(la::Union{LoopAlgorithm{Plan,S,O,R,C,I,Ov,id}, Type{<:LoopAlgorithm{Plan,S,O,R,C,I,Ov,id}}}) where {Plan,S,O,R,C,I,Ov,id} = !isnothing(id)
-@inline id(la::Union{LoopAlgorithm{Plan,S,O,R,C,I,Ov,id}, Type{<:LoopAlgorithm{Plan,S,O,R,C,I,Ov,id}}}) where {Plan,S,O,R,C,I,Ov,id} = id
+@inline getid(la::Union{LoopAlgorithm{Plan,Step,S,O,R,C,I,Ov,id}, Type{<:LoopAlgorithm{Plan,Step,S,O,R,C,I,Ov,id}}}) where {Plan,Step,S,O,R,C,I,Ov,id} = id
+@inline hasid(la::Union{LoopAlgorithm{Plan,Step,S,O,R,C,I,Ov,id}, Type{<:LoopAlgorithm{Plan,Step,S,O,R,C,I,Ov,id}}}) where {Plan,Step,S,O,R,C,I,Ov,id} = !isnothing(id)
+@inline id(la::Union{LoopAlgorithm{Plan,Step,S,O,R,C,I,Ov,id}, Type{<:LoopAlgorithm{Plan,Step,S,O,R,C,I,Ov,id}}}) where {Plan,Step,S,O,R,C,I,Ov,id} = id
 
 """
 Trait for setup
@@ -105,7 +105,7 @@ Trait for setup
 @inline iscomposite(::Type{<:LoopAlgorithm{Plan}}) where {Plan} = iscomposite(Plan)
 @inline iscomposite(la::LA) where {LA<:AbstractLoopAlgorithm} = iscomposite(typeof(la))
 
-statetypes(::Type{<:LoopAlgorithm{Plan,S}}) where {Plan,S} = S.parameters
+statetypes(::Type{<:LoopAlgorithm{Plan,Step,S}}) where {Plan,Step,S} = S.parameters
 algotypes(::Type{<:LoopAlgorithm{Plan}}) where {Plan} = algotypes(Plan)
 @inline functypes(::Union{LoopAlgorithm{Plan}, Type{<:LoopAlgorithm{Plan}}}) where {Plan} = functypes(Plan)
 @inline subalgotypes(::Union{LoopAlgorithm{Plan}, Type{<:LoopAlgorithm{Plan}}}) where {Plan} = subalgotypes(Plan)
@@ -154,7 +154,15 @@ then enters the same `_step!` chain used by `run`.
     lifetime = get(getglobals(context), :lifetime, Indefinite())
     process = LoopRunProcess(lifetime)
     plan = @inline getplan(la)
-    return @inline _step!(plan, context, getwiring(plan), Namespace{nothing}(), process, lifetime, typestable)
+    plan_step = @inline get_step(la)
+    available_names = @inline step_available_names(la)
+    all_subcontexts = @inline get_subcontexts(context)
+    active_subcontexts = @inline select_subcontexts(all_subcontexts, Val(available_names))
+    runtime_ref = Ref{Any}(@inline getglobals(context))
+    returned_subcontexts = @inline plan_step(plan, process, lifetime, runtime_ref, getruntimeinput(context), active_subcontexts...)
+    subcontexts = @inline merge_subcontexts_by_name(all_subcontexts, returned_subcontexts)
+    stepped_context = @inline withsubcontexts(context, subcontexts)
+    return @inline withruntime(stepped_context, runtime_ref[])
 end
 
 """

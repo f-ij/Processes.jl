@@ -6,7 +6,7 @@ abstract type Lifetime end
 abstract type RepeatLifetime <: Lifetime end
 abstract type IndefiniteLifetime <: Lifetime end
 
-Base.:(/)(r::RepeatLifetime, n) = r.repeats / n
+Base.:(/)(r::RepeatLifetime, n) = repeats(r) / n
 repeats(r::RepeatLifetime) = r.repeats
 
 repeats(::IndefiniteLifetime) = Inf
@@ -18,9 +18,19 @@ Struct to define the lifetime of a process
 Is a struct so that dispatch can be used to choose the appropriate loop during compile time
 """
 struct Indefinite <: IndefiniteLifetime end
-struct Repeat <: RepeatLifetime
-    repeats::Int
+struct Repeat{N} <: RepeatLifetime
+    """Create a finite repeat lifetime with the repeat count encoded in the type."""
+    function Repeat{N}() where {N}
+        N > 0 || error("Repeat(0) is not supported. Use a positive repeat count.")
+        return new{N}()
+    end
 end
+
+"""Create a finite repeat lifetime with at least one scheduled step."""
+Repeat(repeats::Integer) = Repeat{Int(repeats)}()
+Repeat(repeats::Real) = Repeat(round(Int, repeats))
+repeats(::Repeat{N}) where {N} = N
+repeats(::Type{<:Repeat{N}}) where {N} = N
 
 
 function breakcondition(lt::Union{Repeat, Indefinite}, process::P, context::C) where {P <: AbstractProcess, C}
@@ -99,7 +109,5 @@ function breakcondition(aam::AtLeastAtMost{Vars}, process::P, context::C) where 
         return @inline aam.cond(getindex(context, Vars...))
     end
 end
-
-
 
 

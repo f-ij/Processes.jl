@@ -10,11 +10,12 @@ Execution plan that steps child algorithms on fixed intervals.
 the registry, root process states, stored context, inputs, and overrides belongs
 to the concrete `LoopAlgorithm` wrapper created by `resolve`/`init`.
 """
-struct CompositeAlgorithm{T, Intervals, Namespaces, W, id} <: AbstractLoopAlgorithm
+struct CompositeAlgorithm{T, Intervals, Namespaces, W, Steps, id} <: AbstractLoopAlgorithm
     funcs::T
-    intervals
+    intervals::Intervals
     namespaces::Namespaces
     wiring::W
+    child_steps::Steps
     inc::Base.RefValue{Int} # Runtime interval cursor.
 end
 
@@ -35,19 +36,19 @@ non-plan options stay on the `LoopAlgorithm` wrapper.
 function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
     namespaces = ntuple(_ -> Namespace{nothing}(), length(funcs))
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(funcs, options))
-    plan = CompositeAlgorithm{typeof(funcs), intervals, typeof(namespaces), typeof(wiring), id}(funcs, intervals, namespaces, wiring, Ref(1))
+    plan = CompositeAlgorithm{typeof(funcs), typeof(intervals), typeof(namespaces), typeof(wiring), Tuple{}, id}(funcs, intervals, namespaces, wiring, (), Ref(1))
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end
 
 function newfuncs(ca::CompositeAlgorithm, funcs)
     # CompositeAlgorithm{typeof(funcs), intervals(ca), typeof(ca.registry), typeof(ca.options)}(funcs, ca.inc, ca.registry , ca.options)
-    setfield(ca, :funcs, funcs)
+    return clear_steps(setfield(ca, :funcs, funcs))
 end
 
 function setoptions(ca::CompositeAlgorithm, options)
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(getalgos(ca), options))
-    return setfield(ca, :wiring, wiring)
+    return clear_steps(setfield(ca, :wiring, wiring))
 end
 
 subalgorithms(ca::CompositeAlgorithm) = getalgos(ca)
@@ -62,14 +63,14 @@ getinc(ca::CompositeAlgorithm) = getfield(ca, :inc)
 getwiring(ca::CompositeAlgorithm) = getfield(ca, :wiring)
 getoptions(ca::CompositeAlgorithm) = _all_plan_wiring(global_wiring(getwiring(ca)), child_wiring(getwiring(ca)))
 
-getid(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = id
-setid(ca::CA, id = uuid4()) where {CA<:CompositeAlgorithm} = setparameter(ca, 5, id)
+getid(ca::Union{CompositeAlgorithm{T,I,NS,W,CS,id}, Type{<:CompositeAlgorithm{T,I,NS,W,CS,id}}}) where {T,I,NS,W,CS,id} = id
+setid(ca::CA, id = uuid4()) where {CA<:CompositeAlgorithm} = setparameter(ca, 6, id)
 
 # setname(ca::CA, name::Symbol) where CA <: CompositeAlgorithm = setparameter(ca, 6, name)
 # getname(ca::Union{CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}, Type{<:CompositeAlgorithm{T,I,NSR,O,R,id,CustomName}}}) where {T,I,NSR,O,R,id,CustomName} = CustomName
 
-interval(ca::CompositeAlgorithm, idx) = typeof(ca).parameters[2][idx]
-interval(::Type{<:CompositeAlgorithm{T,I}}, idx) where {T,I} = I[idx]
+interval(ca::CompositeAlgorithm, idx) = getfield(ca, :intervals)[idx]
+interval(::Type{<:CompositeAlgorithm{T,I}}, idx) where {T,I} = intervals(I)[idx]
 
 
 ###########################################
@@ -80,20 +81,43 @@ interval(::Type{<:CompositeAlgorithm{T,I}}, idx) where {T,I} = I[idx]
 @inline numalgos(::Union{CompositeAlgorithm{T,I,NS}, Type{<:CompositeAlgorithm{T,I,NS}}}) where {T,I,NS} = length(T.parameters)
 
 
-@inline intervals(ca::CompositeAlgorithm) = typeof(ca).parameters[2]
-@inline intervals(::Type{<:CompositeAlgorithm{T,I}}) where {T,I} = I
+"""Return the singleton schedule values carried by a tuple type."""
+function _schedule_values_from_tuple_type(::Type{T}) where {T<:Tuple}
+    return ntuple(i -> _schedule_value_from_type(fieldtype(T, i)), fieldcount(T))
+end
+
+"""Return a singleton value for singleton schedule types, otherwise the type."""
+function _schedule_value_from_type(::Type{T}) where {T}
+    return Base.issingletontype(T) ? T.instance : T
+end
+
+@inline intervals(ca::CompositeAlgorithm) = getfield(ca, :intervals)
+@inline intervals(::Type{<:CompositeAlgorithm{T,I}}) where {T,I} = intervals(I)
+@inline intervals(::Type{I}) where {I<:Tuple} = _schedule_values_from_tuple_type(I)
 @inline intervals(ca::Union{CompositeAlgorithm, Type{<:CompositeAlgorithm}}, ::Val{Idx}) where Idx = @inline intervals(ca)[Idx]
 
 get_this_interval(args) = interval(getalgo(args.process), algoidx(args))
 
+"""Normalize one composite schedule entry to an `Interval` value."""
+@inline _normalize_composite_interval(interval::Interval) = interval
+@inline _normalize_composite_interval(interval::Real) = Interval(round(Int, interval))
+
 function setintervals(ca::C, new_intervals) where {C<:CompositeAlgorithm}
-    @assert length(new_intervals) == length(getalgos(ca)) "Length of new intervals must match number of functions in the composite algorithm, but got $(length(new_intervals)) intervals for $(length(getalgos(ca))) functions"
-    setparameter(ca, 2, new_intervals)
+    intervals_tuple = map(_normalize_composite_interval, Tuple(new_intervals))
+    @assert length(intervals_tuple) == length(getalgos(ca)) "Length of new intervals must match number of functions in the composite algorithm, but got $(length(intervals_tuple)) intervals for $(length(getalgos(ca))) functions"
+    return CompositeAlgorithm{typeof(getalgos(ca)), typeof(intervals_tuple), typeof(getfield(ca, :namespaces)), typeof(getwiring(ca)), typeof(get_child_steps(ca)), getid(ca)}(
+        getalgos(ca),
+        intervals_tuple,
+        getfield(ca, :namespaces),
+        getwiring(ca),
+        get_child_steps(ca),
+        getinc(ca),
+    )
 end
 
 function setinterval(ca::C, idx::Int, new_interval) where {C<:CompositeAlgorithm}
-    new_intervals = ntuple(i -> i == idx ? new_interval : interval(ca, i), length(getalgos(ca)))
-    setparameter(ca, 2, new_intervals)
+    new_intervals = ntuple(i -> i == idx ? _normalize_composite_interval(new_interval) : interval(ca, i), length(getalgos(ca)))
+    return setintervals(ca, new_intervals)
 end
 
 
@@ -103,8 +127,8 @@ end
 # intervals(ca::C) where {C<:CompositeAlgorithm} = getfield(ca, :intervals)
 get_intervals(ca) = intervals(ca)
 
-hasid(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = !isnothing(id)
-id(ca::Union{CompositeAlgorithm{T,I,NS,W,id}, Type{<:CompositeAlgorithm{T,I,NS,W,id}}}) where {T,I,NS,W,id} = id
+hasid(ca::Union{CompositeAlgorithm{T,I,NS,W,CS,id}, Type{<:CompositeAlgorithm{T,I,NS,W,CS,id}}}) where {T,I,NS,W,CS,id} = !isnothing(id)
+id(ca::Union{CompositeAlgorithm{T,I,NS,W,CS,id}, Type{<:CompositeAlgorithm{T,I,NS,W,CS,id}}}) where {T,I,NS,W,CS,id} = id
 
 
 

@@ -1,10 +1,202 @@
+export get_step, get_child_step
+
+@inline Base.getindex(wiring::PlanWiring, idx::Int) = getfield(child_wiring(wiring), idx)
+
+"""Return `items` with duplicate symbols removed while preserving first-seen order."""
+function _unique_symbols(items::Tuple)
+    result = Symbol[]
+    for item in items
+        item isa Symbol || continue
+        item in result || push!(result, item)
+    end
+    return Tuple(result)
+end
+
+"""Return source subcontext names needed by one resolved route."""
+function _route_source_names(route::R) where {R<:Route}
+    source = get_fromname(route)
+    source == :_runtime && return ()
+    return source isa Symbol ? (source,) : ()
+end
+
+"""Return source subcontext names needed by one resolved share."""
+function _share_source_names(share::S) where {S<:Share}
+    source = contextname(share)
+    return source isa Symbol ? (source,) : ()
+end
+
+"""Return all subcontext names required by one concrete child wiring bucket."""
+function get_available_subcontext_names(wiring::W, namespace::N = Namespace{nothing}()) where {W<:Wiring, N<:Namespace}
+    route_sources = mapreduce(_route_source_names, (left, right) -> (left..., right...), routes(wiring); init = ())
+    share_sources = mapreduce(_share_source_names, (left, right) -> (left..., right...), shares(wiring); init = ())
+    return _unique_symbols((_namespace_names(namespace)..., route_sources..., share_sources...))
+end
+
+"""Return all subcontext names required by a child-indexed `PlanWiring`."""
+function get_available_subcontext_names(wiring::W, namespaces::N) where {W<:PlanWiring, N<:Tuple}
+    child_wirings = child_wiring(wiring)
+    names = ()
+    for i in eachindex(child_wirings)
+        names = (names..., get_available_subcontext_names(getfield(child_wirings, i), getfield(namespaces, i))...)
+    end
+    return _unique_symbols(names)
+end
+
+"""Return all subcontext names required by a concrete child step."""
+function get_child_available_subcontext_names(child::A, wiring::W, namespace::N) where {A, W<:Wiring, N<:Namespace}
+    return get_available_subcontext_names(wiring, namespace)
+end
+
+function get_child_available_subcontext_names(child::LA, wiring::W, namespace::N) where {LA<:AbstractLoopAlgorithm, W<:PlanWiring, N<:Namespace}
+    return step_available_names(child)
+end
+
+"""Return all subcontext names required by a resolved plan node."""
+function get_available_subcontext_names(plan::P, wiring::W, namespaces::N) where {P<:Union{CompositeAlgorithm, Routine}, W<:PlanWiring, N<:Tuple}
+    funcs = getalgos(plan)
+    child_wirings = child_wiring(wiring)
+    names = ()
+    for i in eachindex(child_wirings)
+        names = (names..., get_child_available_subcontext_names(getfield(funcs, i), getfield(child_wirings, i), getfield(namespaces, i))...)
+    end
+    return _unique_symbols(names)
+end
+
+"""Clear resolved step functions after unresolved plan edits."""
+@inline function clear_steps(plan::P) where {P<:Union{CompositeAlgorithm, Routine}}
+    return setfield(plan, :child_steps, ())
+end
+
+@inline clear_steps(x) = x
+
+"""Return the typed tuple of resolved child-step functions."""
+@inline get_child_steps(plan::Union{CompositeAlgorithm, Routine}) = getfield(plan, :child_steps)
+@inline get_child_steps(la::LoopAlgorithm) = get_child_steps(getplan(la))
+
+"""Return one resolved child-step function."""
+@inline get_child_step(plan::Union{CompositeAlgorithm, Routine}, idx::Int) = getfield(get_child_steps(plan), idx)
+@inline get_child_step(la::LoopAlgorithm, idx::Int) = get_child_step(getplan(la), idx)
+
+"""Return the root step function owned by a resolved loop wrapper."""
+@inline function get_step(la::LoopAlgorithm)
+    step = getfield(la, :step)
+    isnothing(step) && error("Root plan step has not been generated. Resolve the loop algorithm before running it.")
+    return step
+end
+
+@inline get_step(fa::FinalizedAlgorithm) = get_step(inneralgorithm(fa))
+
+"""Return all subcontext names expected by a resolved plan step."""
+@inline step_available_names(plan::Union{CompositeAlgorithm, Routine}) =
+    get_available_subcontext_names(plan, getwiring(plan), getfield(plan, :namespaces))
+@inline step_available_names(la::LoopAlgorithm) = step_available_names(getplan(la))
+@inline step_available_names(fa::FinalizedAlgorithm) = step_available_names(inneralgorithm(fa))
+
+"""Generate a child step for either a concrete child or a nested plan child."""
+function generate_child_step(child::A, thiswiring::W, namespace::N) where {A, W<:Wiring, N<:Namespace}
+    return generate_process_algorithm_step(thiswiring, namespace)
+end
+
+function generate_child_step(child::LA, thiswiring::W, namespace::N) where {LA<:AbstractLoopAlgorithm, W<:PlanWiring, N<:Namespace}
+    return generate_plan_step(child, thiswiring, getfield(child, :namespaces))
+end
+
+"""Run every child step factory for a resolved plan."""
+function generate_child_steps(plan::P, this_plan_wiring::W, namespaces::N) where {P<:Union{CompositeAlgorithm, Routine}, W<:PlanWiring, N<:Tuple}
+    funcs = getalgos(plan)
+    child_wirings = child_wiring(this_plan_wiring)
+    return ntuple(i -> generate_child_step(getfield(funcs, i), getfield(child_wirings, i), getfield(namespaces, i)), length(funcs))
+end
+
+"""Return the generated function argument expressions for named subcontexts."""
+function _subcontext_arg_exprs(names::Tuple)
+    return Any[Expr(:(::), name, Symbol(:T, i)) for (i, name) in enumerate(names)]
+end
+
+"""Return the `where` type variables for named subcontext arguments."""
+function _subcontext_typevars(names::Tuple)
+    return Any[Symbol(:T, i) for i in eachindex(names)]
+end
+
+"""Return a named-tuple expression from current subcontext argument variables."""
+function _subcontexts_tuple_expr(names::Tuple)
+    return Expr(:tuple, Expr(:parameters, (Expr(:(=), name, name) for name in names)...))
+end
+
+"""Generate child call expressions for a composite plan step."""
+function _composite_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings::Tuple, namespaces::Tuple, interval_values::Tuple)
+    exprs = Any[]
+    for i in eachindex(child_wirings)
+        child_subcontext_names = get_child_available_subcontext_names(getfield(funcs, i), getfield(child_wirings, i), getfield(namespaces, i))
+        child_args = Any[child_subcontext_name for child_subcontext_name in child_subcontext_names]
+        update_exprs = Any[]
+        for child_subcontext_name in child_subcontext_names
+            child_subcontext_name in parent_names || continue
+            push!(update_exprs, :($child_subcontext_name = @inline getproperty(_returned_subcontexts, $(QuoteNode(child_subcontext_name)))))
+        end
+        push!(exprs, quote
+            if @inline divides(_this_inc, $(interval_values[i]))
+                _child_algo = @inline getalgo(_plan, $i)
+                _child_step = @inline get_child_step(_plan, $i)
+                _returned_subcontexts = @inline _child_step(_child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
+                $(update_exprs...)
+            end
+        end)
+    end
+    return exprs
+end
+
+"""Generate child call expressions for a routine plan step."""
+function _routine_child_exprs(funcs::Tuple, parent_names::Tuple, child_wirings::Tuple, namespaces::Tuple, lifetime_values::Tuple)
+    exprs = Any[]
+    break_context_expr = _subcontexts_tuple_expr(parent_names)
+    for i in eachindex(child_wirings)
+        child_subcontext_names = get_child_available_subcontext_names(getfield(funcs, i), getfield(child_wirings, i), getfield(namespaces, i))
+        child_args = Any[child_subcontext_name for child_subcontext_name in child_subcontext_names]
+        update_exprs = Any[]
+        for child_subcontext_name in child_subcontext_names
+            child_subcontext_name in parent_names || continue
+            push!(update_exprs, :($child_subcontext_name = @inline getproperty(_returned_subcontexts, $(QuoteNode(child_subcontext_name)))))
+        end
+        push!(exprs, quote
+            # Wiring should have a getindex method that returns the appropriate wiring for the child algorithm, 
+            _this_child_idx = $i
+            _this_lifetime = $(lifetime_values[i])
+            _this_repeat_count = @inline routine_repeat_count(_this_lifetime)
+            _resume_point = @inline get_resume_point(_plan, _this_child_idx)
+            if _resume_point <= _this_repeat_count
+                for _lidx in _resume_point:_this_repeat_count
+                    _break_context = @inline break_context_from_subcontexts($break_context_expr, _inputs)
+                    if @inline routine_breakcondition(_this_lifetime, _lifetime, _process, _break_context, _lidx)
+                        if !(@inline _routine_local_breakcondition(_this_lifetime, _process, _break_context, _lidx))
+                            @inline set_resume_point!(_plan, _this_child_idx, _lidx)
+                        end
+                        break
+                    end
+                    # get the pregenerated step for the child algorithm, which should be a _step!-like function 
+                    # that takes the normal arguments plus all the available subcontexts for this child step
+                    _child_algo = @inline getalgo(_plan, _this_child_idx)
+                    _child_step = @inline get_child_step(_plan, _this_child_idx)
+
+                    # call the child step with the appropriate arguments, including the available subcontexts for this child
+                    _returned_subcontexts = @inline _child_step(_child_algo, _process, _lifetime, _globals, _inputs, $(child_args...))
+                    $(update_exprs...)
+                    @inline tick!(_process)
+                end
+            end
+            @inline set_resume_point!(_plan, _this_child_idx, 1)
+        end)
+    end
+    return exprs
+end
+
 """
 Generate a step for composite with runtime wiring information
 """
-@inline function generate_composite_steps(ca::CA, context::C, wiring::W, namespace::N)
+@inline function generate_composite_steps(ca::CA, this_plan_wiring::W, namespaces::N) where {CA<:CompositeAlgorithm, W<:PlanWiring, N<:Tuple}
     # For every child, get a tuple of available subcontexts symbols from the wiring
-    # TODO IMPLEMENT similar to routine, but now just with the divides condition for the loop scheduling
-
+    child_steps = generate_child_steps(ca, this_plan_wiring, namespaces)
+    return generate_plan_step(ca, this_plan_wiring, namespaces), child_steps
 end
 
 """
@@ -16,181 +208,67 @@ because these functions will be inlined with those names. We should use _argname
 to avoid name clashes with subcontext names since now they are all passed as normal arguments.
 I.e. all non-generated argument names should be prefixed with "_"
 """
-@inline function generate_routine_steps(routine::R, this_plan_wiring::W, namespaces::N) where {R <: Routine, W <: PlanWiring, N}
-    @assert isresolved(routine) "Can only generate steps for resolved routines"
+@inline function generate_routine_steps(routine::R, this_plan_wiring::W, namespaces::N) where {R <: Routine, W <: PlanWiring, N<:Tuple}
     # For a child routine, get a tuple of available subcontexts symbols from the wiring, recursively
-    # TODO IMPLEMENT this function
-    this_routine_available_subcontexts_from_parent = get_available_subcontext_names.(this_plan_wiring)
-    child_wirings = ntuple(i -> getindex(this_plan_wiring, i), numalgos(routine))
+    child_steps = generate_child_steps(routine, this_plan_wiring, namespaces)
+    return generate_plan_step(routine, this_plan_wiring, namespaces), child_steps
+end
 
-    routine_child_part_per_child = Any[]
-    for i in 1:numalgos(routine)
-        this_child_step_wiring = child_wirings[i]
-        available_child_subcontext_names = get_available_subcontext_names(this_child_step_wiring)
-        this_child_namespace = getindex(namespaces, i)
-        child_available_subcontexts = get_available_subcontexts(this_child_step_wiring[i])
-
-        # Below is the part of the generated routine step that corresponds to child i
-        # This is just the for loop body that runs the child step repeatedly
-        # But now i this branch we pass the subcontext names that actually can be accessed in this step branch
-        # However, the child step itself is not generated here, it is generated separately 
-        # Then gotten here as a getfield from the plan that calls this function
-        # The reason we need to runtime generate this is because we need to know which arguments need to be passed on to a child step
-        push!(routine_child_part_per_child, quote 
-            # Wiring should have a getindex method that returns the appropriate wiring for the child algorithm, 
-            _this_child_idx = $i
-            _this_lifetime = _lifetime[_this_child_idx]
-            if _lifetime isa RepeatLifetime
-                _this_repeats = repeats(_this_lifetime)
-                for _lidx in 1:_this_repeats
-                    if @inline routine_breakcondition(_this_lifetime, _lifetime, _process, _context, _lidx)
-                        break
-                    end
-                    # get the pregenerated step for the child algorithm, which should be a _step!-like function 
-                    # that takes the normal arguments plus all the available subcontexts for this child step
-                    child_step = get_child_step(_routine, _this_child_idx)
-    
-                    # call the child step with the appropriate arguments, including the available subcontexts for this child
-                    return_subcontexts = @inline child_step(_routine, $this_child_step_wiring, $this_child_namespace, _process, _lifetime, $(child_available_subcontexts...))
-                end
-                # TODO generate a code block where all the available subcontexts passed by the parent that are also returned by the child
-                # are overwritten, thus we need the intersection of the child_available_subcontexts and this_routine_available_subcontexts_from_parent
-                # to know which subcontexts need to be overwritten 
-            else # TODO Branch for other lifetime types like UntilLifetime
-            end
-
-         end)
+"""Generate a plan step function for a composite or routine."""
+function generate_plan_step(plan::P, this_plan_wiring::W = getwiring(plan), namespaces::N = getfield(plan, :namespaces)) where {P<:Union{CompositeAlgorithm, Routine}, W<:PlanWiring, N<:Tuple}
+    this_available_subcontexts_from_parent = get_available_subcontext_names(plan, this_plan_wiring, namespaces)
+    subcontext_args = _subcontext_arg_exprs(this_available_subcontexts_from_parent)
+    subcontext_typevars = _subcontext_typevars(this_available_subcontexts_from_parent)
+    return_expr = _subcontexts_tuple_expr(this_available_subcontexts_from_parent)
+    funcs = getalgos(plan)
+    child_wirings = child_wiring(this_plan_wiring)
+    if plan isa CompositeAlgorithm
+        child_exprs = _composite_child_exprs(funcs, this_available_subcontexts_from_parent, child_wirings, namespaces, intervals(plan))
+        plan_prelude = Any[:(_this_inc = @inline inc(_plan))]
+        plan_epilogue = Any[:(@inline inc!(_plan))]
+    elseif plan isa Routine
+        child_exprs = _routine_child_exprs(funcs, this_available_subcontexts_from_parent, child_wirings, namespaces, lifetimes(plan))
+        plan_prelude = Any[]
+        plan_epilogue = Any[]
     end
-    # TODO generate ::T1, ::T2 ... where {..., T1, T2,...} for the child function type parameters so julia can specialize
 
-    func_signature = quote function _generated_child_routine_step!(_routine:C, _process::P, _lifetime::LT, $(this_available_subcontexts[i]...))
-                # Similar function body to the old _step!
-                # but now something inserts the argument specific child steps
-                # TODO Interpolate the child step code blocks generated above into the appropriate place 
-
-            # Returns a namedtuple of all the names of the subcontexts from the parent
-            # These are thuse overwritten by the child steps
-            return (; $(this_available_subcontexts_from_parent...))
+    funcbody = quote
+        function (
+            _plan::Plan,
+            _process::Proc,
+            _lifetime::LT,
+            _globals::G,
+            _inputs::I,
+            $(subcontext_args...)
+        ) where {Plan<:$(typeof(plan)), Proc<:AbstractProcess, LT<:Lifetime, G, I<:NamedTuple, $(subcontext_typevars...)}
+            $(plan_prelude...)
+            $(child_exprs...)
+            $(plan_epilogue...)
+            return $return_expr
         end
     end
 
-    # TODO use RUNTIMEGENERATEDFUNCTIONS machinery to generate a function with the above signature and body, and return that as the generated step for this routine
+    # RuntimeGeneratedFunctions turns the generated signature and body into the resolved plan step.
+    return @RuntimeGeneratedFunction(funcbody.args[end])
 end
 
-# """
-# Running a composite algorithm allows for static unrolling and inlining of all sub-algorithms through 
-#     recursive calls
-# """
+"""Attach resolved child steps to one resolved plan node."""
+function attach_steps_to_plan(plan::CA) where {CA<:CompositeAlgorithm}
+    _, child_steps = generate_composite_steps(plan, getwiring(plan), getfield(plan, :namespaces))
+    return setfield(plan, :child_steps, child_steps)
+end
 
-# """
-# Step each scheduled child of a composite plan with explicit loop runtime.
+"""Attach resolved child steps to one resolved plan node."""
+function attach_steps_to_plan(plan::R) where {R<:Routine}
+    _, child_steps = generate_routine_steps(plan, getwiring(plan), getfield(plan, :namespaces))
+    return setfield(plan, :child_steps, child_steps)
+end
 
-# The `process` and `lifetime` values are forwarded so nested loop algorithms can
-# run without storing those transient values in the context.
-# """
-# Base.@constprop :aggressive @inline @generated function _step!(ca::CA, context::C, wiring::W, namespace::N, process::P, lifetime::LT, typestable::S = Stable()) where {CA <: CompositeAlgorithm, C <: AbstractContext, W <: PlanWiring, N <: Namespace, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
-#     algo_count = numalgos(CA)
-#     child_wiring_type = W.parameters[2]
-#     interval_values = CA.parameters[2]
-#     child_namespace_tuple_type = CA.parameters[3]
-#     # Generate the same child-indexed execution as the old unrollreplace path,
-#     # but without the closure object on the hot non-generated loop path. The
-#     # schedule is known from the plan type, so `divides` specializes away for
-#     # interval-1 children.
-#     exprs = Any[]
-#     sizehint!(exprs, algo_count + 4)
-#     push!(exprs, :(local algos = @inline getalgos(ca)))
-#     push!(exprs, :(local this_inc = @inline inc(ca)))
+@inline attach_steps_to_plan(x) = x
 
-#     for i in 1:algo_count
-#         interval_value = interval_values[i]
-#         child_step_wiring_type = fieldtype(child_wiring_type, i)
-#         interval_type = typeof(interval_value)
-#         child_namespace_type = fieldtype(child_namespace_tuple_type, i)
-#         push!(exprs, quote
-#             if @inline divides(this_inc, $interval_type())
-#                 local algo = @inline getfield(algos, $i)
-#                 local child_step_wiring = $child_step_wiring_type()
-#                 local child_namespace = $child_namespace_type()
-#                 context = @inline _step!(algo, context, child_step_wiring, child_namespace, process, lifetime, typestable)
-#             end
-#         end)
-#     end
+"""Attach the root generated step to a resolved loop wrapper."""
+@inline function attach_root_step(la::LA) where {LA<:LoopAlgorithm}
+    return LoopAlgorithm(la; step = generate_plan_step(getplan(la)))
+end
 
-#     push!(exprs, :(@inline inc!(ca)))
-#     push!(exprs, :(return context))
-#     return Expr(:block, exprs...)
-# end
-
-# """Step one lifetime-scheduled child inside a `Routine`."""
-# @inline function _subroutine_step!(
-#     context::C,
-#     func::F,
-#     r::R,
-#     process::P,
-#     lifetime::LT,
-#     typestable::S,
-#     idx::Int,
-#     subroutine_lifetime::SL,
-#     child_step_wiring::W,
-#     namespace::N,
-# ) where {C,F,R<:Routine,P<:AbstractProcess,LT<:Lifetime,S<:Stability,SL<:Lifetime,W,N<:Namespace}
-#     resume_point = @inline get_resume_point(r, idx)
-#     this_repeat_count = @inline routine_repeat_count(subroutine_lifetime)
-#     if resume_point <= this_repeat_count
-#         context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, typestable)
-#         @inline tick!(process)
-
-#         next_idx = resume_point + 1
-#         if @inline routine_breakcondition(subroutine_lifetime, lifetime, process, context, resume_point)
-#             if !(@inline _routine_local_breakcondition(subroutine_lifetime, process, context, resume_point))
-#                 @inline set_resume_point!(r, idx, next_idx)
-#             end
-#             return context
-#         end
-
-#         for lidx in next_idx:this_repeat_count
-#             if @inline routine_breakcondition(subroutine_lifetime, lifetime, process, context, lidx)
-#                 if !(@inline _routine_local_breakcondition(subroutine_lifetime, process, context, lidx))
-#                     @inline set_resume_point!(r, idx, lidx)
-#                 end
-#                 return context
-#             end
-#             context = @inline _step!(func, context, child_step_wiring, namespace, process, lifetime, typestable)
-#             @inline tick!(process)
-#         end
-#     end
-#     return context
-# end
-
-# """
-# Step each child routine in sequence with explicit loop runtime.
-
-# Each child is run once at its resume point, then repeated until its declared
-# repeat count is reached or the lifetime stops.
-# """
-# Base.@constprop :aggressive @inline @generated function _step!(r::R, context::C, wiring::W, namespace::N, process::P, lifetime::LT, typestable::S = Stable()) where {R <: Routine, C <: AbstractContext, W <: PlanWiring, N <: Namespace, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
-#     algo_count = numalgos(R)
-#     child_wiring_type = W.parameters[2]
-#     repeat_values = R.parameters[2]
-#     child_namespace_tuple_type = R.parameters[3]
-
-#     exprs = Any[]
-#     sizehint!(exprs, algo_count + 4)
-#     push!(exprs, :(local algos = @inline getalgos(r)))
-
-#     for i in 1:algo_count
-#         repeat_value = repeat_values[i]
-#         child_step_wiring_type = fieldtype(child_wiring_type, i)
-#         child_namespace_type = fieldtype(child_namespace_tuple_type, i)
-#         push!(exprs, quote
-#             local func = @inline getfield(algos, $i)
-#             local child_step_wiring = $child_step_wiring_type()
-#             local child_namespace = $child_namespace_type()
-#             context = @inline _subroutine_step!(context, func, r, process, lifetime, typestable, $i, $repeat_value, child_step_wiring, child_namespace)
-#         end)
-#     end
-
-#     push!(exprs, :(return context))
-#     return Expr(:block, exprs...)
-# end
+@inline attach_root_step(x) = x

@@ -58,8 +58,9 @@ that plan is resolved or initialized: root states, resolved options, registry,
 stored context, initializers, and overrides. Reinitialization should replace
 this wrapper/lifecycle data without changing the type of the wrapped plan.
 """
-struct LoopAlgorithm{Plan, S, O, R, C, Inits, Overrides, id} <: AbstractLoopAlgorithm
+struct LoopAlgorithm{Plan, RootStep, S, O, R, C, Inits, Overrides, id} <: AbstractLoopAlgorithm
     plan::Plan
+    step::RootStep
     states::S
     options::O
     reg::R
