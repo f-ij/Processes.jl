@@ -75,24 +75,24 @@ end
     return @inline withaliases(scv, instance, injected, Alias)
 end
 
-@inline function Base.view(pc::PC, instance::SA, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I}
+@inline function Base.view(pc::PC, instance::SA, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:AbstractScopedContext, SA<:AbstractIdentifiableAlgo, I}
     key = @inline getkey(instance)
     return SubContextView{typeof(pc), key, typeof(instance), typeof(inject)}(pc, instance; inject)
 end
 
-@inline function Base.view(pc::PC, instance::SA, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I, SC<:Tuple, SV<:Tuple}
+@inline function Base.view(pc::PC, instance::SA, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:AbstractScopedContext, SA<:AbstractIdentifiableAlgo, I, SC<:Tuple, SV<:Tuple}
     key = @inline getkey(instance)
     typed_sharedcontexts = @inline wiring_from_tuple_type(SC)
     typed_sharedvars = @inline wiring_from_tuple_type(SV)
     return SubContextView{typeof(pc), key, typeof(instance), typeof(inject), varaliases(instance), typed_sharedcontexts, typed_sharedvars}(pc, instance, inject)
 end
 
-@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, A<:ProcessAlgorithm, Name, I}
+@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:AbstractScopedContext, A<:ProcessAlgorithm, Name, I}
     aliases = VarAliases()
     return SubContextView{typeof(pc), Name, typeof(instance), typeof(inject), typeof(aliases), (), ()}(pc, instance, inject)
 end
 
-@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, A<:ProcessAlgorithm, Name, I, SC<:Tuple, SV<:Tuple}
+@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:AbstractScopedContext, A<:ProcessAlgorithm, Name, I, SC<:Tuple, SV<:Tuple}
     aliases = VarAliases()
     typed_sharedcontexts = @inline wiring_from_tuple_type(SC)
     typed_sharedvars = @inline wiring_from_tuple_type(SV)
@@ -100,14 +100,14 @@ end
 end
 
 """Get a subcontext view for a raw child algorithm and explicit namespace."""
-@inline function Base.view(pc::ProcessContext, instance::A, namespace::Namespace; inject = (;), sharedcontexts = (), sharedvars = ()) where {A<:ProcessAlgorithm}
+@inline function Base.view(pc::AbstractScopedContext, instance::A, namespace::Namespace; inject = (;), sharedcontexts = (), sharedvars = ()) where {A<:ProcessAlgorithm}
     return @inline view(pc, instance, namespace, inject, sharedcontexts, sharedvars)
 end
 
 """
 Get a subcontext view for a specific subcontext
 """
-@inline function Base.view(pc::ProcessContext, instance::SA; inject = (;), sharedcontexts = (), sharedvars = ()) where SA <: AbstractIdentifiableAlgo
+@inline function Base.view(pc::AbstractScopedContext, instance::SA; inject = (;), sharedcontexts = (), sharedvars = ()) where SA <: AbstractIdentifiableAlgo
     # TODO: no key should always be nothing
     # if key == Symbol() || isnothing(key)
     #     key = getkey(getregistry(pc)[instance])
@@ -115,7 +115,7 @@ Get a subcontext view for a specific subcontext
     return @inline view(pc, instance, inject, sharedcontexts, sharedvars)
 end
 
-@inline function Base.view(pc::ProcessContext{D}, instance::AbstractIdentifiableAlgo{T, nothing}, inject = (;)) where {D, T}
+@inline function Base.view(pc::PC, instance::AbstractIdentifiableAlgo{T, nothing}, inject = (;)) where {PC<:AbstractScopedContext, T}
     named_instance = getregistry(pc)[instance]
     return view(pc, named_instance; inject)
 end
@@ -123,7 +123,7 @@ end
 """
 Create a view from a non-scoped instance by looking it up in the registry
 """
-@inline function Base.view(pc::ProcessContext, instance::I, inject = (;)) where I
+@inline function Base.view(pc::PC, instance::I, inject = (;)) where {PC<:AbstractScopedContext, I}
     reg = getregistry(pc)
     scoped_instance = @inline get(reg, instance, nothing)
     if isnothing(scoped_instance) && instance isa ProcessEntity
@@ -137,7 +137,7 @@ end
 """
 Regenerate a SubContextView from its type
 """
-@inline function Base.view(pc::PC, scv::CV; inject = (;)) where {PC <: ProcessContext, CV <: SubContextView}
+@inline function Base.view(pc::PC, scv::CV; inject = (;)) where {PC <: AbstractScopedContext, CV <: SubContextView}
     @inline view(pc, this_instance(scv), inject(scv))
 end
 
@@ -160,7 +160,7 @@ end
 """
 Get the type of the original subcontext from the view
 """
-@inline subcontext_type(scv::Union{SubContextView{CType, SubKey}, Type{<:SubContextView{CType, SubKey}}}) where {CType<:ProcessContext, SubKey} = subcontext_type(CType, SubKey)
+@inline subcontext_type(scv::Union{SubContextView{CType, SubKey}, Type{<:SubContextView{CType, SubKey}}}) where {CType<:AbstractScopedContext, SubKey} = subcontext_type(CType, SubKey)
 
 
 

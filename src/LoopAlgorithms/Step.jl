@@ -4,6 +4,22 @@ Running a composite algorithm allows for static unrolling and inlining of all su
 """
 
 """
+    _runtime_local_context(subcontexts, registry, runtime, input, widened)
+
+Materialize the narrow on-demand context used by runtime-generated loop control
+logic such as routine break-condition checks.
+"""
+@inline function _runtime_local_context(
+    subcontexts::D,
+    registry::Reg,
+    runtime::R,
+    input::I,
+    widened::W,
+) where {D<:NamedTuple, Reg<:AbstractRegistry, R, I<:NamedTuple, W<:NamedTuple}
+    return OnDemandContext(subcontexts, registry, runtime, input, widened)
+end
+
+"""
     _runtime_composite_child_step!(state, child_step, ...)
 
 Conditionally run one composite child against the parent-local working subset
@@ -43,6 +59,41 @@ and thread the updated local state forward.
 end
 
 """
+    _runtime_step!(ca, Val(names), wiring, namespace, process, lifetime, stability, registry, runtime, input, widened, subcontexts...)
+
+Run a nested composite plan directly on the forwarded local subcontext tuple and
+return only the updated local tuple state.
+"""
+@inline function _runtime_step!(
+    ca::CA,
+    ::Val{ScopeNames},
+    wiring::W,
+    namespace::N,
+    process::P,
+    lifetime::LT,
+    typestable::S,
+    registry::Reg,
+    runtime::R,
+    input::I,
+    widened::Wd,
+    subcontexts::Vararg{Any, Count},
+) where {CA<:CompositeAlgorithm, ScopeNames, W<:PlanWiring, N<:Namespace, P<:AbstractProcess, LT<:Lifetime, S<:Stability, Reg<:AbstractRegistry, R, I<:NamedTuple, Wd<:NamedTuple, Count}
+    local_subcontexts = NamedTuple{ScopeNames}(subcontexts)
+    state = (local_subcontexts, runtime, widened)
+
+    state = @inline unrollreplace_withargs(
+        _runtime_composite_child_step!,
+        state,
+        runtime_child_steps(getruntime_bundle(ca));
+        args = (input, registry, process, lifetime, typestable, inc(ca)),
+        zips = (getalgos(ca), child_wiring(wiring), getfield(ca, :namespaces), intervals(ca)),
+    )
+
+    @inline inc!(ca)
+    return RuntimeStepResult(state[1], state[2], state[3])
+end
+
+"""
     _step!(ca, context, wiring, namespace, process, lifetime, stability)
 
 Run the `NonGenerated()` composite path against one parent-local working subset,
@@ -65,18 +116,20 @@ Base.@constprop :aggressive @inline function _step!(
     local_subcontexts = @inline select_namedtuple_fields(get_subcontexts(context), Val(scope_names))
     local_runtime = @inline getglobals(context)
     local_widened = @inline narrow_namedtuple_fields(getwidened(context), Val(scope_names))
-    state = (local_subcontexts, local_runtime, local_widened)
-
-    state = @inline unrollreplace_withargs(
-        _runtime_composite_child_step!,
-        state,
-        runtime_child_steps(bundle);
-        args = (getruntimeinput(context), getregistry(context), process, lifetime, typestable, inc(ca)),
-        zips = (getalgos(ca), child_wiring(wiring), getfield(ca, :namespaces), intervals(ca)),
+    result = @inline runtime_step_func(bundle)(
+        ca,
+        wiring,
+        namespace,
+        getregistry(context),
+        local_runtime,
+        getruntimeinput(context),
+        local_widened,
+        process,
+        lifetime,
+        typestable,
+        values(local_subcontexts)...,
     )
-
-    @inline inc!(ca)
-    return @inline merge_runtime_plan_scope(context, state[1], state[2], state[3])
+    return @inline merge_runtime_plan_scope(context, getfield(result, :subcontexts), getfield(result, :runtime), getfield(result, :widened))
 end
 
 """
@@ -160,7 +213,7 @@ the current resume-point and break-condition semantics.
         @inline tick!(process)
 
         next_idx = resume_point + 1
-        local_context = ProcessContext(state[1], registry, state[2], input, state[3])
+        local_context = @inline _runtime_local_context(state[1], registry, state[2], input, state[3])
         if @inline routine_breakcondition(subroutine_lifetime, lifetime, process, local_context, resume_point)
             if !(@inline _routine_local_breakcondition(subroutine_lifetime, process, local_context, resume_point))
                 @inline set_resume_point!(r, idx, next_idx)
@@ -169,7 +222,7 @@ the current resume-point and break-condition semantics.
         end
 
         for lidx in next_idx:this_repeat_count
-            local_context = ProcessContext(state[1], registry, state[2], input, state[3])
+            local_context = @inline _runtime_local_context(state[1], registry, state[2], input, state[3])
             if @inline routine_breakcondition(subroutine_lifetime, lifetime, process, local_context, lidx)
                 if !(@inline _routine_local_breakcondition(subroutine_lifetime, process, local_context, lidx))
                     @inline set_resume_point!(r, idx, lidx)
@@ -194,6 +247,42 @@ the current resume-point and break-condition semantics.
         end
     end
     return state
+end
+
+"""
+    _runtime_step!(r, Val(names), wiring, namespace, process, lifetime, stability, registry, runtime, input, widened, subcontexts...)
+
+Run a nested routine plan directly on the forwarded local subcontext tuple and
+return only the updated local tuple state.
+"""
+@inline function _runtime_step!(
+    r::R,
+    ::Val{ScopeNames},
+    wiring::W,
+    namespace::N,
+    process::P,
+    lifetime::LT,
+    typestable::S,
+    registry::Reg,
+    runtime::RT,
+    input::I,
+    widened::Wd,
+    subcontexts::Vararg{Any, Count},
+) where {R<:Routine, ScopeNames, W<:PlanWiring, N<:Namespace, P<:AbstractProcess, LT<:Lifetime, S<:Stability, Reg<:AbstractRegistry, RT, I<:NamedTuple, Wd<:NamedTuple, Count}
+    local_subcontexts = NamedTuple{ScopeNames}(subcontexts)
+    state = (local_subcontexts, runtime, widened)
+
+    child_count = length(getalgos(r))
+    child_indices = ntuple(i -> i, child_count)
+    state = @inline unrollreplace_withargs(
+        _runtime_routine_child_step!,
+        state,
+        runtime_child_steps(getruntime_bundle(r));
+        args = (r, process, lifetime, typestable, input, registry),
+        zips = (getalgos(r), child_indices, lifetimes(r), child_wiring(wiring), getfield(r, :namespaces)),
+    )
+
+    return RuntimeStepResult(state[1], state[2], state[3])
 end
 
 """
@@ -297,19 +386,20 @@ Base.@constprop :aggressive @inline function _step!(
     local_subcontexts = @inline select_namedtuple_fields(get_subcontexts(context), Val(scope_names))
     local_runtime = @inline getglobals(context)
     local_widened = @inline narrow_namedtuple_fields(getwidened(context), Val(scope_names))
-    state = (local_subcontexts, local_runtime, local_widened)
-
-    child_count = length(getalgos(r))
-    child_indices = ntuple(i -> i, child_count)
-    state = @inline unrollreplace_withargs(
-        _runtime_routine_child_step!,
-        state,
-        runtime_child_steps(bundle);
-        args = (r, process, lifetime, typestable, getruntimeinput(context), getregistry(context)),
-        zips = (getalgos(r), child_indices, lifetimes(r), child_wiring(wiring), getfield(r, :namespaces)),
+    result = @inline runtime_step_func(bundle)(
+        r,
+        wiring,
+        namespace,
+        getregistry(context),
+        local_runtime,
+        getruntimeinput(context),
+        local_widened,
+        process,
+        lifetime,
+        typestable,
+        values(local_subcontexts)...,
     )
-
-    return @inline merge_runtime_plan_scope(context, state[1], state[2], state[3])
+    return @inline merge_runtime_plan_scope(context, getfield(result, :subcontexts), getfield(result, :runtime), getfield(result, :widened))
 end
 
 """

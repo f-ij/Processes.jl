@@ -36,8 +36,9 @@ non-plan options stay on the `LoopAlgorithm` wrapper.
 function LoopAlgorithm(::Type{CompositeAlgorithm}, funcs::F, states::Tuple, options::Tuple, intervals; id = nothing) where F
     namespaces = ntuple(_ -> Namespace{nothing}(), length(funcs))
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(funcs, options))
-    runtime_bundle = _plan_runtime_bundle(funcs, child_wiring(wiring), namespaces)
-    plan = CompositeAlgorithm{typeof(funcs), intervals, typeof(namespaces), typeof(wiring), typeof(runtime_bundle), id}(funcs, intervals, namespaces, wiring, runtime_bundle, Ref(1))
+    placeholder_bundle = RuntimePlanStepBundle{(), Nothing, Tuple{}}(nothing, ())
+    plan = CompositeAlgorithm{typeof(funcs), intervals, typeof(namespaces), typeof(wiring), typeof(placeholder_bundle), id}(funcs, intervals, namespaces, wiring, placeholder_bundle, Ref(1))
+    plan = @inline refresh_runtime_bundle(plan)
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end

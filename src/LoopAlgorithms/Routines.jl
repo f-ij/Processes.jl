@@ -34,8 +34,9 @@ function LoopAlgorithm(::Type{Routine}, funcs::F, states::Tuple, options::Tuple,
     namespaces = ntuple(_ -> Namespace{nothing}(), length(funcs))
     resume_idxs = MVector{length(funcs),Int}(ones(length(funcs)))
     wiring = PlanWiring(_plan_wiring(options), _plan_child_wiring(funcs, options))
-    runtime_bundle = _plan_runtime_bundle(funcs, child_wiring(wiring), namespaces)
-    plan = Routine{typeof(funcs), repeats, typeof(namespaces), typeof(resume_idxs), typeof(wiring), typeof(runtime_bundle), id}(funcs, repeats, namespaces, resume_idxs, wiring, runtime_bundle)
+    placeholder_bundle = RuntimePlanStepBundle{(), Nothing, Tuple{}}(nothing, ())
+    plan = Routine{typeof(funcs), repeats, typeof(namespaces), typeof(resume_idxs), typeof(wiring), typeof(placeholder_bundle), id}(funcs, repeats, namespaces, resume_idxs, wiring, placeholder_bundle)
+    plan = @inline refresh_runtime_bundle(plan)
     root_options = _root_loop_options(options)
     return isempty(states) && isempty(root_options) ? plan : LoopAlgorithm(plan; states, options = root_options, id)
 end

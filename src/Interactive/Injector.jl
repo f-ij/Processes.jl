@@ -60,25 +60,25 @@ end
 
 @inline Processes.cleanup(::ContextInjector, context::ProcessContext) = context
 
-@inline Processes.step!(inj::ContextInjector, context::C) where {C<:ProcessContext} =
+@inline Processes.step!(inj::ContextInjector, context::C) where {C<:AbstractScopedContext} =
     Processes.step!(inj, context, Stable())
 
-@inline Processes.step!(inj::ContextInjector, context::C, ::Stable) where {C<:ProcessContext} =
+@inline Processes.step!(inj::ContextInjector, context::C, ::Stable) where {C<:AbstractScopedContext} =
     _step_context_injector(inj, context)
 
 # Buffered updates are converted before they enter the queue, so the unstable
 # pass can use the same exact-type-preserving merge path as the stable pass.
-@inline Processes.step!(inj::ContextInjector, context::C, ::Unstable) where {C<:ProcessContext} =
+@inline Processes.step!(inj::ContextInjector, context::C, ::Unstable) where {C<:AbstractScopedContext} =
     _step_context_injector(inj, context)
 
 """Step the injector on the full process context even inside raw resolved plans."""
-@inline Processes._step!(inj::ContextInjector, context::C, ::Wiring{Tuple{}, Tuple{}}, ::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {C<:ProcessContext, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability} =
+@inline Processes._step!(inj::ContextInjector, context::C, ::Wiring{Tuple{}, Tuple{}}, ::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {C<:AbstractScopedContext, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability} =
     Processes.step!(inj, context, stability)
 
-@inline Processes._step!(inj::ContextInjector, context::C, ::Wiring, ::Namespace, process::P, lifetime::LT, stability::S = Stable()) where {C<:ProcessContext, P<:AbstractProcess, LT<:Lifetime, S<:Stability} =
+@inline Processes._step!(inj::ContextInjector, context::C, ::Wiring, ::Namespace, process::P, lifetime::LT, stability::S = Stable()) where {C<:AbstractScopedContext, P<:AbstractProcess, LT<:Lifetime, S<:Stability} =
     Processes.step!(inj, context, stability)
 
-@inline function _step_context_injector(::ContextInjector, context::C) where {C<:ProcessContext}
+@inline function _step_context_injector(::ContextInjector, context::C) where {C<:AbstractScopedContext}
     updates = _context_injector_buffer(context)
     isempty(updates) && return context
 
@@ -89,14 +89,14 @@ end
     return context::C
 end
 
-@inline function _context_injector_buffer(context::ProcessContext)
+@inline function _context_injector_buffer(context::AbstractScopedContext)
     getfield(getdata(getfield(get_subcontexts(context), context_injector_key)), :buffer)
 end
 
 @inline context_injector_buffer_isempty(context) = false
-@inline context_injector_buffer_isempty(context::ProcessContext) = isempty(_context_injector_buffer(context))
+@inline context_injector_buffer_isempty(context::AbstractScopedContext) = isempty(_context_injector_buffer(context))
 
-@inline function _apply_buffered_update(context::C, update::BufferedContextUpdate{Subcontext, Varname}) where {C<:ProcessContext, Subcontext, Varname}
+@inline function _apply_buffered_update(context::C, update::BufferedContextUpdate{Subcontext, Varname}) where {C<:AbstractScopedContext, Subcontext, Varname}
     value = _update_value(update)
     return (@inline merge_into_subcontexts(context, NamedTuple{(Subcontext,)}((NamedTuple{(Varname,)}((value,)),))))::C
 end

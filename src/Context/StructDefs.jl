@@ -37,6 +37,16 @@ struct OnDemandContext{D,Reg,R,I,W} <: AbstractScopedContext
     _runtime::R
     _input::I
     _widened::W
+
+    function OnDemandContext{D,Reg,R,I,W}(
+        subcontexts::D,
+        registry::Reg,
+        runtime::R,
+        input::I,
+        widened::W,
+    ) where {D,Reg,R,I,W}
+        new{D,Reg,R,I,W}(subcontexts, registry, runtime, input, widened)
+    end
 end
 
 

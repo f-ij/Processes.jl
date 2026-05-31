@@ -49,6 +49,9 @@ end
 Rebuild a scoped context while preserving whether the caller is a full
 `ProcessContext` or a leaf-only `OnDemandContext`.
 """
+@inline _scoped_context_constructor(::Type{<:ProcessContext}) = ProcessContext
+@inline _scoped_context_constructor(::Type{<:OnDemandContext}) = OnDemandContext
+
 @inline function _rebuild_scoped_context(
     ::Type{C},
     subcontexts::D,
@@ -57,7 +60,8 @@ Rebuild a scoped context while preserving whether the caller is a full
     input::I,
     widened::W,
 ) where {C<:AbstractScopedContext, D, Reg, R, I, W}
-    return C(subcontexts, registry, runtime, input, widened)
+    constructor = _scoped_context_constructor(C)
+    return constructor(subcontexts, registry, runtime, input, widened)
 end
 
 @inline function _rebuild_scoped_context(
@@ -219,13 +223,13 @@ function materialize_widened_context(pc::PC) where {PC<:ProcessContext}
     return @inline withwidened(context, (;))
 end
 
-@inline subcontext_names(pc::AbstractScopedContext{D}, name::Symbol) where {D} = @inline fieldnames(typeof(getproperty(get_subcontexts(pc), name)))
-@inline subcontext_type(pc::AbstractScopedContext{D}, name::Symbol) where {D} = @inline fieldtype(typeof(get_subcontexts(pc)), name)
-@inline function subcontext_type(pct::Type{<:AbstractScopedContext{D}}, name::Symbol) where {D}
-    fieldtype(D, name)
+@inline subcontext_names(pc::PC, name::Symbol) where {PC<:AbstractScopedContext} = @inline fieldnames(typeof(getproperty(get_subcontexts(pc), name)))
+@inline subcontext_type(pc::PC, name::Symbol) where {PC<:AbstractScopedContext} = @inline fieldtype(typeof(get_subcontexts(pc)), name)
+@inline function subcontext_type(pct::Type{PC}, name::Symbol) where {PC<:AbstractScopedContext}
+    fieldtype(PC.parameters[1], name)
 end
 
-@inline get_subcontexts_fieldnames(pct::Type{<:AbstractScopedContext{D}}) where {D} = fieldnames(D)
+@inline get_subcontexts_fieldnames(pct::Type{PC}) where {PC<:AbstractScopedContext} = fieldnames(PC.parameters[1])
 
 @inline getglobals(pc::AbstractScopedContext) = getfield(pc, :_runtime)
 @inline function getglobals(pc::AbstractScopedContext, name::Symbol)
@@ -246,7 +250,7 @@ function get_subcontext_type(pc::Type{<:AbstractScopedContext}, s)
 end
 
 ###
-@inline function _merge_into_globals(pc::AbstractScopedContext{D}, args) where {D}
+@inline function _merge_into_globals(pc::PC, args) where {PC<:AbstractScopedContext}
     merged_runtime = @inline merge(getglobals(pc), args)
     return @inline withruntime(pc, merged_runtime)
     # Accessors path kept for comparison:
@@ -270,7 +274,7 @@ end
 Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), subcontextname2 = (;...), ...)
     Assumes that the subcontext names exist in the context, otherwise it errors
 """
-@inline @generated function merge_into_subcontexts(pc::PC, args::As) where {PC<:AbstractScopedContext{D}, D, As}
+@inline @generated function merge_into_subcontexts(pc::PC, args::As) where {PC<:AbstractScopedContext, As}
     sc_names = get_subcontexts_fieldnames(pc)
     mergenames = fieldnames(args)
     if length(mergenames) == 1
@@ -298,7 +302,7 @@ Merge keys into subcontext by args = (;subcontextname1 = (;var1 = val1,...), sub
     end
 end
 
-Base.@constprop :aggressive merge_into_subcontext(pc::PC, name::Symbol, args) where {PC<:AbstractScopedContext{D}, D} = @inline merge_into_subcontext(pc, Val(name), args)
+Base.@constprop :aggressive merge_into_subcontext(pc::PC, name::Symbol, args) where {PC<:AbstractScopedContext} = @inline merge_into_subcontext(pc, Val(name), args)
 
 function _namedtuple_merge_preserves_type(old_type::Type{<:NamedTuple}, new_type::Type)
     new_type <: NamedTuple || return false
@@ -312,13 +316,13 @@ function _namedtuple_merge_preserves_type(old_type::Type{<:NamedTuple}, new_type
     return true
 end
 
-@inline @generated function merge_into_subcontext(pc::PC, ::Val{name}, args::A) where {PC<:AbstractScopedContext{D}, D, name, A}
+@inline @generated function merge_into_subcontext(pc::PC, ::Val{name}, args::A) where {PC<:AbstractScopedContext, name, A}
     sc_names = get_subcontexts_fieldnames(pc)
     found_idx = _static_tuple_index(sc_names, name)
     if isnothing(found_idx)
         error("Trying to merge into unknown subcontext $(QuoteNode(name)) in ProcessContext. Available subcontexts are: $(sc_names)")
     end
-    old_sc_type = fieldtype(D, name)
+    old_sc_type = fieldtype(PC.parameters[1], name)
 
     if _namedtuple_merge_preserves_type(getdatatype(old_sc_type), A)
         return quote
@@ -332,7 +336,7 @@ end
     end
 end
 
-@inline @generated function merge_into_subcontext_rebuild(pc::PC, ::Val{name}, args) where {PC<:AbstractScopedContext{D}, D, name}
+@inline @generated function merge_into_subcontext_rebuild(pc::PC, ::Val{name}, args) where {PC<:AbstractScopedContext, name}
     sc_names = get_subcontexts_fieldnames(pc)
     found_idx = _static_tuple_index(sc_names, name)
     if isnothing(found_idx)
@@ -349,7 +353,7 @@ end
     end
 end
 
-@inline @generated function merge_into_subcontext_mutate(pc::PC, ::Val{name}, args) where {PC<:AbstractScopedContext{D}, D, name}
+@inline @generated function merge_into_subcontext_mutate(pc::PC, ::Val{name}, args) where {PC<:AbstractScopedContext, name}
     sc_names = get_subcontexts_fieldnames(pc)
     found_idx = _static_tuple_index(sc_names, name)
     if isnothing(found_idx)
@@ -375,7 +379,7 @@ end
 Args should name subcontext they want to replace, check if all names are in the original context
     since we can only replace existing subcontexts
 """
-@inline @generated function _replace_subcontexts(pc::PC, args::As) where {PC<:AbstractScopedContext{D, Reg}, D, Reg, As<:NamedTuple}
+@inline @generated function _replace_subcontexts(pc::PC, args::As) where {PC<:AbstractScopedContext, As<:NamedTuple}
     sc_names = get_subcontexts_fieldnames(pc)
     replacenames = fieldnames(args)
     replace_exprs = Expr[]

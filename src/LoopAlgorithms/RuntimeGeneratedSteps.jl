@@ -30,7 +30,8 @@ Per-plan runtime step bundle for the `NonGenerated()` path. `ScopeNames` is the
 union of subcontexts touched anywhere in the plan, and `ChildSteps` is the
 tuple of runtime-generated child kernels aligned with the plan's child tuple.
 """
-struct RuntimePlanStepBundle{ScopeNames, ChildSteps}
+struct RuntimePlanStepBundle{ScopeNames, StepFunc, ChildSteps}
+    step_func::StepFunc
     child_steps::ChildSteps
 end
 
@@ -49,6 +50,13 @@ end
 Return the plan-local union of subcontext names touched by a runtime bundle.
 """
 @inline runtime_scope_names(::RuntimePlanStepBundle{ScopeNames}) where {ScopeNames} = ScopeNames
+
+"""
+    runtime_step_func(bundle)
+
+Return the runtime-generated step function for one plan node.
+"""
+@inline runtime_step_func(bundle::RuntimePlanStepBundle) = getfield(bundle, :step_func)
 
 """
     runtime_child_steps(bundle)
@@ -72,15 +80,35 @@ Return the ordered tuple of subcontext names returned by one child kernel.
 @inline runtime_returned_names(::RuntimeChildStep{RequiredNames, ReturnedNames}) where {RequiredNames, ReturnedNames} = ReturnedNames
 
 """
-    _step!(algo, Val(names), wiring, namespace, process, lifetime, stability, registry, runtime, input, widened, subcontexts...)
+    _runtime_step_context(Val(names), registry, runtime, input, widened, subcontexts...)
 
-Internal positional-subcontext step API used by runtime-generated child kernels.
-`names` encodes the required top-level subcontext keys, and the remaining
-positional arguments are exactly the matching `SubContext{Name,T}` values.
+Materialize the leaf-scoped context seen by the public two-argument
+`step!(algo, context)` API from the local runtime-generated subcontext tuple.
 """
-@inline @generated function _step!(
-    algo::A,
+@inline @generated function _runtime_step_context(
     ::Val{Names},
+    registry::Reg,
+    runtime::R,
+    input::I,
+    widened::Wd,
+    subcontexts::Vararg{Any, Count},
+) where {Names, Reg<:AbstractRegistry, R, I<:NamedTuple, Wd<:NamedTuple, Count}
+    length(Names) == Count || error("Expected $(length(Names)) subcontexts for runtime step, got $(Count).")
+    subcontext_expr = Expr(:tuple, Expr(:parameters, (
+        Expr(:(=), name, :(subcontexts[$idx]))
+        for (idx, name) in enumerate(Names)
+    )...))
+    return :(OnDemandContext($subcontext_expr, registry, runtime, input, widened))
+end
+
+"""
+    _runtime_leaf_step_result(algo, wiring, namespace, process, lifetime, stability, registry, runtime, input, widened, subcontexts...)
+
+Run one concrete process algorithm against the exact routed/shared subcontext
+tuple visible to that child.
+"""
+@inline function _runtime_leaf_step_result(
+    algo::A,
     wiring::W,
     namespace::N,
     process::P,
@@ -91,21 +119,186 @@ positional arguments are exactly the matching `SubContext{Name,T}` values.
     input::I,
     widened::Wd,
     subcontexts::Vararg{Any, Count},
-) where {A, Names, W, N<:Namespace, P<:AbstractProcess, LT<:Lifetime, S<:Stability, Reg<:AbstractRegistry, R, I<:NamedTuple, Wd<:NamedTuple, Count}
-    length(Names) == Count || error("Expected $(length(Names)) subcontexts for runtime step, got $(Count).")
-    subcontext_expr = Expr(:tuple, Expr(:parameters, (
-        Expr(:(=), name, :(subcontexts[$idx]))
-        for (idx, name) in enumerate(Names)
-    )...))
-    return quote
-        context = ProcessContext($subcontext_expr, registry, runtime, input, widened)
-        stepped_context = @inline _step!(algo, context, wiring, namespace, process, lifetime, stability)
-        return RuntimeStepResult(
-            get_subcontexts(stepped_context),
-            getglobals(stepped_context),
-            getwidened(stepped_context),
+) where {A<:ProcessAlgorithm, W, N<:Namespace, P<:AbstractProcess, LT<:Lifetime, S<:Stability, Reg<:AbstractRegistry, R, I<:NamedTuple, Wd<:NamedTuple, Count}
+    names = ntuple(i -> getkey(subcontexts[i]), Count)
+    context = @inline _runtime_step_context(Val(names), registry, runtime, input, widened, subcontexts...)
+    stepped_context = @inline _step!(algo, context, wiring, namespace, process, lifetime, stability)
+    return RuntimeStepResult(
+        get_subcontexts(stepped_context),
+        getglobals(stepped_context),
+        getwidened(stepped_context),
+    )
+end
+
+"""
+    step_factory(::Type{A}, required_names)
+
+Build the runtime-generated child step used for one concrete process algorithm.
+The generated kernel takes only the exact routed/shared top-level subcontexts
+the child can see.
+"""
+function step_factory(::Type{A}, required_names::Names) where {A<:ProcessAlgorithm, Names<:Tuple}
+    subcontext_args = ntuple(i -> Symbol(:subcontext_, i), length(required_names))
+    body = quote
+        return @inline _runtime_leaf_step_result(
+            algo,
+            wiring,
+            namespace,
+            process,
+            lifetime,
+            stability,
+            registry,
+            runtime,
+            input,
+            widened,
+            $(subcontext_args...),
         )
     end
+    step_expr = Expr(
+        :->,
+        Expr(:tuple, :algo, :wiring, :namespace, :registry, :runtime, :input, :widened, :process, :lifetime, :stability, subcontext_args...),
+        body,
+    )
+    return RuntimeGeneratedFunctions.RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, Base.remove_linenums!(step_expr))
+end
+
+"""
+    step_factory(::Type{LA}, required_names)
+
+Forward runtime step-factory construction through the concrete `LoopAlgorithm`
+wrapper to its stable underlying plan type.
+"""
+@inline function step_factory(::Type{LA}, required_names::Names) where {Plan, LA<:LoopAlgorithm{Plan}, Names<:Tuple}
+    return @inline step_factory(Plan, required_names)
+end
+
+"""
+    step_factory(::Type{CA}, required_names)
+
+Build the runtime-generated plan step for one composite node. The generated
+kernel threads only the forwarded top-level subcontexts through its children.
+"""
+function step_factory(::Type{CA}, required_names::Names) where {CA<:CompositeAlgorithm, Names<:Tuple}
+    subcontext_args = ntuple(i -> Symbol(:subcontext_, i), length(required_names))
+    algo_count = numalgos(CA)
+    interval_values = CA.parameters[2]
+    exprs = Any[
+        :(local current_subcontexts = NamedTuple{$required_names}(tuple($(subcontext_args...)))),
+        :(local current_runtime = runtime),
+        :(local current_widened = widened),
+        :(local child_steps = runtime_child_steps(getruntime_bundle(algo))),
+        :(local algos = getalgos(algo)),
+        :(local child_wirings = child_wiring(wiring)),
+        :(local child_namespaces = getfield(algo, :namespaces)),
+        :(local this_inc = inc(algo)),
+    ]
+    for i in 1:algo_count
+        interval_type = typeof(interval_values[i])
+        push!(exprs, quote
+            if @inline divides(this_inc, $interval_type())
+                local child_state = @inline _call_runtime_child_step(
+                    getfield(child_steps, $i),
+                    current_subcontexts,
+                    current_runtime,
+                    input,
+                    current_widened,
+                    registry,
+                    getfield(algos, $i),
+                    getfield(child_wirings, $i),
+                    getfield(child_namespaces, $i),
+                    process,
+                    lifetime,
+                    stability,
+                )
+                current_subcontexts = child_state[1]
+                current_runtime = child_state[2]
+                current_widened = child_state[3]
+            end
+        end)
+    end
+    push!(exprs, :(@inline inc!(algo)))
+    push!(exprs, :(return RuntimeStepResult(current_subcontexts, current_runtime, current_widened)))
+    step_expr = Expr(
+        :->,
+        Expr(:tuple, :algo, :wiring, :namespace, :registry, :runtime, :input, :widened, :process, :lifetime, :stability, subcontext_args...),
+        Expr(:block, exprs...),
+    )
+    return RuntimeGeneratedFunctions.RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, Base.remove_linenums!(step_expr))
+end
+
+"""
+    step_factory(::Type{R}, required_names)
+
+Build the runtime-generated plan step for one routine node. The generated
+kernel threads only the forwarded top-level subcontexts through each scheduled
+child and preserves the current resume-point semantics.
+"""
+function step_factory(::Type{R}, required_names::Names) where {R<:Routine, Names<:Tuple}
+    subcontext_args = ntuple(i -> Symbol(:subcontext_, i), length(required_names))
+    algo_count = numalgos(R)
+    repeat_values = R.parameters[2]
+    exprs = Any[
+        :(local current_subcontexts = NamedTuple{$required_names}(tuple($(subcontext_args...)))),
+        :(local current_runtime = runtime),
+        :(local current_widened = widened),
+        :(local child_steps = runtime_child_steps(getruntime_bundle(algo))),
+        :(local algos = getalgos(algo)),
+        :(local child_wirings = child_wiring(wiring)),
+        :(local child_namespaces = getfield(algo, :namespaces)),
+    ]
+    for i in 1:algo_count
+        push!(exprs, quote
+            local child_state = @inline _runtime_subroutine_step!(
+                (current_subcontexts, current_runtime, current_widened),
+                getfield(child_steps, $i),
+                getfield(algos, $i),
+                algo,
+                process,
+                lifetime,
+                stability,
+                $i,
+                $(repeat_values[i]),
+                getfield(child_wirings, $i),
+                getfield(child_namespaces, $i),
+                input,
+                registry,
+            )
+            current_subcontexts = child_state[1]
+            current_runtime = child_state[2]
+            current_widened = child_state[3]
+        end)
+    end
+    push!(exprs, :(return RuntimeStepResult(current_subcontexts, current_runtime, current_widened)))
+    step_expr = Expr(
+        :->,
+        Expr(:tuple, :algo, :wiring, :namespace, :registry, :runtime, :input, :widened, :process, :lifetime, :stability, subcontext_args...),
+        Expr(:block, exprs...),
+    )
+    return RuntimeGeneratedFunctions.RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, Base.remove_linenums!(step_expr))
+end
+
+"""
+    _step!(algo, Val(names), wiring, namespace, process, lifetime, stability, registry, runtime, input, widened, subcontexts...)
+
+Compatibility shim for the previous runtime-generated path. New runtime bundles
+call factory-produced step functions directly.
+"""
+@inline function _step!(
+    algo::A,
+    names::Val{Names},
+    wiring::W,
+    namespace::N,
+    process::P,
+    lifetime::LT,
+    stability::S,
+    registry::Reg,
+    runtime::R,
+    input::I,
+    widened::Wd,
+    subcontexts::Vararg{Any, Count},
+) where {A<:ProcessAlgorithm, Names, W, N<:Namespace, P<:AbstractProcess, LT<:Lifetime, S<:Stability, Reg<:AbstractRegistry, R, I<:NamedTuple, Wd<:NamedTuple, Count}
+    context = @inline _runtime_step_context(names, registry, runtime, input, widened, subcontexts...)
+    return @inline _runtime_leaf_step_result(algo, wiring, namespace, process, lifetime, stability, registry, runtime, input, widened, subcontexts...)
 end
 
 """
@@ -230,31 +423,7 @@ Build one runtime-generated child kernel that accepts exactly the top-level
 `SubContext{Name,T}` values it needs as positional arguments.
 """
 function _runtime_child_step(algo, wiring, namespace, required_names = _runtime_step_required_names(algo, wiring, namespace))
-    subcontext_args = ntuple(i -> Symbol(:subcontext_, i), length(required_names))
-
-    body = quote
-        return @inline _step!(
-            algo,
-            Val{$(QuoteNode(required_names))}(),
-            wiring,
-            namespace,
-            process,
-            lifetime,
-            stability,
-            registry,
-            runtime,
-            input,
-            widened,
-            $(subcontext_args...),
-        )
-    end
-
-    step_expr = Expr(
-        :->,
-        Expr(:tuple, :algo, :wiring, :namespace, :registry, :runtime, :input, :widened, :process, :lifetime, :stability, subcontext_args...),
-        body,
-    )
-    func = RuntimeGeneratedFunctions.RuntimeGeneratedFunction(@__MODULE__, @__MODULE__, Base.remove_linenums!(step_expr))
+    func = step_factory(typeof(algo), required_names)
     return RuntimeChildStep{required_names, required_names, typeof(func)}(func)
 end
 
@@ -264,7 +433,7 @@ end
 Build the runtime-generated child kernels and the transitive local scope for one
 resolved plan node.
 """
-function _plan_runtime_bundle(funcs::Funcs, child_wirings::ChildWirings, namespaces::Namespaces) where {Funcs<:Tuple, ChildWirings<:Tuple, Namespaces<:Tuple}
+function _plan_runtime_bundle(plan::Plan, funcs::Funcs, child_wirings::ChildWirings, namespaces::Namespaces) where {Plan<:Union{CompositeAlgorithm, Routine}, Funcs<:Tuple, ChildWirings<:Tuple, Namespaces<:Tuple}
     provisional_required = ntuple(i -> _runtime_step_required_names(getfield(funcs, i), getfield(child_wirings, i), getfield(namespaces, i)), length(funcs))
     scope_names = ()
     for names in provisional_required
@@ -280,7 +449,8 @@ function _plan_runtime_bundle(funcs::Funcs, child_wirings::ChildWirings, namespa
         _runtime_child_step(func, getfield(child_wirings, i), getfield(namespaces, i), names)
     end
     scope_names = _runtime_plan_scope_names(child_steps)
-    return RuntimePlanStepBundle{scope_names, typeof(child_steps)}(child_steps)
+    step_func = step_factory(typeof(plan), scope_names)
+    return RuntimePlanStepBundle{scope_names, typeof(step_func), typeof(child_steps)}(step_func, child_steps)
 end
 
 """
@@ -290,7 +460,7 @@ Regenerate the runtime step bundle after a plan's funcs, namespaces, or wiring
 has changed during construction or resolve-time rewrites.
 """
 function refresh_runtime_bundle(plan::Plan) where {Plan<:Union{CompositeAlgorithm, Routine}}
-    bundle = _plan_runtime_bundle(getalgos(plan), child_wiring(getwiring(plan)), getfield(plan, :namespaces))
+    bundle = _plan_runtime_bundle(plan, getalgos(plan), child_wiring(getwiring(plan)), getfield(plan, :namespaces))
     return setfield(plan, :runtime_bundle, bundle)
 end
 
