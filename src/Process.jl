@@ -258,6 +258,8 @@ end
 @inline lock(f, p::Process) = lock(f, p.lock)
 @inline unlock(p::Process) =  unlock(p.lock)
 
+
+# TODO CLEAN THIS UP IT'S A MESS
 """
 Runs the prepared task of a process on a thread
 """
