@@ -183,7 +183,7 @@ The type of loop to use for a process. This is determined by the system and can 
 # else
 #     Generated()
 # end
-const sys_looptype = RuntimeGenerated()
+const sys_looptype = Generated()
     
 
 #### Type Stabliity of steps
