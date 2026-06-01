@@ -388,22 +388,6 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         wait(dsl_composite_process)
         close(dsl_composite_process)
 
-        dsl_composite_routed = @CompositeAlgorithm begin
-            @state seed = 2.0
-            @state bias = 1.0
-            @alias src = _ProcessPrecompileSource
-            produced, passthrough = src(seed)
-            scaled = _process_precompile_scale(produced; scale = 3.0)
-            combined = _process_precompile_add(scaled, passthrough; bias = bias)
-            _ProcessPrecompileSink(value = combined)
-        end
-        resolved_dsl_composite_routed = resolve(dsl_composite_routed)
-        initcontext(resolved_dsl_composite_routed)
-        dsl_routed_process = Process(resolved_dsl_composite_routed; repeats = 2)
-        run(dsl_routed_process)
-        wait(dsl_routed_process)
-        close(dsl_routed_process)
-
         dsl_interval_composite = @CompositeAlgorithm begin
             @interval 2 _ProcessPrecompileCounter()
             _ProcessPrecompileScaler()
