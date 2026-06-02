@@ -1,8 +1,5 @@
 export ContextExchange, InteractiveVar, interact!, isinteractive
 
-struct ContextExchangeNoUpdate end
-const context_exchange_no_update = ContextExchangeNoUpdate()
-
 struct ResolvedExchangeVar{Name, Subcontext, Varname, T}
     initial::T
 end
@@ -23,9 +20,11 @@ The `Specs` type parameter contains the fully resolved `(exchange name,
 subcontext, variable)` triplets produced during init. Hot stepping specializes on
 that type and does not use routing/wiring lookup.
 """
-mutable struct ContextExchangeStore{Specs, Published, Pending, LastTime}
+mutable struct ContextExchangeStore{Specs, Published, Pending, HasPending, Subscribed, LastTime}
     published::Published
     pending::Pending
+    haspending::HasPending
+    subscribed::Subscribed
     lasttime::LastTime
     period::Float64
 end
@@ -37,18 +36,24 @@ end
         T = _exchange_vartype(spec)
         :(Ref{$T}(getfield(getfield(specs, $i), :initial)))
     end
-    pending_values = map(spec_types) do spec
+    pending_values = map(enumerate(spec_types)) do (i, spec)
         T = _exchange_vartype(spec)
-        :(Ref{Union{ContextExchangeNoUpdate, $T}}(context_exchange_no_update))
+        :(Ref{$T}(getfield(getfield(specs, $i), :initial)))
     end
+    haspending_values = (:(Ref(false)) for _ in names)
+    subscribed_values = (:(Ref(false)) for _ in names)
 
     return quote
         published = NamedTuple{$names}(($(published_values...),))
         pending = NamedTuple{$names}(($(pending_values...),))
+        haspending = NamedTuple{$names}(($(haspending_values...),))
+        subscribed = NamedTuple{$names}(($(subscribed_values...),))
         lasttime = Ref(-Inf)
-        return ContextExchangeStore{$Specs, typeof(published), typeof(pending), typeof(lasttime)}(
+        return ContextExchangeStore{$Specs, typeof(published), typeof(pending), typeof(haspending), typeof(subscribed), typeof(lasttime)}(
             published,
             pending,
+            haspending,
+            subscribed,
             lasttime,
             period,
         )
@@ -228,7 +233,12 @@ end
 
 @inline @generated function _step_context_exchange_store(context::C, store::ContextExchangeStore{Specs}) where {C<:ProcessContext, Specs}
     specs = Specs.parameters
-    exprs = Expr[:(published = getfield(store, :published)), :(pending = getfield(store, :pending))]
+    exprs = Expr[
+        :(published = getfield(store, :published)),
+        :(pending = getfield(store, :pending)),
+        :(haspending = getfield(store, :haspending)),
+        :(subscribed = getfield(store, :subscribed)),
+    ]
 
     for spec in specs
         name = _exchange_name(spec)
@@ -236,23 +246,27 @@ end
         varname = _exchange_varname(spec)
         current = Symbol(:current_, name)
         pending_value = Symbol(:pending_, name)
-        converted = Symbol(:converted_, name)
+        has_pending = Symbol(:has_pending_, name)
+        is_subscribed = Symbol(:is_subscribed_, name)
 
-        push!(exprs, :($current = getproperty(getproperty(context, $(QuoteNode(subcontext))), $(QuoteNode(varname)))))
-        push!(exprs, :($pending_value = getproperty(pending, $(QuoteNode(name)))[]))
+        push!(exprs, :($has_pending = getproperty(haspending, $(QuoteNode(name)))[]))
         push!(
             exprs,
             quote
-                if $pending_value === context_exchange_no_update
-                    getproperty(published, $(QuoteNode(name)))[] = $current
-                else
-                    $converted = convert(typeof($current), $pending_value)
-                    getproperty(published, $(QuoteNode(name)))[] = $converted
-                    getproperty(pending, $(QuoteNode(name)))[] = context_exchange_no_update
+                if $has_pending
+                    $pending_value = getproperty(pending, $(QuoteNode(name)))[]
+                    getproperty(published, $(QuoteNode(name)))[] = $pending_value
+                    getproperty(haspending, $(QuoteNode(name)))[] = false
                     context = @inline merge_into_subcontexts(
                         context,
-                        NamedTuple{$((subcontext,))}((NamedTuple{$((varname,))}(($converted,)),)),
+                        NamedTuple{$((subcontext,))}((NamedTuple{$((varname,))}(($pending_value,)),)),
                     )
+                else
+                    $is_subscribed = getproperty(subscribed, $(QuoteNode(name)))[]
+                    if $is_subscribed
+                        $current = getproperty(getproperty(context, $(QuoteNode(subcontext))), $(QuoteNode(varname)))
+                        getproperty(published, $(QuoteNode(name)))[] = $current
+                    end
                 end
             end,
         )
@@ -268,12 +282,14 @@ end
     return quote
         published = getfield(store, :published)
         pending = getfield(store, :pending)
-        return getfield(published, $(QuoteNode(name))), getfield(pending, $(QuoteNode(name)))
+        haspending = getfield(store, :haspending)
+        subscribed = getfield(store, :subscribed)
+        return getfield(published, $(QuoteNode(name))), getfield(pending, $(QuoteNode(name))), getfield(haspending, $(QuoteNode(name))), getfield(subscribed, $(QuoteNode(name)))
     end
 end
 
 """Return the concrete target type accepted by a typed pending slot."""
-@inline _pending_value_type(::Base.RefValue{Union{ContextExchangeNoUpdate, T}}) where {T} = T
+@inline _pending_value_type(::Base.RefValue{T}) where {T} = T
 
 """
     interact!(context, :name => value; exchange = :_exchange)
@@ -283,8 +299,9 @@ step converts it to the current target variable type and writes it directly into
 the resolved subcontext.
 """
 function interact!(context::ProcessContext, pair::Pair{Symbol, <:Any}; exchange::Union{Nothing, Symbol} = nothing)
-    _, pending = _exchange_slot(_context_exchange_store(context, exchange), Val(first(pair)))
+    _, pending, haspending, _ = _exchange_slot(_context_exchange_store(context, exchange), Val(first(pair)))
     pending[] = convert(_pending_value_type(pending), last(pair))
+    haspending[] = true
     return context
 end
 
@@ -297,16 +314,18 @@ Ref-like view of one exchange variable.
 `ref[]` reads the last value published by the exchange. `ref[] = value` queues a
 write for the next due exchange step.
 """
-struct InteractiveVar{ExchangeKey, Varname, Published, Pending}
+struct InteractiveVar{ExchangeKey, Varname, Published, Pending, HasPending}
     published::Published
     pending::Pending
+    haspending::HasPending
 end
 
 @inline _interactive_varname(::InteractiveVar{ExchangeKey, Varname}) where {ExchangeKey, Varname} = Varname
 
 function InteractiveVar(context::ProcessContext, varname::Symbol; exchange::Union{Nothing, Symbol} = nothing)
-    published, pending = _exchange_slot(_context_exchange_store(context, exchange), Val(varname))
-    return InteractiveVar{exchange, varname, typeof(published), typeof(pending)}(published, pending)
+    published, pending, haspending, subscribed = _exchange_slot(_context_exchange_store(context, exchange), Val(varname))
+    subscribed[] = true
+    return InteractiveVar{exchange, varname, typeof(published), typeof(pending), typeof(haspending)}(published, pending, haspending)
 end
 
 function Base.view(context::ProcessContext, varname::Symbol; exchange::Union{Nothing, Symbol} = nothing)
@@ -322,5 +341,6 @@ end
 @inline function Base.setindex!(ref::InteractiveVar, value)
     pending = getfield(ref, :pending)
     pending[] = convert(_pending_value_type(pending), value)
+    getfield(ref, :haspending)[] = true
     return value
 end

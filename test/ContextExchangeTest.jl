@@ -23,15 +23,19 @@ using Processes
     exchange_key = getkey(only(Processes._context_exchanges(context)))
     @test keys(context[exchange_key]) == (:store,)
     @test context[exchange_key].store.published.value isa Base.RefValue{Float64}
-    @test context[exchange_key].store.pending.value[] == 2
+    @test context[exchange_key].store.pending.value isa Base.RefValue{Float64}
+    @test context[exchange_key].store.haspending.value isa Base.RefValue{Bool}
+    @test context[exchange_key].store.pending.value[] == 2.0
+    @test context[exchange_key].store.haspending.value[]
 
     context = Processes._step!(algo, context, Processes.Unstable())
     @test context.target.value == 1.0
-    @test context[exchange_key].store.pending.value[] == 2
+    @test context[exchange_key].store.pending.value[] == 2.0
+    @test context[exchange_key].store.haspending.value[]
 
     context = Processes._step!(algo, context, Processes.Stable())
     @test context.target.value == 2.0
-    @test context[exchange_key].store.pending.value[] === Processes.context_exchange_no_update
+    @test !context[exchange_key].store.haspending.value[]
 end
 
 @testset "InteractiveVar writes through ContextExchange" begin
@@ -61,13 +65,14 @@ end
     ref[] = 4
     @test ref[] == 1.0
     @test duplicate_ref[] == 1.0
-    @test context[exchange_key].store.pending.value[] == 4
+    @test context[exchange_key].store.pending.value[] == 4.0
+    @test context[exchange_key].store.haspending.value[]
 
     context = Processes._step!(algo, context, Processes.Stable())
     @test context.target.value == 4.0
     @test ref[] == 4.0
     @test duplicate_ref[] == 4.0
-    @test context[exchange_key].store.pending.value[] === Processes.context_exchange_no_update
+    @test !context[exchange_key].store.haspending.value[]
 
     typed_ref = view(context, :value)
     typed_ref[] = 5
