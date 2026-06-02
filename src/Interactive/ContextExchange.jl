@@ -3,140 +3,271 @@ export ContextExchange, InteractiveVar, interact!, isinteractive
 struct ContextExchangeNoUpdate end
 const context_exchange_no_update = ContextExchangeNoUpdate()
 
-"""
-Mutable two-way exchange buffers shared by `ContextExchange` and `InteractiveVar`.
+struct ResolvedExchangeVar{Name, Subcontext, Varname} end
 
-`published` holds the last values read by the scheduled exchange step. `pending`
-holds external writes that will be returned through the normal route/merge path
-on the next exchange step. Both named tuples have the keys carried by the
-`ContextExchange` type.
+ResolvedExchangeVar(name::Symbol, subcontext::Symbol, varname::Symbol) =
+    ResolvedExchangeVar{name, subcontext, varname}()
+
+@inline _exchange_name(::ResolvedExchangeVar{Name}) where {Name} = Name
+@inline _exchange_name(::Type{<:ResolvedExchangeVar{Name}}) where {Name} = Name
+@inline _exchange_subcontext(::Type{<:ResolvedExchangeVar{Name, Subcontext}}) where {Name, Subcontext} = Subcontext
+@inline _exchange_varname(::Type{<:ResolvedExchangeVar{Name, Subcontext, Varname}}) where {Name, Subcontext, Varname} = Varname
+
 """
-mutable struct ContextExchangeStore{Names, Published, Pending}
+Mutable buffers shared by `ContextExchange` and `InteractiveVar`.
+
+The `Specs` type parameter contains the fully resolved `(exchange name,
+subcontext, variable)` triplets produced during init. Hot stepping specializes on
+that type and does not use routing/wiring lookup.
+"""
+mutable struct ContextExchangeStore{Specs, Published, Pending, LastTime}
     published::Published
     pending::Pending
+    lasttime::LastTime
+    period::Float64
 end
 
-function ContextExchangeStore(::Val{Names}) where {Names}
-    published = NamedTuple{Names}(ntuple(_ -> Ref{Any}(missing), Val(length(Names))))
-    pending = NamedTuple{Names}(ntuple(_ -> Ref{Any}(context_exchange_no_update), Val(length(Names))))
-    return ContextExchangeStore{Names, typeof(published), typeof(pending)}(published, pending)
+@generated function ContextExchangeStore(specs::Specs, period::Float64) where {Specs<:Tuple}
+    spec_types = Specs.parameters
+    names = tuple((_exchange_name(spec) for spec in spec_types)...)
+    published_values = (:(Ref{Any}(missing)) for _ in names)
+    pending_values = (:(Ref{Any}(context_exchange_no_update)) for _ in names)
+
+    return quote
+        published = NamedTuple{$names}(($(published_values...),))
+        pending = NamedTuple{$names}(($(pending_values...),))
+        lasttime = Ref(-Inf)
+        return ContextExchangeStore{$Specs, typeof(published), typeof(pending), typeof(lasttime)}(
+            published,
+            pending,
+            lasttime,
+            period,
+        )
+    end
 end
 
 """
-Scheduled two-way exchange for a fixed set of view-local variables.
+Scheduled two-way exchange for concrete `Var` selectors.
 
-Construct it as `ContextExchange(:value, :seen)`. Those names are stored in the
-type, so the exchange step can unroll reads from its `SubContextView`. Use
-ordinary `Route`/`Share` wiring to decide where the names come from and where
-external writes are merged back.
+Selectors are supplied as values, for example:
+
+```julia
+ContextExchange(Var(:target, :value), :display_seen => Var(MyAlgo, :seen))
+```
+
+Init resolves those selectors against the process registry/context and stores
+the resolved paths in `ContextExchangeStore`. The exchange has a custom `_step!`
+so it can read and write those paths directly.
 """
-struct ContextExchange{Names} <: AbstractIdentifiableAlgo{
+struct ContextExchange{Selectors, Key} <: AbstractIdentifiableAlgo{
     ContextExchange,
     ValMatcher(:ContextExchange),
     VarAliases(),
     Symbol(),
-    :_exchange,
-} end
+    Key,
+}
+    selectors::Selectors
+    period::Float64
+end
 
-ContextExchange(names::Symbol...) = ContextExchange{names}()
+ContextExchange(selectors...; period::Real = 0.0) =
+    ContextExchange{typeof(selectors), :_exchange}(selectors, Float64(period))
 
-@inline exchange_names(::Union{ContextExchange{Names}, Type{<:ContextExchange{Names}}}) where {Names} = Names
-@inline Base.getkey(::Union{ContextExchange, Type{<:ContextExchange}}) = :_exchange
+@inline exchange_selectors(exchange::ContextExchange) = getfield(exchange, :selectors)
+@inline exchange_period(exchange::ContextExchange) = getfield(exchange, :period)
+@inline Base.getkey(exchange::ContextExchange) = getkey(typeof(exchange))
+@inline Base.getkey(::Type{<:ContextExchange{Selectors, Key}}) where {Selectors, Key} = Key
 @inline getalgo(exchange::ContextExchange) = exchange
 @inline getalgos(exchange::ContextExchange) = (exchange,)
-@inline setcontextkey(exchange::ContextExchange, ::Symbol) = exchange
+@inline setcontextkey(exchange::ContextExchange{Selectors}, key::Symbol) where {Selectors} =
+    ContextExchange{Selectors, key}(exchange_selectors(exchange), exchange_period(exchange))
 @inline setid(exchange::ContextExchange, newid) = exchange
 @inline setvaraliases(exchange::ContextExchange, newaliases) = exchange
 @inline match_by(::Union{ContextExchange, Type{<:ContextExchange}}) = ValMatcher(:ContextExchange)
 @inline registry_entrytype(::Type{<:ContextExchange}) = ContextExchange
 @inline isstaticallyfindable(::ContextExchange) = true
+@inline Autokey(exchange::ContextExchange, i::Int; customname = Symbol(), aliases...) =
+    haskey(exchange) ? exchange : setcontextkey(exchange, static_symbol(:ContextExchange_, i))
 
-function _context_exchange_state(exchange::ContextExchange)
-    store = ContextExchangeStore(Val(exchange_names(exchange)))
+function _context_exchange_state(exchange::ContextExchange, context::ProcessContext)
+    specs = _resolve_exchange_specs(context, exchange_selectors(exchange))
+    store = ContextExchangeStore(specs, exchange_period(exchange))
     return (; store)
 end
 
-Processes.init(exchange::ContextExchange, ::NamedTuple = (;)) = _context_exchange_state(exchange)
+function Processes.init(exchange::ContextExchange, ::NamedTuple = (;))
+    error("ContextExchange init needs a ProcessContext so its Var selectors can be resolved.")
+end
 
-function Processes.init(exchange::ContextExchange, context::AbstractContext)
-    return replace(context, NamedTuple{(:_exchange,)}((_context_exchange_state(exchange),)))
+function Processes.init(exchange::ContextExchange, context::C) where {C<:ProcessContext}
+    key = getkey(exchange)
+    return replace(context, NamedTuple{(key,)}((_context_exchange_state(exchange, context),)))
 end
 
 @inline Processes.cleanup(::ContextExchange, context::AbstractContext) = context
 
-"""
-Run one exchange step through a generated, key-unrolled view read.
-
-For every declared exchange name, the current routed value is published to the
-external ref slot. Pending external writes are returned under the same names, so
-the existing view merge logic and routes perform the actual context update.
-"""
-@inline @generated function Processes.step!(exchange::ContextExchange{Names}, context::C) where {Names, C<:SubContextView}
-    reads = Expr[]
-    values = Any[]
-
-    push!(reads, :(store = getproperty(context, :store)))
-    push!(reads, :(published = getfield(store, :published)))
-    push!(reads, :(pending = getfield(store, :pending)))
-
-    for name in Names
-        current = Symbol(:current_, name)
-        pending_value = Symbol(:pending_, name)
-        returned_value = Symbol(:returned_, name)
-
-        push!(reads, :($current = getproperty(context, $(QuoteNode(name)))))
-        push!(reads, :($pending_value = getproperty(pending, $(QuoteNode(name)))[]))
-        push!(reads, :($returned_value = $pending_value === context_exchange_no_update ? $current : convert(typeof($current), $pending_value)))
-        push!(reads, :(getproperty(published, $(QuoteNode(name)))[] = $returned_value))
-        push!(reads, :(getproperty(pending, $(QuoteNode(name)))[] = context_exchange_no_update))
-        push!(values, returned_value)
-    end
-
-    return quote
-        $(reads...)
-        return NamedTuple{$Names}(($(values...),))
-    end
+function _resolve_exchange_specs(context::ProcessContext, selectors::Tuple)
+    return ntuple(i -> _resolve_exchange_spec(context, selectors[i]), length(selectors))
 end
 
-@inline function _context_exchange_store(context::ProcessContext, exchange::Symbol = :_exchange)
-    return getfield(getdata(getfield(get_subcontexts(context), exchange)), :store)
+@inline _exchange_selector_pair(selector::Var{Entity, Varname}) where {Entity, Varname} = Varname => selector
+@inline _exchange_selector_pair(pair::Pair{Symbol, <:Var}) = pair
+
+function _resolve_exchange_spec(context::ProcessContext, selector)
+    name, var = _exchange_selector_pair(selector)
+    subcontext, varname = _resolve_exchange_var(context, var)
+    return ResolvedExchangeVar(name, subcontext, varname)
+end
+
+function _resolve_exchange_var(context::ProcessContext, ::Var{Entity, Varname}) where {Entity, Varname}
+    Entity == :globals && error("ContextExchange selectors must target stored subcontext variables, not globals.")
+    subcontext = _resolve_exchange_entity(context, Entity)
+    _validate_exchange_target(context, subcontext, Varname)
+    return subcontext, Varname
+end
+
+function _resolve_exchange_entity(context::ProcessContext, entity::Symbol)
+    entity in get_subcontexts_fieldnames(typeof(context)) || error("ContextExchange target subcontext $(entity) not found.")
+    return entity
+end
+
+function _resolve_exchange_entity(context::ProcessContext, entity::Type)
+    matches = findall(entity, getregistry(context))
+    if isempty(matches)
+        error("No algorithm matching $(entity) was found in the registry.")
+    elseif length(matches) > 1
+        error("Context has multiple algorithms matching $(entity): $(getkey.(matches)). Use a keyed Var selector.")
+    end
+    return getkey(only(matches))
+end
+
+function _resolve_exchange_entity(context::ProcessContext, entity)
+    return getkey(getregistry(context)[entity])
+end
+
+function _validate_exchange_target(context::ProcessContext, subcontext::Symbol, varname::Symbol)
+    subctx = getproperty(context, subcontext)
+    haskey(getdata(subctx), varname) || error("ContextExchange target variable $(subcontext).$(varname) not found.")
+    return nothing
+end
+
+function _default_exchange_key(context::ProcessContext)
+    matches = _context_exchanges(context)
+    isempty(matches) && error("Context has no ContextExchange in its registry.")
+    length(matches) > 1 && error("Context has multiple ContextExchange entries: $(getkey.(matches)). Pass `exchange = :key`.")
+    return getkey(only(matches))
+end
+
+@inline function _context_exchange_store(context::ProcessContext, exchange::Union{Nothing, Symbol} = nothing)
+    key = isnothing(exchange) ? _default_exchange_key(context) : exchange
+    return getfield(getdata(getfield(get_subcontexts(context), key)), :store)
 end
 
 function _context_exchanges(context::ProcessContext)
-    reg = getregistry(context)
-    exchange = haskey(reg, :_exchange) ? reg[:_exchange] : nothing
-    isnothing(exchange) ? () : (exchange,)
+    matches = findall(ContextExchange, getregistry(context))
+    return matches
 end
 
 @inline isinteractive(context::ProcessContext) = !isempty(_context_exchanges(context))
 @inline isinteractive(process::AbstractProcess) = isinteractive(context(process))
 
-@inline function _exchange_slot(store::ContextExchangeStore{Names}, ::Val{name}) where {Names, name}
-    name in Names || error("ContextExchange does not expose variable $(name). Available variables are $(Names).")
+@inline function _context_exchange_due!(store::ContextExchangeStore)
+    period = getfield(store, :period)
+    period <= 0 && return true
+
+    now = time()
+    lasttime = getfield(store, :lasttime)
+    if now - lasttime[] >= period
+        lasttime[] = now
+        return true
+    end
+    return false
+end
+
+@inline function Processes._step!(
+    exchange::E,
+    context::C,
+    runtimecontext::RC,
+    ::W,
+    ::Namespace{Name},
+    process::P,
+    lifetime::LT,
+    stability::S = Stable(),
+) where {E<:ContextExchange, C<:ProcessContext, RC<:ProcessContext, W<:PlanWiringView, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+    store = _context_exchange_store(context, Name)
+    _context_exchange_due!(store) || return context, runtimecontext
+    return (@inline _step_context_exchange_store(context, store)), runtimecontext
+end
+
+@inline function Processes.step!(exchange::ContextExchange, context::C, stability::S = Stable()) where {C<:ProcessContext, S<:Stability}
+    store = _context_exchange_store(context, getkey(exchange))
+    _context_exchange_due!(store) || return context
+    return @inline _step_context_exchange_store(context, store)
+end
+
+@inline @generated function _step_context_exchange_store(context::C, store::ContextExchangeStore{Specs}) where {C<:ProcessContext, Specs}
+    specs = Specs.parameters
+    exprs = Expr[:(published = getfield(store, :published)), :(pending = getfield(store, :pending))]
+
+    for spec in specs
+        name = _exchange_name(spec)
+        subcontext = _exchange_subcontext(spec)
+        varname = _exchange_varname(spec)
+        current = Symbol(:current_, name)
+        pending_value = Symbol(:pending_, name)
+        converted = Symbol(:converted_, name)
+
+        push!(exprs, :($current = getproperty(getproperty(context, $(QuoteNode(subcontext))), $(QuoteNode(varname)))))
+        push!(exprs, :($pending_value = getproperty(pending, $(QuoteNode(name)))[]))
+        push!(
+            exprs,
+            quote
+                if $pending_value === context_exchange_no_update
+                    getproperty(published, $(QuoteNode(name)))[] = $current
+                else
+                    $converted = convert(typeof($current), $pending_value)
+                    getproperty(published, $(QuoteNode(name)))[] = $converted
+                    getproperty(pending, $(QuoteNode(name)))[] = context_exchange_no_update
+                    context = @inline merge_into_subcontexts(
+                        context,
+                        NamedTuple{$((subcontext,))}((NamedTuple{$((varname,))}(($converted,)),)),
+                    )
+                end
+            end,
+        )
+    end
+
+    push!(exprs, :(return context))
+    return Expr(:block, exprs...)
+end
+
+@inline function _exchange_slot(store::ContextExchangeStore{Specs}, ::Val{name}) where {Specs, name}
+    names = propertynames(getfield(store, :published))
+    name in names || error("ContextExchange does not expose variable $(name). Available variables are $(names).")
     return getproperty(getfield(store, :published), name), getproperty(getfield(store, :pending), name)
 end
 
 """
     interact!(context, :name => value; exchange = :_exchange)
 
-Queue an external write to one exchange-local variable. The next scheduled
-`ContextExchange` step returns that value under `:name`, and normal route/merge
-machinery applies it to the routed target.
+Queue an external write to one resolved exchange variable. The next due exchange
+step converts it to the current target variable type and writes it directly into
+the resolved subcontext.
 """
-function interact!(context::ProcessContext, pair::Pair{Symbol, <:Any}; exchange::Symbol = :_exchange)
+function interact!(context::ProcessContext, pair::Pair{Symbol, <:Any}; exchange::Union{Nothing, Symbol} = nothing)
     _, pending = _exchange_slot(_context_exchange_store(context, exchange), Val(first(pair)))
     pending[] = last(pair)
     return context
 end
 
-interact!(process::AbstractProcess, pair::Pair{Symbol, <:Any}; exchange::Symbol = :_exchange) =
+interact!(process::AbstractProcess, pair::Pair{Symbol, <:Any}; exchange::Union{Nothing, Symbol} = nothing) =
     interact!(context(process), pair; exchange)
 
 """
-Ref-like view of one exchange-local variable.
+Ref-like view of one exchange variable.
 
-`ref[]` reads the last value published by the scheduled exchange step.
-`ref[] = value` queues a write for the next exchange step.
+`ref[]` reads the last value published by the exchange. `ref[] = value` queues a
+write for the next due exchange step.
 """
 struct InteractiveVar{ExchangeKey, Varname, Published, Pending}
     published::Published
@@ -145,12 +276,12 @@ end
 
 @inline _interactive_varname(::InteractiveVar{ExchangeKey, Varname}) where {ExchangeKey, Varname} = Varname
 
-function InteractiveVar(context::ProcessContext, varname::Symbol; exchange::Symbol = :_exchange)
+function InteractiveVar(context::ProcessContext, varname::Symbol; exchange::Union{Nothing, Symbol} = nothing)
     published, pending = _exchange_slot(_context_exchange_store(context, exchange), Val(varname))
     return InteractiveVar{exchange, varname, typeof(published), typeof(pending)}(published, pending)
 end
 
-function Base.view(context::ProcessContext, varname::Symbol; exchange::Symbol = :_exchange)
+function Base.view(context::ProcessContext, varname::Symbol; exchange::Union{Nothing, Symbol} = nothing)
     return InteractiveVar(context, varname; exchange)
 end
 

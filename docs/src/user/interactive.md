@@ -1,73 +1,77 @@
 # [Interactive Contexts](@id interactive_user)
 
-`Processes` supports scheduled external reads and writes through `ContextExchange`.
+`ContextExchange` gives external code a polled read/write handle to selected
+process variables.
 
-Use this when code outside normal `step!` methods needs a polled view of process
-state, or needs to queue a value change while a process is running.
+## Selectors
 
-## Overview
-
-Declare the exchange-local names in the `ContextExchange` constructor:
+Construct an exchange from `Var` selectors:
 
 ```julia
 algo = resolve(CompositeAlgorithm(
     :target => MyAlgo(),
-    ContextExchange(:value),
-    (1, 10),
-    Route(:target => :_exchange, :value),
+    ContextExchange(Var(:target, :value), Var(:target, :seen)),
+    (1, 20),
 ))
 ```
 
-The names are stored in the `ContextExchange` type. On each scheduled exchange
-step, generated code reads those names from the exchange view. `Route` and
-`Share` decide where those names come from and where queued writes go.
+Selectors are resolved during `initcontext`, when the registry and concrete
+state layout are available. The resolved paths are stored in the exchange state
+type, and `ContextExchange` uses a custom `_step!` instead of route/wiring
+machinery.
 
-The exchange owns a persistent subcontext named `:_exchange`.
+For a different external name, use a pair:
 
-## Polling
+```julia
+ContextExchange(:display => Var(:target, :value))
+```
 
-`view(context, :value)` returns an `InteractiveVar` for the exchange-local
-`:value` slot:
+Type selectors are also supported when they resolve uniquely:
+
+```julia
+ContextExchange(:display => Var(MyAlgo, :value))
+```
+
+## Polling And Writes
+
+External code reads and writes exchange-local names:
 
 ```julia
 ref = view(context, :value)
-ref[]
+ref[]          # last published value, initially `missing`
+ref[] = 4      # queued write
 ```
 
-`ref[]` reads the last value published by a scheduled exchange step. Before the
-first exchange step, the value is `missing`.
+The next due exchange step converts pending writes to the current target field
+type and writes directly into the resolved subcontext. Current values are also
+published to the ref slots on due exchange steps.
 
-With an interval of `10`, published values refresh every 10 composite steps.
-
-## Writes
-
-Assigning to the ref queues a write:
-
-```julia
-ref[] = 4
-```
-
-The write is applied on the next scheduled exchange step. The generated exchange
-step converts the pending value to the type of the currently routed value, then
-returns it under the same exchange-local name. Normal merge and route machinery
-then applies the update.
-
-Programmatic writes use the same exchange-local names:
+Programmatic writes use the same names:
 
 ```julia
 interact!(context, :value => 5)
 interact!(process, :value => 5)
 ```
 
-## Explicit Exchange Key
+Default lookup expects one `ContextExchange` in the process. If there are
+multiple exchanges, pass the exchange key explicitly.
 
-The default exchange key is `:_exchange`. You can address it explicitly:
+## Scheduling
+
+The outer loop schedule still controls how often the exchange child is called:
 
 ```julia
-ref = view(context, Var(:_exchange, :value))
-ref = view(context, :value; exchange = :_exchange)
-interact!(context, :value => 2; exchange = :_exchange)
+CompositeAlgorithm(target, ContextExchange(Var(:target, :value)), (1, 20))
 ```
+
+The exchange also supports a wall-clock gate:
+
+```julia
+ContextExchange(Var(:target, :value); period = 0.05)
+```
+
+If the exchange is called before `period` seconds have elapsed, it returns
+without reading selected variables or applying pending writes.
 
 ## Complete Example
 
@@ -86,9 +90,8 @@ end
 
 algo = resolve(CompositeAlgorithm(
     :target => InteractiveTarget(),
-    ContextExchange(:value),
+    ContextExchange(Var(:target, :value)),
     (1, 1),
-    Route(:target => :_exchange, :value),
 ))
 
 context = initcontext(algo; lifetime = Repeat(3))

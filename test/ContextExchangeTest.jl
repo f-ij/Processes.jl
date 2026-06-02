@@ -14,23 +14,22 @@ using Processes
 
     algo = resolve(CompositeAlgorithm(
         :target => ExchangeTargetForTest(),
-        ContextExchange(:value),
+        ContextExchange(Var(:target, :value)),
         (1, 2),
-        Route(:target => :_exchange, :value),
     ))
     context = initcontext(algo; lifetime = Repeat(5))
 
     interact!(context, :value => 2)
-    @test getkey(algo[:_exchange]) == :_exchange
-    @test context._exchange.store.pending.value[] == 2
+    exchange_key = getkey(only(Processes._context_exchanges(context)))
+    @test context[exchange_key].store.pending.value[] == 2
 
     context = Processes._step!(algo, context, Processes.Unstable())
     @test context.target.value == 1.0
-    @test context._exchange.store.pending.value[] == 2
+    @test context[exchange_key].store.pending.value[] == 2
 
     context = Processes._step!(algo, context, Processes.Stable())
     @test context.target.value == 2.0
-    @test context._exchange.store.pending.value[] === Processes.context_exchange_no_update
+    @test context[exchange_key].store.pending.value[] === Processes.context_exchange_no_update
 end
 
 @testset "InteractiveVar writes through ContextExchange" begin
@@ -46,25 +45,26 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => InteractiveVarTargetForTest(),
-        ContextExchange(:value),
+        ContextExchange(Var(:target, :value)),
         (1, 1),
-        Route(:target => :_exchange, :value),
     ))
     context = initcontext(algo; lifetime = Repeat(3))
 
     ref = view(context, :value)
     @test ref[] === missing
-    duplicate_ref = view(context, Var(:_exchange, :value))
+    exchange_key = getkey(only(Processes._context_exchanges(context)))
+    duplicate_ref = view(context, Var(exchange_key, :value))
 
     ref[] = 4
     @test ref[] === missing
     @test duplicate_ref[] === missing
-    @test context._exchange.store.pending.value[] == 4
+    @test context[exchange_key].store.pending.value[] == 4
 
     context = Processes._step!(algo, context, Processes.Stable())
+    @test context.target.value == 4.0
     @test ref[] == 4.0
     @test duplicate_ref[] == 4.0
-    @test context._exchange.store.pending.value[] === Processes.context_exchange_no_update
+    @test context[exchange_key].store.pending.value[] === Processes.context_exchange_no_update
 
     typed_ref = view(context, :value)
     typed_ref[] = 5
@@ -85,9 +85,8 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => PollingInteractiveTargetForTest(),
-        ContextExchange(:seen),
+        ContextExchange(Var(:target, :seen)),
         (1, 1),
-        Route(:target => :_exchange, :seen),
     ))
     context = initcontext(algo; lifetime = Repeat(3))
 
@@ -100,9 +99,8 @@ end
 
     interval_algo = resolve(CompositeAlgorithm(
         :target => PollingInteractiveTargetForTest(),
-        ContextExchange(:seen),
+        ContextExchange(Var(:target, :seen)),
         (1, 2),
-        Route(:target => :_exchange, :seen),
     ))
     interval_context = initcontext(interval_algo; lifetime = Repeat(4))
     interval_ref = view(interval_context, :seen)
@@ -114,6 +112,32 @@ end
     interval_context = Processes._step!(interval_algo, interval_context, Processes.Stable())
     @test interval_context.target.seen == 2
     @test interval_ref[] == 2
+end
+
+@testset "ContextExchange supports aliases and type selectors" begin
+    struct AliasedExchangeTargetForTest <: ProcessAlgorithm end
+
+    function Processes.init(::AliasedExchangeTargetForTest, context)
+        return (; value = 1.0)
+    end
+
+    function Processes.step!(::AliasedExchangeTargetForTest, context)
+        return (;)
+    end
+
+    algo = resolve(CompositeAlgorithm(
+        :target => AliasedExchangeTargetForTest(),
+        ContextExchange(:display => Var(AliasedExchangeTargetForTest, :value)),
+        (1, 1),
+    ))
+    context = initcontext(algo; lifetime = Repeat(2))
+
+    ref = view(context, :display)
+    ref[] = 3
+    context = Processes._step!(algo, context, Processes.Stable())
+
+    @test context.target.value == 3.0
+    @test ref[] == 3.0
 end
 
 @testset "InteractiveVar requires a ContextExchange" begin
@@ -129,28 +153,35 @@ end
     @test_throws ErrorException view(context, :value)
 end
 
-@testset "ContextExchange writes through routes" begin
-    struct RoutedExchangeTargetForTest <: ProcessAlgorithm end
+@testset "ContextExchange timer skips reads and writes" begin
+    struct TimedExchangeTargetForTest <: ProcessAlgorithm end
 
-    function Processes.init(::RoutedExchangeTargetForTest, context)
-        return (; value = 1.0)
+    function Processes.init(::TimedExchangeTargetForTest, context)
+        return (; value = 1.0, seen = 0)
     end
 
-    function Processes.step!(::RoutedExchangeTargetForTest, context)
-        return (;)
+    function Processes.step!(::TimedExchangeTargetForTest, context)
+        return (; seen = context.seen + 1)
     end
 
     algo = resolve(CompositeAlgorithm(
-        :target => RoutedExchangeTargetForTest(),
-        ContextExchange(:value),
+        :target => TimedExchangeTargetForTest(),
+        ContextExchange(Var(:target, :value), Var(:target, :seen); period = 60.0),
         (1, 1),
-        Route(:target => :_exchange, :value),
     ))
-    context = initcontext(algo; lifetime = Repeat(1))
+    context = initcontext(algo; lifetime = Repeat(3))
+    value_ref = view(context, :value)
+    seen_ref = view(context, :seen)
 
-    interact!(context, :value => 2.0)
     context = Processes._step!(algo, context, Processes.Stable())
-    @test context.target.value == 2.0
+    @test value_ref[] == 1.0
+    @test seen_ref[] == 1
+
+    value_ref[] = 4
+    context = Processes._step!(algo, context, Processes.Stable())
+    @test context.target.value == 1.0
+    @test value_ref[] == 1.0
+    @test seen_ref[] == 1
 end
 
 @testset "ContextExchange updates running process state" begin
@@ -167,9 +198,8 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => SlowInteractiveTargetForTest(),
-        ContextExchange(:value),
+        ContextExchange(Var(:target, :value)),
         (1, 1),
-        Route(:target => :_exchange, :value),
     ))
     process = Process(algo; repeat = Inf)
 
