@@ -59,7 +59,7 @@ end
 
 @inline function after_while(p::P, func::F, hot_state::C, returnvalue, stored_context::SC = hot_state) where {P<:LoopRunProcess,F,C<:ProcessContext,SC<:ProcessContext}
     @inline set_endtime!(p)
-    return returnvalue
+    return @inline _reattach_persistent_registry(hot_state, stored_context)
 end
 
 """

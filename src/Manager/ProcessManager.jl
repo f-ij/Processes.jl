@@ -274,7 +274,6 @@ function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, rep
     result = loop(worker, algo, base_context, lt, inputs, Resuming{false}())
 
     worker.lastresult = result
-    result isa AbstractContext && commit_context!(worker, _strip_runtime_inputs(result, base_context))
     worker.task = nothing
     worker.loopidx = 1
     @atomic worker.shouldrun = false

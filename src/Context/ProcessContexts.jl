@@ -76,6 +76,16 @@ directly addressable, which keeps existing finalstep functions ergonomic.
     return @inline getproperty(getcontext(ec), name)
 end
 
+"""Merge persistent subcontext fields while preserving the active runtime frame."""
+@inline function merge_into_subcontexts(ec::EC, args::A) where {EC<:ExecutionContext,A<:NamedTuple}
+    return ExecutionContext((@inline merge_into_subcontexts(getcontext(ec), args)), getruntimecontext(ec))
+end
+
+"""Replace persistent subcontexts while preserving the active runtime frame."""
+@inline function Base.replace(ec::EC, args::A) where {EC<:ExecutionContext,A<:NamedTuple}
+    return ExecutionContext((@inline replace(getcontext(ec), args)), getruntimecontext(ec))
+end
+
 @inline function Base.getindex(ec::ExecutionContext, name::Symbol)
     name === :globals && return getglobals(ec)
     name === :_runtime && return getglobals(ec)
@@ -108,10 +118,7 @@ end
     if haskey(subcontexts, name)
         return @inline getproperty(subcontexts, name)
     end
-    if haskey(subcontexts, :_runtime) && haskey(getdata(getproperty(subcontexts, :_runtime)), name)
-        return @inline getproperty(getdata(getproperty(subcontexts, :_runtime)), name)
-    end
-    error("Context has no subcontext or runtime value named `$name`.")
+    error("Context has no persistent subcontext named `$name`.")
 end
 
 @inline Base.@constprop :aggressive function Base.getindex(pc::ProcessContext, name::Symbol)
@@ -215,14 +222,6 @@ Merge runtime globals into a runtime context.
 @inline function _merge_into_globals(pc::ProcessContext, args::NamedTuple)
     runtime = @inline merge(getglobals(pc), args)
     return @inline with_subcontext(pc, Val(:_runtime), SubContext(:_runtime, runtime))
-end
-
-"""Remove runtime-owned subcontexts from a context before it is stored."""
-@inline function without_runtime_subcontexts(pc::PC) where {PC<:ProcessContext}
-    subcontexts = @inline get_subcontexts(pc)
-    persistent = haskey(subcontexts, :_runtime) ? deletekeys(subcontexts, :_runtime) : subcontexts
-    persistent = haskey(persistent, :_input) ? deletekeys(persistent, :_input) : persistent
-    return persistent === subcontexts ? pc : ProcessContext(persistent, getregistry(pc))
 end
 
 @inline merge_runtime_return(context::C, ::Nothing) where {C<:ProcessContext} = context

@@ -2,7 +2,7 @@
 Set up an empty ProcessContext for a LoopAlgorithm with given shared specifications
 Inputargs are given as a NamedTuple of (;algo_name => (; inputname1 = value1, ...), ...)
 """
-function init(algos::LA, inputcontext::ProcessContext) where {LA<:AbstractLoopAlgorithm}
+function init(algos::LA, inputcontext::C) where {LA<:AbstractLoopAlgorithm,C<:AbstractContext}
     registry = @inline getregistry(inputcontext)
     named_algos = @inline all_algos(registry)
 

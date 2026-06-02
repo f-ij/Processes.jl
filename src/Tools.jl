@@ -1,6 +1,17 @@
 export processsizehint!, recommendsize, newallocator, progress, est_remaining,
     num_calls, closeprocess
 
+"""Return the lifetime visible to init-time sizing helpers."""
+@inline sizing_lifetime(contextview::SubContextView) = view_lifetime(contextview)
+@inline sizing_lifetime(contextview::ContextAnalyserView) = getglobals(contextview).lifetime
+
+"""Return the current algorithm instance for init-time sizing helpers."""
+@inline sizing_instance(contextview::Union{SubContextView, ContextAnalyserView}) = this_instance(contextview)
+
+"""Return the scheduled call multiplier for init-time sizing helpers."""
+@inline sizing_multiplier(contextview::SubContextView) = view_multiplier(contextview)
+@inline sizing_multiplier(contextview::ContextAnalyserView) = getmultiplier(contextview, sizing_instance(contextview))
+
 """
 Use within init function
 For a process with a limited lifetime,
@@ -13,13 +24,12 @@ give the array a size hint based on the lifetime and the number of updates per s
         return nothing
     end
 
-    globals = getglobals(contextview)
-    lifetime = globals.lifetime
+    lifetime = @inline sizing_lifetime(contextview)
     if lifetime isa IndefiniteLifetime
         return sizehint!(array, 2^16)
     end
 
-    multiplier = getmultiplier(contextview, this_instance(contextview))
+    multiplier = @inline sizing_multiplier(contextview)
     startsize = length(array)
 
     recommended_extra = ceil(Int, repeats(lifetime)*multiplier*updates_per_step)
@@ -30,7 +40,7 @@ give the array a size hint based on the lifetime and the number of updates per s
     # @show sizehint
     @DebugMode "Sizehint is $sizehint"
     if print_hint
-        println("Recommended sizehint for $(this_instance(contextview)) is: $sizehint")
+        println("Recommended sizehint for $(@inline sizing_instance(contextview)) is: $sizehint")
     end
     sizehint!(array, sizehint)
 end
@@ -87,8 +97,8 @@ Get the number of times an algorithm will be called in a process
 This is to be used in the init function
 """
 function num_calls(contextview)
-    lifetime = getglobals(contextview).lifetime
-    instance = this_instance(contextview)
+    lifetime = @inline sizing_lifetime(contextview)
+    instance = @inline sizing_instance(contextview)
     num_calls(contextview, lifetime, instance)
 end
 

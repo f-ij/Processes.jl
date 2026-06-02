@@ -14,11 +14,23 @@ function init(t::T, c::Any) where T
     (;)
 end
 
+"""Build the runtime frame visible only while lifecycle init runs."""
+@inline function _init_runtime_context(algo::F, lifetime::LT) where {F<:AbstractLoopAlgorithm,LT}
+    return @inline _merge_into_globals(_empty_context(), (; algo, lifetime))
+end
+
+"""Return the persistent state produced by lifecycle init."""
+@inline _init_state_context(context::C, base::B) where {C<:ProcessContext,B<:ProcessContext} = context
+@inline _init_state_context(context::C, base::B) where {C<:ExecutionContext,B<:ProcessContext} = getcontext(context)
+@inline _init_state_context(patch::P, base::B) where {P<:NamedTuple,B<:ProcessContext} =
+    @inline merge_into_subcontexts(base, patch)
+
 """
 Make a context from an algo and empty context
 """
 function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
-    input_context = _merge_into_globals(c, (;algo, lifetime))
+    runtime_context = @inline _init_runtime_context(algo, lifetime)
+    input_context = ExecutionContext(c, runtime_context)
 
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"
     @DebugMode "Overrides are ()"
@@ -26,14 +38,15 @@ function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where 
     prepared_context = init(algo, input_context)
     @DebugMode "Prepared in initcontext context is $prepared_context"
 
-    return @inline without_runtime_subcontexts(prepared_context)
+    return @inline _init_state_context(prepared_context, c)
 end
 
 function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{Input, Override}...; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
-    input_context = _merge_into_globals(c, (;algo, lifetime))
-    resolved = _resolve_lifecycle_specs(getregistry(input_context), overrides_and_inputs)
+    resolved = _resolve_lifecycle_specs(getregistry(c), overrides_and_inputs)
     inputs, overrides = _split_init_override(resolved)
-    input_context = merge_resolved_inputs(input_context, inputs)
+    input_state_context = merge_resolved_inputs(c, inputs)
+    runtime_context = @inline _init_runtime_context(algo, lifetime)
+    input_context = ExecutionContext(input_state_context, runtime_context)
 
     @DebugMode "Preparing context for algo $(algo) with input context $input_context"
     @DebugMode "Overrides are $overrides"
@@ -41,9 +54,10 @@ function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), override
     prepared_context = init(algo, input_context)
     @DebugMode "Prepared in initcontext context is $prepared_context"
 
-    overridden_context = merge_resolved_inputs(prepared_context, overrides)
+    prepared_state_context = @inline _init_state_context(prepared_context, input_state_context)
+    overridden_context = merge_resolved_inputs(prepared_state_context, overrides)
 
-    return @inline without_runtime_subcontexts(overridden_context)
+    return overridden_context
 end
 
 function makecontext(p::AbstractProcess, inputs_overrides...; lifetime=nothing)

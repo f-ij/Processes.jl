@@ -143,28 +143,6 @@ function _validate_runtime_inputs(la::LA, inputs::I) where {LA<:AbstractLoopAlgo
     return merge(_runtime_input_defaults(specs), inputs)
 end
 
-"""Compatibility shim: runtime inputs are now built by the loop kernel."""
-@inline _merge_runtime_inputs(context, ::NamedTuple{()}) = context
-@inline _merge_runtime_inputs(context, inputs::I) where {I<:NamedTuple} = context
-
-"""Return the persistent state context from a finished execution value."""
-function _strip_runtime_inputs(context::C) where {C<:ProcessContext}
-    return context
-end
-_strip_runtime_inputs(context::ExecutionContext) = getcontext(context)
-
-"""
-    _strip_runtime_inputs(runtime_context, stored_context)
-
-Keep the updated persistent subcontexts from `runtime_context`, and ensure the
-stored registry is present.
-"""
-@inline function _strip_runtime_inputs(runtime_context::C, stored_context::S) where {C<:ProcessContext, S<:ProcessContext}
-    return @inline withregistry(runtime_context, getregistry(stored_context))
-end
-@inline _strip_runtime_inputs(runtime_context::ExecutionContext, stored_context::S) where {S<:ProcessContext} =
-    @inline _strip_runtime_inputs(getcontext(runtime_context), stored_context)
-
 # Lifecycle accessors keep `LoopAlgorithm`, plain plan nodes, and wrappers on a
 # shared path. Plain plans report no stored lifecycle data.
 @inline getstoredinits(la::LA) where {LA<:AbstractLoopAlgorithm} = hasfield(LA, :inits) ? getfield(la, :inits) : ()
@@ -241,19 +219,17 @@ end
 """
 Build the persistent context for an initialized loop algorithm.
 
-The initialization context includes `algo` and `lifetime` in `_runtime` because
-init methods such as `processsizehint!` need them. Runtime `process` and
-per-run `_input` values are intentionally absent here.
+Lifecycle init runs with a separate runtime frame carrying `algo` and
+`lifetime`. Only the persistent state side is stored on the initialized
+algorithm.
 """
 @inline function _init_context_for(la::LA, inits::I, overrides::O, lifetime::LT) where {LA<:AbstractLoopAlgorithm, I<:Tuple, O<:Tuple, LT}
-    empty_context = _build_process_context(
-        getregistry(la);
-        globals = (; algo = la, lifetime),
-    )
+    empty_context = _build_process_context(getregistry(la))
     input_context = isempty(inits) ? empty_context : merge_into_subcontexts(empty_context, construct_context_merge_tuples(inits))
-    prepared = init(la, input_context)
-    overridden = isempty(overrides) ? prepared : merge_into_subcontexts(prepared, construct_context_merge_tuples(overrides))
-    return @inline without_runtime_subcontexts(overridden)
+    runtime_context = @inline _init_runtime_context(la, lifetime)
+    prepared = init(la, ExecutionContext(input_context, runtime_context))
+    prepared_context = @inline _init_state_context(prepared, input_context)
+    return isempty(overrides) ? prepared_context : merge_into_subcontexts(prepared_context, construct_context_merge_tuples(overrides))
 end
 
 """
@@ -305,8 +281,6 @@ function Base.run(la::LA; repeats = 1, lifetime = nothing, kwargs...) where {LA<
     lt = isnothing(lifetime) ? normalize_process_lifetime(initialized, repeats) : normalize_process_lifetime(initialized, lifetime)
     inputs = _validate_runtime_inputs(initialized, (; kwargs...))
     process = LoopRunProcess(lt)
-    result = loop(process, initialized, stored_context, lt, inputs)
-    runtime_context = result isa AbstractContext ? result : stored_context
-    persistent_context = @inline _strip_runtime_inputs(runtime_context, stored_context)
+    persistent_context = loop(process, initialized, stored_context, lt, inputs)
     return _with_lifecycle(initialized, persistent_context, getstoredinits(initialized), getstoredoverrides(initialized))
 end

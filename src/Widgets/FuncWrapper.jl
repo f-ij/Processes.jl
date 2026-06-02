@@ -259,9 +259,9 @@ context_input_symbols(inputs) = tuple((x for x in inputs if x isa Symbol)...)
     end
 end
 
-@inline init(::FuncWrapper, context::ProcessContext) = context
+@inline init(::FuncWrapper, context::AbstractContext) = context
 @inline init(::FuncWrapper, context) = (;)
-@inline cleanup(::FuncWrapper, context::ProcessContext) = context
+@inline cleanup(::FuncWrapper, context::AbstractContext) = context
 @inline cleanup(::FuncWrapper, context) = (;)
 
 function _funcwrapper_construct(f::F, inputs, outputsyms::NTuple{M, Symbol}, kwargs::NamedTuple, display_inputs::Tuple, display_kwargs::NamedTuple) where {F, M}
