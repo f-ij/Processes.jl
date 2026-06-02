@@ -1,4 +1,8 @@
 export resolve
+
+"""Child-count threshold where registry construction switches to batch insertion."""
+const _REGISTRY_BATCH_CHILD_LIMIT = 16
+
 """
 Materialize a loop algorithm for context construction.
 
@@ -22,7 +26,7 @@ its inner loop is materialized.
     registry, keyed_la = setup_registry_and_keyed_algos(la)
     keyed_la = attach_registry_to_tree(keyed_la, registry)
     keyed_la = resolve_plan_wiring(keyed_la, registry)
-    return setoptions(keyed_la, _root_loop_options(_unresolved_options(la)))
+    return setoptions(keyed_la, _root_loop_options(la))
 end
 
 @inline function setup_registry_and_keyed_algos(la::LoopAlgorithm)
@@ -34,43 +38,106 @@ end
     multipliers = ntuple(i -> 1, length(states))
     registry = addall(registry, states, multipliers)
 
-    registry, keyed_plan = add_algos_to_registry(registry, getplan(la), 1.0)
-    return registry, setfield(la, :plan, keyed_plan)
+    registry, named_plan = add_algos_to_registry(registry, getplan(la), 1.0)
+    return registry, setfield(la, :plan, named_plan)
+end
+
+@inline function add_algos_to_registry(registry::R, la::LA, multiplier) where {R<:NameSpaceRegistry, LA<:Union{CompositeAlgorithm, Routine}}
+    funcs = getalgos(la)
+    algo_multipliers = multiplier .* multipliers(la)
+    registry, raw_funcs, namespaces = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
+    return registry, setfield(rebuild_loopalgorithm_funcs(la, raw_funcs), :namespaces, namespaces)
 end
 
 @inline function add_algos_to_registry(registry::R, la::LA, multiplier) where {R<:NameSpaceRegistry, LA<:AbstractLoopAlgorithm}
     funcs = getalgos(la)
     algo_multipliers = multiplier .* multipliers(la)
-    registry, keyed_funcs = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
-    return registry, rebuild_loopalgorithm_funcs(la, keyed_funcs)
+    registry, raw_funcs, _ = add_algo_tuple_to_registry(registry, funcs, algo_multipliers)
+    return registry, rebuild_loopalgorithm_funcs(la, raw_funcs)
 end
 
-@inline add_algo_tuple_to_registry(registry::R, ::Tuple{}, ::Tuple{}) where {R<:NameSpaceRegistry} = registry, ()
+@inline add_algo_tuple_to_registry(registry::R, ::Tuple{}, ::Tuple{}) where {R<:NameSpaceRegistry} = registry, (), ()
+
+"""Return whether every child is a raw `FuncWrapper` value."""
+function _all_funcwrapper_values(funcs::Funcs) where {Funcs<:Tuple}
+    for func in funcs
+        func isa FuncWrapper || return false
+    end
+    return true
+end
+
+"""Return the same autokey shape used for raw `FuncWrapper` DSL children."""
+@inline function _funcwrapper_autokey(func::F, idx::Int) where {F<:FuncWrapper}
+    return IdentifiableAlgo(func, Symbol(:FuncWrapper_, idx))
+end
+
+"""Add a large tuple of raw `FuncWrapper`s to the registry in one pass.
+
+Large DSL function-call chains usually produce many unique `FuncWrapper`
+children. Adding them one-by-one creates and compiles one intermediate registry
+tuple type per child; batching keeps the same final registry shape while only
+materializing the final `RegistryTypeEntry{FuncWrapper}` once.
+"""
+function _add_funcwrapper_tuple_to_registry(registry::R, funcs::Funcs, multipliers::Multipliers) where {R<:NameSpaceRegistry, Funcs<:Tuple, Multipliers<:Tuple}
+    entries = ntuple(i -> _funcwrapper_autokey(getfield(funcs, i), i), length(funcs))
+    multiplier_values = Float64[]
+    sizehint!(multiplier_values, length(multipliers))
+    lookup = Dict{Any, Int}()
+
+    # Mirror `RegistryTypeEntry.add`: store multipliers and dynamic lookup for
+    # each autokeyed wrapper, but avoid building every intermediate entry tuple.
+    for i in eachindex(entries)
+        push!(multiplier_values, Float64(getfield(multipliers, i)))
+        lookup[match_by(getfield(entries, i))] = i
+    end
+
+    entry = RegistryTypeEntry{FuncWrapper, typeof(entries)}(entries, multiplier_values, lookup)
+    registry_entries = (getentries(registry)..., entry)
+    namespaces = ntuple(i -> Namespace{getkey(getfield(entries, i))}(), length(entries))
+    return NameSpaceRegistry{typeof(registry_entries)}(registry_entries), funcs, namespaces
+end
 
 @inline function add_algo_tuple_to_registry(registry::R, funcs::F, multipliers::M) where {R<:NameSpaceRegistry, F<:Tuple, M<:Tuple}
-    registry, keyed_head = add_algo_to_registry(registry, first(funcs), first(multipliers))
-    registry, keyed_tail = add_algo_tuple_to_registry(registry, Base.tail(funcs), Base.tail(multipliers))
-    return registry, (keyed_head, keyed_tail...)
+    if length(funcs) > _REGISTRY_BATCH_CHILD_LIMIT &&
+       isnothing(find_typeidx(registry, FuncWrapper)) &&
+       _all_funcwrapper_values(funcs)
+        return _add_funcwrapper_tuple_to_registry(registry, funcs, multipliers)
+    end
+
+    registry, raw_head, name_head = add_algo_to_registry(registry, first(funcs), first(multipliers))
+    registry, raw_tail, name_tail = add_algo_tuple_to_registry(registry, Base.tail(funcs), Base.tail(multipliers))
+    return registry, (raw_head, raw_tail...), (name_head, name_tail...)
 end
 
 @inline function add_algo_to_registry(registry::R, algo::LA, multiplier) where {R<:NameSpaceRegistry, LA<:AbstractLoopAlgorithm}
     inner = algo isa LoopAlgorithm ? getplan(algo) : algo
-    return add_algos_to_registry(registry, inner, multiplier)
+    registry, plan = add_algos_to_registry(registry, inner, multiplier)
+    return registry, plan, Namespace{nothing}()
+end
+
+@inline function add_algo_to_registry(registry::R, algo::IA, multiplier) where {F<:AbstractLoopAlgorithm, R<:NameSpaceRegistry, IA<:AbstractIdentifiableAlgo{F}}
+    registry, plan = add_algos_to_registry(registry, getalgo(algo), multiplier)
+    return registry, plan, Namespace{nothing}()
 end
 
 @inline function add_algo_to_registry(registry::R, algo::A, multiplier) where {R<:NameSpaceRegistry, A}
-    return add(registry, algo, multiplier)
+    registry, keyed_algo = add(registry, algo, multiplier)
+    return registry, getalgo(keyed_algo), Namespace{getkey(keyed_algo)}()
 end
 
-@inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:AbstractLoopAlgorithm, F<:Tuple}
+@inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:Union{CompositeAlgorithm, Routine}, F<:Tuple}
     return setfield(la, :funcs, funcs)
 end
 
-@inline function rebuild_loopalgorithm_funcs(la::LoopAlgorithm, funcs::F) where {F<:Tuple}
+@inline function rebuild_loopalgorithm_funcs(la::LA, funcs::F) where {LA<:AbstractLoopAlgorithm, F}
+    return setfield(la, :funcs, funcs)
+end
+
+@inline function rebuild_loopalgorithm_funcs(la::LoopAlgorithm, funcs::F) where {F}
     return setfield(la, :plan, rebuild_loopalgorithm_funcs(getplan(la), funcs))
 end
 
-@inline function rebuild_loopalgorithm_funcs(fa::FA, funcs::F) where {FA<:FinalizedAlgorithm, F<:Tuple}
+@inline function rebuild_loopalgorithm_funcs(fa::FA, funcs::F) where {FA<:FinalizedAlgorithm, F}
     return finalstep(rebuild_loopalgorithm_funcs(inneralgorithm(fa), funcs), finalfunction(fa))
 end
 
@@ -112,9 +179,6 @@ function _resolve_plan_wiring_tree(la::LA, registry::NameSpaceRegistry, inherite
         child = getalgo(la, i)
         if child isa AbstractLoopAlgorithm
             return _resolve_plan_wiring_tree(child, registry, combined_global)
-        elseif child isa AbstractIdentifiableAlgo{<:AbstractLoopAlgorithm}
-            resolved_child = _resolve_plan_wiring_tree(getalgo(child), registry, combined_global)
-            return setfield(child, :func, resolved_child)
         end
         return child
     end
@@ -122,10 +186,10 @@ function _resolve_plan_wiring_tree(la::LA, registry::NameSpaceRegistry, inherite
 
     resolved_children = ntuple(length(funcs)) do i
         child = funcs[i]
-        if child isa AbstractLoopAlgorithm || child isa AbstractIdentifiableAlgo{<:AbstractLoopAlgorithm}
-            return child isa AbstractLoopAlgorithm ? getwiring(child) : getwiring(getalgo(child))
+        if child isa AbstractLoopAlgorithm
+            return getwiring(child)
         end
-        target = getkey(child)
+        target = plan_child_namespace(la, i)
         bucket = getfield(child_wiring(raw_wiring), i)
 
         # Concrete children receive a single resolved `Wiring`: inherited global

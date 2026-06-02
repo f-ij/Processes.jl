@@ -71,6 +71,13 @@ end
 @inline Processes.step!(inj::ContextInjector, context::C, ::Unstable) where {C<:ProcessContext} =
     _step_context_injector(inj, context)
 
+"""Step the injector on the full process context even inside raw resolved plans."""
+@inline Processes._step!(inj::ContextInjector, context::C, ::Wiring{Tuple{}, Tuple{}}, ::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {C<:ProcessContext, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability} =
+    Processes.step!(inj, context, stability)
+
+@inline Processes._step!(inj::ContextInjector, context::C, ::Wiring, ::Namespace, process::P, lifetime::LT, stability::S = Stable()) where {C<:ProcessContext, P<:AbstractProcess, LT<:Lifetime, S<:Stability} =
+    Processes.step!(inj, context, stability)
+
 @inline function _step_context_injector(::ContextInjector, context::C) where {C<:ProcessContext}
     updates = _context_injector_buffer(context)
     isempty(updates) && return context
@@ -184,7 +191,10 @@ function _resolved_update_from_view(context::ProcessContext, target, varname::Sy
 end
 
 function _resolved_updates(context::ProcessContext, input::Union{Input, Override})
-    if _is_resolved_input(input)
+    if isalltargets(input)
+        resolved = resolve(getregistry(context), input)
+        return Iterators.flatten(_resolved_updates(context, named) for named in resolved)
+    elseif isresolved(input)
         target = get_target_name(input)
         return tuple((_resolved_update_from_view(context, target, first(pair), last(pair)) for pair in pairs(get_vars(input)))...)
     end

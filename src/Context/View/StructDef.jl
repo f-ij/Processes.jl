@@ -35,7 +35,7 @@ end
     varnames = varnames isa Tuple ? varnames : (varnames,)
     assign_symbols = ntuple(i -> gensym(:var), numvars)
     target_subcontext = get_subcontextname(vl)
-    return [:($(assign_symbols[i]) = @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(varnames[i]))))
+    return [:($(assign_symbols[i]) = @inline getproperty_fromsubcontext(sct, Val($(QuoteNode(target_subcontext))), Val($(QuoteNode(varnames[i])))))
         for i in 1:numvars], assign_symbols
 end
 

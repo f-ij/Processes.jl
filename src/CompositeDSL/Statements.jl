@@ -11,15 +11,60 @@ function _dsl_customname(ex, alias_name::Symbol)
     return Symbol()
 end
 
+"""Return whether a schedule value is a lifetime constructor call supported by `@repeat`."""
+function _dsl_lifetime_constructor_name(ex::Ex) where {Ex}
+    if ex isa Symbol
+        return ex
+    elseif ex isa Expr && ex.head == :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
+        return ex.args[2].value
+    end
+    return nothing
+end
+
+"""Rewrite one DSL variable selector into a runtime `Var` selector expression."""
+function _dsl_repeat_lifetime_selector_expr(selector::S) where {S}
+    if selector isa Symbol
+        return :(Processes._composite_dsl_var_selector(_dsl_producers, _dsl_owner, _dsl_outputs, $(QuoteNode(selector))))
+    end
+    return esc(selector)
+end
+
+"""Lower a `@repeat` schedule value, resolving DSL variable selectors in lifetimes."""
+function _dsl_repeat_schedule_expr(schedule_value::SV) where {SV}
+    if schedule_value isa Expr && schedule_value.head == :call
+        constructor = _dsl_lifetime_constructor_name(schedule_value.args[1])
+        if constructor == :Repeat
+            length(schedule_value.args) == 2 || error("Repeat schedules must be written as `Repeat(n)`.")
+            return :(Processes.Repeat($(esc(schedule_value.args[2]))))
+        elseif constructor == :Indefinite
+            length(schedule_value.args) == 1 || error("Indefinite schedules must be written as `Indefinite()`.")
+            return :(Processes.Indefinite())
+        elseif constructor == :Until
+            length(schedule_value.args) == 3 || error("Until schedules must be written as `Until(condition, selector)`.")
+            return :(Processes.Until($(esc(schedule_value.args[2])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[3]))))
+        elseif constructor == :RepeatOrUntil
+            length(schedule_value.args) == 4 || error("RepeatOrUntil schedules must be written as `RepeatOrUntil(condition, n, selector)`.")
+            return :(Processes.RepeatOrUntil($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[4]))))
+        elseif constructor == :AtLeast
+            length(schedule_value.args) == 4 || error("AtLeast schedules must be written as `AtLeast(condition, n, selector)`.")
+            return :(Processes.AtLeast($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[4]))))
+        elseif constructor == :AtLeastAtMost
+            length(schedule_value.args) == 5 || error("AtLeastAtMost schedules must be written as `AtLeastAtMost(condition, min, max, selector)`.")
+            return :(Processes.AtLeastAtMost($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(esc(schedule_value.args[4])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[5]))))
+        end
+    end
+    return :(Processes.Repeat(Int($(esc(schedule_value)))))
+end
+
 """Validate schedule usage and turn it into the constructor specification entry."""
 function _dsl_schedule_expr(schedule_kind::Symbol, schedule_value, expected_schedule::Symbol, owner_name::Symbol)
     if schedule_kind == :default
-        return :(1)
+        return expected_schedule == :repeat ? :(Processes.Repeat(1)) : :(1)
     elseif expected_schedule == :none
         got = schedule_kind == :every ? "@interval" : "@repeat"
         error("Use plain entries inside `@$(owner_name) ... begin ... end`, not `$got`.")
     elseif schedule_kind == expected_schedule
-        return esc(schedule_value)
+        return expected_schedule == :repeat ? _dsl_repeat_schedule_expr(schedule_value) : :(Int($(esc(schedule_value))))
     else
         expected = expected_schedule == :every ? "@interval" : "@repeat"
         got = schedule_kind == :every ? "@interval" : "@repeat"
@@ -28,8 +73,8 @@ function _dsl_schedule_expr(schedule_kind::Symbol, schedule_value, expected_sche
 end
 
 """Emit either `algo` or `:alias => algo` for the target constructor call."""
-function _dsl_algorithm_entry_expr(alias_name::Symbol)
-    return :(Processes._composite_dsl_entry(_dsl_resolved.entity, $(QuoteNode(alias_name))))
+function _dsl_algorithm_entry_expr(alias_name::Symbol, entity_expr::E = :(_dsl_entity)) where {E}
+    return :(Processes._composite_dsl_entry($entity_expr, $(QuoteNode(alias_name))))
 end
 
 """Wrap an algorithm constructor entry in a parser option when conditionally included."""
@@ -86,8 +131,98 @@ later composition/renaming can update the reference without relying on raw-value
 matching. Otherwise fall back to the raw entity and let constructor-time naming
 resolve it later.
 """
-function _dsl_share_endpoint_expr(alias_name::Symbol)
-    _dsl_known_owner_expr(:(_dsl_resolved.entity), alias_name)
+function _dsl_share_endpoint_expr(alias_name::Symbol, entity_expr::E = :(_dsl_entity)) where {E}
+    _dsl_known_owner_expr(entity_expr, alias_name)
+end
+
+"""Return an expression that prefixes nested state warning paths with one context alias."""
+function _dsl_contextual_entity_expr(context_alias::Symbol)
+    context_alias == Symbol() && return :(_dsl_resolved.entity)
+    return :(Processes._composite_dsl_prefix_state_diagnostic_paths(_dsl_resolved.entity, $(QuoteNode(context_alias))))
+end
+
+"""Remember the pushed algorithm index for a `@context` alias."""
+function _dsl_register_context_index_expr(context_alias::Symbol)
+    context_alias == Symbol() && return nothing
+    return :(_dsl_context_indices[$(QuoteNode(context_alias))] = length(_dsl_algos))
+end
+
+"""Parse a current-block or child inline-state field selector.
+
+Selectors are used by `@bind` and `@merge`. A plain symbol such as `buffers`
+selects the current block's inline state. A dotted expression such as
+`f.buffers` or `f._state.buffers` selects the inline state of the `@context f`
+entry. The returned `scope` is `:local` or `:context`; `display` preserves the
+user-facing selector for diagnostics.
+"""
+function _dsl_parse_state_field_selector(context_map::CM, ex::Ex) where {CM<:Dict, Ex}
+    if ex isa Symbol
+        return (; scope = :local, context_alias = Symbol(), field = ex, display = string(ex))
+    elseif ex isa Expr && ex.head == :. && length(ex.args) == 2 && ex.args[2] isa QuoteNode
+        field = ex.args[2].value
+        field isa Symbol || return nothing
+        base = ex.args[1]
+        if base isa Symbol && haskey(context_map, base)
+            return (; scope = :context, context_alias = base, field, display = string(base, ".", field))
+        elseif base isa Expr && base.head == :. && length(base.args) == 2 && base.args[2] isa QuoteNode && base.args[2].value == :_state
+            context_alias = base.args[1]
+            if context_alias isa Symbol && haskey(context_map, context_alias)
+                return (; scope = :context, context_alias, field, display = string(context_alias, "._state.", field))
+            end
+        end
+    end
+    return nothing
+end
+
+"""Return user payload arguments from a DSL-only macro call."""
+function _dsl_macro_payload_args(stmt::S) where {S}
+    args = [stmt.args[i] for i in 3:length(stmt.args) if !(stmt.args[i] isa LineNumberNode)]
+    if length(args) == 1 && args[1] isa Expr && args[1].head == :tuple
+        return Any[args[1].args...]
+    end
+    return args
+end
+
+"""Parse `@bind source => child.field` as an explicit state-sharing approval."""
+function _dsl_build_state_bind_statement(stmt::S, context_map::CM) where {S, CM<:Dict}
+    stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@bind") || return nothing
+    args = _dsl_macro_payload_args(stmt)
+    length(args) == 1 || error("@bind expects one mapping like `@bind buffers => f.buffers`.")
+    mapping = only(args)
+    mapping isa Expr && mapping.head == :call && mapping.args[1] == :(=>) && length(mapping.args) == 3 ||
+        error("@bind expects one mapping like `@bind buffers => f.buffers`.")
+
+    source = _dsl_parse_state_field_selector(context_map, mapping.args[2])
+    target = _dsl_parse_state_field_selector(context_map, mapping.args[3])
+    isnothing(source) && error("@bind source must be a state field like `buffers`.")
+    isnothing(target) && error("@bind target must be a child state field like `f.buffers`.")
+    source.scope == :local || error("@bind source must be a current-block state field. Got `$(source.display)`.")
+    target.scope == :context || error("@bind target must be a child state field. Got `$(target.display)`.")
+    source.field == target.field || error("@bind currently requires matching field names. Got `$(source.display)` and `$(target.display)`.")
+
+    return quote
+        Processes._composite_dsl_mark_local_shared_state_field!(_dsl_states, $(QuoteNode(source.field)))
+        Processes._composite_dsl_mark_context_shared_state_field!(_dsl_algos, _dsl_context_indices, $(QuoteNode(target.context_alias)), $(QuoteNode(target.field)))
+    end
+end
+
+"""Parse `@merge child.field, other_child.field` as an explicit peer state merge approval."""
+function _dsl_build_state_merge_statement(stmt::S, context_map::CM) where {S, CM<:Dict}
+    stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@merge") || return nothing
+    args = _dsl_macro_payload_args(stmt)
+    length(args) >= 2 || error("@merge expects at least two child state fields, e.g. `@merge f.buffers, n.buffers`.")
+    selectors = map(arg -> _dsl_parse_state_field_selector(context_map, arg), args)
+    any(isnothing, selectors) && error("@merge only accepts child state fields like `f.buffers` or `f._state.buffers`.")
+    all(selector -> selector.scope == :context, selectors) || error("@merge only accepts child state fields; use `@bind` for current-block state.")
+    field = first(selectors).field
+    all(selector -> selector.field == field, selectors) || error("@merge currently requires matching field names. Got `$(join(getproperty.(selectors, :display), ", "))`.")
+
+    shared_field_marks = map(selectors) do selector
+        :(Processes._composite_dsl_mark_context_shared_state_field!(_dsl_algos, _dsl_context_indices, $(QuoteNode(selector.context_alias)), $(QuoteNode(selector.field))))
+    end
+    return quote
+        $(shared_field_marks...)
+    end
 end
 
 """Return whether a RHS expression should stay on the normal invocation parser."""
@@ -205,7 +340,7 @@ function _dsl_build_owned_write_statement(lhs, rhs, alias_map, context_map, know
         local _dsl_resolved = Processes._resolve_composite_dsl_entity($(esc(spec_expr)), $inputs_expr, _dsl_outputs, Val{Symbol()}())
         local _dsl_owner = _dsl_resolved.entity
         push!(_dsl_algos, _dsl_resolved.entity)
-        push!(_dsl_specification, Int($schedule_expr))
+        push!(_dsl_specification, $schedule_expr)
         $(_dsl_maybe_guard_metadata_expr(quote
             Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
         end, include_condition))
@@ -224,7 +359,7 @@ Accepted top-level statements inside the block:
 
 `@finally` is root-only and handled by the surrounding block collector.
 """
-function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{Symbol}, state_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol; include_condition = nothing)
+function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{Symbol}, state_outputs::Set{Symbol}, expected_schedule::Symbol, owner_name::Symbol; include_condition = nothing, context_alias::Symbol = Symbol())
     if stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@state")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@input")
@@ -232,6 +367,10 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@alias")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@context")
+        return nothing
+    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@bind")
+        return nothing
+    elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@merge")
         return nothing
     elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@finally")
         error("@finally is root-only and must appear as a top-level DSL statement.")
@@ -283,6 +422,8 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     parsed = isnothing(context_write) ? _dsl_parse_invocation(alias_map, context_map, rhs, known_outputs) : context_write
     outputs_expr = Expr(:tuple, [QuoteNode(sym) for sym in outputs]...)
     schedule_expr = _dsl_schedule_expr(parsed.schedule_kind, parsed.schedule_value, expected_schedule, owner_name)
+    entity_expr = _dsl_contextual_entity_expr(context_alias)
+    context_index_expr = _dsl_register_context_index_expr(context_alias)
 
     if parsed.kind == :entity
         customname = _dsl_customname(parsed.spec_expr, parsed.alias_name)
@@ -301,19 +442,21 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             # Resolve the user-facing DSL entity into a normal algorithm/state
             # object plus the routed input metadata the builder needs.
             local _dsl_resolved = Processes._resolve_composite_dsl_entity($(esc(parsed.spec_expr)), $inputs_expr, _dsl_outputs, Val{$(QuoteNode(customname))}())
+            local _dsl_entity = $entity_expr
             local _dsl_owner = $share_target_expr
             if _dsl_resolved isa Processes._CompositeDSLResolved{:state}
                 # Inline states are stored separately and claim ownership of
                 # their outputs immediately.
                 $(_dsl_maybe_guard_metadata_expr(quote
-                    push!(_dsl_states, _dsl_resolved.entity)
+                    push!(_dsl_states, _dsl_entity)
                     Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_owner, _dsl_outputs)
                 end, include_condition))
             else
                 # Algorithms are appended to the constructor argument list and
                 # then wired into the routing tables.
                 push!(_dsl_algos, $algo_entry_expr)
-                push!(_dsl_specification, Int($schedule_expr))
+                push!(_dsl_specification, $schedule_expr)
+                $context_index_expr
                 $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
             end
         end
@@ -331,9 +474,11 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             # Repeated inner blocks already expand to one resolved entity, so the
             # outer builder only has to wire and register them.
             local _dsl_resolved = $(parsed.resolved_expr)
+            local _dsl_entity = $entity_expr
             local _dsl_owner = $owner_expr
             push!(_dsl_algos, $algo_entry_expr)
-            push!(_dsl_specification, Int($schedule_expr))
+            push!(_dsl_specification, $schedule_expr)
+            $context_index_expr
             $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
         end
     end
@@ -366,9 +511,11 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
                 _dsl_outputs,
                 Val{$(QuoteNode(customname))}(),
             )
+            local _dsl_entity = $entity_expr
             local _dsl_owner = $share_target_expr
             push!(_dsl_algos, $algo_entry_expr)
-            push!(_dsl_specification, Int($schedule_expr))
+            push!(_dsl_specification, $schedule_expr)
+            $context_index_expr
             $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
         end
     end
@@ -392,9 +539,11 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             $inputs_expr,
             Val{$(QuoteNode(customname))}(),
         )
+        local _dsl_entity = $entity_expr
         local _dsl_owner = $share_target_expr
         push!(_dsl_algos, $algo_entry_expr)
-        push!(_dsl_specification, Int($schedule_expr))
+        push!(_dsl_specification, $schedule_expr)
+        $context_index_expr
         $(_dsl_maybe_guard_metadata_expr(metadata_expr, include_condition))
     end
 end
@@ -433,6 +582,7 @@ function _dsl_build_include_if_statement(stmt, alias_map, context_map, known_out
                 expected_schedule,
                 owner_name;
                 include_condition = condition_sym,
+                context_alias = context.first,
             )
             if !isnothing(step_expr)
                 step_expr = Base.remove_linenums!(step_expr)
@@ -526,7 +676,23 @@ function _dsl_collect_block(
             context = _dsl_parse_context(stmt)
             alias_map[context.first] = context.second
             context_map[context.first] = context.second
-            step_expr = _dsl_build_statement(stmt.args[3].args[2], alias_map, context_map, known_outputs, state_outputs, expected_schedule, owner_name)
+            step_expr = _dsl_build_statement(stmt.args[3].args[2], alias_map, context_map, known_outputs, state_outputs, expected_schedule, owner_name; context_alias = context.first)
+            if !isnothing(step_expr)
+                step_expr = Base.remove_linenums!(step_expr)
+                isnothing(current_line) || push!(step_exprs, current_line)
+                push!(step_exprs, step_expr)
+            end
+            continue
+        elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@bind")
+            step_expr = _dsl_build_state_bind_statement(stmt, context_map)
+            if !isnothing(step_expr)
+                step_expr = Base.remove_linenums!(step_expr)
+                isnothing(current_line) || push!(step_exprs, current_line)
+                push!(step_exprs, step_expr)
+            end
+            continue
+        elseif stmt isa Expr && stmt.head == :macrocall && stmt.args[1] == Symbol("@merge")
+            step_expr = _dsl_build_state_merge_statement(stmt, context_map)
             if !isnothing(step_expr)
                 step_expr = Base.remove_linenums!(step_expr)
                 isnothing(current_line) || push!(step_exprs, current_line)

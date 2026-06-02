@@ -110,6 +110,20 @@ function _run_inline_chunk!(recipe::Recipe, worker::W, chunk::Chunk, slot::S, ma
 end
 
 """
+    _run_inline_chunk_now!(manager, slot, chunk)
+
+Run a chunk worker immediately in the current task. Threaded manager schedules
+use this so chunk setup, every example run, and chunk cleanup stay on the same
+threaded iteration.
+"""
+function _run_inline_chunk_now!(manager::M, slot::S, chunk::Chunk) where {M<:ProcessManager, S<:WorkerSlot{<:InlineChunkWorker}, Chunk}
+    worker = slot.worker
+    _inline_chunk_task_done(worker) || throw(ArgumentError("InlineChunkWorker is already running a chunk."))
+    worker.task = nothing
+    return _run_inline_chunk!(manager.recipe, worker, chunk, slot, manager)
+end
+
+"""
     _start_inline_chunk_worker!(manager, slot, chunk)
 
 Start one chunk on an `InlineChunkWorker` using one spawned task for the full
@@ -132,6 +146,18 @@ function _start_slot!(manager::M, slot::S, chunk) where {M<:ProcessManager, S<:W
     result = start!(manager.recipe, slot, chunk, manager)
     _is_no_recipe_callback(result) || return result
     return _start_inline_chunk_worker!(manager, slot, chunk)
+end
+
+"""
+    _start_slot_inline!(manager, slot::WorkerSlot{<:InlineChunkWorker}, chunk)
+
+Start a chunk worker inside a threaded manager iteration. A recipe `start!`
+callback can still replace the default chunk runner.
+"""
+function _start_slot_inline!(manager::M, slot::S, chunk) where {M<:ProcessManager, S<:WorkerSlot{<:InlineChunkWorker}}
+    result = start!(manager.recipe, slot, chunk, manager)
+    _is_no_recipe_callback(result) || return result
+    return _run_inline_chunk_now!(manager, slot, chunk)
 end
 
 """
@@ -184,6 +210,30 @@ function _chunk_buffer(jobs::J) where {J}
 end
 
 """
+    _chunked_jobs(jobs, chunksize)
+
+Collect an iterable into chunk vectors suitable for threaded chunk scheduling.
+"""
+function _chunked_jobs(jobs::Jobs, chunksize::Integer) where {Jobs}
+    chunksize > 0 || throw(ArgumentError("`chunksize` must be positive."))
+    chunk = _chunk_buffer(jobs)
+    chunks = Vector{typeof(chunk)}()
+    sizehint!(chunk, Int(chunksize))
+
+    for job in jobs
+        push!(chunk, job)
+        if length(chunk) >= chunksize
+            push!(chunks, chunk)
+            chunk = similar(chunk, 0)
+            sizehint!(chunk, Int(chunksize))
+        end
+    end
+
+    !isempty(chunk) && push!(chunks, chunk)
+    return chunks
+end
+
+"""
     runchunks!(manager, jobs; chunksize)
 
 Dispatch `jobs` as vector chunks. Each chunk is one manager job, so an
@@ -211,4 +261,17 @@ function runchunks!(manager::M, jobs::Jobs; chunksize::Integer) where {M<:Proces
 
     drain!(manager)
     return manager
+end
+
+"""
+    runchunks!(manager, jobs, schedule; chunksize)
+
+Dispatch `jobs` as chunks and run those chunks through `runthreaded!` with the
+given thread schedule. Each chunk is one manager job, and `InlineChunkWorker`
+slots execute their examples inline on the owning threaded iteration.
+"""
+function runchunks!(manager::M, jobs::Jobs, schedule::S; chunksize::Integer) where {M<:ProcessManager, Jobs, S<:ThreadsType}
+    chunks = _chunked_jobs(jobs, chunksize)
+    isempty(chunks) && return manager
+    return runthreaded!(manager, chunks, schedule)
 end

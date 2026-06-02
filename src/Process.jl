@@ -138,10 +138,42 @@ function context(p::P) where {P<:Process}
     runtime_context = p.runtime_context
     return isnothing(runtime_context) ? getstoredcontext(getalgo(p)) : runtime_context
 end
+
+"""
+Store one live process context in the dynamic runtime slot.
+
+Use this while a `Process` is still resumable, for example after a pause or
+before a run with per-call lifetime changes. The stored value may intentionally
+deviate from the lifecycle context carried in `p.algo`.
+"""
 @inline function _store_runtime_context!(p::P, c::C) where {P<:Process, C}
     context(p, c)
     return c
 end
+
+"""
+Commit one finished or reinitialized process context back onto the process.
+
+When the context strips back to the same concrete type as the stored lifecycle
+context, the lifecycle wrapper in `p.algo` is rebuilt so later runs keep using
+the typed fast path. Only genuine shape changes fall back to the dynamic
+`runtime_context` slot.
+"""
+@inline function commit_context!(p::P, c::C) where {P<:Process, C}
+    algo = getalgo(p)
+    stored_context = getstoredcontext(algo)
+
+    # Preserve the typed lifecycle path whenever finalization returns to the
+    # stored concrete context shape.
+    if !isnothing(stored_context) && typeof(c) === typeof(stored_context)
+        p.algo = _with_lifecycle(algo, c, getstoredinits(algo), getstoredoverrides(algo))
+        p.runtime_context = nothing
+    else
+        p.runtime_context = c
+    end
+    return c
+end
+
 function context(p::P, c::C) where {P<:Process, C}
     p.runtime_context = c
     return c
@@ -206,7 +238,7 @@ end
 
 function createfrom!(p1::Process, p2::Process)
     p1.algo = p2.algo
-    context(p1, context(p2))
+    commit_context!(p1, context(p2))
     p1.timeout = p2.timeout
     reset!(p1)
 end

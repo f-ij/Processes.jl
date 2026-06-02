@@ -1,21 +1,46 @@
 
 export start, restart, quit, pause, syncclose, reinit
 
-function Base.run(p::Process, lifetime = nothing, inputs_and_overrides...; kwargs...)
+"""
+Resolve the optional lifetime controls for one `Process` run.
+
+`Process` construction may intentionally store an indefinite lifetime. These
+per-run controls let callers execute the same prepared process for a finite or
+otherwise different lifetime without rebuilding its initialized context.
+"""
+@inline function _process_run_lifetime(algo::A, run_lifetime::RL, repeats::R, keyword_lifetime::KL) where {A<:AbstractLoopAlgorithm, RL, R, KL}
+    if !isnothing(repeats)
+        isnothing(run_lifetime) || error("Pass either a positional lifetime or `repeats`, not both.")
+        isnothing(keyword_lifetime) || error("Pass either `repeats` or `lifetime`, not both.")
+        return normalize_process_lifetime(algo, repeats)
+    elseif !isnothing(keyword_lifetime)
+        isnothing(run_lifetime) || error("Pass either a positional lifetime or `lifetime`, not both.")
+        return normalize_process_lifetime(algo, keyword_lifetime)
+    elseif isnothing(run_lifetime)
+        return nothing
+    else
+        return normalize_process_lifetime(algo, run_lifetime)
+    end
+end
+
+function Base.run(p::Process, run_lifetime = nothing, inputs_and_overrides...; repeats = nothing, lifetime = nothing, kwargs...)
     @assert isidle(p) "Process is already in use"
 
     if ispaused(p)
+        isnothing(run_lifetime) || error("Cannot change lifetime while resuming a paused Process.")
+        isnothing(repeats) || error("Cannot change lifetime while resuming a paused Process.")
         isnothing(lifetime) || error("Cannot change lifetime while resuming a paused Process.")
         isempty(inputs_and_overrides) || error("Cannot pass init/override specs while resuming a paused Process.")
         isempty(kwargs) || error("Cannot pass new runtime inputs while resuming a paused Process.")
         return _resume_paused_loop!(p)
     end
+    isempty(inputs_and_overrides) || error("Process run accepts runtime inputs as keywords only. Reinitialize the Process context before running to apply init/override specs.")
 
     @atomic p.shouldrun = true
     @atomic p.paused = false
 
-    if !isnothing(lifetime)
-        lt = normalize_process_lifetime(getalgo(p), lifetime)
+    lt = _process_run_lifetime(getalgo(p), run_lifetime, repeats, lifetime)
+    if !isnothing(lt)
         context(p, _merge_into_globals(context(p), (; lifetime = lt)))
     end
 
@@ -41,9 +66,9 @@ function _cleanup_paused_process!(p::Process, fetched_result)
     # `close` turns that paused lifecycle into a final one, so cleanup must run
     # here because the loop will not re-enter `after_while`.
     cleanup_context = fetched_result isa AbstractContext ? fetched_result : context(p)
-    cleaned_context = @inline _loop_cleanup_context(getalgo(p), cleanup_context)
-    context(p, cleaned_context)
+    cleaned_context = @inline cleanup(getalgo(p), cleanup_context)
     p.lastresult = @inline _loop_final_result(getalgo(p), cleaned_context)
+    commit_context!(p, _strip_runtime_inputs(cleaned_context, getstoredcontext(getalgo(p))))
     return p.lastresult
 end
 
@@ -69,13 +94,10 @@ function Base.close(p::Process)
         println("Process with error closed:")
         Base.showerror(stderr, err)
         p.task = nothing
-        context(p, context(init(getalgo(p); lifetime = lifetime(p))))
+        commit_context!(p, context(init(getalgo(p); lifetime = lifetime(p))))
 
     end
 
-    if !was_paused && fetched_result isa AbstractContext
-        context(p, fetched_result)
-    end
     p.task = nothing 
 
     p.loopidx = 1
@@ -141,7 +163,7 @@ so that the new loop function is newly compiled
 """
 function reinit(p::Process)
     pause(p)
-    context(p, context(init(getalgo(p); lifetime = lifetime(p))))
+    commit_context!(p, context(init(getalgo(p); lifetime = lifetime(p))))
     run(p)
     return true
 end
@@ -155,7 +177,7 @@ afterwards.
 """
 function reinit(p::Process, target; inputs = (;), overrides = (;))
     pause(p)
-    context(p, initcontext(context(p), target; inputs, overrides))
+    commit_context!(p, initcontext(context(p), target; inputs, overrides))
     run(p)
     return true
 end

@@ -78,8 +78,6 @@ end
 @inline Base.length(fa::FinalizedAlgorithm) = length(inneralgorithm(fa))
 @inline Base.eachindex(fa::FinalizedAlgorithm) = eachindex(inneralgorithm(fa))
 @inline reset!(fa::FinalizedAlgorithm) = reset!(inneralgorithm(fa))
-@inline _step!(fa::FA, context::C, step_wiring::W, process::P, lifetime::LT, typestable::S = Stable()) where {FA <: FinalizedAlgorithm, C <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability} =
-    _step!(inneralgorithm(fa), context, step_wiring, process, lifetime, typestable)
 @inline cleanup(fa::FinalizedAlgorithm, context) = cleanup(inneralgorithm(fa), context)
 
 @inline multipliers(fa::FinalizedAlgorithm) = multipliers(inneralgorithm(fa))
@@ -105,18 +103,6 @@ end
 
 @inline iscomposite(::Type{FA}) where {LA, FA<:FinalizedAlgorithm{LA}} = iscomposite(LA)
 @inline iscomposite(fa::FinalizedAlgorithm) = iscomposite(inneralgorithm(fa))
-
-@inline function _loop_cleanup_context(algo, context)
-    return cleanup(algo, context)
-end
-
-@inline function _loop_final_result(algo, cleaned_context)
-    return cleaned_context
-end
-
-@inline function _loop_cleanup_context(fa::FinalizedAlgorithm, context)
-    return cleanup(inneralgorithm(fa), context)
-end
 
 @inline function _loop_final_result(fa::FinalizedAlgorithm, cleaned_context)
     return finalfunction(fa)(cleaned_context)

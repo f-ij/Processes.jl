@@ -1,3 +1,5 @@
 include("ProcessManager.jl")
+include("Showing.jl")
+include("OnDemandWorkers.jl")
 include("Threaded.jl")
 include("ChunkedInline.jl")

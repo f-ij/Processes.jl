@@ -115,6 +115,8 @@ function parse_la_input(laType::Type{LA}, args...) where {LA<:AbstractLoopAlgori
             intervals_or_repeats = _filter_loopalgorithm_specification(firstargs, kept_algos)
             if iscomposite(laType)
                 intervals_or_repeats = map(x -> !(x isa Interval) ? Interval(x) : x, intervals_or_repeats)
+            else
+                intervals_or_repeats = map(x -> x isa Lifetime ? x : Repeat(x), intervals_or_repeats)
             end
             args = args[2:end] # Remove the intervals from the arguments list for further processing
         elseif iscomposite(laType)

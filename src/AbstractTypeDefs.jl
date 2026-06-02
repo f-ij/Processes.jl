@@ -69,6 +69,17 @@ struct LoopAlgorithm{Plan, S, O, R, C, Inits, Overrides, id} <: AbstractLoopAlgo
 end
 
 """
+Type-level namespace marker for a resolved plan child.
+
+Resolved loop plans step raw child algorithms, so the child context key must be
+carried beside the algorithm rather than inside an `IdentifiableAlgo` wrapper.
+"""
+struct Namespace{Name} end
+
+"""Return the symbol carried by a `Namespace` value or type."""
+@inline namesymbol(::Union{Namespace{Name}, Type{<:Namespace{Name}}}) where {Name} = Name
+
+"""
 Attach route/share wiring to the local plan node that emitted it.
 
 Plain `Route` and `Share` values are top-level plan routing metadata. The DSL

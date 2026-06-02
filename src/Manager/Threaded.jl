@@ -18,7 +18,8 @@ function _start_slot_inline!(manager::M, slot::S, job) where {M<:ProcessManager,
 
     kwargs = _run_kwargs(manager, slot, job)
     if slot.worker isa Process
-        return runprocessinline!(slot.worker; kwargs...)
+        lifetime, runtime_kwargs = _manager_process_launch_args(slot.worker, kwargs)
+        return runprocessinline!(slot.worker; lifetime = lifetime, runtime_kwargs...)
     end
     return _start_worker!(slot.worker, kwargs)
 end
@@ -29,6 +30,7 @@ end
 Close a slot while collecting close failures in thread-local error storage.
 """
 function _safe_close_slot_threadlocal!(manager::M, slot::S, errors::Vector{Any}) where {M<:ProcessManager, S<:WorkerSlot}
+    isnothing(slot.worker) && return slot
     try
         result = close!(manager.recipe, slot, manager)
         _is_no_recipe_callback(result) && _close_worker!(slot.worker)
@@ -78,6 +80,7 @@ function _run_threaded_job!(
     slot.active = true
 
     try
+        _assign_job_worker!(manager, slot, job)
         prepare!(manager.recipe, slot, job, manager)
         _start_slot_inline!(manager, slot, job)
         dispatched[Int(slot_idx)] += 1
@@ -85,6 +88,7 @@ function _run_threaded_job!(
         afterrun!(manager.recipe, slot, job, manager)
         consume!(manager.recipe, slot, job, manager)
         release!(manager.recipe, slot, job, manager)
+        _destroy_finished_job_worker!(manager, slot, job)
         slot.runs += 1
         counts[Int(slot_idx)] += 1
     catch err

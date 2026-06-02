@@ -8,6 +8,7 @@
 
 export ProcessManager, WorkerSlot
 export WorkerInitMode, CopyFirstWorker, MakeEachWorker
+export WorkerLifecycle, ReuseWorker
 export FlushPolicy, FlushAtEnd, NoFlush, FlushEvery
 export dispatch!, poll!, drain!, run!, resetworker!, reinitworker!, partialinitworker!, slots, workers, copyworker, runprocessinline!
 
@@ -32,6 +33,20 @@ Use this when workers should be uniquely initialized instead of copied or
 deep-copied from slot 1.
 """
 struct MakeEachWorker <: WorkerInitMode end
+
+"""
+Worker lifecycle policy controlling whether slots keep one reusable worker or
+replace the worker for every job.
+"""
+abstract type WorkerLifecycle end
+
+"""
+    ReuseWorker()
+
+Keep the historical manager behavior: each slot owns one reusable worker, and
+jobs update that worker through recipe callbacks such as `prepare!`.
+"""
+struct ReuseWorker <: WorkerLifecycle end
 
 """
 Policy trait controlling when a `ProcessManager` invokes a recipe `flush!` callback.
@@ -76,6 +91,14 @@ _normalize_flush_policy(policy::FlushPolicy) = policy
 _normalize_flush_policy(policy) = throw(ArgumentError("`flush_policy` must be a FlushPolicy, got $(typeof(policy))."))
 
 """
+    _normalize_worker_lifecycle(lifecycle)
+
+Validate and return a concrete `WorkerLifecycle` value.
+"""
+_normalize_worker_lifecycle(lifecycle::L) where {L<:WorkerLifecycle} = lifecycle
+_normalize_worker_lifecycle(lifecycle) = throw(ArgumentError("`worker_lifecycle` must be a WorkerLifecycle, got $(typeof(lifecycle))."))
+
+"""
     WorkerSlot
 
 Transparent manager-owned slot around a reusable worker.
@@ -83,8 +106,9 @@ Transparent manager-owned slot around a reusable worker.
 The `worker` field is intentionally public so recipes can inspect and mutate the
 underlying worker context directly.
 """
-mutable struct WorkerSlot{W, Job, Scratch, Result, Err}
+mutable struct WorkerSlot{W, Job, Scratch, Result, Err, Name}
     idx::Int                         # Stable slot number inside the manager.
+    name::Name                       # User-facing worker name for logs/results.
     worker::W                        # Reusable worker object owned or wrapped by the slot.
     job::Union{Nothing, Job}          # Job currently assigned to this slot.
     scratch::Union{Nothing, Scratch}  # Optional user scratch storage for recipes.
@@ -95,13 +119,13 @@ mutable struct WorkerSlot{W, Job, Scratch, Result, Err}
 end
 
 """
-    WorkerSlot(idx, worker; scratch = nothing)
+    WorkerSlot(idx, worker; name = Symbol(:worker_, idx), scratch = nothing)
 
 Create an untyped slot around `worker`. The main `ProcessManager` constructor
 usually creates slots with concrete job/result/error field types instead.
 """
-WorkerSlot(idx::Integer, worker; scratch = nothing) =
-    WorkerSlot{typeof(worker), Any, Any, Any, Any}(Int(idx), worker, nothing, scratch, nothing, nothing, false, 0)
+WorkerSlot(idx::Integer, worker; name = Symbol(:worker_, idx), scratch = nothing) =
+    WorkerSlot{typeof(worker), Any, Any, Any, Any, typeof(name)}(Int(idx), name, worker, nothing, scratch, nothing, nothing, false, 0)
 
 """
     context(slot::WorkerSlot)
@@ -149,13 +173,12 @@ pipeline, then return `slot`.
 
 This is different from `resetworker!`: it rebuilds context values by calling
 `init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))`
-and then assigning the resulting context with
-`context(slot.worker, context(init(...)))`. Use it from `prepare!` when a job
-needs freshly initialized context state instead of reusing the previous context
-object.
+and then committing the resulting persistent context back onto the worker. Use
+it from `prepare!` when a job needs freshly initialized context state instead
+of reusing the previous context object.
 """
 function reinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...; kwargs...)
-    context(slot.worker, context(init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))))
+    commit_context!(slot.worker, context(init(getalgo(slot.worker), inputs_overrides...; lifetime = lifetime(slot.worker))))
     return slot
 end
 
@@ -179,25 +202,67 @@ function partialinitworker!(slot::WorkerSlot{<:Process}, inputs_overrides...)
         getstoredinits(getalgo(slot.worker)),
         getstoredoverrides(getalgo(slot.worker)),
     )
-    context(slot.worker, context(partialinit(algo, inputs_overrides...)))
+    commit_context!(slot.worker, context(partialinit(algo, inputs_overrides...)))
     return slot
 end
 
 """
-    runprocessinline!(worker; lifetime = nothing, kwargs...)
+    _manager_launch_lifetime(worker, kwargs)
+
+Extract a per-run process lifetime from manager launch keyword arguments.
+`lifetime`, `repeats`, and `repeat` are launch controls, not runtime inputs.
+"""
+function _manager_launch_lifetime(worker::P, kwargs::K) where {P<:Process, K<:NamedTuple}
+    lifetime_value = get(kwargs, :lifetime, nothing)
+    repeats_value = get(kwargs, :repeats, nothing)
+    repeat_value = get(kwargs, :repeat, nothing)
+    has_lifetime = !isnothing(lifetime_value)
+    has_repeats = !isnothing(repeats_value)
+    has_repeat = !isnothing(repeat_value)
+    has_repeats && has_repeat && throw(ArgumentError("Pass either `repeats` or `repeat`, not both."))
+    has_lifetime && (has_repeats || has_repeat) && throw(ArgumentError("Pass either `lifetime` or `repeats`/`repeat`, not both."))
+
+    raw_lifetime = if has_lifetime
+        lifetime_value
+    elseif has_repeats
+        repeats_value
+    elseif has_repeat
+        repeat_value
+    else
+        nothing
+    end
+    return isnothing(raw_lifetime) ? nothing : normalize_process_lifetime(getalgo(worker), raw_lifetime)
+end
+
+"""
+    _manager_process_launch_args(worker, kwargs)
+
+Split manager launch arguments into `(lifetime, runtime_kwargs)` for a `Process`
+worker. Runtime keyword arguments are passed to the loop as `@input` values.
+"""
+function _manager_process_launch_args(worker::P, kwargs::K) where {P<:Process, K<:NamedTuple}
+    lifetime = _manager_launch_lifetime(worker, kwargs)
+    runtime_kwargs = deletekeys(kwargs, :lifetime, :repeats, :repeat)
+    return lifetime, runtime_kwargs
+end
+
+"""
+    runprocessinline!(worker; lifetime = nothing, repeats = nothing, repeat = nothing, kwargs...)
 
 Run a `Process` worker synchronously in the current task and store the resulting
 runtime context back on the worker. This avoids per-job `Task` allocation for
-manager recipes that do not need concurrent `Process` execution.
+threaded manager jobs.
 """
-function runprocessinline!(worker::P; lifetime = nothing, kwargs...) where {P<:Process}
+function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, repeat = nothing, kwargs...) where {P<:Process}
     @assert isidle(worker) "Process is already in use"
     @atomic worker.shouldrun = true
     @atomic worker.paused = false
     worker.lastresult = nothing
 
-    if !isnothing(lifetime)
-        lt = normalize_process_lifetime(getalgo(worker), lifetime)
+    launch_kwargs = (; lifetime, repeats, repeat)
+    launch_lifetime = _manager_launch_lifetime(worker, launch_kwargs)
+    if !isnothing(launch_lifetime)
+        lt = launch_lifetime
         context(worker, _merge_into_globals(context(worker), (; lifetime = lt)))
     end
 
@@ -210,7 +275,7 @@ function runprocessinline!(worker::P; lifetime = nothing, kwargs...) where {P<:P
     result = loop(worker, algo, base_context, lt, inputs, Resuming{false}())
 
     worker.lastresult = result
-    result isa AbstractContext && context(worker, _strip_runtime_inputs(result, base_context))
+    result isa AbstractContext && commit_context!(worker, _strip_runtime_inputs(result, base_context))
     worker.task = nothing
     worker.loopidx = 1
     @atomic worker.shouldrun = false
@@ -220,8 +285,11 @@ end
 """
     ProcessManager(recipe; nworkers = Threads.nthreads(), workers = nothing,
                    config = nothing, state = nothing, flush_policy = FlushAtEnd(),
+                   worker_lifecycle = ReuseWorker(),
                    worker_init = CopyFirstWorker(),
                    worker_init_data = nothing,
+                   worker_type = nothing,
+                   name_type = Symbol,
                    throw = true, poll_interval = 0.0,
                    job_type = Any, scratch_type = Any,
                    result_type = Any, error_type = Any)
@@ -254,16 +322,26 @@ owned slot instead of copying slot 1. This avoids the manager's deepcopy-based
 default `Process` copy path entirely. Pass `worker_init_data = data` to provide
 one value per worker; callbacks may accept it as `makeworker(idx, manager, data)`.
 
+Use `worker_lifecycle = OnDemandWorkers()` when workers should be constructed
+from job data instead of upfront. That mode lives in `OnDemandWorkers.jl` and
+uses `makeworker(idx, manager, job)` for each dispatched job. Pass
+`worker_type` when the job may choose among different concrete worker types.
+
+Slots have a public `name` field for logs and result lookup. Missing
+`workername` callbacks use names such as `:worker_1`. Pass `name_type` if names
+should use a type other than `Symbol`.
+
 The `job_type`, `scratch_type`, `result_type`, and `error_type` keywords let
 latency-sensitive code make worker slot fields concrete. Leaving them as `Any`
 keeps the manager fully flexible.
 """
-mutable struct ProcessManager{Recipe, W, Config, State, Policy <: FlushPolicy}
+mutable struct ProcessManager{Recipe, W, Config, State, Policy <: FlushPolicy, Lifecycle <: WorkerLifecycle}
     recipe::Recipe              # Concrete callback container or recipe object.
     slots::W                    # Tuple of mutable WorkerSlot objects.
     config::Config              # Construction-time configuration retained for users.
     state::State                # Manager-owned runtime state built by initstate.
     flush_policy::Policy        # Policy deciding when recipe flush! is called.
+    worker_lifecycle::Lifecycle # Policy deciding whether workers are reused or replaced per job.
     throw::Bool                 # Whether slot errors are rethrown immediately.
     poll_interval::Float64      # Sleep interval used while waiting for slots.
     completions::Int            # Total completed worker runs.
@@ -302,12 +380,13 @@ function ProcessManager(
     active_count = count(slot -> slot.active, slots)
     free_idx = findfirst(slot -> !slot.active, slots)
     free_hint = isnothing(free_idx) ? 1 : Int(free_idx)
-    return ProcessManager{Recipe, W, Config, State, Policy}(
+    return ProcessManager{Recipe, W, Config, State, Policy, ReuseWorker}(
         recipe,
         slots,
         config,
         state,
         flush_policy,
+        ReuseWorker(),
         throw,
         poll_interval,
         Int(completions),
@@ -315,6 +394,52 @@ function ProcessManager(
         Int(dispatched),
         active_count,
         free_hint,
+        errors,
+        closed,
+        owns_workers,
+    )
+end
+
+"""
+    ProcessManager(recipe, slots, config, state, flush_policy, throw,
+                   poll_interval, completions, completions_since_flush,
+                   dispatched, active_count, free_hint, errors, closed,
+                   owns_workers)
+
+Compatibility constructor for the reusable-worker manager shape that predates
+`worker_lifecycle`.
+"""
+function ProcessManager(
+    recipe::Recipe,
+    slots::W,
+    config::Config,
+    state::State,
+    flush_policy::Policy,
+    throw::Bool,
+    poll_interval::Float64,
+    completions::Integer,
+    completions_since_flush::Integer,
+    dispatched::Integer,
+    active_count::Integer,
+    free_hint::Integer,
+    errors::Vector{Any},
+    closed::Bool,
+    owns_workers::Bool,
+) where {Recipe, W, Config, State, Policy<:FlushPolicy}
+    return ProcessManager{Recipe, W, Config, State, Policy, ReuseWorker}(
+        recipe,
+        slots,
+        config,
+        state,
+        flush_policy,
+        ReuseWorker(),
+        throw,
+        poll_interval,
+        Int(completions),
+        Int(completions_since_flush),
+        Int(dispatched),
+        Int(active_count),
+        Int(free_hint),
         errors,
         closed,
         owns_workers,
@@ -349,8 +474,10 @@ manager starts processing jobs.
 function _precompile_processmanager!(::Type{M}, ::Type{Slot}, ::Type{Job}) where {M<:ProcessManager, Slot<:WorkerSlot, Job}
     _try_precompile(dispatch!, (M, Job))
     _try_precompile(poll!, (M,))
+    _try_precompile(wait, (M,))
     _try_precompile(drain!, (M,))
     _try_precompile(run!, (M, Vector{Job}))
+    _try_precompile(_wait_active_slots!, (M,))
     _try_precompile(_wait_for_free_slot!, (M,))
     _try_precompile(_finish_done_slots!, (M,))
     _try_precompile(_finish_slot!, (M, Slot))
@@ -387,14 +514,16 @@ function schedule_processmanager_precompile!(manager::ProcessManager)
 end
 
 """
-    _slot_container(workers, Job, Scratch, Result, Err)
+    _slot_container(workers, worker_names, Job, Scratch, Result, Err,
+                    worker_type = nothing, name_type = Any)
 
 Wrap worker values in a typed tuple of mutable `WorkerSlot`s.
 """
-function _slot_container(workers, ::Type{Job}, ::Type{Scratch}, ::Type{Result}, ::Type{Err}) where {Job, Scratch, Result, Err}
+function _slot_container(workers, worker_names, ::Type{Job}, ::Type{Scratch}, ::Type{Result}, ::Type{Err}, worker_type = nothing, ::Type{Name} = Any) where {Job, Scratch, Result, Err, Name}
     return Tuple(
-        WorkerSlot{typeof(worker), Job, Scratch, Result, Err}(
+        WorkerSlot{_slot_worker_type(worker, worker_type), Job, Scratch, Result, Err, _slot_name_type(worker_names[Int(idx)], Name)}(
             Int(idx),
+            worker_names[Int(idx)],
             worker,
             nothing,
             nothing,
@@ -406,6 +535,92 @@ function _slot_container(workers, ::Type{Job}, ::Type{Scratch}, ::Type{Result}, 
         for (idx, worker) in enumerate(workers)
     )
 end
+
+"""
+    _slot_name_type(name, Name)
+
+Return the name field type for one slot and validate explicit name type
+requests.
+"""
+function _slot_name_type(name, ::Type{Name}) where {Name}
+    name isa Name || throw(ArgumentError("`name_type = $Name` cannot store worker name of type $(typeof(name))."))
+    return Name
+end
+
+"""
+    _set_slot_name!(slot, name)
+
+Assign a new worker name to `slot`, validating the slot's name field type before
+mutation.
+"""
+function _set_slot_name!(slot::WorkerSlot{W, Job, Scratch, Result, Err, Name}, name) where {W, Job, Scratch, Result, Err, Name}
+    name isa Name || throw(ArgumentError("Worker name $(repr(name)) has type $(typeof(name)), which cannot be stored in a slot typed for $Name."))
+    slot.name = name
+    return slot
+end
+
+"""
+    _slot_worker_type(worker, worker_type)
+
+Return the worker field type for one slot. The default keeps the exact worker
+type; explicit `worker_type` values opt into a broader slot worker field.
+"""
+_slot_worker_type(worker, ::Nothing) = typeof(worker)
+
+function _slot_worker_type(worker, ::Type{W}) where {W}
+    worker isa W || throw(ArgumentError("`worker_type = $W` cannot store initial worker of type $(typeof(worker))."))
+    return W
+end
+
+function _slot_worker_type(worker, worker_type)
+    throw(ArgumentError("`worker_type` must be a type or `nothing`, got $(typeof(worker_type))."))
+end
+
+"""
+    _manager_worker_values(recipe, nworkers, build_manager, worker_init,
+                           worker_init_data, workers, lifecycle)
+
+Return the initial worker values for the manager lifecycle. Reusable workers are
+constructed upfront; other lifecycle modes may override this in their own file.
+"""
+function _manager_worker_values(recipe, nworkers::Integer, build_manager, worker_init::WIM, worker_init_data, workers, ::WorkerLifecycle) where {WIM<:WorkerInitMode}
+    if isnothing(workers)
+        return _owned_worker_values(recipe, nworkers, build_manager, worker_init, worker_init_data)
+    end
+
+    collected = collect(workers)
+    isempty(collected) && throw(ArgumentError("`workers` must not be empty."))
+    return Tuple(collected)
+end
+
+"""
+    _manager_worker_names(recipe, nworkers, build_manager, workers, lifecycle)
+
+Return the initial worker names for the manager lifecycle. Reusable workers are
+named at construction; other lifecycle modes may override this in their own
+file.
+"""
+function _manager_worker_names(recipe, nworkers::Integer, build_manager, workers, ::WorkerLifecycle)
+    return ntuple(Int(nworkers)) do idx
+        workername(recipe, idx, build_manager)
+    end
+end
+
+"""
+    _manager_slot_worker_type(worker_type, lifecycle)
+
+Normalize the requested slot worker type for a manager lifecycle.
+"""
+_manager_slot_worker_type(worker_type, ::WorkerLifecycle) = worker_type
+
+"""
+    _manager_slot_name_type(name_type, lifecycle)
+
+Normalize the requested slot name type for a manager lifecycle.
+"""
+_manager_slot_name_type(::Type{Name}, ::WorkerLifecycle) where {Name} = Name
+_manager_slot_name_type(name_type, ::WorkerLifecycle) =
+    throw(ArgumentError("`name_type` must be a type, got $(typeof(name_type))."))
 
 """
     _has_recipe_callback(recipe, Val(name))
@@ -549,27 +764,33 @@ end
 Construct a manager and its worker slots. Recipes are stored concretely, so a
 named tuple of anonymous functions becomes part of the manager type.
 """
-function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), worker_init::WIM = CopyFirstWorker(), worker_init_data = nothing, throw::Bool = true, poll_interval::Real = 0.0, job_type::Type{Job} = Any, scratch_type::Type{Scratch} = Any, result_type::Type{Result} = Any, error_type::Type{Err} = Any) where {Job, Scratch, Result, Err, WIM<:WorkerInitMode}
+function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers = nothing, config = nothing, state = nothing, flush_policy = FlushAtEnd(), worker_lifecycle = ReuseWorker(), worker_init::WIM = CopyFirstWorker(), worker_init_data = nothing, worker_type = nothing, name_type::Type{Name} = Symbol, throw::Bool = true, poll_interval::Real = 0.0, job_type::Type{Job} = Any, scratch_type::Type{Scratch} = Any, result_type::Type{Result} = Any, error_type::Type{Err} = Any) where {Job, Scratch, Result, Err, Name, WIM<:WorkerInitMode}
     nworkers > 0 || throw(ArgumentError("`nworkers` must be positive."))
     prepared_worker_init_data = _validate_worker_init_data(worker_init_data, nworkers)
     normalized_policy = _normalize_flush_policy(flush_policy)
+    normalized_lifecycle = _normalize_worker_lifecycle(worker_lifecycle)
     prepared_state = if isnothing(state)
         initstate(recipe, config, nothing)
     else
         state
     end
-    build_manager = ProcessManager(recipe, (), config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, 0, 1, Any[], false, isnothing(workers))
+    build_manager = ProcessManager(recipe, (), config, prepared_state, normalized_policy, normalized_lifecycle, throw, Float64(poll_interval), 0, 0, 0, 0, 1, Any[], false, isnothing(workers))
 
-    worker_values = if isnothing(workers)
-        _owned_worker_values(recipe, nworkers, build_manager, worker_init, prepared_worker_init_data)
-    else
-        collected = collect(workers)
-        isempty(collected) && throw(ArgumentError("`workers` must not be empty."))
-        Tuple(collected)
-    end
+    worker_values = _manager_worker_values(
+        recipe,
+        nworkers,
+        build_manager,
+        worker_init,
+        prepared_worker_init_data,
+        workers,
+        normalized_lifecycle,
+    )
+    worker_names = _manager_worker_names(recipe, nworkers, build_manager, workers, normalized_lifecycle)
 
-    slot_values = _slot_container(worker_values, job_type, scratch_type, result_type, error_type)
-    manager = ProcessManager(recipe, slot_values, config, prepared_state, normalized_policy, throw, Float64(poll_interval), 0, 0, 0, 0, 1, Any[], false, isnothing(workers))
+    slot_worker_type = _manager_slot_worker_type(worker_type, normalized_lifecycle)
+    slot_name_type = _manager_slot_name_type(name_type, normalized_lifecycle)
+    slot_values = _slot_container(worker_values, worker_names, job_type, scratch_type, result_type, error_type, slot_worker_type, slot_name_type)
+    manager = ProcessManager(recipe, slot_values, config, prepared_state, normalized_policy, normalized_lifecycle, throw, Float64(poll_interval), 0, 0, 0, 0, 1, Any[], false, isnothing(workers))
     schedule_processmanager_precompile!(manager)
     return manager
 end
@@ -763,6 +984,24 @@ function initstate(recipe, config, manager)
 end
 
 """
+    workername(recipe, idx, manager)
+    workername(recipe, idx, manager, job)
+
+Optional callback for naming workers. Missing callbacks use the slot index.
+On-demand workers usually define the four-argument form so the job can provide
+the experiment or worker name.
+"""
+function workername(recipe, idx, manager)
+    result = _call_optional_recipe_field(recipe, Val(:workername), idx, manager)
+    return _is_no_recipe_callback(result) ? Symbol(:worker_, idx) : result
+end
+
+function workername(recipe, idx, manager, job)
+    result = _call_optional_recipe_field(recipe, Val(:workername), idx, manager, job)
+    return _is_no_recipe_callback(result) ? Symbol(:worker_, idx) : result
+end
+
+"""
     prepare!(recipe, slot, job, manager)
 
 Optional dispatch-step callback. This is where jobs usually mutate or
@@ -808,6 +1047,16 @@ workers, which stores the finished context back on the process before result
 collection.
 """
 finalize!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:finalize!), slot, job, manager)
+
+"""
+    workerfinalizer(recipe, slot, job, manager)
+
+Optional finish-step callback that selects a finalizer function for this job's
+worker. The selected function is called with `(worker, slot, job, manager)`, or
+with any shorter supported prefix. Return `nothing` to use the default worker
+finalization for that job.
+"""
+workerfinalizer(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:workerfinalizer), slot, job, manager)
 
 """
     afterrun!(recipe, slot, job, manager)
@@ -872,7 +1121,8 @@ Default worker launch step. `Process` workers are launched with
 shape or provide recipe `start!`.
 """
 function _start_worker!(worker::Process, kwargs::NamedTuple)
-    run(worker; kwargs...)
+    lifetime, runtime_kwargs = _manager_process_launch_args(worker, kwargs)
+    run(worker, lifetime; runtime_kwargs...)
     return worker
 end
 
@@ -892,6 +1142,25 @@ end
 Launch a worker with no runtime keyword arguments.
 """
 _start_worker!(worker) = _start_worker!(worker, (;))
+
+"""
+    _assign_job_worker!(manager, slot, job)
+
+Install a lifecycle-specific worker for `job`. The reusable-worker mode keeps
+the current slot worker.
+"""
+function _assign_job_worker!(manager::M, slot::S, job) where {M<:ProcessManager, S<:WorkerSlot}
+    return _assign_job_worker!(manager, slot, job, manager.worker_lifecycle)
+end
+
+"""
+    _assign_job_worker!(manager, slot, job, ::ReuseWorker)
+
+Keep the current reusable slot worker.
+"""
+function _assign_job_worker!(manager::M, slot::S, job, ::ReuseWorker) where {M<:ProcessManager, S<:WorkerSlot}
+    return slot
+end
 
 """
     _run_kwargs(manager, slot, job)
@@ -928,6 +1197,16 @@ function _finalize_worker!(worker::Process)
 end
 
 """
+    _finalize_worker_with(finalizer, worker, slot, job, manager)
+
+Call a job-selected worker finalizer with the richest supported lifecycle
+argument list.
+"""
+function _finalize_worker_with(finalizer, worker, slot::S, job, manager::M) where {S<:WorkerSlot, M<:ProcessManager}
+    return _call_with_supported_arity(finalizer, worker, slot, job, manager)
+end
+
+"""
     _close_worker!(worker)
 
 Default worker cleanup used when a manager closes a slot without a recipe
@@ -936,6 +1215,24 @@ Default worker cleanup used when a manager closes a slot without a recipe
 function _close_worker!(worker::Process)
     close(worker)
     return worker
+end
+
+"""
+    _destroy_finished_job_worker!(manager, slot, job)
+
+Run lifecycle-specific cleanup after result collection.
+"""
+function _destroy_finished_job_worker!(manager::M, slot::S, job) where {M<:ProcessManager, S<:WorkerSlot}
+    return _destroy_finished_job_worker!(manager, slot, job, manager.worker_lifecycle)
+end
+
+"""
+    _destroy_finished_job_worker!(manager, slot, job, ::ReuseWorker)
+
+Leave reusable workers alive after a job finishes.
+"""
+function _destroy_finished_job_worker!(manager::M, slot::S, job, ::ReuseWorker) where {M<:ProcessManager, S<:WorkerSlot}
+    return slot
 end
 
 """
@@ -970,7 +1267,11 @@ and the worker default otherwise.
 """
 function _finalize_slot_worker!(manager::ProcessManager, slot::WorkerSlot, job)
     result = finalize!(manager.recipe, slot, job, manager)
-    return _is_no_recipe_callback(result) ? _finalize_worker!(slot.worker) : result
+    _is_no_recipe_callback(result) || return result
+
+    finalizer = workerfinalizer(manager.recipe, slot, job, manager)
+    (_is_no_recipe_callback(finalizer) || isnothing(finalizer)) && return _finalize_worker!(slot.worker)
+    return _finalize_worker_with(finalizer, slot.worker, slot, job, manager)
 end
 
 """
@@ -1020,6 +1321,7 @@ Close a slot during manager cleanup or error recovery, recording close errors
 instead of replacing the original lifecycle error.
 """
 function _safe_close_slot!(manager::ProcessManager, slot::WorkerSlot)
+    isnothing(slot.worker) && return slot
     try
         result = close!(manager.recipe, slot, manager)
         _is_no_recipe_callback(result) && _close_worker!(slot.worker)
@@ -1062,6 +1364,7 @@ function _finish_slot!(manager::ProcessManager, slot::WorkerSlot)
         afterrun!(manager.recipe, slot, job, manager)
         consume!(manager.recipe, slot, job, manager)
         release!(manager.recipe, slot, job, manager)
+        _destroy_finished_job_worker!(manager, slot, job)
         slot.runs += 1
         manager.completions += 1
         manager.completions_since_flush += 1
@@ -1212,9 +1515,9 @@ Schedule `job` on the next available worker slot, waiting for a slot to become
 free when all workers are active.
 
 The dispatch order is fixed: assign `slot.job`, clear old result/error state,
-call recipe `prepare!`, call recipe `runarguments`, implicitly run the worker,
-then mark the slot active. Recipe `start!` replaces the `runarguments` and implicit run
-steps when present.
+let the worker lifecycle prepare the slot, call recipe `prepare!`, call recipe
+`runarguments`, implicitly run the worker, then mark the slot active. Recipe
+`start!` replaces the `runarguments` and implicit run steps when present.
 """
 function dispatch!(manager::ProcessManager, job)
     manager.closed && throw(ArgumentError("Cannot dispatch to a closed ProcessManager."))
@@ -1223,6 +1526,7 @@ function dispatch!(manager::ProcessManager, job)
     slot.result = nothing
     slot.error = nothing
     try
+        _assign_job_worker!(manager, slot, job)
         prepare!(manager.recipe, slot, job, manager)
         _start_slot!(manager, slot, job)
         _mark_slot_active!(manager, slot)
@@ -1243,14 +1547,39 @@ policy.
 """
 function drain!(manager::ProcessManager)
     manager.closed && throw(ArgumentError("Cannot drain a closed ProcessManager."))
+    _wait_active_slots!(manager)
+    _apply_flush_policy!(manager, manager.flush_policy; final = true)
+    return manager
+end
+
+"""
+    _wait_active_slots!(manager)
+
+Wait until all currently active manager slots have finished and been finalized.
+This does not apply the manager's final flush policy.
+"""
+function _wait_active_slots!(manager::M) where {M<:ProcessManager}
     while _has_active_slots(manager)
         _finish_done_slots!(manager)
+
+        # Avoid a busy loop while all remaining active slots are still running.
         if _has_active_slots(manager)
             manager.poll_interval > 0 ? sleep(manager.poll_interval) : yield()
         end
     end
-    _apply_flush_policy!(manager, manager.flush_policy; final = true)
     return manager
+end
+
+"""
+    wait(manager)
+
+Wait for all currently active manager workers to finish, without applying the
+configured final flush policy. Use `drain!(manager)` when waiting should also
+perform the final manager-level flush.
+"""
+function Base.wait(manager::M) where {M<:ProcessManager}
+    manager.closed && throw(ArgumentError("Cannot wait on a closed ProcessManager."))
+    return _wait_active_slots!(manager)
 end
 
 """

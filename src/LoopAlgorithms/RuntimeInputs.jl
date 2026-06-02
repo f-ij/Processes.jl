@@ -152,9 +152,7 @@ subcontexts, so finished contexts can be stripped back to their original shape.
 """
 @inline _merge_runtime_inputs(context, ::NamedTuple{()}) = context
 @inline _merge_runtime_inputs(context, inputs::I) where {I<:NamedTuple} =
-    ProcessContext(get_subcontexts(context), getregistry(context), getglobals(context), inputs)
-
-@inline _strip_runtime_inputs(context) = context
+    ProcessContext(get_subcontexts(context), getregistry(context), getglobals(context), inputs, getwidened(context))
 
 """
 Remove runtime-only data from a finished context.
@@ -166,29 +164,57 @@ context was created before the runtime/input field split.
 """
 function _strip_runtime_inputs(context::C) where {C<:ProcessContext}
     runtime = getglobals(context)
+    subcontexts = get_subcontexts(context)
+    if !haskey(runtime, :process) &&
+        !haskey(runtime, :lifetime) &&
+        !haskey(subcontexts, :_input) &&
+        isempty(getruntimeinput(context)) &&
+        isempty(getwidened(context))
+        return context
+    end
+
     stripped_runtime = haskey(runtime, :process) ? deletekeys(runtime, :process) : runtime
     stripped_runtime = haskey(stripped_runtime, :lifetime) ? deletekeys(stripped_runtime, :lifetime) : stripped_runtime
-    subcontexts = get_subcontexts(context)
     persistent_subcontexts = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
-    return ProcessContext(persistent_subcontexts, getregistry(context), stripped_runtime, (;))
+    return ProcessContext(persistent_subcontexts, getregistry(context), stripped_runtime, (;), (;))
 end
 
 """
     _strip_runtime_inputs(runtime_context, stored_context)
 
 Keep the updated persistent subcontexts from `runtime_context`, but restore the
-runtime and input fields from `stored_context`.
-"""
-@inline _strip_runtime_inputs(runtime_context, stored_context) = _strip_runtime_inputs(runtime_context)
+stored runtime-only buckets from `stored_context`.
 
+This path should preserve the original concrete `ProcessContext` shape whenever
+the finished run did not introduce new persistent fields.
+"""
 @inline function _strip_runtime_inputs(runtime_context::C, stored_context::S) where {C<:ProcessContext, S<:ProcessContext}
-    subcontexts = get_subcontexts(runtime_context)
-    persistent_subcontexts = haskey(subcontexts, :_input) ? deletekeys(subcontexts, :_input) : subcontexts
+    runtime_subcontexts = get_subcontexts(runtime_context)
+    stored_subcontexts = get_subcontexts(stored_context)
+
+    if !haskey(runtime_subcontexts, :_input) &&
+        getglobals(runtime_context) == getglobals(stored_context) &&
+        getruntimeinput(runtime_context) == getruntimeinput(stored_context) &&
+        getwidened(runtime_context) == getwidened(stored_context)
+        return runtime_context
+    end
+
+    # Preserve persistent updates, but restore the stored input bucket when the
+    # initialized lifecycle context already carried one for routing metadata.
+    persistent_subcontexts = if haskey(stored_subcontexts, :_input) && haskey(runtime_subcontexts, :_input)
+        replace_namedtuple_field(runtime_subcontexts, Val(:_input), stored_subcontexts._input)
+    elseif haskey(runtime_subcontexts, :_input)
+        deletekeys(runtime_subcontexts, :_input)
+    else
+        runtime_subcontexts
+    end
+
     return ProcessContext(
         persistent_subcontexts,
         getregistry(runtime_context),
         getglobals(stored_context),
         getruntimeinput(stored_context),
+        getwidened(stored_context),
     )
 end
 
@@ -327,11 +353,12 @@ context.
 """
 function Base.run(la::LA; repeats = 1, lifetime = nothing, kwargs...) where {LA<:AbstractLoopAlgorithm}
     initialized = isnothing(getstoredcontext(la)) ? init(la) : la
+    stored_context = getstoredcontext(initialized)
     lt = isnothing(lifetime) ? normalize_process_lifetime(initialized, repeats) : normalize_process_lifetime(initialized, lifetime)
     inputs = _validate_runtime_inputs(initialized, (; kwargs...))
     process = LoopRunProcess(lt)
-    result = loop(process, initialized, getstoredcontext(initialized), lt, inputs)
-    stored = result isa AbstractContext ? result : getstoredcontext(initialized)
-    stored = _strip_runtime_inputs(stored)
-    return _with_lifecycle(initialized, stored, getstoredinits(initialized), getstoredoverrides(initialized))
+    result = loop(process, initialized, stored_context, lt, inputs)
+    runtime_context = result isa AbstractContext ? result : stored_context
+    persistent_context = _strip_runtime_inputs(runtime_context, stored_context)
+    return _with_lifecycle(initialized, persistent_context, getstoredinits(initialized), getstoredoverrides(initialized))
 end

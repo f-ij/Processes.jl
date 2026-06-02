@@ -4,6 +4,8 @@ abstract type InputInterface end
 
 @inline target_type(::InputInterface) = nothing
 
+struct AllInitTargets end
+
 ########################################
 ########### User Interface #############
 ########################################
@@ -23,6 +25,17 @@ initialized loop algorithm.
 function Init(target, pairs::Pair{Symbol,<:Any}...; kwargs...)
     nt = (;pairs..., kwargs...)
     Init{_input_target_parameter(target), typeof(nt), typeof(target)}(nt, target)
+end
+
+"""
+    Init(; name = value, ...)
+
+Initialization-time values for every registered process algorithm or state. Each
+target receives these values in its local init context before `init` runs.
+"""
+function Init(; kwargs...)
+    nt = (;kwargs...)
+    Init{AllInitTargets, typeof(nt), Nothing}(nt, nothing)
 end
 
 Init{Target}(vars::NT) where {Target,NT<:NamedTuple} = Init{Target,NT,Nothing}(vars, nothing)

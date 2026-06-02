@@ -782,6 +782,36 @@ Replace a field in a struct by name and return a new instance
 end
 
 """
+    replace_namedtuple_field(nt, Val(name), value)
+
+Return a new `NamedTuple` with one existing field replaced.
+
+This is the Processes-specific subset of `Accessors.@set` that context rebuilds
+need: no generic lenses, no recursive property path handling, just one
+statically-known `NamedTuple` field.
+"""
+@inline replace_namedtuple_field(nt::NT, name::Symbol, value) where {NT<:NamedTuple} =
+    replace_namedtuple_field(nt, Val(name), value)
+
+@inline @generated function replace_namedtuple_field(nt::NT, ::Val{Name}, value::V) where {NT<:NamedTuple, Name, V}
+    names = fieldnames(NT)
+    found_idx = nothing
+    for idx in eachindex(names)
+        if names[idx] === Name
+            found_idx = idx
+            break
+        end
+    end
+    if isnothing(found_idx)
+        error("Trying to replace unknown NamedTuple field $(QuoteNode(Name)). Available fields are: $(names)")
+    end
+
+    value_exprs = Any[:(getfield(nt, $(QuoteNode(name)))) for name in names]
+    value_exprs[found_idx] = :value
+    return :(NamedTuple{$names}(tuple($(value_exprs...))))
+end
+
+"""
 General replacing setfield
 """
 function _setfield_debug_message(

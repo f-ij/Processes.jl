@@ -350,7 +350,11 @@ Get the static entry from the registry
 
 function static_get(reg::NameSpaceRegistry, v::V) where {V}
     entries = get_type_entries(reg, v)
-    return static_get(entries, v)
+    idx = findfirst_match(entries, v)
+    if isnothing(idx)
+        return static_get(entries, v)
+    end
+    return entries[idx]
 end
 
 ## TODO : FIX

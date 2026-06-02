@@ -29,6 +29,7 @@ end
     manager = ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1)
     @test manager.flush_policy isa FlushAtEnd
     @test_throws ArgumentError ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, flush_policy = :end)
+    @test_throws ArgumentError ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, worker_lifecycle = :reuse)
 end
 
 @testset "ProcessManager can keep slot fields concrete" begin
@@ -40,7 +41,27 @@ end
     )
 
     @test manager.config === nothing
-    @test eltype(slots(manager)) <: WorkerSlot{ManagerFakeWorker, Int, Any, Nothing, Any}
+    @test eltype(slots(manager)) <: WorkerSlot{ManagerFakeWorker, Int, Any, Nothing, Any, Symbol}
+    @test only(slots(manager)).name == :worker_1
+end
+
+@testset "ProcessManager show includes useful runtime state" begin
+    manager = ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 2, job_type = Int)
+    compact = sprint(show, manager)
+    manager_summary = sprint(summary, manager)
+    detailed = sprint(show, MIME("text/plain"), manager)
+    slot_detail = sprint(show, MIME("text/plain"), first(slots(manager)))
+
+    @test occursin("ProcessManager(open, workers=2", compact)
+    @test manager_summary == "ProcessManager(2 workers, open)"
+    @test occursin("active=0", compact)
+    @test occursin("completions=0", compact)
+    @test occursin("status = open", detailed)
+    @test occursin("workers = 2 (active=0, idle=2)", detailed)
+    @test occursin("progress = dispatched=0, completions=0", detailed)
+    @test occursin("[1] :worker_1 idle runs=0", detailed)
+    @test occursin("WorkerSlot", slot_detail)
+    @test occursin("status = idle", slot_detail)
 end
 
 @testset "ProcessManager stores slots as a typed tuple" begin
@@ -57,8 +78,8 @@ end
     @test slots(manager) isa Tuple
     @test workers(manager) isa Tuple
     @test typeof(slots(manager)) <: Tuple{
-        WorkerSlot{ManagerFakeWorker, Int, Any, Any, Any},
-        WorkerSlot{@NamedTuple{done::Bool, buffer::Vector{Int}}, Int, Any, Any, Any},
+        WorkerSlot{ManagerFakeWorker, Int, Any, Any, Any, Symbol},
+        WorkerSlot{@NamedTuple{done::Bool, buffer::Vector{Int}}, Int, Any, Any, Any, Symbol},
     }
 end
 
@@ -212,6 +233,25 @@ end
     @test flush_count[] == 1
 end
 
+@testset "wait finishes active ProcessManager work without final flush" begin
+    external = Int[]
+    flush_count = Ref(0)
+    manager = ProcessManager(immediate_fake_recipe(external, flush_count); nworkers = 2)
+
+    dispatch!(manager, 1)
+    dispatch!(manager, 2)
+
+    @test wait(manager) === manager
+    @test manager.active_count == 0
+    @test isempty(external)
+    @test sort(vcat((slot.worker.buffer for slot in slots(manager))...)) == [1, 2]
+    @test flush_count[] == 0
+
+    drain!(manager)
+    @test sort(external) == [1, 2]
+    @test flush_count[] == 1
+end
+
 @testset "NoFlush leaves worker-local buffers untouched" begin
     external = Int[]
     flush_count = Ref(0)
@@ -308,6 +348,18 @@ function Processes.step!(::ManagerProcessAccumulator, context)
     return (;)
 end
 
+struct ManagerProcessMultiplier <: Processes.ProcessAlgorithm end
+
+function Processes.init(::ManagerProcessMultiplier, context::C) where {C}
+    value = get(context, :start, 0)
+    return (; value = Ref(value), buffer = Int[])
+end
+
+function Processes.step!(::ManagerProcessMultiplier, context::C) where {C}
+    push!(context.buffer, 2 * context.value[])
+    return (;)
+end
+
 function manager_process_context(worker)
     subcontexts = Processes.get_subcontexts(Processes.context(worker))
     names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
@@ -396,6 +448,138 @@ end
     @test [ctx.value[] for ctx in contexts] == worker_data
 end
 
+@testset "ProcessManager can create on-demand workers for each job and keep the last worker" begin
+    created = Int[]
+    finalized = Int[]
+    consumed = Int[]
+    released = Int[]
+    construction_count = Ref(0)
+    recipe = (;
+        makeworker = (idx, manager, job) -> begin
+            construction_count[] += 1
+            push!(created, job.value)
+            ManagerFakeWorker(job.value, Int[], false)
+        end,
+        workername = (idx, manager, job) -> job.name,
+        prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job.value),
+        start! = (slot, job, manager) -> (slot.worker.done = true),
+        isdone = (slot, manager) -> slot.worker.done,
+        workerfinalizer = (slot, job, manager) -> job.finalizer,
+        consume! = (slot, job, manager) -> push!(consumed, only(slot.worker.buffer)),
+        release! = (slot, job, manager) -> push!(released, slot.worker.idx),
+    )
+    jobs = [
+        (; name = :trial_a, value = 3, finalizer = worker -> (push!(finalized, worker.idx); worker.done = false; worker)),
+        (; name = :trial_b, value = 5, finalizer = (worker, slot, job) -> (push!(finalized, job.value); worker.done = false; worker)),
+    ]
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 1,
+        worker_lifecycle = OnDemandWorkers(destroy_after_finalize = false),
+        flush_policy = NoFlush(),
+        job_type = eltype(jobs),
+        result_type = ManagerFakeWorker,
+    )
+    @test construction_count[] == 0
+    run!(manager, jobs)
+
+    @test construction_count[] == 2
+    @test created == [3, 5]
+    @test finalized == [3, 5]
+    @test consumed == [3, 5]
+    @test released == [3, 5]
+    @test only(slots(manager)).name == :trial_b
+    @test only(workers(manager)).idx == 5
+end
+
+@testset "ProcessManager can destroy on-demand workers after release" begin
+    destroyed = Int[]
+    recipe = (;
+        makeworker = (idx, manager, job) -> ManagerFakeWorker(job, Int[], false),
+        prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job),
+        start! = (slot, job, manager) -> (slot.worker.done = true),
+        isdone = (slot, manager) -> slot.worker.done,
+        workerfinalizer = (slot, job, manager) -> worker -> (worker.done = false; worker),
+        destroyworker! = (slot, job, manager) -> push!(destroyed, slot.worker.idx),
+    )
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 1,
+        worker_lifecycle = OnDemandWorkers(),
+        flush_policy = NoFlush(),
+        job_type = Int,
+        result_type = ManagerFakeWorker,
+    )
+    run!(manager, 7:9)
+
+    @test destroyed == [7, 8, 9]
+
+    closed = Int[]
+    close_recipe = (;
+        makeworker = recipe.makeworker,
+        prepare! = recipe.prepare!,
+        start! = recipe.start!,
+        isdone = recipe.isdone,
+        workerfinalizer = recipe.workerfinalizer,
+        close! = (slot, manager) -> push!(closed, slot.worker.idx),
+    )
+    close_manager = ProcessManager(
+        close_recipe;
+        nworkers = 1,
+        worker_lifecycle = OnDemandWorkers(),
+        flush_policy = NoFlush(),
+        job_type = Int,
+        result_type = ManagerFakeWorker,
+    )
+    run!(close_manager, [11])
+
+    @test closed == [11]
+end
+
+@testset "ProcessManager can use job-specific Process algorithm types" begin
+    outputs = Int[]
+    recipe = (;
+        makeworker = (idx, manager, job) -> Process(job.algo; repeats = 1),
+        workername = (idx, manager, job) -> job.name,
+        prepare! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job.value
+            nothing
+        end,
+        consume! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            push!(outputs, only(local_context.buffer))
+        end,
+    )
+    jobs = Any[
+        (; name = :accumulate, algo = ManagerProcessAccumulator(), value = 4),
+        (; name = :multiply, algo = ManagerProcessMultiplier(), value = 4),
+    ]
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 1,
+        worker_lifecycle = OnDemandWorkers(destroy_after_finalize = false),
+        worker_type = Process,
+        flush_policy = NoFlush(),
+        job_type = Any,
+        result_type = Process,
+    )
+    run!(manager, jobs)
+
+    @test outputs == [4, 8]
+    @test only(slots(manager)).name == :multiply
+    @test only(workers(manager)) isa Process
+    @test_throws ArgumentError ProcessManager(
+        recipe;
+        nworkers = 1,
+        worker_lifecycle = OnDemandWorkers(),
+        worker_type = :process,
+    )
+end
+
 @testset "Process workers are transparent and reset is explicit" begin
     worker = Process(ManagerProcessAccumulator(); repeats = 1)
     external = Int[]
@@ -461,6 +645,54 @@ end
     @test external == [1, 2, 3]
     @test manager.active_count == 0
     @test isnothing(worker.task)
+end
+
+@testset "ProcessManager runarguments can set per-job Process lifetime" begin
+    jobs = [
+        (; value = 1, repeats = 2),
+        (; value = 2, lifetime = Repeat(3)),
+    ]
+
+    polling_worker = Process(ManagerProcessAccumulator(); repeats = 1)
+    polling_output = Int[]
+    polling_recipe = (;
+        prepare! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job.value
+            nothing
+        end,
+        runarguments = (slot, job, manager) -> haskey(job, :repeats) ? (; repeats = job.repeats) : (; lifetime = job.lifetime),
+        consume! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            append!(polling_output, local_context.buffer)
+            empty!(local_context.buffer)
+        end,
+    )
+    polling_manager = ProcessManager(polling_recipe; workers = (polling_worker,), flush_policy = NoFlush())
+    run!(polling_manager, jobs)
+
+    @test polling_output == [1, 1, 2, 2, 2]
+    @test isnothing(polling_worker.task)
+
+    threaded_template = Process(ManagerProcessAccumulator(); repeats = 1)
+    threaded_output = Int[]
+    threaded_recipe = (;
+        makeworker = (idx, manager) -> copyprocess(threaded_template; context = deepcopy(context(threaded_template))),
+        prepare! = polling_recipe.prepare!,
+        runarguments = polling_recipe.runarguments,
+        flush! = manager -> begin
+            for slot in slots(manager)
+                local_context = manager_process_context(slot.worker)
+                append!(threaded_output, local_context.buffer)
+                empty!(local_context.buffer)
+            end
+        end,
+    )
+    threaded_manager = ProcessManager(threaded_recipe; nworkers = 2, flush_policy = FlushAtEnd())
+    runthreaded!(threaded_manager, jobs, Dynamic())
+
+    @test sort(threaded_output) == [1, 1, 2, 2, 2]
+    @test all(isnothing(slot.worker.task) for slot in slots(threaded_manager))
 end
 
 @testset "ProcessManager threaded mode runs Process workers inline" begin
@@ -624,6 +856,55 @@ end
     @test worker.runs == 5
     @test manager.dispatched == 3
     @test isnothing(worker.task)
+end
+
+@testset "Inline chunk workers support threaded manager schedules" begin
+    outputs = Int[]
+    recipe = (;
+        makeworker = (idx, manager) -> InlineChunkWorker(InlineProcess(ManagerInlineAccumulator(); repeats = 1)),
+        beforechunk! = (process, chunk, slot, manager) -> begin
+            isnothing(slot.scratch) && (slot.scratch = Int[])
+            nothing
+        end,
+        resetexample! = (process, example, slot, manager) -> begin
+            local_context = manager_inline_context(slot.worker)
+            local_context.total[] = 0
+            nothing
+        end,
+        loadexample! = (process, example, slot, manager) -> begin
+            local_context = manager_inline_context(slot.worker)
+            local_context.value[] = example
+            nothing
+        end,
+        afterexample! = (process, example, result, slot, manager) -> begin
+            local_context = manager_inline_context(slot.worker)
+            push!(slot.scratch, local_context.total[])
+            nothing
+        end,
+        flush! = manager -> begin
+            for slot in slots(manager)
+                isnothing(slot.scratch) && continue
+                append!(outputs, slot.scratch)
+                empty!(slot.scratch)
+            end
+        end,
+    )
+
+    manager = ProcessManager(
+        recipe;
+        nworkers = 2,
+        flush_policy = FlushAtEnd(),
+        job_type = Vector{Int},
+        scratch_type = Vector{Int},
+        result_type = InlineChunkWorker,
+    )
+    runchunks!(manager, 1:6, Dynamic(); chunksize = 2)
+
+    @test sort(outputs) == collect(1:6)
+    @test sum(slot.worker.runs for slot in slots(manager)) == 6
+    @test manager.dispatched == 3
+    @test manager.completions == 3
+    @test all(isnothing(slot.worker.task) for slot in slots(manager))
 end
 
 @testset "Inline chunk workers keep context between examples unless recipe resets" begin

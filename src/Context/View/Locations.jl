@@ -44,7 +44,8 @@ function get_routed_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, 
         _localnames = localnames(sv)
         _subvarcontextnames = subvarcontextnames(sv)
         _transform = gettransform(sv)
-        pairs = (_localnames[i] => VarLocation{:subcontext}(fromname, _subvarcontextnames[i], _transform) for i in 1:length(_localnames))
+        location_type = fromname == :_runtime ? :runtime : :subcontext
+        pairs = (_localnames[i] => VarLocation{location_type}(fromname, _subvarcontextnames[i], _transform) for i in 1:length(_localnames))
         return NamedTuple(pairs)
     end
 
@@ -126,7 +127,23 @@ end
 @inline Base.propertynames(scv::SCV) where SCV <: SubContextView = @inline propertynames(@inline get_all_locations(scv))
 @inline Base.haskey(scv::SCV, name::Symbol) where SCV <: SubContextView = @inline haskey(get_all_locations(scv), name)
 @inline getregistry(scv::SCV) where SCV <: SubContextView = getregistry(getcontext(scv))
-@inline getproperty_fromsubcontext(scv::SCV, subcontextname::Symbol, varname::Symbol) where SCV <: SubContextView = @inline getproperty(getproperty(getcontext(scv), subcontextname), varname)
+@inline function getproperty_fromsubcontext(
+    scv::SCV,
+    ::Val{subcontextname},
+    ::Val{varname},
+) where {SCV<:SubContextView, subcontextname, varname}
+    if subcontextname === :_input
+        return @inline getproperty(getruntimeinput(getcontext(scv)), varname)
+    end
+    subcontext = @inline getproperty(get_subcontexts(getcontext(scv)), subcontextname)
+    if @inline haskey(getdata(subcontext), varname)
+        return @inline getproperty(subcontext, varname)
+    end
+    if @inline has_widened_var(getcontext(scv), Val(subcontextname), Val(varname))
+        return @inline get_widened_var(getcontext(scv), Val(subcontextname), Val(varname))
+    end
+    return @inline getproperty(subcontext, varname)
+end
 @inline getinjected(scv::SCV, key) where SCV <: SubContextView = getproperty(getinjected(scv), key)
 @inline function Base.get(scv::SCV, name::Symbol, default) where SCV <: SubContextView
     if haskey(scv, name)
@@ -153,7 +170,7 @@ end
     target_variable = get_originalname(vl)
     if isnothing(getfunc(vl)) && target_variable isa Symbol
         return quote
-            return @inline getproperty_fromsubcontext(sct, $(QuoteNode(target_subcontext)), $(QuoteNode(target_variable)))
+            return @inline getproperty_fromsubcontext(sct, Val($(QuoteNode(target_subcontext))), Val($(QuoteNode(target_variable))))
         end
     end
 
@@ -161,6 +178,32 @@ end
     fexpr = funcexpr(vl, varsymbols...)
     
     return  quote
+        $(assign_exprs...)
+        return $(fexpr)
+    end
+end
+
+"""
+Read a routed runtime variable from `ProcessContext._runtime`.
+"""
+@inline @generated function Base.getproperty(sct::SCV, vl::VarLocation{:runtime}) where SCV <: SubContextView
+    target_variables = get_originalname(vl)
+    if isnothing(getfunc(vl)) && target_variables isa Symbol
+        return quote
+            runtime = @inline getglobals(getcontext(sct))
+            return @inline getproperty(runtime, $(QuoteNode(target_variables)))
+        end
+    end
+
+    varnames = target_variables isa Tuple ? target_variables : (target_variables,)
+    varsymbols = ntuple(i -> gensym(:runtime_var), length(varnames))
+    assign_exprs = [
+        :($(varsymbols[i]) = @inline getproperty(getglobals(getcontext(sct)), $(QuoteNode(varnames[i]))))
+        for i in eachindex(varnames)
+    ]
+    fexpr = funcexpr(vl, varsymbols...)
+
+    return quote
         $(assign_exprs...)
         return $(fexpr)
     end
@@ -188,13 +231,16 @@ end
             $(LineNumberNode(@__LINE__, @__FILE__))
             @inline getproperty(sct, $target_location) 
         end
-    else
-        locations = get_all_locations(sct)
-        available = keys(locations)
-        return quote
-            if $(QuoteNode(subcontextname)) == $(QuoteNode(key))
-                $(LineNumberNode(@__LINE__, @__FILE__))
-                a_name = $(QuoteNode(key))
+        else
+            locations = get_all_locations(sct)
+            available = keys(locations)
+            return quote
+                if @inline has_widened_var(getcontext(sct), Val($(QuoteNode(SubKey))), Val($(QuoteNode(key))))
+                    return @inline get_widened_var(getcontext(sct), Val($(QuoteNode(SubKey))), Val($(QuoteNode(key))))
+                end
+                if $(QuoteNode(subcontextname)) == $(QuoteNode(key))
+                    $(LineNumberNode(@__LINE__, @__FILE__))
+                    a_name = $(QuoteNode(key))
                 context = getcontext(sct)
                 available_names = $available
                 sct_name = $(QuoteNode(subcontextname))

@@ -40,11 +40,23 @@ end
 
 runtime_inputs_lifecycle_value(seed, temp, scale; bias = 0) = seed + temp * scale + bias
 runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :RuntimeShapeChanger_1)
+runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
 
 @testset "Runtime inputs and LoopAlgorithm lifecycle" begin
     @test Input === Init
     @test Init(LifecycleInitA; x = 1).vars == (; x = 1)
+    @test Init(; x = 1).vars == (; x = 1)
     @test Input(LifecycleInitA, :x => 2).vars == (; x = 2)
+    @test !Processes.isresolved(Init(LifecycleInitA; x = 1))
+    @test !Processes.isresolved(typeof(Init(LifecycleInitA; x = 1)))
+    @test !Processes.isresolved(Init(; x = 1))
+    @test !Processes.isresolved(typeof(Init(; x = 1)))
+    @test Processes.isalltargets(Init(; x = 1))
+    @test Processes.isalltargets(typeof(Init(; x = 1)))
+    @test !Processes.isalltargets(Init(LifecycleInitA; x = 1))
+    @test !Processes.isalltargets(Override(LifecycleInitA; x = 1))
+    @test Processes.isresolved(Init(:LifecycleInitA_1; x = 1))
+    @test Processes.isresolved(typeof(Init(:LifecycleInitA_1; x = 1)))
 
     la = CompositeAlgorithm(LifecycleInitA, LifecycleInitB, (1, 1))
     initialized = init(la, Init(LifecycleInitA; x = 1), Init(LifecycleInitB; y = 2))
@@ -56,6 +68,15 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
     @test Processes.context(overridden)[LifecycleInitA].x[] == 5
     @test Processes.context(overridden)[LifecycleInitB].y[] == 2
 
+    general_init = init(la, Init(; x = 3, y = 4, z = 5))
+    @test Processes.context(general_init)[LifecycleInitA].x[] == 3
+    @test Processes.context(general_init)[LifecycleInitA].z == 5
+    @test Processes.context(general_init)[LifecycleInitB].y[] == 4
+
+    targeted_after_general = init(la, Init(; x = 3, y = 4), Init(LifecycleInitA; x = 8))
+    @test Processes.context(targeted_after_general)[LifecycleInitA].x[] == 8
+    @test Processes.context(targeted_after_general)[LifecycleInitB].y[] == 4
+
     b_ref = Processes.context(overridden)[LifecycleInitB].y
     partial = partialinit(overridden, Init(LifecycleInitA; x = 9, z = 4))
 
@@ -64,9 +85,16 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
     @test Processes.context(partial)[LifecycleInitB].y === b_ref
 
     resolved_la = resolve(la)
-    resolved_target = first(Processes.getalgos(resolved_la))
-    initialized_by_matcher = init(resolved_la, Init(resolved_target; x = 7))
-    @test Processes.context(initialized_by_matcher)[LifecycleInitA].x[] == 7
+    resolved_target = getkey(only(findall(LifecycleInitA, Processes.getregistry(resolved_la))))
+    resolved_input = only(Processes.resolve(Processes.getregistry(resolved_la), Init(resolved_target; x = 7)))
+    @test Processes.get_ref(resolved_input) === nothing
+    @test Processes.isresolved(resolved_input)
+    @test Processes.isresolved(typeof(resolved_input))
+    resolved_general_inputs = Processes.resolve(Processes.getregistry(resolved_la), Init(; x = 11))
+    @test length(resolved_general_inputs) == length(keys(Processes.getregistry(resolved_la)))
+    @test all(Processes.isresolved, resolved_general_inputs)
+    initialized_by_symbol = init(resolved_la, Init(resolved_target; x = 7))
+    @test Processes.context(initialized_by_symbol)[LifecycleInitA].x[] == 7
 
     runtime_algo = @CompositeAlgorithm begin
         @state seed = 1
@@ -83,23 +111,77 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
 
     runtime_result = run(initialized_runtime; temp = 1.5, scale = 2)
     runtime_context = Processes.context(runtime_result)
-    @test runtime_context[:FuncWrapper_1].value == 6.0
-    @test !haskey(Processes.get_subcontexts(runtime_context), :_input)
+    @test isempty(runtime_context[:FuncWrapper_1])
+    @test !haskey(Processes.getglobals(runtime_context), :value)
+    @test isempty(Processes.getruntimeinput(runtime_context))
+    @test isempty(runtime_input_bucket(runtime_context))
     @test !haskey(Processes.getglobals(runtime_context), :process)
 
     for entry in (runtime_algo, resolve(runtime_algo), initialized_runtime)
         process = Process(entry; repeats = 1)
         run(process; temp = 2.0, scale = 3)
         wait(process)
-        @test Processes.context(process)[:FuncWrapper_1].value == 9.0
-        @test !haskey(Processes.get_subcontexts(Processes.context(process)), :_input)
+        @test Processes._has_typed_runtime_context(process)
+        @test isnothing(process.runtime_context)
+        fetched_context = fetch(process)
+        @test Processes.getglobals(fetched_context).value == 9.0
+        @test isempty(Processes.context(process)[:FuncWrapper_1])
+        @test !haskey(Processes.getglobals(Processes.context(process)), :value)
+        @test isempty(Processes.getruntimeinput(Processes.context(process)))
+        @test isempty(runtime_input_bucket(Processes.context(process)))
         @test !haskey(Processes.getglobals(Processes.context(process)), :process)
         close(process)
     end
 
+    inline_worker = Process(runtime_algo; repeats = 1)
+    Processes.runprocessinline!(inline_worker; temp = 2.0, scale = 3)
+    @test Processes._has_typed_runtime_context(inline_worker)
+    @test isnothing(inline_worker.runtime_context)
+    @test Processes.getglobals(fetch(inline_worker)).value == 9.0
+    @test isempty(Processes.context(inline_worker)[:FuncWrapper_1])
+    @test !haskey(Processes.getglobals(Processes.context(inline_worker)), :value)
+    @test isempty(Processes.getruntimeinput(Processes.context(inline_worker)))
+    @test isempty(runtime_input_bucket(Processes.context(inline_worker)))
+    @test !haskey(Processes.getglobals(Processes.context(inline_worker)), :process)
+    close(inline_worker)
+
+    per_run_repeats_process = Process(runtime_algo)
+    run(per_run_repeats_process; repeats = 1, temp = 2.0, scale = 3)
+    wait(per_run_repeats_process)
+    @test Processes.getglobals(fetch(per_run_repeats_process)).value == 9.0
+    @test Processes.lifetime(per_run_repeats_process) == Repeat(1)
+    close(per_run_repeats_process)
+
+    per_run_lifetime_process = Process(runtime_algo)
+    run(per_run_lifetime_process; lifetime = Repeat(1), temp = 1.5, scale = 2)
+    wait(per_run_lifetime_process)
+    @test Processes.getglobals(fetch(per_run_lifetime_process)).value == 6.0
+    close(per_run_lifetime_process)
+
+    positional_specs_process = Process(runtime_algo; repeats = 1)
+    @test_throws ErrorException run(positional_specs_process, nothing, Input(; seed = 2); temp = 1.0, scale = 2)
+
+    inline_process = InlineProcess(runtime_algo; repeats = 1)
+    inline_result = run(inline_process; temp = 2.0, scale = 3)
+    @test Processes.getglobals(inline_result).value == 9.0
+    @test isempty(Processes.context(inline_process)[:FuncWrapper_1])
+    @test !haskey(Processes.getglobals(Processes.context(inline_process)), :value)
+    @test isempty(Processes.getruntimeinput(Processes.context(inline_process)))
+    @test isempty(getproperty(Processes.get_subcontexts(Processes.context(inline_process)), :_input))
+
+    inline_nogen_result = Processes.run_nogen(inline_process; temp = 1.5, scale = 2)
+    @test Processes.getglobals(inline_nogen_result).value == 6.0
+    @test isempty(Processes.getruntimeinput(Processes.context(inline_process)))
+    @test isempty(getproperty(Processes.get_subcontexts(Processes.context(inline_process)), :_input))
+    @test_throws ErrorException run(inline_process)
+    @test_throws ErrorException run(inline_process; temp = 1, scale = 2)
+    @test_throws ErrorException run(inline_process, Input(; seed = 2); temp = 1.0, scale = 2)
+
     shape_result = run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(0))
     @test runtime_shape_context(Processes.context(shape_result)).added == 1
-    @test_throws Exception run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(2))
+    widened_shape_result = run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(2))
+    @test runtime_shape_context(Processes.context(widened_shape_result)).added == 1
+    @test runtime_shape_context(Processes.context(widened_shape_result)).extra == 1
 
     pause_algo = @CompositeAlgorithm begin
         @input delta::Int
@@ -131,5 +213,8 @@ runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :Runtim
 
     @test context(process)[PauseRuntimeInputConsumer].total > paused_total
     close(process)
-    @test !haskey(Processes.get_subcontexts(context(process)), :_input)
+    @test Processes._has_typed_runtime_context(process)
+    @test isnothing(process.runtime_context)
+    @test isempty(Processes.getruntimeinput(context(process)))
+    @test isempty(runtime_input_bucket(context(process)))
 end

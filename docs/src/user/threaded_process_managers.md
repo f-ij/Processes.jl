@@ -148,7 +148,9 @@ A threaded manager run has four parts:
    in `slot.job`, clears the previous `slot.result` and `slot.error`, runs
    `prepare!`, calls `runarguments`, then starts the process. Use `prepare!` for
    persistent context changes. Use `runarguments` for runtime `@input` values by
-   returning a named tuple, which is passed to `run(slot.worker; kwargs...)`.
+   returning a named tuple. For `Process` workers, `lifetime`, `repeats`, and
+   `repeat` in that tuple control the launch lifetime; the remaining keys are
+   passed as runtime inputs.
 3. Completion happens inside the threaded job iteration. When a process
    finishes, the manager runs `finalize!`, `afterrun!`, `consume!`, and
    `release!`, then makes the slot available for another job.
@@ -237,6 +239,72 @@ This wraps the existing processes in new slots. It does not create contexts.
 Use this form when some other object owns the processes or when the processes
 must be constructed before the manager exists.
 
+## On-Demand Workers
+
+Use `OnDemandWorkers` when the job should define the worker that runs it. This
+is a different manager operation mode from reusable workers: slots are created
+upfront, but workers are not. Each dispatched job calls
+`makeworker(idx, manager, job)` and installs the returned worker into the slot.
+
+This is useful for automating long lived experiments where the job record is the
+experiment specification. For example, one job can carry the algorithm type,
+initialization options, seed, output location, and a worker-specific finalizer.
+The manager still gives you bounded threaded scheduling, error accounting,
+flushing, and a consistent result collection lifecycle, but each experiment can
+choose its own worker shape.
+
+Slots also keep a `slot.name::Symbol`. By default names are `:worker_1`,
+`:worker_2`, and so on. Define `workername(idx, manager, job)` when a job should
+provide a stable experiment label, so later result lookup and logs can refer to
+the same name.
+
+```julia
+recipe = (;
+    initstate = config -> (; results = []),
+    workername = (idx, manager, job) -> job.name,
+    makeworker = (idx, manager, job) -> Process(
+        job.algo,
+        Init(job.algo; seed = job.seed);
+        repeats = 1,
+    ),
+    workerfinalizer = (slot, job, manager) -> job.finalizer,
+    consume! = (slot, job, manager) -> push!(
+        manager.state.results,
+        (; name = slot.name, output = job.readout(slot.worker)),
+    ),
+)
+
+manager = ProcessManager(
+    recipe;
+    nworkers = 4,
+    worker_lifecycle = OnDemandWorkers(destroy_after_finalize = false),
+    worker_type = Process,
+)
+```
+
+Pass `worker_type` when different jobs may return different concrete worker
+types. For `Process` workers, `Process(job.algo; ...)` usually has a concrete
+type that depends on `job.algo`, so use `worker_type = Process` when jobs may
+select different concrete `Process{LoopAlgo}` specializations. If every job
+returns exactly the same worker type, pass that concrete type as `worker_type`
+to keep the slot field concrete. If you omit `worker_type`, on-demand slots use
+`Any` for maximum flexibility.
+
+Worker names are `Symbol` by default. If you need another name type, pass
+`name_type`, but symbols are preferred because they are compact and easy to use
+as result keys.
+
+`workerfinalizer` may select a finalizer function from the job. That function is
+called as `finalizer(worker, slot, job, manager)`, or with fewer trailing
+arguments if it accepts less. Return `nothing` to use the default finalizer for
+that job.
+
+By default `OnDemandWorkers()` destroys the job worker after `consume!` and
+`release!`, using `destroyworker!` when the recipe defines it, then `close!`,
+and otherwise the default worker close behavior. Pass
+`destroy_after_finalize = false` to keep the finished worker in the slot until
+the next job replaces it.
+
 ## Threaded Scheduling
 
 `runthreaded!(manager, jobs)` uses `Dynamic()` scheduling by default.
@@ -247,15 +315,27 @@ runthreaded!(manager, jobs, Static())
 runthreaded!(manager, jobs, Greedy())
 ```
 
-Use `Dynamic()` when job runtimes may vary. Slots are borrowed from a bounded
-pool, so the number of concurrently running jobs is limited by the number of
-manager slots.
+The schedule controls how Julia assigns job iterations to threads and how the
+manager maps those iterations onto slots:
 
-Use `Static()` when each thread should use a stable slot index. Static mode
-requires at least `Threads.maxthreadid()` slots.
+| Schedule | Slot mapping | Use when | Main cost |
+| --- | --- | --- | --- |
+| `Dynamic()` | Each iteration borrows a slot from a bounded channel. | Job runtimes may vary, or you want the default bounded scheduling behavior. | Channel traffic for every job. |
+| `Static()` | Each Julia thread uses `slots(manager)[Threads.threadid()]`. | Jobs have similar cost and you want a stable thread-to-slot mapping. | Requires at least `Threads.maxthreadid()` slots and can leave work imbalanced. |
+| `Greedy()` | Greedy Julia scheduling with the same bounded slot pool as `Dynamic()`. | Job costs are uneven enough that greedy scheduling improves balance. | Can lose on tiny jobs because scheduling overhead dominates. |
 
-Use `Greedy()` for Julia's greedy threaded scheduling when it is available and
-when jobs are uneven enough that the schedule is useful.
+`Dynamic()` is the safest default for heterogeneous job streams. `Static()` is
+often fastest for many equal CPU-bound jobs because it avoids the slot-pool
+channel and each thread reuses the same slot. `Greedy()` is worth measuring for
+long-tailed job costs, for example when a few simulations or samples take much
+longer than the rest.
+
+For local comparisons, run the threaded mode profiler from the repository root:
+
+```bash
+julia --project=. --threads=auto Profiling/manager/threaded_modes/compare_threaded_modes.jl
+julia --project=. --threads=auto Profiling/manager/threaded_modes/actual_process_workloads.jl
+```
 
 The convenience form below is equivalent to `runthreaded!`:
 
@@ -271,7 +351,9 @@ For each job, the manager uses this order:
 2. Store the job in `slot.job`.
 3. Call `prepare!(slot, job, manager)`.
 4. Call `runarguments(slot, job, manager)`.
-5. Start the process with the named tuple returned by `runarguments`.
+5. Start the process with the named tuple returned by `runarguments`. For
+   `Process` workers, `lifetime`, `repeats`, and `repeat` are reserved launch
+   controls; all other keys are passed as runtime `@input` values.
 6. Wait for the process to finish. In threaded mode this means the inline
    process run has returned. In the polling mode this means `isdone` reported
    that the process is finished.
@@ -287,7 +369,7 @@ If a recipe defines `start!(slot, job, manager)`, that callback replaces steps 4
 and 5. Use `start!` only when you want to take over process launch completely.
 
 For `Process` workers, threaded mode runs the process inline inside the current
-threaded iteration. The non-threaded manager run uses:
+threaded iteration through `runprocessinline!`. The non-threaded manager run uses:
 
 ```julia
 run(slot.worker)
@@ -303,6 +385,7 @@ If a job needs to affect both persistent context and loop-level runtime inputs,
 use two different steps: prepare the context in `prepare!`, then pass runtime
 inputs from `runarguments`.
 
+<<<<<<< HEAD
 ## What `flush!` Is For
 
 `flush!` is a manager-level callback that runs after completed worker runs are
@@ -368,10 +451,79 @@ recipe = (;
         end
 
         manager.state.params[] -= manager.state.lr * total_grad
+=======
+## Running Custom Code On Worker Threads
+
+Use threaded manager mode when setup work must run on the same Julia thread as
+the process loop:
+
+```julia
+runthreaded!(manager, jobs)
+
+# Equivalent convenience forms:
+run!(manager, jobs, Dynamic())
+run!(manager, jobs, Static())
+run!(manager, jobs, Greedy())
+```
+
+In these modes, each job owns one slot for the duration of a threaded iteration.
+For a `Process` worker and no custom `start!`, the code executed on that thread
+is:
+
+```julia
+prepare!(manager.recipe, slot, job, manager)
+kwargs = runarguments(manager.recipe, slot, job, manager)
+runprocessinline!(slot.worker; kwargs...)
+finalize!(manager.recipe, slot, job, manager)
+afterrun!(manager.recipe, slot, job, manager)
+consume!(manager.recipe, slot, job, manager)
+release!(manager.recipe, slot, job, manager)
+```
+
+That makes `prepare!` the normal place for per-job thread-local setup before the
+loop algorithm runs:
+
+```julia
+recipe = (;
+    makeworker = (idx, manager) -> Process(MyAlgorithm; repeats = 1),
+    prepare! = (slot, job, manager) -> begin
+        # This runs on the same thread that will run the process loop when using
+        # runthreaded! or run!(manager, jobs, Dynamic()/Static()/Greedy()).
+        ctx = context(slot.worker)[MyAlgorithm]
+        ctx.input[] = job.input
+        ctx.thread_id[] = Threads.threadid()
+        return nothing
+    end,
+    runarguments = (slot, job, manager) -> (; temperature = job.temperature),
+    consume! = (slot, job, manager) -> push!(manager.state.outputs, job.id),
+)
+```
+
+Use `runarguments` when the pre-run code should compute loop-level runtime
+inputs immediately before launch. For `Process` workers, return `lifetime`,
+`repeats`, or `repeat` from the same named tuple to control the per-job process
+lifetime:
+
+```julia
+recipe = (;
+    makeworker = (idx, manager) -> Process(MyAlgorithm; repeats = 1),
+    prepare! = (slot, job, manager) -> begin
+        context(slot.worker)[MyAlgorithm].input[] = job.input
+        return nothing
+    end,
+    runarguments = (slot, job, manager) -> begin
+        # Also runs on the worker thread in threaded manager mode.
+        (;
+            temperature = job.temperature,
+            thread_id = Threads.threadid(),
+            repeats = job.repeats,
+        )
+>>>>>>> d6b3a8504846923aa37cef15958a4fded63b4258
     end,
 )
 ```
 
+<<<<<<< HEAD
 Each worker accumulates its own `ctx.grad[]` locally. `flush!` reads those local
 buffers, combines them, updates the shared manager parameters once, and clears
 the local buffers.
@@ -384,6 +536,49 @@ to reason about.
 
 `flush!` gives you one explicit place to say: "all completed worker results up
 to this point may now be merged into shared manager state."
+=======
+Use `lifetime` when the job already has a `Lifetime` object, for example
+`Repeat(10)`, `Until(...)`, or `AtLeastAtMost(...)`:
+
+```julia
+runarguments = (slot, job, manager) -> (;
+    temperature = job.temperature,
+    lifetime = job.lifetime,
+)
+```
+
+Do not return both `lifetime` and `repeats` for one job. These keys are consumed
+by the manager launch path and are not passed to runtime `@input` validation for
+`Process` workers.
+
+Use `start!` only when the launch itself must be custom. Defining `start!`
+replaces the default `runarguments` + `runprocessinline!` launch, so call
+`runprocessinline!` yourself if you still want inline `Process` execution:
+
+```julia
+recipe = (;
+    makeworker = (idx, manager) -> Process(MyAlgorithm; repeats = 1),
+    prepare! = (slot, job, manager) -> begin
+        context(slot.worker)[MyAlgorithm].input[] = job.input
+        return nothing
+    end,
+    start! = (slot, job, manager) -> begin
+        # Custom thread-local setup immediately before the loop starts.
+        job.before_run!(Threads.threadid())
+        return runprocessinline!(
+            slot.worker;
+            temperature = job.temperature,
+        )
+    end,
+    isdone = (slot, manager) -> true,
+    finalize! = (slot, job, manager) -> nothing,
+)
+```
+
+In the polling manager path, `prepare!` and `runarguments` run on the manager
+task, and `run(slot.worker; kwargs...)` starts the process asynchronously. Use
+threaded manager mode when same-thread setup is part of the contract.
+>>>>>>> d6b3a8504846923aa37cef15958a4fded63b4258
 
 ## What `finalize!` Is For
 
@@ -450,6 +645,20 @@ manager = ProcessManager(
 runchunks!(manager, dataset; chunksize = 128)
 ```
 
+The default `runchunks!` form uses the polling manager path and starts one task
+per chunk. To run chunks through the threaded manager schedules instead, pass a
+schedule:
+
+```julia
+runchunks!(manager, dataset, Dynamic(); chunksize = 128)
+runchunks!(manager, dataset, Static(); chunksize = 128)
+runchunks!(manager, dataset, Greedy(); chunksize = 128)
+```
+
+In scheduled chunk mode, `beforechunk!`, `resetexample!`, `loadexample!`,
+`afterexample!`, and `afterchunk!` run on the threaded iteration that owns the
+slot, and no extra task is spawned for the chunk.
+
 `resetexample!` is optional. If it is omitted, context state carries from one
 example to the next inside a chunk. `loadexample!` is required. `beforechunk!`
 and `afterchunk!` are optional hooks around the whole chunk.
@@ -463,29 +672,44 @@ functions in a named tuple are part of the manager type.
 
 - `initstate(config, manager)`: build `manager.state` from user configuration.
 - `makeworker(idx, manager)`: create process `idx` when `workers` is not passed.
+- `makeworker(idx, manager, job)`: create the worker for one job when
+  `worker_lifecycle = OnDemandWorkers()`.
+- `workername(idx, manager)`: name reusable workers at manager construction.
+- `workername(idx, manager, job)`: name an on-demand worker from job data.
 - `makecontext(idx, manager, template)`: for manager-owned `Process` workers,
   build the context for slot `idx` from the template process.
 - `prepare!(slot, job, manager)`: write one job into a process before it starts.
   This is the usual place to mutate context, call `reinitworker!`, or call
-  `partialinitworker!`.
+  `partialinitworker!`. In threaded manager mode, this callback runs on the same
+  thread that will run the process loop.
 - `runarguments(slot, job, manager)`: return a named tuple of runtime keyword
   arguments for the implicit `run(...)` call. This callback may also run
   arbitrary manager-side code before launch. For example,
   `(; temperature = job.temperature)` becomes
-  `run(slot.worker; temperature = job.temperature)`.
+  `run(slot.worker; temperature = job.temperature)`. In threaded manager mode,
+  this callback runs on the same thread that will run the process loop. For
+  `Process` workers, `lifetime`, `repeats`, and `repeat` are reserved launch
+  controls and are removed before runtime `@input` validation.
 - `start!(slot, job, manager)`: advanced custom process start. If this callback
-  exists, it replaces `runarguments` and the implicit `run(...)` call.
+  exists, it replaces `runarguments` and the implicit `run(...)` call. For
+  `Process` workers in threaded manager mode, call `runprocessinline!` inside
+  `start!` when custom launch code should still run the process inline.
 - `isdone(slot, manager)`: custom completion check. Defaults to
   `isdone(worker)` for `Process` workers.
 - `finalize!(slot, job, manager)`: custom finish step called after the process
   has completed and before `afterrun!` and `consume!`. Defaults to
   `wait(worker); close(worker)` for `Process` workers.
+- `workerfinalizer(slot, job, manager)`: select a finalizer function for the
+  current job. Ignored when `finalize!` is present.
 - `afterrun!(slot, job, manager)`: optional hook after finalization.
 - `consume!(slot, job, manager)`: read a finished process and accumulate output.
 - `release!(slot, job, manager)`: clear local state after `consume!`.
 - `flush!(manager)`: move slot-local buffers into manager state or another
   destination.
 - `close!(slot, manager)`: custom process close.
+- `destroyworker!(slot, job, manager)`: cleanup hook for
+  `OnDemandWorkers(destroy_after_finalize = true)`. If this is missing, the
+  manager falls back to `close!`.
 - `onerror!(slot, err, manager)`: custom error handling.
 - `beforechunk!(process, chunk, slot, manager)`: optional chunk setup for
   `InlineChunkWorker`.
@@ -608,11 +832,15 @@ The manager also has a lower-level, polling-based interface:
 ```julia
 dispatch!(manager, job)
 poll!(manager)
+wait(manager)
 drain!(manager)
 ```
 
 Use this only when you need manual control over dispatch and polling. For normal
 threaded `Process` runs, prefer `runthreaded!`.
+
+`wait(manager)` waits until all currently active workers finish. `drain!(manager)`
+also applies the final flush policy after all active workers have finished.
 
 `poll_interval = 0.0` means the manager yields while waiting. A positive
 `poll_interval` sleeps for that many seconds between checks when all slots are
@@ -647,6 +875,9 @@ Processes.FlushPolicy
 Processes.FlushAtEnd
 Processes.NoFlush
 Processes.FlushEvery
+Processes.WorkerLifecycle
+Processes.ReuseWorker
+Processes.OnDemandWorkers
 Processes.ThreadsType
 Processes.Static
 Processes.Dynamic

@@ -7,6 +7,7 @@ struct DSLSinkAlgo <: Processes.ProcessAlgorithm end
 struct DSLValueAlgo <: Processes.ProcessAlgorithm end
 struct DSLNestedSourceAlgo <: Processes.ProcessAlgorithm end
 struct DSLHeldStateAlgo <: Processes.ProcessAlgorithm end
+struct DSLRepeatLifetimeCounter <: Processes.ProcessAlgorithm end
 
 function Processes.step!(::DSLSourceAlgo, context)
     return (; produced = 2, passthrough = context.seed)
@@ -36,6 +37,14 @@ function Processes.step!(::DSLHeldStateAlgo, context)
     return (; state = context.state)
 end
 
+function Processes.init(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
+    return (; count = get(context, :count, 0))
+end
+
+function Processes.step!(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
+    return (; count = context.count + 1)
+end
+
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
 zero_input_dsl_test() = 7
 keyword_only_capture_dsl_test(; plus_capture, minus_capture, β, buffers) = plus_capture + minus_capture + β + buffers
@@ -44,6 +53,9 @@ constant_value_dsl_test() = 0.25
 square_dsl_test(x) = x^2
 keyword_value_identity_dsl_test(; value) = value
 dsl_final_summary(context) = (; result = context[DSLValueAlgo].result)
+dsl_runtime_final_summary(context) = (; result = context.result)
+dsl_state_push_writer!(buffers) = (push!(buffers, :writer); buffers)
+dsl_state_push_reader!(buffers) = (push!(buffers, :reader); buffers)
 
 @ProcessAlgorithm function DSLPositionalCallAlgo(value)
     return (; seen = value)
@@ -129,9 +141,79 @@ end
         @test Processes.init(overlap_merged, (; scale = 3.0)) == (; seed = 7, scale = 3.0)
     end
 
+    @testset "Explicit state bind and merge document overlapping child state" begin
+        @info "Composite DSL: Explicit state bind and merge document overlapping child state"
+        writer = @Routine begin
+            @state buffers
+            buffers = dsl_state_push_writer!(buffers)
+        end
+        reader = @Routine begin
+            @state buffers
+            buffers = dsl_state_push_reader!(buffers)
+        end
+
+        implicit_overlap = @CompositeAlgorithm begin
+            @context f = writer()
+            @context n = reader()
+        end
+
+        @test_logs (:warn, r"f\.buffers <=> n\.buffers") resolve(implicit_overlap)
+
+        bound = @CompositeAlgorithm begin
+            @state buffers = Symbol[]
+            @context f = writer()
+            @context n = reader()
+            @bind buffers => f.buffers
+            @bind buffers => n.buffers
+        end
+
+        bound_process = Process(resolve(bound), repeat = 1)
+        Processes.run(bound_process)
+        wait(bound_process)
+        @test context(bound_process)[:_state].buffers == [:writer, :reader]
+
+        merged_required = @CompositeAlgorithm begin
+            @context f = writer()
+            @context n = reader()
+            @merge f.buffers, n.buffers
+        end
+
+        resolved_required = resolve(merged_required)
+        @test_throws ErrorException init(resolved_required)
+        initialized = init(resolved_required, Init(:_state; buffers = Symbol[]))
+        merged_process = Process(initialized, repeat = 1)
+        Processes.run(merged_process)
+        wait(merged_process)
+        @test context(merged_process)[:_state].buffers == [:writer, :reader]
+
+        explicit_state_path = @CompositeAlgorithm begin
+            @context f = writer()
+            @context n = reader()
+            @merge f._state.buffers, n.buffers
+        end
+
+        @test_throws ErrorException init(resolve(explicit_state_path))
+
+        left_default = @Routine begin
+            @state buffers = Symbol[:left]
+            buffers = dsl_state_push_writer!(buffers)
+        end
+        right_default = @Routine begin
+            @state buffers = Symbol[:right]
+            buffers = dsl_state_push_reader!(buffers)
+        end
+        default_conflict = @CompositeAlgorithm begin
+            @context f = left_default()
+            @context n = right_default()
+            @merge f.buffers, n.buffers
+        end
+
+        @test_logs (:warn, r"multiple defaults") resolve(default_conflict)
+    end
+
     @testset "CompositeAlgorithm DSL resolves and runs" begin
         @info "Composite DSL: CompositeAlgorithm DSL resolves and runs"
-        n = 10
+        n = 1
         algo = @CompositeAlgorithm begin
             @state seed = 3
             @state doubled = 10
@@ -150,16 +232,18 @@ end
         @test !isempty(Processes.getoptions(Processes.getplan(resolved), Processes.Route))
         @test intervals(resolved) == (
             Processes.Interval(1),
-            Processes.Interval(10),
+            Processes.Interval(1),
             Processes.Interval(1),
             Processes.Interval(1),
         )
-        @test Processes.getkey(Processes.getalgo(resolved, 1)) == :source
+        @test Processes.plan_child_namespace(resolved, 1) == :source
         @test length(Processes.getstates(resolved)) == 1
         @test Processes.getkey(first(Processes.getstates(resolved))) == :_state
 
         sharedcontexts, sharedvars = Processes._resolve_options(resolved)
         @test !isempty(sharedvars)
+        combine_routes = sharedvars[:DSLCombineAlgo_1]
+        @test any(route -> Processes.get_fromname(route) == :_runtime && Processes.localnames(route) == (:right,), combine_routes)
 
         init_ctx = Processes.initcontext(resolved; lifetime = Repeat(10))
         @test init_ctx[:_state].seed == 3
@@ -176,7 +260,9 @@ end
         ctx = fetch(p)
 
         @test ctx[:_state].seed == 3
-        @test ctx[:_state].doubled == 8
+        @test ctx[:_state].doubled == 10
+        @test Processes.getglobals(ctx).doubled == 8
+        @test !haskey(Processes.getglobals(context(p)), :doubled)
         @test ctx[:source].produced == 2
         @test ctx[:source].passthrough == 3
         @test ctx[:DSLCombineAlgo_1].combined == 11
@@ -254,7 +340,8 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:sink].seen == 2
-        @test length(typeof(ctx[:sink]).parameters) == 2
+        @test getkey(ctx[:sink]) == :sink
+        @test only(typeof(ctx[:sink]).parameters) <: NamedTuple
     end
 
     @testset "Local routes occlude top-level @route aliases" begin
@@ -278,7 +365,8 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:sink].seen == 7
-        @test length(typeof(ctx[:sink]).parameters) == 2
+        @test getkey(ctx[:sink]) == :sink
+        @test only(typeof(ctx[:sink]).parameters) <: NamedTuple
     end
 
     @testset "Transform routes use explicit @transform syntax" begin
@@ -365,6 +453,51 @@ end
         @test repeats(resolved_routine) == (3,)
     end
 
+    @testset "Routine repeat supports lifetime syntax with DSL selectors" begin
+        @info "Composite DSL: Routine repeat supports lifetime syntax with DSL selectors"
+        until_routine = @Routine begin
+            count = @repeat Until(x -> x >= 3, count) DSLRepeatLifetimeCounter
+        end
+
+        until_result = run(until_routine; repeats = 1)
+        @test Processes.context(until_result)[DSLRepeatLifetimeCounter].count == 3
+
+        until_ten_routine = @Routine begin
+            count = @repeat Until(x -> x >= 10, count) DSLRepeatLifetimeCounter
+        end
+
+        until_ten_result = run(until_ten_routine; repeats = 1)
+        @test Processes.context(until_ten_result)[DSLRepeatLifetimeCounter].count == 10
+
+        capped_routine = @Routine begin
+            count = @repeat RepeatOrUntil(x -> x >= 10, 4, count) DSLRepeatLifetimeCounter
+        end
+
+        capped_result = run(capped_routine; repeats = 1)
+        @test Processes.context(capped_result)[DSLRepeatLifetimeCounter].count == 4
+
+        repeat_routine = @Routine begin
+            count = @repeat Repeat(2) DSLRepeatLifetimeCounter
+        end
+
+        repeat_result = run(repeat_routine; repeats = 1)
+        @test Processes.context(repeat_result)[DSLRepeatLifetimeCounter].count == 2
+
+        atleast_routine = @Routine begin
+            count = @repeat AtLeast(x -> x >= 1, 4, count) DSLRepeatLifetimeCounter
+        end
+
+        atleast_result = run(atleast_routine; repeats = 1)
+        @test Processes.context(atleast_result)[DSLRepeatLifetimeCounter].count == 4
+
+        atleast_atmost_routine = @Routine begin
+            count = @repeat AtLeastAtMost(x -> x >= 10, 2, 5, count) DSLRepeatLifetimeCounter
+        end
+
+        atleast_atmost_result = run(atleast_atmost_routine; repeats = 1)
+        @test Processes.context(atleast_atmost_result)[DSLRepeatLifetimeCounter].count == 5
+    end
+
     @testset "Nested DSL state writeback resolves through keyed _state" begin
         @info "Composite DSL: Nested DSL state writeback resolves through keyed _state"
         inner = @Routine begin
@@ -397,7 +530,7 @@ end
 
         resolved = resolve(algo)
         wrapper = Processes.getalgo(resolved, 2)
-        wrapper_key = Processes.getkey(wrapper)
+        wrapper_key = Processes.plan_child_namespace(resolved, 2)
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[wrapper_key]
         @test length(routes) == 1
@@ -406,7 +539,9 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[wrapper_key].result == 4
+        @test Processes.getglobals(ctx).result == 4
+        @test isempty(context(p)[wrapper_key])
+        @test !haskey(Processes.getglobals(context(p)), :result)
     end
 
     @testset "FuncWrapper positional args accept explicit @transform routes" begin
@@ -424,14 +559,14 @@ end
 
         resolved = resolve(algo)
         wrapper = Processes.getalgo(resolved, 2)
-        wrapper_key = Processes.getkey(wrapper)
+        wrapper_key = Processes.plan_child_namespace(resolved, 2)
         @test occursin("@transform", sprint(show, wrapper))
         @test occursin("c1.plus_capture.captured", sprint(show, wrapper))
 
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[wrapper_key].result == 5
+        @test Processes.getglobals(ctx).result == 5
     end
 
     @testset "FuncWrapper positional @transform routes can source @state fields" begin
@@ -445,7 +580,7 @@ end
 
         resolved = resolve(algo)
         wrapper = Processes.getalgo(resolved, 1)
-        wrapper_key = Processes.getkey(wrapper)
+        wrapper_key = Processes.plan_child_namespace(resolved, 1)
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[wrapper_key]
         @test length(routes) == 1
@@ -456,7 +591,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[wrapper_key].result == -2
+        @test Processes.getglobals(ctx).result == -2
     end
 
     @testset "State fields can be assigned captured values directly" begin
@@ -471,9 +606,9 @@ end
 
         resolved = resolve(algo)
         writer = Processes.getalgo(resolved, 1)
-        writer_key = Processes.getkey(writer)
-        result_algo = Processes.getalgo(resolved, 2)
-        @test Processes.getalgo(writer) isa Processes.ContextWrite
+        writer_key = Processes.plan_child_namespace(resolved, 1)
+        result_key = Processes.plan_child_namespace(resolved, 2)
+        @test writer isa Processes.ContextWrite
 
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[writer_key]
@@ -483,7 +618,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].clamping_beta === 3.0
-        @test ctx[Processes.getkey(result_algo)].result === 3.0
+        @test Processes.getglobals(ctx).result === 3.0
     end
 
     @testset "State buffer indexes can be assigned directly" begin
@@ -501,7 +636,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].somebuffer == [2, 4, 5]
-        @test ctx[Processes.getkey(Processes.getalgo(resolved, 3))].result == [2, 4, 5]
+        @test Processes.getglobals(ctx).result == [2, 4, 5]
     end
 
     @testset "State buffers support broadcast assignment syntax" begin
@@ -520,7 +655,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].somebuffer == [1, 7, 8]
-        @test ctx[Processes.getkey(Processes.getalgo(resolved, 3))].result == [1, 7, 8]
+        @test Processes.getglobals(ctx).result == [1, 7, 8]
     end
 
     @testset "Owned state fields can be assigned from ref values" begin
@@ -543,7 +678,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].nudged_beta === 2.0
-        @test ctx[:FuncWrapper_1].result === 2.0
+        @test Processes.getglobals(ctx).result === 2.0
     end
 
     @testset "FuncWrapper keyword args preserve routed display expressions" begin
@@ -565,7 +700,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[Processes.getkey(wrapper)].result == 4
+        @test Processes.getglobals(ctx).result == 4
     end
 
     @testset "Alias field routes work before later output bindings" begin
@@ -578,7 +713,7 @@ end
 
         resolved = resolve(algo)
         sink = Processes.getalgo(resolved, 1)
-        sink_key = Processes.getkey(sink)
+        sink_key = Processes.plan_child_namespace(resolved, 1)
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[sink_key]
         @test length(routes) == 1
@@ -603,10 +738,10 @@ end
         end
 
         resolved = resolve(algo)
-        function_key = Processes.getkey(Processes.getalgo(resolved, 1))
-        positional_key = Processes.getkey(Processes.getalgo(resolved, 2))
-        transform_key = Processes.getkey(Processes.getalgo(resolved, 3))
-        sink_key = Processes.getkey(Processes.getalgo(resolved, 4))
+        function_key = Processes.plan_child_namespace(resolved, 1)
+        positional_key = Processes.plan_child_namespace(resolved, 2)
+        transform_key = Processes.plan_child_namespace(resolved, 3)
+        sink_key = Processes.plan_child_namespace(resolved, 4)
         _, sharedvars = Processes._resolve_options(resolved)
         @test length(sharedvars[function_key]) == 1
         @test length(sharedvars[positional_key]) == 1
@@ -616,9 +751,9 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[function_key].result == 11
-        @test ctx[positional_key].doubled == 22
-        @test ctx[transform_key].transformed == 12
+        @test Processes.getglobals(ctx).result == 11
+        @test Processes.getglobals(ctx).doubled == 22
+        @test Processes.getglobals(ctx).transformed == 12
         @test ctx[sink_key].result == 11
     end
 
@@ -636,8 +771,8 @@ end
         resolved = resolve(algo)
         nested = Processes.getalgo(resolved, 1)
         nested_plan = Processes.getalgo(nested, 1)
-        function_key = Processes.getkey(Processes.getalgo(nested_plan, 1))
-        positional_key = Processes.getkey(Processes.getalgo(nested_plan, 2))
+        function_key = Processes.plan_child_namespace(nested_plan, 1)
+        positional_key = Processes.plan_child_namespace(nested_plan, 2)
         _, sharedvars = Processes._resolve_options(resolved)
         @test length(sharedvars[function_key]) == 1
         @test length(sharedvars[positional_key]) == 1
@@ -645,8 +780,8 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[function_key].result == 11
-        @test ctx[positional_key].doubled == 22
+        @test Processes.getglobals(ctx).result == 11
+        @test Processes.getglobals(ctx).doubled == 22
     end
 
     @testset "ProcessAlgorithm direct-call positional args accept alias field routes" begin
@@ -659,7 +794,7 @@ end
 
         resolved = resolve(algo)
         sink = Processes.getalgo(resolved, 1)
-        sink_key = Processes.getkey(sink)
+        sink_key = Processes.plan_child_namespace(resolved, 1)
         _, sharedvars = Processes._resolve_options(resolved)
         routes = sharedvars[sink_key]
         @test length(routes) == 1
@@ -682,7 +817,7 @@ end
 
         resolved = resolve(algo)
         sink = Processes.getalgo(resolved, 1)
-        sink_key = Processes.getkey(sink)
+        sink_key = Processes.plan_child_namespace(resolved, 1)
 
         p = Process(resolved, repeat = 1)
         Processes.run(p)
@@ -780,7 +915,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         wrapper = Processes.getalgo(resolved, 2)
-        @test ctx[Processes.getkey(wrapper)].result == 4
+        @test Processes.getglobals(ctx).result == 4
     end
 
     @testset "@include_if rejects state and alias declarations" begin
@@ -847,5 +982,46 @@ end
                 end
             end
         end)
+    end
+
+    @testset "FuncWrapper outputs are runtime-only and visible to finalstep" begin
+        @info "Composite DSL: FuncWrapper outputs are runtime-only and visible to finalstep"
+        algo = @CompositeAlgorithm begin
+            @state seed = 4
+            result = keyword_value_identity_dsl_test(value = seed)
+            @finally dsl_runtime_final_summary
+        end
+
+        p = Process(resolve(algo), repeat = 1)
+        run(p)
+        @test fetch(p) == (; result = 4)
+        @test isempty(context(p)[:FuncWrapper_1])
+        @test !haskey(Processes.getglobals(context(p)), :result)
+
+        close(p)
+        @test fetch(p) == (; result = 4)
+        @test !haskey(Processes.getglobals(context(p)), :result)
+    end
+
+    @testset "FuncWrapper runtime output shape does not persist" begin
+        @info "Composite DSL: FuncWrapper runtime output shape does not persist"
+        count = Ref(0)
+        widening_runtime_value = () -> begin
+            count[] += 1
+            count[] == 1 ? (; y = 1) : (; y = 1, z = 2)
+        end
+
+        algo = @CompositeAlgorithm begin
+            result = widening_runtime_value()
+        end
+
+        p = Process(resolve(algo), repeat = 2)
+        run(p)
+        fetched = fetch(p)
+
+        @test fetched.result == (; y = 1, z = 2)
+        @test isempty(context(p)[:FuncWrapper_1])
+        @test !haskey(Processes.getglobals(context(p)), :result)
+        close(p)
     end
 end

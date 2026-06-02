@@ -1,11 +1,48 @@
 """Return non-wiring options that must stay on the `LoopAlgorithm` wrapper."""
-@inline function _root_loop_options(options::Options) where {Options<:Tuple}
-    isempty(options) && return ()
-    tail = _root_loop_options(Base.tail(options))
-    option = getfield(options, 1)
-    Option = fieldtype(Options, 1)
-    Option <: AbstractWiring && return tail
-    return (option, tail...)
+function _root_loop_options(options::Options) where {Options<:Tuple}
+    root_options = Any[]
+
+    # Constructor-only filtering. Keep this as a plain loop so large DSL route
+    # lists do not compile one recursive tuple-builder method per option.
+    for option in options
+        option isa AbstractWiring && continue
+        push!(root_options, option)
+    end
+    return Tuple(root_options)
+end
+
+"""Append non-wiring options to `root_options` without constructing a large tuple."""
+function _append_root_loop_options!(root_options::Vector{Any}, options::Options) where {Options<:Tuple}
+    for option in options
+        option isa AbstractWiring && continue
+        push!(root_options, option)
+    end
+    return root_options
+end
+
+"""Collect root options from a loop tree without materializing plan wiring."""
+function _append_plan_tree_root_options!(root_options::Vector{Any}, la::LA) where {LA<:AbstractLoopAlgorithm}
+    plan = if la isa LoopAlgorithm
+        _append_root_loop_options!(root_options, getoptions(la))
+        getplan(la)
+    else
+        la
+    end
+
+    # Concrete executable plans store only plan wiring locally, so do not call
+    # `getoptions(plan)` here. That would rebuild all route/share options just
+    # to discard them as non-root options.
+    for child in getalgos(plan)
+        child isa AbstractLoopAlgorithm && _append_plan_tree_root_options!(root_options, child)
+    end
+    return root_options
+end
+
+"""Return non-wiring options stored anywhere in an unresolved loop tree."""
+function _root_loop_options(la::LA) where {LA<:LoopAlgorithm}
+    root_options = Any[]
+    _append_plan_tree_root_options!(root_options, la)
+    return Tuple(root_options)
 end
 
 """Collect plan-wide route/share wiring into a `Wiring` value."""
@@ -119,16 +156,73 @@ end
     return getwiring(getalgo(child))
 end
 
+"""Return whether a child value receives one runtime-scoped wiring option."""
+function _runtime_scoped_wiring_matches_child(child, option::LocalPlanOption)
+    scoped_wiring = _wrapped_plan_wiring(option)
+    if scoped_wiring isa Route
+        return _child_matches_endpoint_match(child, to_match_by(scoped_wiring))
+    end
+
+    if match(child, getfield(option, :owner))
+        return true
+    end
+
+    if scoped_wiring isa Share
+        return _child_matches_endpoint_match(child, first_match_by(scoped_wiring)) ||
+            _child_matches_endpoint_match(child, second_match_by(scoped_wiring))
+    end
+    return false
+end
+
+"""Construct child wiring without generating an O(children * options) method body."""
+function _plan_child_wiring_runtime(funcs::Funcs, options::Options) where {Funcs<:Tuple, Options<:Tuple}
+    route_buckets = [Any[] for _ in 1:length(funcs)]
+    share_buckets = [Any[] for _ in 1:length(funcs)]
+
+    # Group and validate in one pass. A separate validation scan over concrete
+    # `Wiring` tuples made large DSL construction spend seconds in inference.
+    for option in options
+        option isa LocalPlanOption || continue
+        scoped_wiring = _wrapped_plan_wiring(option)
+        assigned = false
+        for i in eachindex(route_buckets)
+            _runtime_scoped_wiring_matches_child(getfield(funcs, i), option) || continue
+            if scoped_wiring isa Route
+                push!(route_buckets[i], scoped_wiring)
+            elseif scoped_wiring isa Share
+                push!(share_buckets[i], scoped_wiring)
+            end
+            assigned = true
+        end
+        assigned || error("Child-scoped wiring $(option) could not be assigned to any child in plan funcs $(funcs).")
+    end
+
+    raw_buckets = ntuple(i -> Wiring(Tuple(route_buckets[i]), Tuple(share_buckets[i])), length(funcs))
+    return ntuple(i -> _child_wiring_for_child(getfield(funcs, i), getfield(raw_buckets, i)), length(funcs))
+end
+
 """
 Build the child-indexed wiring tuple stored in `PlanWiring`.
 
 For every child position this produces exactly the value that `step!` receives:
 a `Wiring(routes, shares)` bucket for concrete children, or a nested
-`PlanWiring` for child loop plans. The generated body first builds raw
-per-child `Wiring` buckets from `LocalPlanOption` entries, then replaces buckets
-belonging to nested loop plans with that child's own `PlanWiring`.
+`PlanWiring` for child loop plans.
 """
+function _plan_child_wiring(funcs::Funcs, options::Options) where {Funcs<:Tuple, Options<:Tuple}
+    return _plan_child_wiring_runtime(funcs, options)
+end
+
+#=
+Generated child-wiring builder kept here while testing whether constructor-side
+specialization is worth it. Early measurements show the runtime builder is
+cheaper for large DSL construction, and it still stores concrete wiring in the
+constructed plan.
+
 @inline @generated function _plan_child_wiring(funcs::Funcs, options::Options) where {Funcs<:Tuple, Options<:Tuple}
+    if fieldcount(Funcs) * fieldcount(Options) > _PLAN_CHILD_WIRING_GENERATED_PRODUCT_LIMIT
+        return :(Processes._plan_child_wiring_runtime(funcs, options))
+    end
+
     runtime_checks = Any[]
     for option_idx in 1:fieldcount(Options)
         option_type = fieldtype(Options, option_idx)
@@ -136,9 +230,6 @@ belonging to nested loop plans with that child's own `PlanWiring`.
         owner = option_type.parameters[1]
         option = option_type.parameters[2]
 
-        # Most child ownership can be decided from type data. Shares may still
-        # need value-level owner matching, so unresolved assignments get a small
-        # runtime check in the generated constructor body.
         assigned = any(i -> _scoped_wiring_matches_child_type(fieldtype(Funcs, i), owner, option), 1:fieldcount(Funcs))
         runtime_assigned = !(option <: Route)
         if !assigned
@@ -157,9 +248,6 @@ belonging to nested loop plans with that child's own `PlanWiring`.
         end
     end
 
-    # The first tuple is always concrete `Wiring` buckets. The second expression
-    # swaps buckets for nested loop children with that child's `PlanWiring`, so
-    # stepping can zip directly over one child-indexed tuple.
     raw_expr = Expr(:tuple, (:(@inline _child_wiring_bucket(@inline _wiring_options_for_child(Val($i), funcs, options))) for i in 1:fieldcount(Funcs))...)
     child_expr = Expr(:tuple, (:(@inline _child_wiring_for_child(getfield(funcs, $i), getfield(_raw_buckets, $i))) for i in 1:fieldcount(Funcs))...)
     if isempty(runtime_checks)
@@ -174,6 +262,7 @@ belonging to nested loop plans with that child's own `PlanWiring`.
         $child_expr
     end
 end
+=#
 
 """Flatten the raw wiring values stored by a plan for constructor rebuilds."""
 @inline function _all_plan_wiring(plan_wiring::Wiring, child_wiring::ChildWiring) where {ChildWiring<:Tuple}

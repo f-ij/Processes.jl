@@ -87,6 +87,23 @@ end
     return SubContextView{typeof(pc), key, typeof(instance), typeof(inject), varaliases(instance), typed_sharedcontexts, typed_sharedvars}(pc, instance, inject)
 end
 
+@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, A<:ProcessAlgorithm, Name, I}
+    aliases = VarAliases()
+    return SubContextView{typeof(pc), Name, typeof(instance), typeof(inject), typeof(aliases), (), ()}(pc, instance, inject)
+end
+
+@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, A<:ProcessAlgorithm, Name, I, SC<:Tuple, SV<:Tuple}
+    aliases = VarAliases()
+    typed_sharedcontexts = @inline wiring_from_tuple_type(SC)
+    typed_sharedvars = @inline wiring_from_tuple_type(SV)
+    return SubContextView{typeof(pc), Name, typeof(instance), typeof(inject), typeof(aliases), typed_sharedcontexts, typed_sharedvars}(pc, instance, inject)
+end
+
+"""Get a subcontext view for a raw child algorithm and explicit namespace."""
+@inline function Base.view(pc::ProcessContext, instance::A, namespace::Namespace; inject = (;), sharedcontexts = (), sharedvars = ()) where {A<:ProcessAlgorithm}
+    return @inline view(pc, instance, namespace, inject, sharedcontexts, sharedvars)
+end
+
 """
 Get a subcontext view for a specific subcontext
 """
@@ -107,7 +124,13 @@ end
 Create a view from a non-scoped instance by looking it up in the registry
 """
 @inline function Base.view(pc::ProcessContext, instance::I, inject = (;)) where I
-    scoped_instance = @inline static_get(getregistry(pc), instance)
+    reg = getregistry(pc)
+    scoped_instance = @inline get(reg, instance, nothing)
+    if isnothing(scoped_instance) && instance isa ProcessEntity
+        scoped_instance = @inline static_get(reg, typeof(instance))
+    elseif isnothing(scoped_instance)
+        scoped_instance = @inline static_get(reg, instance)
+    end
     return SubContextView{typeof(pc), getkey(scoped_instance), typeof(scoped_instance), typeof(inject)}(pc, scoped_instance; inject=inject)
 end
 

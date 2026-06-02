@@ -10,28 +10,56 @@ end
     @inline set_starttime!(ip)
 end
 
-@inline function after_while(p::AbstractProcess, func::F, context::C, stored_context::SC = context) where {F, C, SC}
+"""
+Finalize one threaded/dynamic `Process` loop execution.
+
+Paused runs keep their live context in the dynamic runtime slot. Finished runs
+clean up runtime-only values and commit the persistent context back into the
+typed lifecycle when the concrete shape still matches.
+"""
+@inline function after_while(p::P, func::F, context::C, stored_context::SC = context) where {P<:Process, F, C, SC}
     @inline set_endtime!(p)
-    if p isa Process && ispaused(p)
+    if ispaused(p)
         # Pause is not finalization. Store the live context before cleanup,
         # because type-preserving context merges may mutate it in place.
         _store_runtime_context!(p, context)
         persistent_context = _strip_runtime_inputs(context, stored_context)
         return persistent_context
     else
-        cleaned_context = @inline _loop_cleanup_context(func, context)
-        persistent_context = _strip_runtime_inputs(cleaned_context, stored_context)
-        Processes.context(p, persistent_context)
-        return @inline _loop_final_result(func, persistent_context)
+        cleaned_context = @inline cleanup(func, context)
+        visible_context = materialize_widened_context(cleaned_context)
+        persistent_context = _strip_runtime_inputs(visible_context, stored_context)
+        commit_context!(p, persistent_context)
+        return @inline _loop_final_result(func, visible_context)
     end
 end
 
-@inline function after_while(ip::InlineProcess, func::F, context::C, stored_context::SC = context) where {F, C, SC}
+"""
+Finalize one `InlineProcess` loop execution.
+
+Inline processes always write their persistent context directly back into the
+concrete inline context field.
+"""
+@inline function after_while(ip::IP, func::F, context::C, stored_context::SC = context) where {IP<:InlineProcess, F, C, SC}
     @inline set_endtime!(ip)
-    cleaned_context = @inline _loop_cleanup_context(func, context)
+    cleaned_context = @inline cleanup(func, context)
+    visible_context = materialize_widened_context(cleaned_context)
     persistent_context = _strip_runtime_inputs(cleaned_context, stored_context)
     Processes.context(ip, persistent_context)
-    return @inline _loop_final_result(func, persistent_context)
+    return @inline _loop_final_result(func, visible_context)
+end
+
+"""
+Finalize one direct `run(::LoopAlgorithm; ...)` execution.
+
+`LoopRunProcess` is only a transient loop driver, so it returns the visible
+result without storing a persistent context on itself.
+"""
+@inline function after_while(p::P, func::F, context::C, stored_context::SC = context) where {P<:LoopRunProcess, F, C, SC}
+    @inline set_endtime!(p)
+    cleaned_context = @inline cleanup(func, context)
+    visible_context = materialize_widened_context(cleaned_context)
+    return @inline _loop_final_result(func, visible_context)
 end
 
 """
@@ -43,18 +71,19 @@ Run a single function in a loop indefinitely
 @inline function loop(process::P, func::F, context::C, lt::LT, inputs::NamedTuple, ::Resuming{isresuming}, ::NonGenerated) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C, LT <: IndefiniteLifetime, isresuming}
     @inline before_while(process)
 
-    step_wiring = @inline getwiring(func)
+    step_plan = @inline getplan(func)
+    step_wiring = @inline getwiring(step_plan)
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
     if isresuming
         @atomic process.paused = false
     else
-        runtime_context = @inline _step!(func, runtime_context, step_wiring, process, lt, Unstable())
+        runtime_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
         @inline tick!(process)
         @inline inc!(process)
     end
 
     while true
-        nextcontext = @inline _step!(func, runtime_context, step_wiring, process, lt, Stable())
+        nextcontext = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
         # typeof(nextcontext) === typeof(runtime_context) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(runtime_context)).")
         runtime_context = nextcontext
         @inline tick!(process)
@@ -78,14 +107,15 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     @assert isresolved(algo) "Algo must be resolved before running the loop. Got algo $(algo) which is not resolved."
     @inline before_while(process)
     
-    step_wiring = @inline getwiring(algo)
+    step_plan = @inline getplan(algo)
+    step_wiring = @inline getwiring(step_plan)
 
     runtime_context = @inline _merge_runtime_inputs(context, inputs)
     stablecontext = if isresuming
         @atomic process.paused = false
         runtime_context
     else
-        stepped_context = @inline _step!(algo, runtime_context, step_wiring, process, r, Unstable())
+        stepped_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, r, Stable())
         @inline tick!(process)
         @inline inc!(process)
         stepped_context
@@ -96,7 +126,7 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     
     for _ in start_idx:end_idx
     
-        nextcontext = @inline _step!(algo, stablecontext, step_wiring, process, r, Stable())
+        nextcontext = @inline _step!(step_plan, stablecontext, step_wiring, Namespace{nothing}(), process, r, Stable())
         # typeof(nextcontext) === typeof(stablecontext) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(stablecontext)).")
         stablecontext = nextcontext
         @inline tick!(process)

@@ -86,6 +86,9 @@ end
 function _composite_algo_type_labels(types::Tuple)
     labels = String[]
     for t in types
+        if !(t isa Type)
+            continue
+        end
         if t <: IdentifiableAlgo
             algo_type = t.parameters[1]
             push!(labels, string(nameof(algo_type), "@", Processes.getkey(t)))
