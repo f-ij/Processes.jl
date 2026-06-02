@@ -156,12 +156,16 @@ then enters the same `_step!` chain used by `run`.
     plan = @inline getplan(la)
     runtimecontext = @inline _merge_into_globals(_empty_context(), (; lifetime))
     newcontext, _ = @inline _step!(plan, context, runtimecontext, getwiring(plan), Namespace{nothing}(), process, lifetime, typestable)
-    return @inline withregistry(newcontext, getregistry(context))
+    return newcontext
 end
 
 """
 Return the public result for a loop after cleanup has produced the stored context.
 """
 @inline function _loop_final_result(algo, cleaned_context)
+    return cleaned_context
+end
+
+@inline function _loop_final_result(algo, cleaned_context, runtimecontext)
     return cleaned_context
 end

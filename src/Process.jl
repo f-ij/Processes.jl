@@ -184,8 +184,7 @@ end
 @inline _context_lifetime(context) = get(getglobals(context), :lifetime, Indefinite())
 
 function getcontext(p::Process)
-    runtimecontext = @inline _merge_into_globals(_empty_context(), (; process = p, lifetime = lifetime(p)))
-    return ExecutionContext(context(p), runtimecontext)
+    return context(p)
 end
 
 getcontext(p::Process, context) = getcontext(p)[context]

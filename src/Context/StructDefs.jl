@@ -4,10 +4,10 @@
 """
 Persistent state for a resolved process.
 
-`ProcessContext` stores only named subcontexts and the registry needed to resolve
-external references. Hot loop contexts use the same type with `reg::Nothing`.
-Runtime inputs, loop handles, and transient step returns live in a separate hot
-runtime `ProcessContext`.
+`ProcessContext` stores named subcontexts and the registry needed to resolve
+external references. Runtime inputs, loop handles, and transient step returns
+live in a separate runtime `ProcessContext` passed explicitly through loop
+execution.
 """
 struct ProcessContext{D,R} <: AbstractContext
     subcontexts::D
@@ -17,20 +17,6 @@ struct ProcessContext{D,R} <: AbstractContext
         new{D,R}(subcontexts, reg)
     end
 end
-
-const HotContext = ProcessContext{D,Nothing} where {D}
-
-"""
-Combined execution frame used by finalization and views.
-
-The state context remains persistent-state-only. The runtime context is a second
-hot context that can be read through views while the loop kernel is active.
-"""
-struct ExecutionContext{StateC,RuntimeC} <: AbstractContext
-    context::StateC
-    runtimecontext::RuntimeC
-end
-
 
 ########################
     ### SUBCONTEXT ###

@@ -227,7 +227,7 @@ algorithm.
     empty_context = _build_process_context(getregistry(la))
     input_context = isempty(inits) ? empty_context : merge_into_subcontexts(empty_context, construct_context_merge_tuples(inits))
     runtime_context = @inline _init_runtime_context(la, lifetime)
-    prepared = init(la, ExecutionContext(input_context, runtime_context))
+    prepared = init(la, input_context, runtime_context)
     prepared_context = @inline _init_state_context(prepared, input_context)
     return isempty(overrides) ? prepared_context : merge_into_subcontexts(prepared_context, construct_context_merge_tuples(overrides))
 end

@@ -21,7 +21,6 @@ end
 
 """Return the persistent state produced by lifecycle init."""
 @inline _init_state_context(context::C, base::B) where {C<:ProcessContext,B<:ProcessContext} = context
-@inline _init_state_context(context::C, base::B) where {C<:ExecutionContext,B<:ProcessContext} = getcontext(context)
 @inline _init_state_context(patch::P, base::B) where {P<:NamedTuple,B<:ProcessContext} =
     @inline merge_into_subcontexts(base, patch)
 
@@ -30,12 +29,11 @@ Make a context from an algo and empty context
 """
 function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
     runtime_context = @inline _init_runtime_context(algo, lifetime)
-    input_context = ExecutionContext(c, runtime_context)
 
-    @DebugMode "Preparing context for algo $(algo) with input context $input_context"
+    @DebugMode "Preparing context for algo $(algo) with input context $c"
     @DebugMode "Overrides are ()"
 
-    prepared_context = init(algo, input_context)
+    prepared_context = init(algo, c, runtime_context)
     @DebugMode "Prepared in initcontext context is $prepared_context"
 
     return @inline _init_state_context(prepared_context, c)
@@ -46,12 +44,11 @@ function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), override
     inputs, overrides = _split_init_override(resolved)
     input_state_context = merge_resolved_inputs(c, inputs)
     runtime_context = @inline _init_runtime_context(algo, lifetime)
-    input_context = ExecutionContext(input_state_context, runtime_context)
 
-    @DebugMode "Preparing context for algo $(algo) with input context $input_context"
+    @DebugMode "Preparing context for algo $(algo) with input context $input_state_context"
     @DebugMode "Overrides are $overrides"
 
-    prepared_context = init(algo, input_context)
+    prepared_context = init(algo, input_state_context, runtime_context)
     @DebugMode "Prepared in initcontext context is $prepared_context"
 
     prepared_state_context = @inline _init_state_context(prepared_context, input_state_context)

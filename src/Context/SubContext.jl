@@ -3,18 +3,15 @@
 """
     withdata(sc, data)
 
-Return an immutable `SubContext` rebuild with the same logical key and new local
-data. This is the package-local replacement for `@set sc.data = data`.
+Return an immutable `SubContext` rebuild with the same logical key and new
+local data.
 """
 @inline function withdata(sc::SC, data::D) where {SC<:SubContext, D<:NamedTuple}
     return SubContext(getkey(sc), data)
 end
 
-function newdata(sc::SubContext, data::NamedTuple)
+@inline function newdata(sc::SubContext, data::NamedTuple)
     return @inline withdata(sc, data)
-    # Mutable SubContext path kept for comparison:
-    # setfield!(sc, :data, data)
-    # return sc
 end
 
 @inline Base.isempty(sc::SubContext) = isempty(getdata(sc))

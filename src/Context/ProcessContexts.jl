@@ -1,9 +1,7 @@
 """
     ProcessContext(subcontexts, reg)
 
-Build a persistent or hot process context from named `SubContext` buckets.
-Persistent contexts carry a registry. Hot contexts carry `nothing` so the loop
-body cannot accidentally depend on registry lookup.
+Build a process context from named `SubContext` buckets.
 """
 @generated function ProcessContext(subcontexts::D, reg::R) where {D,R}
     sc_names = fieldnames(D)
@@ -20,92 +18,6 @@ end
 
 @inline _empty_context() = ProcessContext((;), nothing)
 
-"""Return a hot copy of `pc` with the registry removed."""
-@inline hot_context(pc::PC) where {PC<:ProcessContext} = ProcessContext(get_subcontexts(pc), nothing)
-
-"""Return `pc` rebuilt with `reg` as its registry."""
-@inline withregistry(pc::PC, reg::R) where {PC<:ProcessContext,R} = ProcessContext(get_subcontexts(pc), reg)
-
-@inline getcontext(ec::ExecutionContext) = getfield(ec, :context)
-@inline getruntimecontext(ec::ExecutionContext) = getfield(ec, :runtimecontext)
-@inline get_subcontexts(ec::ExecutionContext) = get_subcontexts(getcontext(ec))
-@inline getregistry(ec::ExecutionContext) = getregistry(getcontext(ec))
-@inline getglobals(ec::ExecutionContext) = getglobals(getruntimecontext(ec))
-@inline getglobals(ec::ExecutionContext, name::Symbol) = getglobals(getruntimecontext(ec), name)
-@inline getruntimeinput(ec::ExecutionContext) = getruntimeinput(getruntimecontext(ec))
-@inline getruntimeinput(ec::ExecutionContext, name::Symbol) = getruntimeinput(getruntimecontext(ec), name)
-
-"""
-Read state and runtime values from a combined execution frame.
-
-State subcontexts win over runtime subcontexts. Flat DSL runtime globals remain
-directly addressable, which keeps existing finalstep functions ergonomic.
-"""
-@inline function Base.getproperty(ec::ExecutionContext, name::Symbol)
-    if name === :context || name === :runtimecontext
-        return getfield(ec, name)
-    end
-    state_subcontexts = @inline get_subcontexts(getcontext(ec))
-    if haskey(state_subcontexts, name)
-        return @inline getproperty(state_subcontexts, name)
-    end
-    runtime = @inline getruntimecontext(ec)
-    runtime_subcontexts = @inline get_subcontexts(runtime)
-    if haskey(runtime_subcontexts, name)
-        return @inline getproperty(runtime_subcontexts, name)
-    end
-    globals = @inline getglobals(runtime)
-    if haskey(globals, name)
-        return @inline getproperty(globals, name)
-    end
-    input = @inline getruntimeinput(runtime)
-    if haskey(input, name)
-        return @inline getproperty(input, name)
-    end
-    found = false
-    value = nothing
-    for subcontext in values(runtime_subcontexts)
-        data = getdata(subcontext)
-        if haskey(data, name)
-            found && error("Runtime value `$name` is ambiguous across runtime subcontexts.")
-            value = getproperty(data, name)
-            found = true
-        end
-    end
-    found && return value
-    return @inline getproperty(getcontext(ec), name)
-end
-
-"""Merge persistent subcontext fields while preserving the active runtime frame."""
-@inline function merge_into_subcontexts(ec::EC, args::A) where {EC<:ExecutionContext,A<:NamedTuple}
-    return ExecutionContext((@inline merge_into_subcontexts(getcontext(ec), args)), getruntimecontext(ec))
-end
-
-"""Replace persistent subcontexts while preserving the active runtime frame."""
-@inline function Base.replace(ec::EC, args::A) where {EC<:ExecutionContext,A<:NamedTuple}
-    return ExecutionContext((@inline replace(getcontext(ec), args)), getruntimecontext(ec))
-end
-
-@inline function Base.getindex(ec::ExecutionContext, name::Symbol)
-    name === :globals && return getglobals(ec)
-    name === :_runtime && return getglobals(ec)
-    name === :_input && return getruntimeinput(ec)
-    return getproperty(ec, name)
-end
-@inline Base.getindex(ec::ExecutionContext, obj) = getindex(getcontext(ec), obj)
-@inline Base.haskey(ec::ExecutionContext, name::Symbol) =
-    haskey(get_subcontexts(getcontext(ec)), name) ||
-    haskey(get_subcontexts(getruntimecontext(ec)), name) ||
-    haskey(getglobals(ec), name) ||
-    haskey(getruntimeinput(ec), name)
-
-@inline Base.merge(ec::ExecutionContext, ::Nothing) = ec
-@inline function Base.merge(ec::ExecutionContext, args::NamedTuple)
-    isempty(args) && return ec
-    runtimecontext = @inline merge_runtime_return(getruntimecontext(ec), args)
-    return ExecutionContext(getcontext(ec), runtimecontext)
-end
-
 """Return a context containing one named subcontext."""
 @inline _single_subcontext_context(::Val{name}, data::D) where {name,D<:NamedTuple} =
     ProcessContext(NamedTuple{(name,)}((SubContext(name, data),)), nothing)
@@ -117,6 +29,14 @@ end
     subcontexts = @inline get_subcontexts(pc)
     if haskey(subcontexts, name)
         return @inline getproperty(subcontexts, name)
+    end
+    globals = @inline getglobals(pc)
+    if haskey(globals, name)
+        return @inline getproperty(globals, name)
+    end
+    input = @inline getruntimeinput(pc)
+    if haskey(input, name)
+        return @inline getproperty(input, name)
     end
     error("Context has no persistent subcontext named `$name`.")
 end
@@ -130,7 +50,7 @@ end
 
 @inline function Base.getindex(pc::ProcessContext, obj)
     reg = getregistry(pc)
-    isnothing(reg) && error("Cannot index a hot ProcessContext by object because it has no registry.")
+    isnothing(reg) && error("Cannot index a runtime ProcessContext by object because it has no registry.")
     name = getkey(reg[obj])
     return @inline getproperty(pc, name)
 end
@@ -170,6 +90,50 @@ Return an immutable `ProcessContext` rebuild with updated subcontexts.
 """
 @inline function withsubcontexts(pc::PC, subcontexts::D) where {PC<:ProcessContext,D<:NamedTuple}
     return ProcessContext(subcontexts, getregistry(pc))
+end
+
+"""
+    final_visible_context(context, runtimecontext)
+
+Build the one-argument finalstep projection context. Runtime owner subcontexts
+and runtime globals are materialized into a fresh context for final result
+projection only; the returned process state remains `context`.
+"""
+@inline @generated function final_visible_context(context::C, runtimecontext::RC) where {C<:ProcessContext,RC<:ProcessContext}
+    state_names = fieldnames(C.parameters[1])
+    runtime_names = fieldnames(RC.parameters[1])
+    isempty(runtime_names) && return :(context)
+
+    exprs = Any[
+        :(subcontexts = @inline get_subcontexts(context)),
+        :(runtime_subcontexts = @inline get_subcontexts(runtimecontext)),
+    ]
+
+    for name in runtime_names
+        if name in state_names
+            push!(
+                exprs,
+                quote
+                    old_subcontext = @inline getproperty(subcontexts, $(QuoteNode(name)))
+                    runtime_subcontext = @inline getproperty(runtime_subcontexts, $(QuoteNode(name)))
+                    final_data = @inline merge(getdata(old_subcontext), getdata(runtime_subcontext))
+                    final_subcontext = @inline withdata(old_subcontext, final_data)
+                    subcontexts = @inline replace_namedtuple_field(subcontexts, Val($(QuoteNode(name))), final_subcontext)
+                end,
+            )
+        else
+            push!(
+                exprs,
+                quote
+                    runtime_subcontext = @inline getproperty(runtime_subcontexts, $(QuoteNode(name)))
+                    subcontexts = @inline merge(subcontexts, NamedTuple{$((name,))}((runtime_subcontext,)))
+                end,
+            )
+        end
+    end
+
+    push!(exprs, :(return ProcessContext(subcontexts, getregistry(context))))
+    return Expr(:block, exprs...)
 end
 
 """Return `pc` with a named subcontext inserted or replaced."""
@@ -321,7 +285,7 @@ end
     if _namedtuple_merge_preserves_type(getdatatype(old_sc_type), A)
         return quote
             $(LineNumberNode(@__LINE__, @__FILE__))
-            @inline merge_into_subcontext_mutate(pc, Val($(QuoteNode(name))), args)
+            @inline merge_into_subcontext_rebuild(pc, Val($(QuoteNode(name))), args)
         end
     end
     return quote
@@ -339,21 +303,6 @@ end
         old_subcontexts = @inline get_subcontexts(pc)
         old_subcontext = @inline getproperty(old_subcontexts, $(QuoteNode(name)))
         new_subcontext = @inline merge(old_subcontext, args)
-        new_subcontexts = @inline replace_namedtuple_field(old_subcontexts, Val($(QuoteNode(name))), new_subcontext)
-        return @inline withsubcontexts(pc, new_subcontexts)
-    end
-end
-
-@inline @generated function merge_into_subcontext_mutate(pc::ProcessContext{D}, ::Val{name}, args) where {D,name}
-    sc_names = fieldnames(D)
-    name in sc_names || error("Trying to merge into unknown subcontext $(QuoteNode(name)) in ProcessContext. Available subcontexts are: $(sc_names)")
-
-    return quote
-        $(LineNumberNode(@__LINE__, @__FILE__))
-        old_subcontexts = @inline get_subcontexts(pc)
-        subcontext = @inline getproperty(old_subcontexts, $(QuoteNode(name)))
-        new_data = @inline merge(getdata(subcontext), args)
-        new_subcontext = @inline withdata(subcontext, new_data)
         new_subcontexts = @inline replace_namedtuple_field(old_subcontexts, Val($(QuoteNode(name))), new_subcontext)
         return @inline withsubcontexts(pc, new_subcontexts)
     end

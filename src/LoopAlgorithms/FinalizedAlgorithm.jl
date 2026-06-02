@@ -108,6 +108,11 @@ end
     return finalfunction(fa)(cleaned_context)
 end
 
+@inline function _loop_final_result(fa::FinalizedAlgorithm, cleaned_context, runtimecontext)
+    final = finalfunction(fa)
+    return applicable(final, cleaned_context, runtimecontext) ? final(cleaned_context, runtimecontext) : final(cleaned_context)
+end
+
 function _strip_nested_finalized_algorithm(algo)
     return algo
 end
