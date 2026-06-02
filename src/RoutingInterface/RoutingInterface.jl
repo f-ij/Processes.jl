@@ -1,4 +1,4 @@
-export Share, Route, Wiring, PlanWiring
+export Share, Route, Wiring, ReturnDemand, PlanWiring, PlanWiringView
 
 include("RouteDef.jl")
 include("Routes.jl")

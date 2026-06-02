@@ -8,15 +8,105 @@ routes(w::Wiring) = getfield(w, :routes)
 """Return the shares carried by a `Wiring` value."""
 shares(w::Wiring) = getfield(w, :shares)
 
+"""Return the demanded field names carried by a return-demand marker."""
+@inline demanded_names(::ReturnDemand{Names}) where {Names} = Names
+
+"""Raw wiring has no owner-runtime return demand attached."""
+@inline return_demand(::Wiring) = ReturnDemand{()}()
+
+"""Return the root plan wiring carried by a plan-wiring view."""
+@inline root_wiring(pwv::PlanWiringView) = getfield(pwv, :wiring)
+
+"""Return a child view one level deeper into the same plan-wiring tree."""
+@inline child_wiring_view(pwv::PlanWiringView{W,Path}, ::Val{idx}) where {W,Path,idx} =
+    PlanWiringView(root_wiring(pwv), Val((Path..., idx)))
+
+"""Return the concrete wiring bucket or nested plan at the current view path."""
+@inline @generated function current_wiring(pwv::PlanWiringView{W,Path}) where {W<:PlanWiring,Path}
+    expr = :(root_wiring(pwv))
+    for idx in Path
+        expr = :(getfield(child_wiring($expr), $idx))
+    end
+    return expr
+end
+
+"""Forward route access through the current plan-wiring view path."""
+@inline routes(pwv::PlanWiringView) = routes(@inline current_wiring(pwv))
+
+"""Forward share access through the current plan-wiring view path."""
+@inline shares(pwv::PlanWiringView) = shares(@inline current_wiring(pwv))
+
 """Return whether a concrete route/share set is empty from its tuple types."""
 Base.isempty(::Wiring{Routes, Shares}) where {Routes<:Tuple, Shares<:Tuple} =
     fieldcount(Routes) == 0 && fieldcount(Shares) == 0
+
+"""Return whether a plan-wiring view's current bucket carries no routes or shares."""
+@inline Base.isempty(pwv::PlanWiringView) = isempty(@inline current_wiring(pwv))
 
 """Return the route tuple type stored by a `Wiring` type."""
 routes_type(::Type{<:Wiring{Routes}}) where {Routes} = Routes
 
 """Return the share tuple type stored by a `Wiring` type."""
 shares_type(::Type{<:Wiring{Routes, Shares}}) where {Routes, Shares} = Shares
+
+"""Return the concrete tuple element types for a tuple type."""
+_tuple_field_types(::Type{Tuple{}}) = ()
+_tuple_field_types(::Type{T}) where {T<:Tuple} = tuple(T.parameters...)
+
+"""Flatten route types from a wiring tree type."""
+_route_types_from_wiring_type(::Type{<:Wiring{Routes}}) where {Routes} = _tuple_field_types(Routes)
+function _route_types_from_wiring_type(::Type{<:PlanWiring{GlobalWiring, ChildWiring}}) where {GlobalWiring, ChildWiring}
+    global_routes = _route_types_from_grouped_wiring_type(GlobalWiring)
+    child_routes = _route_types_from_child_wiring_type(ChildWiring)
+    return (global_routes..., child_routes...)
+end
+
+"""Flatten route types from target-grouped global wiring."""
+function _route_types_from_grouped_wiring_type(::Type{Grouped}) where {Grouped<:NamedTuple}
+    names = fieldnames(Grouped)
+    routes = ()
+    for name in names
+        routes = (routes..., _route_types_from_wiring_type(fieldtype(Grouped, name))...)
+    end
+    return routes
+end
+
+"""Flatten route types from child-indexed wiring."""
+function _route_types_from_child_wiring_type(::Type{Children}) where {Children<:Tuple}
+    routes = ()
+    for i in 1:fieldcount(Children)
+        routes = (routes..., _route_types_from_wiring_type(fieldtype(Children, i))...)
+    end
+    return routes
+end
+
+"""Flatten a route source selector into demanded variable names."""
+_append_route_demand_names(names::Tuple, name::Symbol) = name in names ? names : (names..., name)
+function _append_route_demand_names(names::Tuple, route_varnames::Tuple)
+    merged = names
+    for name in route_varnames
+        merged = _append_route_demand_names(merged, name)
+    end
+    return merged
+end
+
+"""Compute demanded owner-runtime return names from the full plan wiring type."""
+function _return_demand_names(::Type{W}, owner::Symbol) where {W<:PlanWiring}
+    names = ()
+    for route_type in _route_types_from_wiring_type(W)
+        get_fromname(route_type) === owner || continue
+        for route_name in getvarnames(route_type)
+            names = _append_route_demand_names(names, route_name)
+        end
+    end
+    return names
+end
+
+"""Compute demanded owner-runtime return names from the full plan-wiring view."""
+@inline @generated function return_demand(::PlanWiringView{W,Path}, ::Namespace{Name}) where {W<:PlanWiring,Path,Name}
+    names = _return_demand_names(W, Name)
+    return :(ReturnDemand{$names}())
+end
 
 """Return the concrete tuple element types for a wiring tuple type."""
 _wiring_tuple_types(::Type{Tuple{}}) = ()

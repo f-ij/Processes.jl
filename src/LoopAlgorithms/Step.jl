@@ -9,9 +9,8 @@ Step each scheduled child of a composite plan with explicit loop runtime.
 The `process` and `lifetime` values are forwarded so nested loop algorithms can
 run without storing those transient values in the context.
 """
-Base.@constprop :aggressive @inline @generated function _step!(ca::CA, context::C, runtimecontext::RC, wiring::W, namespace::N, process::P, lifetime::LT, typestable::S = Stable()) where {CA <: CompositeAlgorithm, C <: AbstractContext, RC <: ProcessContext, W <: PlanWiring, N <: Namespace, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+Base.@constprop :aggressive @inline @generated function _step!(ca::CA, context::C, runtimecontext::RC, wiring::W, namespace::N, process::P, lifetime::LT, typestable::S = Stable()) where {CA <: CompositeAlgorithm, C <: AbstractContext, RC <: ProcessContext, W <: PlanWiringView, N <: Namespace, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
     algo_count = numalgos(CA)
-    child_wiring_type = W.parameters[2]
     interval_values = CA.parameters[2]
     child_namespace_tuple_type = CA.parameters[3]
     # Generate the same child-indexed execution as the old unrollreplace path,
@@ -25,13 +24,12 @@ Base.@constprop :aggressive @inline @generated function _step!(ca::CA, context::
 
     for i in 1:algo_count
         interval_value = interval_values[i]
-        child_step_wiring_type = fieldtype(child_wiring_type, i)
         interval_type = typeof(interval_value)
         child_namespace_type = fieldtype(child_namespace_tuple_type, i)
         push!(exprs, quote
             if @inline divides(this_inc, $interval_type())
                 local algo = @inline getfield(algos, $i)
-                local child_step_wiring = $child_step_wiring_type()
+                local child_step_wiring = @inline child_wiring_view(wiring, Val($i))
                 local child_namespace = $child_namespace_type()
                 context, runtimecontext = @inline _step!(algo, context, runtimecontext, child_step_wiring, child_namespace, process, lifetime, typestable)
             end
@@ -91,9 +89,8 @@ Step each child routine in sequence with explicit loop runtime.
 Each child is run once at its resume point, then repeated until its declared
 repeat count is reached or the lifetime stops.
 """
-Base.@constprop :aggressive @inline @generated function _step!(r::R, context::C, runtimecontext::RC, wiring::W, namespace::N, process::P, lifetime::LT, typestable::S = Stable()) where {R <: Routine, C <: AbstractContext, RC <: ProcessContext, W <: PlanWiring, N <: Namespace, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+Base.@constprop :aggressive @inline @generated function _step!(r::R, context::C, runtimecontext::RC, wiring::W, namespace::N, process::P, lifetime::LT, typestable::S = Stable()) where {R <: Routine, C <: AbstractContext, RC <: ProcessContext, W <: PlanWiringView, N <: Namespace, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
     algo_count = numalgos(R)
-    child_wiring_type = W.parameters[2]
     repeat_values = R.parameters[2]
     child_namespace_tuple_type = R.parameters[3]
 
@@ -103,11 +100,10 @@ Base.@constprop :aggressive @inline @generated function _step!(r::R, context::C,
 
     for i in 1:algo_count
         repeat_value = repeat_values[i]
-        child_step_wiring_type = fieldtype(child_wiring_type, i)
         child_namespace_type = fieldtype(child_namespace_tuple_type, i)
         push!(exprs, quote
             local func = @inline getfield(algos, $i)
-            local child_step_wiring = $child_step_wiring_type()
+            local child_step_wiring = @inline child_wiring_view(wiring, Val($i))
             local child_namespace = $child_namespace_type()
             context, runtimecontext = @inline _subroutine_step!(context, runtimecontext, func, r, process, lifetime, typestable, $i, $repeat_value, child_step_wiring, child_namespace)
         end)

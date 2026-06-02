@@ -61,7 +61,7 @@ Run a single function in a loop indefinitely.
     @inline before_while(process)
 
     step_plan = @inline getplan(func)
-    step_wiring = @inline getwiring(step_plan)
+    step_wiring = @inline PlanWiringView(getwiring(step_plan))
     context = stored_context
     runtimecontext = @inline _initial_runtime_context(inputs, process, lifetime)
 
@@ -98,7 +98,7 @@ Base.@constprop :aggressive @inline function loop(process::P, algo::F, stored_co
     @inline before_while(process)
     
     step_plan = @inline getplan(algo)
-    step_wiring = @inline getwiring(step_plan)
+    step_wiring = @inline PlanWiringView(getwiring(step_plan))
     context = stored_context
     runtimecontext = @inline _initial_runtime_context(inputs, process, lifetime)
 

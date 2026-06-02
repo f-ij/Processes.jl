@@ -208,6 +208,21 @@ end
     return @inline with_subcontext(runtimecontext, Val(owner), SubContext(owner, new_data))
 end
 
+@inline function merge_owner_runtime_return(runtimecontext::C, ::Val{owner}, args::A, demand::ReturnDemand{Names}) where {C<:ProcessContext,owner,A<:NamedTuple,Names}
+    return @inline merge_owner_runtime_return(runtimecontext, Val(owner), _demanded_namedtuple(args, demand))
+end
+
+@inline function merge_owner_runtime_return(runtimecontext::C, ::Val{owner}, ::Nothing, demand::ReturnDemand) where {C<:ProcessContext,owner}
+    return runtimecontext
+end
+
+"""Filter a named tuple to the fields demanded by downstream runtime consumers."""
+@inline @generated function _demanded_namedtuple(args::A, ::ReturnDemand{Names}) where {A<:NamedTuple,Names}
+    kept = tuple((name for name in fieldnames(A) if name in Names)...)
+    exprs = (:(getproperty(args, $(QuoteNode(name)))) for name in kept)
+    return :(NamedTuple{$kept}(($(exprs...),)))
+end
+
 """Merge nested owner runtime patches into `runtimecontext`."""
 @inline @generated function merge_runtime_subcontexts(runtimecontext::C, args::As) where {C<:ProcessContext,As<:NamedTuple}
     names = fieldnames(As)

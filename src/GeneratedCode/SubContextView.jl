@@ -2,13 +2,6 @@
 @inline function Base.merge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:ProcessContext, SubKey}
     return (@inline getcontext(scv)), (@inline getruntimecontext(scv))
 end
-@inline function Base.merge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    return @inline stablemerge(scv, args)
-end
-
-@inline function stablemerge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:ProcessContext, SubKey}
-    return (@inline getcontext(scv)), (@inline getruntimecontext(scv))
-end
 
 function _subcontext_view_mergetuple_expr(SCV::Type, Args::Type)
     @nospecialize SCV Args
@@ -16,7 +9,7 @@ function _subcontext_view_mergetuple_expr(SCV::Type, Args::Type)
     return merge_expr
 end
 
-function _subcontext_view_merge_exprs(SCV::Type, Args::Type)
+function _subcontext_view_merge_exprs(SCV::Type, Args::Type, demanded_runtime_names = fieldnames(Args))
     @nospecialize SCV Args
     SubKey = SCV.parameters[2]
     algo_varnames = fieldnames(Args)
@@ -43,7 +36,7 @@ function _subcontext_view_merge_exprs(SCV::Type, Args::Type)
                 Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(algo_varname))))),
             )
 
-        else # New variable so add it to this subcontext's runtime bucket.
+        elseif algo_varname in demanded_runtime_names # New demanded variable so add it to this subcontext's runtime bucket.
             exprs = get!(runtime_expressions_by_subcontext, SubKey, Expr[])
             push!(
                 exprs,
@@ -70,11 +63,16 @@ function _subcontext_view_merge_exprs(SCV::Type, Args::Type)
     )
 end
 
+"""Merge with every non-state return field demanded."""
+@inline function Base.merge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
+    return @inline merge(scv, args, ReturnDemand{fieldnames(typeof(args))}())
+end
+
 """
-Merge but error if a var would be overwritten and only allow local merging
+Merge a step/init/cleanup return into persistent state and loop-local runtime state.
 """
-@inline @generated function stablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    mergetuple_expr, runtimetuple_expr = _subcontext_view_merge_exprs(scv, args)
+@inline @generated function Base.merge(scv::SubContextView{CType, SubKey}, args::NamedTuple, demand::ReturnDemand{Names}) where {CType<:ProcessContext, SubKey, Names}
+    mergetuple_expr, runtimetuple_expr = _subcontext_view_merge_exprs(scv, args, Names)
 
     # Return the expression that does the merge
     return quote
@@ -86,31 +84,6 @@ Merge but error if a var would be overwritten and only allow local merging
         newruntimecontext = @inline merge_runtime_subcontexts(getruntimecontext(scv), runtimetuple)
         return newcontext, newruntimecontext
     end
-end
-
-"""
-Returns a merged context by merging the provided named tuple into the appropriate subcontexts
-
-This doesn't check for type stability, and allows overwriting existing variables. 
-
-"""
-@inline @generated function unstablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    mergetuple_expr, runtimetuple_expr = _subcontext_view_merge_exprs(scv, args)
-
-    # Return the expression that does the merge
-    return quote
-        $(LineNumberNode(@__LINE__, @__FILE__))
-        mergetuple = $mergetuple_expr
-        newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
-        @assert typeof(newcontext) == typeof(getcontext(scv)) "A variable type in a subcontext was changed. This is prohibited for performance reasons.\nIf type mutation is needed, set the variable up as a Ref\n$(sprint(show, ContextTypeDiff(getcontext(scv), newcontext)))"
-        runtimetuple = $runtimetuple_expr
-        newruntimecontext = @inline merge_runtime_subcontexts(getruntimecontext(scv), runtimetuple)
-        return newcontext, newruntimecontext
-    end
-end
-
-@inline function unstablemerge(scg::SCV, ::Nothing) where {SCV<:SubContextView}
-    return (@inline getcontext(scg)), (@inline getruntimecontext(scg))
 end
 
 """

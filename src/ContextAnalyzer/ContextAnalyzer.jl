@@ -330,11 +330,6 @@ end
 end
 @inline Base.merge(viewed::ContextAnalyserView, args) = error("Step, init and cleanup must return namedtuple, trying to merge $(args) into ContextAnalyserView $(viewed)")
 @inline Base.replace(viewed::ContextAnalyserView, args::NamedTuple) = _merge_view_return!(viewed, args)
-@inline stablemerge(viewed::ContextAnalyserView, ::Nothing) = getfield(viewed, :analyser)
-@inline stablemerge(viewed::ContextAnalyserView, args::NamedTuple) = _merge_view_return!(viewed, args)
-@inline unstablemerge(viewed::ContextAnalyserView, ::Nothing) = getfield(viewed, :analyser)
-@inline unstablemerge(viewed::ContextAnalyserView, args::NamedTuple) = _merge_view_return!(viewed, args)
-
 function analyse_init(algo, context::Union{ContextAnalyser, ContextAnalyserView})
     try
         result = init(algo, context)
