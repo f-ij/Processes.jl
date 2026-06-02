@@ -1,55 +1,58 @@
 # [Interactive Contexts](@id interactive_user)
 
-`Processes` supports queued context updates through `ContextInjector`.
+`Processes` supports queued context updates and scheduled value publishing through `ContextExchange`.
 
 Use this when code outside the normal `step!` method needs to change one stored
-context value while a process is being stepped.
+context value while a process is being stepped, or when external code needs a
+polled view of a stored value.
 
 This lets you:
 
 - queue a value change from outside normal `step!` code,
 - validate and convert that value before it reaches stored state,
-- apply queued updates whenever the injector is scheduled by the loop algorithm,
+- apply queued updates whenever the exchange is scheduled by the loop algorithm,
+- publish watched values into external refs on the same schedule,
 - work with one variable at a time through a `view(context, Var(...))` handle that reads and writes like a `Ref`.
 
-Updates are converted before they enter the queue. The injector step then only
-applies writes whose target and value type are already known.
+Updates are converted before they enter the queue. The exchange step then only
+applies writes whose target and value type are already known, and publishes
+watched values after those writes have been applied.
 
 ## Overview
 
-Use a `ContextInjector` as one component of a resolved algorithm:
+Use a `ContextExchange` as one component of a resolved algorithm:
 
 ```julia
 algo = resolve(CompositeAlgorithm(
     :target => MyAlgo(),
-    ContextInjector(),
+    ContextExchange(),
     (1, 10),
 ))
 
 context = initcontext(algo; lifetime = Repeat(10))
 ```
 
-The injector owns a small state subcontext named `:_injector` with a plain buffer of pending writes.
+The exchange owns a small state subcontext named `:_exchange` with a plain buffer of pending writes and a shared store for watched values.
 
 Each buffered write stores the exact target `(subcontext, variable)` pair and a
 value that has already been converted to the target variable's current type.
 
 ## Checking Whether a Context Is Interactive
 
-Use `isinteractive(...)` to test whether a context or process has at least one `ContextInjector` in its registry.
+Use `isinteractive(...)` to test whether a context or process has at least one `ContextExchange` in its registry.
 
 ```julia
 isinteractive(context)
 isinteractive(process)
 ```
 
-This is equivalent to asking whether the registry contains a `ContextInjector` target that `interact!(...)` or `view(context, Var(...))` can use.
+This is equivalent to asking whether the registry contains a `ContextExchange` target that `interact!(...)` or `view(context, Var(...))` can use.
 
-If you call the interactive APIs on a context without an injector, they throw an error.
+If you call the interactive APIs on a context without an exchange, they throw an error.
 
 ## Programmatic Updates With `interact!`
 
-`interact!(context, input)` resolves an `Input(...)`, `Override(...)`, or `Var(...) => value` pair into concrete context variables and appends typed buffered writes into the injector state.
+`interact!(context, input)` resolves an `Input(...)`, `Override(...)`, or `Var(...) => value` pair into concrete context variables and appends typed buffered writes into the exchange state.
 
 Example:
 
@@ -59,10 +62,10 @@ interact!(context, Input(:target, :value => 2))
 
 This does **not** update the target immediately. It only appends a buffered write.
 
-The update becomes visible when the injector is stepped:
+The update becomes visible when the exchange is stepped:
 
 ```julia
-context = Processes.step!(algo[:_injector], context, Processes.Stable())
+context = Processes.step!(algo[:_exchange], context, Processes.Stable())
 ```
 
 For scheduled execution, control the cadence with the `CompositeAlgorithm` interval tuple.
@@ -72,24 +75,24 @@ For scheduled execution, control the cadence with the `CompositeAlgorithm` inter
 ```julia
 algo = resolve(CompositeAlgorithm(
     :target => MyAlgo(),
-    ContextInjector(),
+    ContextExchange(),
     (1, 2),
 ))
 
 context = initcontext(algo; lifetime = Repeat(5))
 
 interact!(context, Input(:target, :value => 2))
-length(context._injector.buffer) == 1
+length(context._exchange.buffer) == 1
 
 context = Processes.step!(algo, context, Processes.Unstable())
 context.target.value == 1.0
 
 context = Processes.step!(algo, context, Processes.Stable())
 context.target.value == 2.0
-isempty(context._injector.buffer)
+isempty(context._exchange.buffer)
 ```
 
-This is the same behavior exercised in `test/ContextInjectorTest.jl`.
+This is the same behavior exercised in `test/ContextExchangeTest.jl`.
 
 ## Ref-Like Interactive Access With `view(context, Var(...))`
 
@@ -98,7 +101,7 @@ This is the same behavior exercised in `test/ContextInjectorTest.jl`.
 It supports:
 
 - `ref[]` to read the current value,
-- `ref[] = value` to enqueue a buffered update through the injector.
+- `ref[] = value` to enqueue a buffered update through the exchange.
 
 Example:
 
@@ -117,9 +120,9 @@ ref[] == 1.0
 
 ref[] = 4
 ref[] == 1.0
-length(context._injector.buffer) == 1
+length(context._exchange.buffer) == 1
 
-context = Processes.step!(algo[:_injector], context, Processes.Stable())
+context = Processes.step!(algo[:_exchange], context, Processes.Stable())
 ref[] == 4.0
 ```
 
@@ -128,9 +131,9 @@ ref[] == 4.0
 If the registry contains a unique algorithm of a given type, you can also use the type selector form:
 
 ```julia
-typed_ref = view(context, Var(MyAlgoType, :value); injector = :_injector)
+typed_ref = view(context, Var(MyAlgoType, :value); exchange = :_exchange)
 typed_ref[] = 5
-context = Processes.step!(algo[:_injector], context, Processes.Stable())
+context = Processes.step!(algo[:_exchange], context, Processes.Stable())
 typed_ref[] == 5.0
 ```
 
@@ -138,7 +141,7 @@ If multiple algorithms of that type exist, interactive lookup will ask you to di
 
 ## Input Forms Accepted by `interact!`
 
-The injector supports the same user-facing naming styles already used elsewhere in the package:
+The exchange supports the same user-facing naming styles already used elsewhere in the package:
 
 - `Input(:target, :value => 2)`
 - `Override(:target, :value => 2)`
@@ -149,9 +152,9 @@ Internally, these are resolved through the registry before the update is queued.
 
 ## Type Conversion Rules
 
-The injector validates types before writing into its buffer.
+The exchange validates types before writing into its buffer.
 
-If the target variable currently has type `Float64` and you enqueue `2`, the injector converts that to `2.0` immediately and stores the typed value.
+If the target variable currently has type `Float64` and you enqueue `2`, the exchange converts that to `2.0` immediately and stores the typed value.
 
 If conversion fails, `interact!(...)` or `ref[] = value` throws before the bad value reaches the buffer.
 
@@ -162,21 +165,21 @@ interact!(context, Input(:target, :value => 2))      # accepted
 interact!(context, Input(:target, :value => "bad"))  # throws
 ```
 
-This means the injector step itself does not need to guess how to stabilize a type change at runtime.
+This means the exchange step itself does not need to guess how to stabilize a type change at runtime.
 
 ## Missing Targets at Apply Time
 
-Buffered writes are resolved when they are queued. At apply time, the injector uses the same context merge machinery as normal `step!` returns. If the target no longer exists, the context merge errors in the usual way.
+Buffered writes are resolved when they are queued. At apply time, the exchange uses the same context merge machinery as normal `step!` returns. If the target no longer exists, the context merge errors in the usual way.
 
-## Choosing an Injector
+## Choosing an Exchange
 
-`ContextInjector` always uses the fixed key `:_injector`. `interact!(...)` and `view(context, Var(...))` use that injector automatically.
+`ContextExchange` always uses the fixed key `:_exchange`. `interact!(...)` and `view(context, Var(...))` use that exchange automatically.
 
 You can also pass the key explicitly:
 
 ```julia
-ref = view(context, Var(:target, :value); injector = :_injector)
-interact!(context, Input(:target, :value => 2); injector = :_injector)
+ref = view(context, Var(:target, :value); exchange = :_exchange)
+interact!(context, Input(:target, :value => 2); exchange = :_exchange)
 ```
 
 ## Process Overload
@@ -189,7 +192,7 @@ interact!(process, Input(:target, :value => 2))
 
 This enqueues updates through the process' stored backing context.
 
-For the clearest semantics, the examples in this page use direct context stepping, because injector application is defined in terms of stepping the context that owns the injector state.
+For the clearest semantics, the examples in this page use direct context stepping, because exchange application is defined in terms of stepping the context that owns the exchange state.
 
 ## Relationship to `Var`
 
@@ -214,7 +217,7 @@ end
 
 algo = resolve(CompositeAlgorithm(
     :target => InteractiveTarget(),
-    ContextInjector(),
+    ContextExchange(),
     (1, 1),
 ))
 
@@ -226,22 +229,22 @@ ref = view(context, Var(:target, :value))
 ref[] == 1.0
 
 ref[] = 4
-length(context._injector.buffer) == 1
+length(context._exchange.buffer) == 1
 
-context = Processes.step!(algo[:_injector], context, Processes.Stable())
+context = Processes.step!(algo[:_exchange], context, Processes.Stable())
 ref[] == 4.0
 
 interact!(context, Input(:target, :value => 5))
-context = Processes.step!(algo[:_injector], context, Processes.Stable())
+context = Processes.step!(algo[:_exchange], context, Processes.Stable())
 ref[] == 5.0
 ```
 
 ## Tested Behavior
 
-The interactive API is covered in `test/ContextInjectorTest.jl`, including:
+The interactive API is covered in `test/ContextExchangeTest.jl`, including:
 
 - buffered updates via `interact!(...)`,
 - `view(context, Var(...))` reads and writes,
 - typed selector lookup,
-- missing-injector errors,
+- missing-exchange errors,
 - context merge errors for missing runtime targets.
