@@ -39,6 +39,102 @@ The API uses the word `worker` for a managed process because a manager can also
 wrap non-`Process` worker objects. For ordinary threaded `Processes.jl` usage,
 read `worker` as "the reusable process in this slot".
 
+## What `manager.state` Is
+
+`manager.state` is one shared object stored on the manager itself. Every recipe
+callback can read it, and callbacks that mutate it are mutating the same shared
+object.
+
+This is different from `context(slot.worker)`:
+
+- `manager.state` is manager-wide state shared across all slots.
+- `context(slot.worker)` is the current context of one specific worker process.
+
+Use `manager.state` for data that should survive across many jobs and should be
+visible to the manager as a whole. Common examples are:
+
+- shared gradient buffers,
+- current global model parameters,
+- optimizer state,
+- output arrays or logs,
+- counters such as number of processed samples,
+- statistics accumulated across workers.
+
+Use worker context for data that belongs to one worker run or one worker-local
+buffer. Examples are:
+
+- the current job's input values,
+- temporary per-worker accumulation buffers,
+- one worker's random state,
+- one worker's local scratch arrays.
+
+In other words, if each worker should have its own copy, put it in the worker
+context. If all workers and manager callbacks should refer to the same long-lived
+object, put it in `manager.state`.
+
+You can create `manager.state` in two ways:
+
+1. Pass `state = your_state_object` directly to `ProcessManager(...)`.
+2. Define `initstate(config, manager)` and let the manager build it from
+   `config`.
+
+These are equivalent in the final manager object. The only difference is where
+the state object comes from.
+
+### Why `manager.state` Is Useful
+
+Without `manager.state`, shared training or batching logic has no single home.
+You would have to keep external mutable objects next to the manager and close
+over them manually in callbacks. That works, but it scatters the state outside
+the manager.
+
+With `manager.state`, the shared state is carried by the manager itself:
+
+- `prepare!` can read shared parameters and load them into a worker,
+- `consume!` can append one worker's result into a shared output array,
+- `flush!` can merge all worker-local buffers and apply one shared update,
+- later runs can continue from the updated shared state.
+
+### Example: Shared Parameters
+
+```julia
+recipe = (;
+    initstate = config -> (;
+        params = Ref(config.initial_params),
+        nsamples = Ref(0),
+    ),
+
+    prepare! = (slot, job, manager) -> begin
+        ctx = context(slot.worker)[MyAlgo]
+        ctx.params[] = manager.state.params[]
+        ctx.x[] = job.x
+        manager.state.nsamples[] += 1
+        resetworker!(slot)
+    end,
+)
+```
+
+Here `manager.state.params` is the shared parameter value for the whole manager.
+Each worker gets a copy of that value loaded into its own context before a run.
+`manager.state.nsamples` counts all jobs seen by the manager, not just jobs seen
+by one worker.
+
+### Example: Shared Output Buffer
+
+```julia
+recipe = (;
+    initstate = config -> (; outputs = Float64[]),
+
+    consume! = (slot, job, manager) -> begin
+        ctx = context(slot.worker)[MyAlgo]
+        push!(manager.state.outputs, ctx.value[])
+    end,
+)
+```
+
+Here the output array belongs to the manager, not to any one worker. Each
+finished worker appends one value into the shared output buffer.
+
 ## Whole Manager Workflow
 
 A threaded manager run has four parts:
@@ -207,6 +303,88 @@ If a job needs to affect both persistent context and loop-level runtime inputs,
 use two different steps: prepare the context in `prepare!`, then pass runtime
 inputs from `runarguments`.
 
+## What `flush!` Is For
+
+`flush!` is a manager-level callback that runs after completed worker runs are
+available. Its job is to take data that has already been produced by workers and
+merge it into one shared destination.
+
+The key point is that `flush!` is not the place where one worker finishes. That
+happens earlier, through `finalize!`, `afterrun!`, `consume!`, and `release!`.
+`flush!` runs later, according to `flush_policy`, after one or more completed
+runs are waiting to be flushed.
+
+In practice, `flush!` is useful when workers accumulate local data that should
+only be merged occasionally. Common examples are:
+
+- combine per-worker gradients into one global gradient update,
+- gather worker-local output batches into one manager-owned buffer,
+- write many finished results to disk in one batch,
+- clear worker-local accumulation buffers after their contents were merged.
+
+### Exact Timing
+
+The manager only calls `flush!` when at least one run has completed since the
+previous flush.
+
+- `FlushAtEnd()`: `flush!` runs once after the whole `run!(manager, jobs)` or
+  `runthreaded!(manager, jobs)` call has finished.
+- `FlushEvery(n; drain = true)`: `flush!` runs after every `n` completed runs.
+  With `drain = true`, active slots are finalized before the flush. With
+  `drain = false`, only already-finished slots contribute.
+- `NoFlush()`: `flush!` is never called automatically.
+
+So `flush!` is a batching point, not a per-job callback.
+
+### `flush!` Versus `consume!`
+
+Use `consume!` when you want to react to one finished worker immediately.
+
+Use `flush!` when you want to merge or apply results from many finished workers
+together.
+
+That distinction matters in learning-style workloads:
+
+- `consume!`: append one worker's scalar loss to a history array.
+- `flush!`: sum gradients from all workers, apply one optimizer step, then zero
+  worker-local gradient buffers.
+
+### Example: Batch Gradient Update
+
+```julia
+recipe = (;
+    initstate = config -> (;
+        params = Ref(config.initial_params),
+        lr = config.lr,
+    ),
+
+    flush! = manager -> begin
+        total_grad = 0.0
+
+        for slot in slots(manager)
+            ctx = context(slot.worker)[MyAlgo]
+            total_grad += ctx.grad[]
+            ctx.grad[] = 0.0
+        end
+
+        manager.state.params[] -= manager.state.lr * total_grad
+    end,
+)
+```
+
+Each worker accumulates its own `ctx.grad[]` locally. `flush!` reads those local
+buffers, combines them, updates the shared manager parameters once, and clears
+the local buffers.
+
+### Why `flush!` Exists
+
+Without `flush!`, every worker completion would have to update shared state
+immediately. That often forces extra synchronization or makes the logic harder
+to reason about.
+
+`flush!` gives you one explicit place to say: "all completed worker results up
+to this point may now be merged into shared manager state."
+
 ## What `finalize!` Is For
 
 `finalize!` is for making a just-finished process ready to be inspected. It is
@@ -321,8 +499,9 @@ functions in a named tuple are part of the manager type.
   `InlineChunkWorker`.
 
 `config` is construction input. `state` is runtime data owned by the manager.
-Prefer putting runtime buffers, counters, parameters, and logs in `initstate`
-instead of keeping them as unrelated external mutable objects.
+Prefer putting shared runtime buffers, counters, parameters, optimizer state,
+and logs in `initstate` instead of keeping them as unrelated external mutable
+objects.
 
 ## Context Reuse
 

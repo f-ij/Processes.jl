@@ -742,8 +742,20 @@ end
 """
     initstate(recipe, config, manager)
 
-Build manager-owned runtime state from construction `config`. Missing callbacks
-default to `nothing`.
+Build the object stored in `manager.state`.
+
+`config` is the construction-time input passed to `ProcessManager(...; config = ...)`.
+Use `initstate` to turn that configuration into long-lived manager-side runtime
+data such as shared buffers, global parameters, counters, logs, or optimizer
+state.
+
+This state object is separate from worker contexts:
+
+- `manager.state` is shared manager-owned data.
+- `context(slot.worker)` is the per-worker process context.
+
+If the recipe does not define `initstate`, the manager stores `nothing` in
+`manager.state`.
 """
 function initstate(recipe, config, manager)
     result = _call_optional_recipe_field(recipe, Val(:initstate), config, manager)
@@ -823,6 +835,18 @@ release!(recipe, slot, job, manager) = _call_optional_recipe_field(recipe, Val(:
     flush!(recipe, manager)
 
 Optional manager-level callback controlled by the manager's `FlushPolicy`.
+
+The manager calls this only after one or more worker runs have completed. It is
+the usual place to merge per-worker buffers into shared manager state, apply one
+batched parameter update, write accumulated results to an external destination,
+or clear worker-local accumulation buffers for the next batch of jobs.
+
+`flush!` is not called per job. Its timing depends on `flush_policy`:
+
+- `FlushAtEnd()`: once after the run finishes.
+- `FlushEvery(n; drain = true)`: after every `n` completed runs, with optional
+  draining of active slots first.
+- `NoFlush()`: never called automatically.
 """
 flush!(recipe, manager) = _call_optional_recipe_field(recipe, Val(:flush!), manager)
 
