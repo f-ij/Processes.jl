@@ -18,7 +18,7 @@ boundary. The runtime context is intentionally not returned.
 """
 @noinline function finalizer!(func::F, context::C, runtimecontext::RC, process::P, lifetime::LT) where {F,C<:ProcessContext,RC<:ProcessContext,P<:AbstractProcess,LT<:Lifetime}
     runtimecontext = @inline _merge_into_globals(runtimecontext, (; process, lifetime))
-    state_context = @inline withregistry(context, getregistry(func))
+    state_context = withregistry(context, getregistry(func))
     visible_context = ExecutionContext(state_context, runtimecontext)
     cleanup_result = @inline cleanup(func, visible_context)
     cleaned_context = cleanup_result isa NamedTuple ? (@inline merge(visible_context, cleanup_result)) : cleanup_result
@@ -35,7 +35,7 @@ end
 
 """Finish a loop result by reattaching the stored registry to hot state."""
 @inline function _reattach_persistent_registry(hot_state::C, stored_context::SC) where {C<:ProcessContext,SC<:ProcessContext}
-    return @inline withregistry(hot_state, getregistry(stored_context))
+    return withregistry(hot_state, getregistry(stored_context))
 end
 
 """Commit or return the state-only context produced by the noinline kernel."""
@@ -122,7 +122,7 @@ Run an indefinite loop with runtime state scoped inside this function.
         context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
         @inline tick!(process)
         @inline inc!(process)
-        break_context = ExecutionContext((@inline withregistry(context, getregistry(func))), runtimecontext)
+        break_context = ExecutionContext(withregistry(context, getregistry(func)), runtimecontext)
         if @inline breakcondition(lifetime, process, break_context)
             break
         end
@@ -157,7 +157,7 @@ Run a repeat loop with runtime state scoped inside this function.
         context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
         @inline tick!(process)
         @inline inc!(process)
-        break_context = ExecutionContext((@inline withregistry(context, getregistry(algo))), runtimecontext)
+        break_context = ExecutionContext(withregistry(context, getregistry(algo)), runtimecontext)
         if @inline breakcondition(lifetime, process, break_context)
             break
         end

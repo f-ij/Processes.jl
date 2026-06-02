@@ -110,7 +110,7 @@ end
 
 """Get a subcontext view for a raw child algorithm and explicit namespace."""
 @inline function Base.view(pc::ProcessContext, instance::A, namespace::Namespace; inject = (;), sharedcontexts = (), sharedvars = ()) where {A<:ProcessAlgorithm}
-    return @inline view(pc, _empty_context(), instance, namespace, inject, sharedcontexts, sharedvars)
+    return @inline view(pc, pc, instance, namespace, inject, sharedcontexts, sharedvars)
 end
 
 """Get a subcontext view from a combined execution context."""
@@ -131,7 +131,7 @@ Get a subcontext view for a specific subcontext
     # if key == Symbol() || isnothing(key)
     #     key = getkey(getregistry(pc)[instance])
     # end
-    return @inline view(pc, _empty_context(), instance, inject, sharedcontexts, sharedvars)
+    return @inline view(pc, pc, instance, inject, sharedcontexts, sharedvars)
 end
 
 """Get a subcontext view for an identifiable algorithm from a combined execution context."""
@@ -160,7 +160,7 @@ Create a view from a non-scoped instance by looking it up in the registry
     elseif isnothing(scoped_instance)
         scoped_instance = @inline static_get(reg, instance)
     end
-    runtimecontext = _empty_context()
+    runtimecontext = pc
     return SubContextView{typeof(pc), getkey(scoped_instance), typeof(runtimecontext), typeof(scoped_instance), typeof(inject)}(pc, runtimecontext, scoped_instance; inject=inject)
 end
 
