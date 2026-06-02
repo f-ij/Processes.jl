@@ -54,14 +54,7 @@ function replacecontextkeys(fw::FuncWrapper, key_replacement::Pair)
     return setcontextkey(fw, key_replacement.second)
 end
 
-function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:Wiring{Tuple{}, Tuple{}}, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
-    contextview = @inline view(context, runtimecontext, fw)
-
-    retval = @inline step!(fw, contextview)
-    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability)
-end
-
-function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:Union{Wiring,PlanWiringView}, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:PlanWiringView, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
     contextview = @inline view(
         context,
         runtimecontext,
@@ -71,14 +64,7 @@ function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, process::P, l
     )
 
     retval = @inline step!(fw, contextview)
-    if wiring isa PlanWiringView
-        return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability, return_demand(wiring, Namespace{:_runtime}()))
-    end
-    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability)
-end
-
-function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:PlanWiring, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
-    return @inline _step!(fw, context, runtimecontext, global_wiring(wiring), process, lifetime, stability)
+    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability, return_demand(wiring, Namespace{:_runtime}()))
 end
 
 """
@@ -87,14 +73,7 @@ Step a resolved `FuncWrapper` child using its explicit plan namespace.
 Resolved plans keep the namespace outside the wrapper value, so generated and
 non-generated child stepping must view the context through `Namespace{Name}`.
 """
-function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:Wiring{Tuple{}, Tuple{}}, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
-    contextview = @inline view(context, runtimecontext, fw, namespace)
-
-    retval = @inline step!(fw, contextview)
-    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability)
-end
-
-function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:Union{Wiring,PlanWiringView}, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:PlanWiringView, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
     contextview = @inline view(
         context,
         runtimecontext,
@@ -105,10 +84,7 @@ function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, namespace::Na
     )
 
     retval = @inline step!(fw, contextview)
-    if wiring isa PlanWiringView
-        return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability, return_demand(wiring, Namespace{:_runtime}()))
-    end
-    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability)
+    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability, return_demand(wiring, Namespace{:_runtime}()))
 end
 
 """
