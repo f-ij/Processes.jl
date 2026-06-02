@@ -4,16 +4,17 @@ Internal loop-runtime step for an identifiable algorithm.
 The public extension point remains `step!(algo, context)` on the wrapped
 `ProcessAlgorithm`. This method is only the loop engine's view/merge wrapper.
 """
-@inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: Wiring{Tuple{}, Tuple{}}, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
-    contextview = @inline view(context, sa)
+@inline function _step!(sa::IA, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, RC <: AbstractContext, W <: Wiring{Tuple{}, Tuple{}}, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+    contextview = @inline view(context, runtimecontext, sa)
     retval = @inline step!(getalgo(sa), contextview)
 
     return @inline merge(contextview, retval)
 end
 
-@inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: Wiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+@inline function _step!(sa::IA, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, RC <: AbstractContext, W <: Wiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
     contextview = @inline view(
         context,
+        runtimecontext,
         sa;
         sharedcontexts = (@inline shares(wiring)),
         sharedvars = (@inline routes(wiring)),
@@ -23,8 +24,8 @@ end
     return @inline merge(contextview, retval)
 end
 
-@inline function _step!(sa::IA, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
-    return @inline _step!(sa, context, global_wiring(wiring), process, lifetime, stability)
+@inline function _step!(sa::IA, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {F, IA <: IdentifiableAlgo{F}, C <: AbstractContext, RC <: AbstractContext, W <: PlanWiring, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+    return @inline _step!(sa, context, runtimecontext, global_wiring(wiring), process, lifetime, stability)
 end
 
 """
@@ -35,16 +36,17 @@ Resolved loop plans carry raw `ProcessAlgorithm` children and a parallel
 `IdentifiableAlgo` hot path used, but takes the context key from the namespace
 type instead of from a wrapper value.
 """
-@inline function _step!(algo::A, context::C, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {A <: ProcessAlgorithm, C <: AbstractContext, W <: Wiring{Tuple{}, Tuple{}}, Name, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
-    contextview = @inline view(context, algo, namespace)
+@inline function _step!(algo::A, context::C, runtimecontext::RC, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {A <: ProcessAlgorithm, C <: AbstractContext, RC <: AbstractContext, W <: Wiring{Tuple{}, Tuple{}}, Name, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+    contextview = @inline view(context, runtimecontext, algo, namespace)
     retval = @inline step!(algo, contextview)
 
     return @inline merge(contextview, retval)
 end
 
-@inline function _step!(algo::A, context::C, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {A <: ProcessAlgorithm, C <: AbstractContext, W <: Wiring, Name, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+@inline function _step!(algo::A, context::C, runtimecontext::RC, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {A <: ProcessAlgorithm, C <: AbstractContext, RC <: AbstractContext, W <: Wiring, Name, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
     contextview = @inline view(
         context,
+        runtimecontext,
         algo,
         namespace;
         sharedcontexts = (@inline shares(wiring)),
@@ -62,8 +64,10 @@ Plain algorithms are user-extensible through `step!(algo, context)`. The extra
 runtime arguments exist only while traversing loop plans and are intentionally
 not part of the public algorithm API.
 """
-@inline function _step!(algo::A, context::C, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {A <: ProcessAlgorithm, C <: AbstractContext, W <: Union{Wiring, PlanWiring}, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
-    return @inline step!(algo, context)
+@inline function _step!(algo::A, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {A <: ProcessAlgorithm, C <: AbstractContext, RC <: AbstractContext, W <: Union{Wiring, PlanWiring}, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+    retval = @inline step!(algo, context)
+    runtimecontext = @inline merge_owner_runtime_return(runtimecontext, Val(:_runtime), retval)
+    return context, runtimecontext
 end
 
 # TODO MOVE THESE!!
@@ -84,6 +88,6 @@ function step!_expr(sa::Type{<:IdentifiableAlgo}, context::Type{C}, funcname::Sy
 
     return quote
         $(LineNumberNode(@__LINE__, @__FILE__))
-        context = @inline _step!($funcname, context, $wiringname, process, lifetime, $stability_expr)
+        context, runtimecontext = @inline _step!($funcname, context, runtimecontext, $wiringname, process, lifetime, $stability_expr)
     end
 end

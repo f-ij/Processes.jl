@@ -262,8 +262,7 @@ function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, rep
     launch_kwargs = (; lifetime, repeats, repeat)
     launch_lifetime = _manager_launch_lifetime(worker, launch_kwargs)
     if !isnothing(launch_lifetime)
-        lt = launch_lifetime
-        context(worker, _merge_into_globals(context(worker), (; lifetime = lt)))
+        worker.lifetime = launch_lifetime
     end
 
     # Build the same runtime context as the asynchronous Process path, but call
@@ -271,7 +270,7 @@ function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, rep
     algo = getalgo(worker)
     inputs = _validate_runtime_inputs(algo, (; kwargs...))
     base_context = _has_typed_runtime_context(worker) ? _typed_runtime_context(worker) : context(worker)
-    lt = _has_typed_runtime_context(worker) ? _context_lifetime(base_context) : get(getglobals(base_context), :lifetime, Indefinite())
+    lt = lifetime(worker)
     result = loop(worker, algo, base_context, lt, inputs, Resuming{false}())
 
     worker.lastresult = result

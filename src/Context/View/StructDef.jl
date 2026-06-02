@@ -39,16 +39,17 @@ end
         for i in 1:numvars], assign_symbols
 end
 
-struct SubContextView{CType, SubName, T, NT, VarAliases, SharedContexts, SharedVars} <: AbstractContext
+struct SubContextView{CType, SubName, RuntimeCType, T, NT, VarAliases, SharedContexts, SharedVars} <: AbstractContext
     context::CType
+    runtimecontext::RuntimeCType
     instance::T # ScopedInstance for which the view is created
     injected::NT
 
-    function SubContextView{CType, SubName, T, NT}(context::CType, instance::T; inject::NT = (;)) where {CType, SubName, T, NT}
-        new{CType, SubName, T, typeof(inject), varaliases(instance), (), ()}(context, instance, inject)
+    function SubContextView{CType, SubName, RuntimeCType, T, NT}(context::CType, runtimecontext::RuntimeCType, instance::T; inject::NT = (;)) where {CType, SubName, RuntimeCType, T, NT}
+        new{CType, SubName, RuntimeCType, T, typeof(inject), varaliases(instance), (), ()}(context, runtimecontext, instance, inject)
     end
 
-    function SubContextView{CType, SubName, T, NT, VarAliases, SharedContexts, SharedVars}(context::CType, instance::T, inject::NT = (;)) where {CType, SubName, T, NT, VarAliases, SharedContexts, SharedVars}
-        new{CType, SubName, T, typeof(inject), VarAliases, SharedContexts, SharedVars}(context, instance, inject)
+    function SubContextView{CType, SubName, RuntimeCType, T, NT, VarAliases, SharedContexts, SharedVars}(context::CType, runtimecontext::RuntimeCType, instance::T, inject::NT = (;)) where {CType, SubName, RuntimeCType, T, NT, VarAliases, SharedContexts, SharedVars}
+        new{CType, SubName, RuntimeCType, T, typeof(inject), VarAliases, SharedContexts, SharedVars}(context, runtimecontext, instance, inject)
     end
 end

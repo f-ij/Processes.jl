@@ -26,7 +26,7 @@ function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where 
     prepared_context = init(algo, input_context)
     @DebugMode "Prepared in initcontext context is $prepared_context"
 
-    return prepared_context
+    return @inline without_runtime_subcontexts(prepared_context)
 end
 
 function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{Input, Override}...; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
@@ -43,7 +43,7 @@ function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), override
 
     overridden_context = merge_resolved_inputs(prepared_context, overrides)
 
-    return overridden_context
+    return @inline without_runtime_subcontexts(overridden_context)
 end
 
 function makecontext(p::AbstractProcess, inputs_overrides...; lifetime=nothing)

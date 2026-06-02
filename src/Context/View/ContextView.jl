@@ -2,9 +2,9 @@ export getglobals, withaliases
 #################################
 ########## Properties ###########
 #################################
-varaliases(scv::Union{SubContextView{CType, SubKey, T, NT, Aliases}, Type{<:SubContextView{CType, SubKey, T, NT, Aliases}}}) where {CType, SubKey, T, NT, Aliases} = Aliases
-view_sharedcontexts(scv::Union{SubContextView{CType, SubKey, T, NT, Aliases, SharedContexts}, Type{<:SubContextView{CType, SubKey, T, NT, Aliases, SharedContexts}}}) where {CType, SubKey, T, NT, Aliases, SharedContexts} = SharedContexts
-view_sharedvars(scv::Union{SubContextView{CType, SubKey, T, NT, Aliases, SharedContexts, SharedVars}, Type{<:SubContextView{CType, SubKey, T, NT, Aliases, SharedContexts, SharedVars}}}) where {CType, SubKey, T, NT, Aliases, SharedContexts, SharedVars} = SharedVars
+varaliases(scv::Union{SubContextView{CType, SubKey, RuntimeCType, T, NT, Aliases}, Type{<:SubContextView{CType, SubKey, RuntimeCType, T, NT, Aliases}}}) where {CType, SubKey, RuntimeCType, T, NT, Aliases} = Aliases
+view_sharedcontexts(scv::Union{SubContextView{CType, SubKey, RuntimeCType, T, NT, Aliases, SharedContexts}, Type{<:SubContextView{CType, SubKey, RuntimeCType, T, NT, Aliases, SharedContexts}}}) where {CType, SubKey, RuntimeCType, T, NT, Aliases, SharedContexts} = SharedContexts
+view_sharedvars(scv::Union{SubContextView{CType, SubKey, RuntimeCType, T, NT, Aliases, SharedContexts, SharedVars}, Type{<:SubContextView{CType, SubKey, RuntimeCType, T, NT, Aliases, SharedContexts, SharedVars}}}) where {CType, SubKey, RuntimeCType, T, NT, Aliases, SharedContexts, SharedVars} = SharedVars
 
 @inline this_instance(scv::SubContextView) = getfield(scv, :instance)
 
@@ -13,11 +13,12 @@ view_sharedvars(scv::Union{SubContextView{CType, SubKey, T, NT, Aliases, SharedC
 @inline getglobals(scv::SubContextView, name::Symbol) = getglobals(getcontext(scv), name)
 
 @inline getcontext(scv::SubContextView) = @inline getfield(scv, :context)
+@inline getruntimecontext(scv::SubContextView) = @inline getfield(scv, :runtimecontext)
 @inline getsubcontext(scv::SubContextView{CType, SubKey}) where {CType, SubKey} = @inline getproperty(getcontext(scv), SubKey)
 
 
 getinjected(scv::SubContextView) = getfield(scv, :injected)
-injectedfieldnames(scvt::Union{SubContextView{CType, SubKey, T, NT}, Type{<:SubContextView{CType, SubKey, T, NT}}}) where {CType, SubKey, T, NT} = fieldnames(NT)
+injectedfieldnames(scvt::Union{SubContextView{CType, SubKey, RuntimeCType, T, NT}, Type{<:SubContextView{CType, SubKey, RuntimeCType, T, NT}}}) where {CType, SubKey, RuntimeCType, T, NT} = fieldnames(NT)
 
 
 """
@@ -26,7 +27,7 @@ Helper to merge into a subcontext target in a namedtuple
 
 This merges a set of named tuples into the appropriate subcontexts in the provided context
 """
-function algo_to_subcontext_names(scv::Union{SubContextView{CType, SubKey, T, NT, Aliases}, Type{<:SubContextView{CType, SubKey, T, NT, Aliases}}}, name::Symbol) where {CType, SubKey, T, NT, Aliases}
+function algo_to_subcontext_names(scv::Union{SubContextView{CType, SubKey, RuntimeCType, T, NT, Aliases}, Type{<:SubContextView{CType, SubKey, RuntimeCType, T, NT, Aliases}}}, name::Symbol) where {CType, SubKey, RuntimeCType, T, NT, Aliases}
     _aliases = varaliases(scv)
     return @inline algo_to_subcontext_names(_aliases, name)
 end
@@ -50,11 +51,11 @@ the runtime object. This keeps alias dispatch tied to type information and lets
 view property lookup specialize on the alias mapping.
 """
 @inline function withaliases(
-    scv::SubContextView{CType, SubKey, T, NT, OldAliases, SharedContexts, SharedVars},
+    scv::SubContextView{CType, SubKey, RuntimeCType, T, NT, OldAliases, SharedContexts, SharedVars},
     ::Type{Alias},
-) where {CType, SubKey, T, NT, OldAliases, SharedContexts, SharedVars, Alias}
+) where {CType, SubKey, RuntimeCType, T, NT, OldAliases, SharedContexts, SharedVars, Alias}
     typed_alias = @inline _alias_from_type(Alias)
-    return SubContextView{CType, SubKey, T, NT, typeof(typed_alias), SharedContexts, SharedVars}(getcontext(scv), this_instance(scv), getinjected(scv))
+    return SubContextView{CType, SubKey, RuntimeCType, T, NT, typeof(typed_alias), SharedContexts, SharedVars}(getcontext(scv), getruntimecontext(scv), this_instance(scv), getinjected(scv))
 end
 
 @inline function withaliases(scv::SubContextView, alias::Alias) where {Alias}
@@ -62,46 +63,56 @@ end
 end
 
 @inline function withaliases(
-    scv::SubContextView{CType, SubKey, OldT, OldNT, OldAliases, SharedContexts, SharedVars},
+    scv::SubContextView{CType, SubKey, RuntimeCType, OldT, OldNT, OldAliases, SharedContexts, SharedVars},
     instance::T,
     injected::NT,
     ::Type{Alias},
-) where {CType, SubKey, OldT, OldNT, OldAliases, SharedContexts, SharedVars, T, NT, Alias}
+) where {CType, SubKey, RuntimeCType, OldT, OldNT, OldAliases, SharedContexts, SharedVars, T, NT, Alias}
     typed_alias = @inline _alias_from_type(Alias)
-    return SubContextView{CType, SubKey, T, NT, typeof(typed_alias), SharedContexts, SharedVars}(getcontext(scv), instance, injected)
+    return SubContextView{CType, SubKey, RuntimeCType, T, NT, typeof(typed_alias), SharedContexts, SharedVars}(getcontext(scv), getruntimecontext(scv), instance, injected)
 end
 
 @inline function withaliases(scv::SubContextView, instance, injected, alias::Alias) where {Alias}
     return @inline withaliases(scv, instance, injected, Alias)
 end
 
-@inline function Base.view(pc::PC, instance::SA, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I}
+@inline function Base.view(pc::PC, runtimecontext::RC, instance::SA, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, RC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I}
     key = @inline getkey(instance)
-    return SubContextView{typeof(pc), key, typeof(instance), typeof(inject)}(pc, instance; inject)
+    return SubContextView{typeof(pc), key, typeof(runtimecontext), typeof(instance), typeof(inject)}(pc, runtimecontext, instance; inject)
 end
 
-@inline function Base.view(pc::PC, instance::SA, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I, SC<:Tuple, SV<:Tuple}
+@inline function Base.view(pc::PC, runtimecontext::RC, instance::SA, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, RC<:ProcessContext, SA<:AbstractIdentifiableAlgo, I, SC<:Tuple, SV<:Tuple}
     key = @inline getkey(instance)
     typed_sharedcontexts = @inline wiring_from_tuple_type(SC)
     typed_sharedvars = @inline wiring_from_tuple_type(SV)
-    return SubContextView{typeof(pc), key, typeof(instance), typeof(inject), varaliases(instance), typed_sharedcontexts, typed_sharedvars}(pc, instance, inject)
+    return SubContextView{typeof(pc), key, typeof(runtimecontext), typeof(instance), typeof(inject), varaliases(instance), typed_sharedcontexts, typed_sharedvars}(pc, runtimecontext, instance, inject)
 end
 
-@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, A<:ProcessAlgorithm, Name, I}
+@inline function Base.view(pc::PC, runtimecontext::RC, instance::A, ::Namespace{Name}, inject::I, ::Tuple{}, ::Tuple{}) where {PC<:ProcessContext, RC<:ProcessContext, A<:ProcessAlgorithm, Name, I}
     aliases = VarAliases()
-    return SubContextView{typeof(pc), Name, typeof(instance), typeof(inject), typeof(aliases), (), ()}(pc, instance, inject)
+    return SubContextView{typeof(pc), Name, typeof(runtimecontext), typeof(instance), typeof(inject), typeof(aliases), (), ()}(pc, runtimecontext, instance, inject)
 end
 
-@inline function Base.view(pc::PC, instance::A, ::Namespace{Name}, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, A<:ProcessAlgorithm, Name, I, SC<:Tuple, SV<:Tuple}
+@inline function Base.view(pc::PC, runtimecontext::RC, instance::A, ::Namespace{Name}, inject::I, sharedcontexts::SC, sharedvars::SV) where {PC<:ProcessContext, RC<:ProcessContext, A<:ProcessAlgorithm, Name, I, SC<:Tuple, SV<:Tuple}
     aliases = VarAliases()
     typed_sharedcontexts = @inline wiring_from_tuple_type(SC)
     typed_sharedvars = @inline wiring_from_tuple_type(SV)
-    return SubContextView{typeof(pc), Name, typeof(instance), typeof(inject), typeof(aliases), typed_sharedcontexts, typed_sharedvars}(pc, instance, inject)
+    return SubContextView{typeof(pc), Name, typeof(runtimecontext), typeof(instance), typeof(inject), typeof(aliases), typed_sharedcontexts, typed_sharedvars}(pc, runtimecontext, instance, inject)
 end
 
 """Get a subcontext view for a raw child algorithm and explicit namespace."""
 @inline function Base.view(pc::ProcessContext, instance::A, namespace::Namespace; inject = (;), sharedcontexts = (), sharedvars = ()) where {A<:ProcessAlgorithm}
-    return @inline view(pc, instance, namespace, inject, sharedcontexts, sharedvars)
+    return @inline view(pc, _empty_context(), instance, namespace, inject, sharedcontexts, sharedvars)
+end
+
+"""Get a subcontext view from a combined execution context."""
+@inline function Base.view(ec::ExecutionContext, instance::A, namespace::Namespace; inject = (;), sharedcontexts = (), sharedvars = ()) where {A<:ProcessAlgorithm}
+    return @inline view(getcontext(ec), getruntimecontext(ec), instance, namespace; inject, sharedcontexts, sharedvars)
+end
+
+"""Get a subcontext view for a raw child algorithm with explicit runtime state."""
+@inline function Base.view(pc::ProcessContext, runtimecontext::ProcessContext, instance::A, namespace::Namespace; inject = (;), sharedcontexts = (), sharedvars = ()) where {A<:ProcessAlgorithm}
+    return @inline view(pc, runtimecontext, instance, namespace, inject, sharedcontexts, sharedvars)
 end
 
 """
@@ -112,7 +123,17 @@ Get a subcontext view for a specific subcontext
     # if key == Symbol() || isnothing(key)
     #     key = getkey(getregistry(pc)[instance])
     # end
-    return @inline view(pc, instance, inject, sharedcontexts, sharedvars)
+    return @inline view(pc, _empty_context(), instance, inject, sharedcontexts, sharedvars)
+end
+
+"""Get a subcontext view for an identifiable algorithm from a combined execution context."""
+@inline function Base.view(ec::ExecutionContext, instance::SA; inject = (;), sharedcontexts = (), sharedvars = ()) where {SA<:AbstractIdentifiableAlgo}
+    return @inline view(getcontext(ec), getruntimecontext(ec), instance; inject, sharedcontexts, sharedvars)
+end
+
+"""Get a subcontext view for a specific subcontext with explicit runtime state."""
+@inline function Base.view(pc::ProcessContext, runtimecontext::ProcessContext, instance::SA; inject = (;), sharedcontexts = (), sharedvars = ()) where SA <: AbstractIdentifiableAlgo
+    return @inline view(pc, runtimecontext, instance, inject, sharedcontexts, sharedvars)
 end
 
 @inline function Base.view(pc::ProcessContext{D}, instance::AbstractIdentifiableAlgo{T, nothing}, inject = (;)) where {D, T}
@@ -131,14 +152,15 @@ Create a view from a non-scoped instance by looking it up in the registry
     elseif isnothing(scoped_instance)
         scoped_instance = @inline static_get(reg, instance)
     end
-    return SubContextView{typeof(pc), getkey(scoped_instance), typeof(scoped_instance), typeof(inject)}(pc, scoped_instance; inject=inject)
+    runtimecontext = _empty_context()
+    return SubContextView{typeof(pc), getkey(scoped_instance), typeof(runtimecontext), typeof(scoped_instance), typeof(inject)}(pc, runtimecontext, scoped_instance; inject=inject)
 end
 
 """
 Regenerate a SubContextView from its type
 """
 @inline function Base.view(pc::PC, scv::CV; inject = (;)) where {PC <: ProcessContext, CV <: SubContextView}
-    @inline view(pc, this_instance(scv), inject(scv))
+    @inline view(pc, getruntimecontext(scv), this_instance(scv), inject(scv))
 end
 
 """
@@ -149,7 +171,7 @@ View a view
     scopename = getkey(scoped_instance)
     @assert scopename == SubKey "Trying to view SubContextView of subcontext $(SubKey) with instance of subcontext $(scopename)"
     context = getcontext(scv)
-    return view(context, instance)
+    return view(context, getruntimecontext(scv), instance)
 end
 
 

@@ -2,25 +2,33 @@
 ############# CONTEXT #################
 #######################################
 """
-Previously args system
-This stores the context of a process
+Persistent state for a resolved process.
+
+`ProcessContext` stores only named subcontexts and the registry needed to resolve
+external references. Hot loop contexts use the same type with `reg::Nothing`.
+Runtime inputs, loop handles, and transient step returns live in a separate hot
+runtime `ProcessContext`.
 """
-# mutable struct ProcessContext{D,Reg,R,I,W} <: AbstractContext
-struct ProcessContext{D,Reg,R,I,W} <: AbstractContext
+struct ProcessContext{D,R} <: AbstractContext
     subcontexts::D
-    registry::Reg
-    _runtime::R
-    _input::I
-    _widened::W
-    function ProcessContext{D,Reg,R,I,W}(
-        subcontexts::D,
-        registry::Reg,
-        runtime::R,
-        input::I,
-        widened::W,
-    ) where {D,Reg,R,I,W}
-        new{D,Reg,R,I,W}(subcontexts, registry, runtime, input, widened)
+    reg::R
+
+    function ProcessContext{D,R}(subcontexts::D, reg::R) where {D,R}
+        new{D,R}(subcontexts, reg)
     end
+end
+
+const HotContext = ProcessContext{D,Nothing} where {D}
+
+"""
+Combined execution frame used by finalization and views.
+
+The state context remains persistent-state-only. The runtime context is a second
+hot context that can be read through views while the loop kernel is active.
+"""
+struct ExecutionContext{StateC,RuntimeC} <: AbstractContext
+    context::StateC
+    runtimecontext::RuntimeC
 end
 
 

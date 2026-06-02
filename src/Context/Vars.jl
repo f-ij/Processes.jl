@@ -24,3 +24,15 @@ Read a DSL runtime variable selector from `ProcessContext._runtime`.
 @inline function Base.getindex(c::ProcessContext, var::Var{:_runtime, name}) where {name}
     getglobals(c)[name]
 end
+
+@inline function Base.getindex(c::ExecutionContext, var::Var{Entity, name}) where {Entity, name}
+    @inline getproperty(c[Entity], name)
+end
+
+@inline function Base.getindex(c::ExecutionContext, var::Var{:globals, name}) where {name}
+    getglobals(c)[name]
+end
+
+@inline function Base.getindex(c::ExecutionContext, var::Var{:_runtime, name}) where {name}
+    getglobals(c)[name]
+end

@@ -1,9 +1,10 @@
 export Process, getallocator, getnewallocator, getcontext, getticks
 
 
-mutable struct Process{F} <: AbstractProcess
+mutable struct Process{F,LT} <: AbstractProcess
     id::UUID
     algo::F
+    lifetime::LT
     runtime_context::Union{Nothing, ProcessContext}
     timeout::Float64
     task::Union{Nothing, Task}
@@ -97,11 +98,10 @@ end
 end
 
 function _finish_process_constructor_with_context(algo::A, prepared_context::PC, lifetime::LT, timeout) where {A<:AbstractLoopAlgorithm, PC, LT}
-    prepared_context = _merge_into_globals(prepared_context, (; lifetime,))
     algo = _with_lifecycle(algo, prepared_context, getstoredinits(algo), getstoredoverrides(algo))
 
     # p = Process(uuid1(), context, td, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, Arena(), RuntimeListeners(), 0)
-    p = Process{typeof(algo)}(uuid1(), algo, nothing, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, nothing, RuntimeListeners(), 0)
+    p = Process{typeof(algo),typeof(lifetime)}(uuid1(), algo, lifetime, nothing, timeout, nothing, UInt(1), UInt(1), Threads.ReentrantLock(), false, true, nothing, nothing, nothing, RuntimeListeners(), 0)
 
     register_process!(p)
     schedule_loop_precompile!(p, lifetime)
@@ -181,16 +181,14 @@ end
 
 @inline _has_typed_runtime_context(p::P) where {P<:Process} = isnothing(p.runtime_context)
 @inline _typed_runtime_context(p::P) where {P<:Process} = getstoredcontext(getalgo(p))
-@inline _context_lifetime(context) = getproperty(getglobals(context), :lifetime)
+@inline _context_lifetime(context) = get(getglobals(context), :lifetime, Indefinite())
 
 function getcontext(p::Process)
-    return _merge_into_globals(context(p), (;process = p))
+    runtimecontext = @inline _merge_into_globals(_empty_context(), (; process = p, lifetime = lifetime(p)))
+    return ExecutionContext(context(p), runtimecontext)
 end
 
 getcontext(p::Process, context) = getcontext(p)[context]
-@inline lifetime(p::Process) =
-    _has_typed_runtime_context(p) ? _context_lifetime(_typed_runtime_context(p)) : get(getglobals(context(p)), :lifetime, Indefinite())
-
 set_starttime!(p::Process) = p.starttime = time_ns()
 set_endtime!(p::Process) = p.endtime = time_ns()
 reset_times!(p::Process) = (p.starttime = nothing; p.endtime = nothing)
@@ -264,7 +262,7 @@ Runs the prepared task of a process on a thread
 function makeloop!(p::Process, inputs::NamedTuple = (;); threaded = true, loopfunc::LF = loop) where {LF}
     if _has_typed_runtime_context(p)
         runtime_context = _typed_runtime_context(p)
-        return _makeloop!(p, inputs, _context_lifetime(runtime_context), runtime_context; threaded, loopfunc)
+        return _makeloop!(p, inputs, lifetime(p), runtime_context; threaded, loopfunc)
     else
         return _makeloop_dynamic!(p, inputs; threaded, loopfunc)
     end

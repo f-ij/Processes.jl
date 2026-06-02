@@ -1,18 +1,18 @@
 
 @inline function Base.merge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:ProcessContext, SubKey}
-    return @inline getcontext(scv)
+    return (@inline getcontext(scv)), (@inline getruntimecontext(scv))
 end
 @inline function Base.merge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
     return @inline stablemerge(scv, args)
 end
 
 @inline function stablemerge(scv::SubContextView{CType, SubKey}, ::Nothing) where {CType<:ProcessContext, SubKey}
-    return @inline getcontext(scv)
+    return (@inline getcontext(scv)), (@inline getruntimecontext(scv))
 end
 
 function _subcontext_view_mergetuple_expr(SCV::Type, Args::Type)
     @nospecialize SCV Args
-    merge_expr, widened_expr = _subcontext_view_merge_exprs(SCV, Args)
+    merge_expr, runtime_expr = _subcontext_view_merge_exprs(SCV, Args)
     return merge_expr
 end
 
@@ -22,7 +22,7 @@ function _subcontext_view_merge_exprs(SCV::Type, Args::Type)
     algo_varnames = fieldnames(Args)
 
     merge_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
-    widened_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
+    runtime_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
 
     for (var_idx, algo_varname) in enumerate(algo_varnames)
         target_location, subcontext_varname = _compute_location(SCV, algo_varname)
@@ -43,8 +43,8 @@ function _subcontext_view_merge_exprs(SCV::Type, Args::Type)
                 Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(algo_varname))))),
             )
 
-        else # New variable so add it to this subcontext
-            exprs = get!(widened_expressions_by_subcontext, SubKey, Expr[])
+        else # New variable so add it to this subcontext's runtime bucket.
+            exprs = get!(runtime_expressions_by_subcontext, SubKey, Expr[])
             push!(
                 exprs,
                 Expr(:(=), subcontext_varname, :(getproperty(args, $(QuoteNode(algo_varname))))),
@@ -52,7 +52,7 @@ function _subcontext_view_merge_exprs(SCV::Type, Args::Type)
         end
     end
 
-    # Build the NamedTuple expressions for real subcontext writes and widened
+    # Build the NamedTuple expressions for real subcontext writes and runtime
     # field patches. These create:
     #   (; subcontext1 = (; var1 = ...), ...)
 
@@ -60,13 +60,13 @@ function _subcontext_view_merge_exprs(SCV::Type, Args::Type)
         Expr(:(=), subctx, Expr(:tuple, Expr(:parameters, field_exprs...)))
         for (subctx, field_exprs) in merge_expressions_by_subcontext
     ]
-    widened_subcontext_exprs = [
+    runtime_subcontext_exprs = [
         Expr(:(=), subctx, Expr(:tuple, Expr(:parameters, field_exprs...)))
-        for (subctx, field_exprs) in widened_expressions_by_subcontext
+        for (subctx, field_exprs) in runtime_expressions_by_subcontext
     ]
     return (
         Expr(:tuple, Expr(:parameters, merge_subcontext_exprs...)),
-        Expr(:tuple, Expr(:parameters, widened_subcontext_exprs...)),
+        Expr(:tuple, Expr(:parameters, runtime_subcontext_exprs...)),
     )
 end
 
@@ -74,7 +74,7 @@ end
 Merge but error if a var would be overwritten and only allow local merging
 """
 @inline @generated function stablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    mergetuple_expr, widenedtuple_expr = _subcontext_view_merge_exprs(scv, args)
+    mergetuple_expr, runtimetuple_expr = _subcontext_view_merge_exprs(scv, args)
 
     # Return the expression that does the merge
     return quote
@@ -82,8 +82,9 @@ Merge but error if a var would be overwritten and only allow local merging
         mergetuple = $mergetuple_expr
         newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
         @assert typeof(newcontext) == typeof(getcontext(scv)) "A variable type in a subcontext was changed. This is prohibited for performance reasons.\nIf type mutation is needed, set the variable up as a Ref\n$(sprint(show, ContextTypeDiff(getcontext(scv), newcontext)))"
-        widenedtuple = $widenedtuple_expr
-        return @inline merge_into_widened(newcontext, widenedtuple)
+        runtimetuple = $runtimetuple_expr
+        newruntimecontext = @inline merge_runtime_subcontexts(getruntimecontext(scv), runtimetuple)
+        return newcontext, newruntimecontext
     end
 end
 
@@ -94,7 +95,7 @@ This doesn't check for type stability, and allows overwriting existing variables
 
 """
 @inline @generated function unstablemerge(scv::SubContextView{CType, SubKey}, args::NamedTuple) where {CType<:ProcessContext, SubKey}
-    mergetuple_expr, widenedtuple_expr = _subcontext_view_merge_exprs(scv, args)
+    mergetuple_expr, runtimetuple_expr = _subcontext_view_merge_exprs(scv, args)
 
     # Return the expression that does the merge
     return quote
@@ -102,13 +103,14 @@ This doesn't check for type stability, and allows overwriting existing variables
         mergetuple = $mergetuple_expr
         newcontext = merge_into_subcontexts(getcontext(scv), mergetuple)
         @assert typeof(newcontext) == typeof(getcontext(scv)) "A variable type in a subcontext was changed. This is prohibited for performance reasons.\nIf type mutation is needed, set the variable up as a Ref\n$(sprint(show, ContextTypeDiff(getcontext(scv), newcontext)))"
-        widenedtuple = $widenedtuple_expr
-        return @inline merge_into_widened(newcontext, widenedtuple)
+        runtimetuple = $runtimetuple_expr
+        newruntimecontext = @inline merge_runtime_subcontexts(getruntimecontext(scv), runtimetuple)
+        return newcontext, newruntimecontext
     end
 end
 
 @inline function unstablemerge(scg::SCV, ::Nothing) where {SCV<:SubContextView}
-    return @inline getcontext(scg)
+    return (@inline getcontext(scg)), (@inline getruntimecontext(scg))
 end
 
 """

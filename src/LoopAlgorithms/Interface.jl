@@ -154,7 +154,8 @@ then enters the same `_step!` chain used by `run`.
     lifetime = get(getglobals(context), :lifetime, Indefinite())
     process = LoopRunProcess(lifetime)
     plan = @inline getplan(la)
-    return @inline _step!(plan, context, getwiring(plan), Namespace{nothing}(), process, lifetime, typestable)
+    runtimecontext = @inline _merge_into_globals(_empty_context(), (; lifetime))
+    return @inline _step!(plan, context, runtimecontext, getwiring(plan), Namespace{nothing}(), process, lifetime, typestable)
 end
 
 """

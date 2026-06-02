@@ -41,7 +41,7 @@ function Base.run(p::Process, run_lifetime = nothing, inputs_and_overrides...; r
 
     lt = _process_run_lifetime(getalgo(p), run_lifetime, repeats, lifetime)
     if !isnothing(lt)
-        context(p, _merge_into_globals(context(p), (; lifetime = lt)))
+        p.lifetime = lt
     end
 
     makeloop!(p, (; kwargs...))

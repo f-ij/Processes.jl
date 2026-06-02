@@ -11,55 +11,55 @@ end
 end
 
 """
-Finalize one threaded/dynamic `Process` loop execution.
+    finalizer!(func, context, runtimecontext, process, lifetime)
 
-Paused runs keep their live context in the dynamic runtime slot. Finished runs
-clean up runtime-only values and commit the persistent context back into the
-typed lifecycle when the concrete shape still matches.
+Run cleanup and the final result projection inside the loop-owned runtime
+boundary. The runtime context is intentionally not returned.
 """
-@inline function after_while(p::P, func::F, context::C, stored_context::SC = context) where {P<:Process, F, C, SC}
+@noinline function finalizer!(func::F, context::C, runtimecontext::RC, process::P, lifetime::LT) where {F,C<:ProcessContext,RC<:ProcessContext,P<:AbstractProcess,LT<:Lifetime}
+    runtimecontext = @inline _merge_into_globals(runtimecontext, (; process, lifetime))
+    state_context = @inline withregistry(context, getregistry(func))
+    visible_context = ExecutionContext(state_context, runtimecontext)
+    cleanup_result = @inline cleanup(func, visible_context)
+    cleaned_context = cleanup_result isa NamedTuple ? (@inline merge(visible_context, cleanup_result)) : cleanup_result
+    cleaned_state = cleaned_context isa ExecutionContext ? getfield(cleaned_context, :context) : cleaned_context
+    return (@inline hot_context(cleaned_state)), (@inline _loop_final_result(func, cleaned_context))
+end
+
+"""Build the loop-local runtime context for one execution."""
+@inline function _initial_runtime_context(inputs::NamedTuple, process::P, lifetime::LT) where {P<:AbstractProcess,LT<:Lifetime}
+    runtime = _empty_context()
+    runtime = @inline _merge_into_globals(runtime, (; process, lifetime))
+    return isempty(inputs) ? runtime : @inline with_subcontext(runtime, Val(:_input), SubContext(:_input, inputs))
+end
+
+"""Finish a loop result by reattaching the stored registry to hot state."""
+@inline function _reattach_persistent_registry(hot_state::C, stored_context::SC) where {C<:ProcessContext,SC<:ProcessContext}
+    return @inline withregistry(hot_state, getregistry(stored_context))
+end
+
+"""Commit or return the state-only context produced by the noinline kernel."""
+@inline function after_while(p::P, func::F, hot_state::C, returnvalue, stored_context::SC = hot_state) where {P<:Process,F,C<:ProcessContext,SC<:ProcessContext}
     @inline set_endtime!(p)
+    persistent_context = @inline _reattach_persistent_registry(hot_state, stored_context)
     if ispaused(p)
-        # Pause is not finalization. Store the live context before cleanup,
-        # because type-preserving context merges may mutate it in place.
-        _store_runtime_context!(p, context)
-        persistent_context = _strip_runtime_inputs(context, stored_context)
+        _store_runtime_context!(p, persistent_context)
         return persistent_context
-    else
-        cleaned_context = @inline cleanup(func, context)
-        visible_context = materialize_widened_context(cleaned_context)
-        persistent_context = _strip_runtime_inputs(visible_context, stored_context)
-        commit_context!(p, persistent_context)
-        return @inline _loop_final_result(func, visible_context)
     end
+    commit_context!(p, persistent_context)
+    return returnvalue
 end
 
-"""
-Finalize one `InlineProcess` loop execution.
-
-Inline processes always write their persistent context directly back into the
-concrete inline context field.
-"""
-@inline function after_while(ip::IP, func::F, context::C, stored_context::SC = context) where {IP<:InlineProcess, F, C, SC}
+@inline function after_while(ip::IP, func::F, hot_state::C, returnvalue, stored_context::SC = hot_state) where {IP<:InlineProcess,F,C<:ProcessContext,SC<:ProcessContext}
     @inline set_endtime!(ip)
-    cleaned_context = @inline cleanup(func, context)
-    visible_context = materialize_widened_context(cleaned_context)
-    persistent_context = _strip_runtime_inputs(cleaned_context, stored_context)
+    persistent_context = @inline _reattach_persistent_registry(hot_state, stored_context)
     Processes.context(ip, persistent_context)
-    return @inline _loop_final_result(func, visible_context)
+    return returnvalue
 end
 
-"""
-Finalize one direct `run(::LoopAlgorithm; ...)` execution.
-
-`LoopRunProcess` is only a transient loop driver, so it returns the visible
-result without storing a persistent context on itself.
-"""
-@inline function after_while(p::P, func::F, context::C, stored_context::SC = context) where {P<:LoopRunProcess, F, C, SC}
+@inline function after_while(p::P, func::F, hot_state::C, returnvalue, stored_context::SC = hot_state) where {P<:LoopRunProcess,F,C<:ProcessContext,SC<:ProcessContext}
     @inline set_endtime!(p)
-    cleaned_context = @inline cleanup(func, context)
-    visible_context = materialize_widened_context(cleaned_context)
-    return @inline _loop_final_result(func, visible_context)
+    return returnvalue
 end
 
 """
@@ -73,27 +73,8 @@ Run a single function in a loop indefinitely
 
     step_plan = @inline getplan(func)
     step_wiring = @inline getwiring(step_plan)
-    runtime_context = @inline _merge_runtime_inputs(context, inputs)
-    if isresuming
-        @atomic process.paused = false
-    else
-        runtime_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
-        @inline tick!(process)
-        @inline inc!(process)
-    end
-
-    while true
-        nextcontext = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, lt, Stable())
-        # typeof(nextcontext) === typeof(runtime_context) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(runtime_context)).")
-        runtime_context = nextcontext
-        @inline tick!(process)
-        @inline inc!(process) 
-        if @inline breakcondition(lt, process, runtime_context)
-            break
-        end
-    end
-
-    return @inline after_while(process, func, runtime_context, context)
+    hot_state, returnvalue = @noinline _indefinite_loop_kernel!(process, func, step_plan, step_wiring, context, lt, inputs, Val(isresuming))
+    return @inline after_while(process, func, hot_state, returnvalue, context)
 end
 
 """
@@ -110,31 +91,76 @@ Base.@constprop :aggressive function loop(process::P, algo::F, context::C, r::R,
     step_plan = @inline getplan(algo)
     step_wiring = @inline getwiring(step_plan)
 
-    runtime_context = @inline _merge_runtime_inputs(context, inputs)
-    stablecontext = if isresuming
+    hot_state, returnvalue = @noinline _repeat_loop_kernel!(process, algo, step_plan, step_wiring, context, r, inputs, Val(isresuming))
+    return @inline after_while(process, algo, hot_state, returnvalue, context)
+end
+
+"""
+Run an indefinite loop with runtime state scoped inside this function.
+"""
+@noinline function _indefinite_loop_kernel!(
+    process::P,
+    func::F,
+    step_plan::SP,
+    step_wiring::W,
+    stored_context::C,
+    lifetime::LT,
+    inputs::I,
+    ::Val{isresuming},
+) where {P<:AbstractProcess,F<:AbstractLoopAlgorithm,SP,W,C<:ProcessContext,LT<:IndefiniteLifetime,I<:NamedTuple,isresuming}
+    context = @inline hot_context(stored_context)
+    runtimecontext = @inline _initial_runtime_context(inputs, process, lifetime)
+    if isresuming
         @atomic process.paused = false
-        runtime_context
     else
-        stepped_context = @inline _step!(step_plan, runtime_context, step_wiring, Namespace{nothing}(), process, r, Stable())
+        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
         @inline tick!(process)
         @inline inc!(process)
-        stepped_context
     end
-    
-    start_idx = @inline loopidx(process)
-    end_idx = @inline repeats(r)
-    
-    for _ in start_idx:end_idx
-    
-        nextcontext = @inline _step!(step_plan, stablecontext, step_wiring, Namespace{nothing}(), process, r, Stable())
-        # typeof(nextcontext) === typeof(stablecontext) || error("Steady-state loop steps must preserve context type. Got $(typeof(nextcontext)), expected $(typeof(stablecontext)).")
-        stablecontext = nextcontext
+
+    while true
+        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
         @inline tick!(process)
         @inline inc!(process)
-        if @inline breakcondition(r, process, stablecontext)
+        break_context = ExecutionContext((@inline withregistry(context, getregistry(func))), runtimecontext)
+        if @inline breakcondition(lifetime, process, break_context)
             break
         end
-
     end
-    return @inline after_while(process, algo, stablecontext, context)
+    return @noinline finalizer!(func, context, runtimecontext, process, lifetime)
+end
+
+"""
+Run a repeat loop with runtime state scoped inside this function.
+"""
+@noinline function _repeat_loop_kernel!(
+    process::P,
+    algo::F,
+    step_plan::SP,
+    step_wiring::W,
+    stored_context::C,
+    lifetime::R,
+    inputs::I,
+    ::Val{isresuming},
+) where {P<:AbstractProcess,F<:AbstractLoopAlgorithm,SP,W,C<:ProcessContext,R<:RepeatLifetime,I<:NamedTuple,isresuming}
+    context = @inline hot_context(stored_context)
+    runtimecontext = @inline _initial_runtime_context(inputs, process, lifetime)
+    if isresuming
+        @atomic process.paused = false
+    else
+        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
+        @inline tick!(process)
+        @inline inc!(process)
+    end
+
+    for _ in (@inline loopidx(process)):(@inline repeats(lifetime))
+        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
+        @inline tick!(process)
+        @inline inc!(process)
+        break_context = ExecutionContext((@inline withregistry(context, getregistry(algo))), runtimecontext)
+        if @inline breakcondition(lifetime, process, break_context)
+            break
+        end
+    end
+    return @noinline finalizer!(algo, context, runtimecontext, process, lifetime)
 end

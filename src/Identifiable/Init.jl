@@ -19,5 +19,6 @@ end
 function cleanup(sa::IdentifiableAlgo, context::AbstractContext)
     contextview = view(context, sa)
     cleanup_args = @inline cleanup(getalgo(sa), contextview)
-    @inline merge(contextview, cleanup_args)
+    newcontext, newruntimecontext = @inline merge(contextview, cleanup_args)
+    return :runtimecontext in fieldnames(typeof(context)) ? typeof(context)(newcontext, newruntimecontext) : newcontext
 end
