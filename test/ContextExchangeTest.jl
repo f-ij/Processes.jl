@@ -14,24 +14,23 @@ using Processes
 
     algo = resolve(CompositeAlgorithm(
         :target => ExchangeTargetForTest(),
-        ContextExchange(),
+        ContextExchange(:value),
         (1, 2),
+        Route(:target => :_exchange, :value),
     ))
     context = initcontext(algo; lifetime = Repeat(5))
 
-    interact!(context, Input(:target, :value => 2))
+    interact!(context, :value => 2)
     @test getkey(algo[:_exchange]) == :_exchange
-    @test length(context._exchange.buffer) == 1
+    @test context._exchange.store.pending.value[] == 2
 
     context = Processes._step!(algo, context, Processes.Unstable())
     @test context.target.value == 1.0
-    @test length(context._exchange.buffer) == 1
+    @test context._exchange.store.pending.value[] == 2
 
     context = Processes._step!(algo, context, Processes.Stable())
     @test context.target.value == 2.0
-    @test isempty(context._exchange.buffer)
-
-    @test_throws ErrorException interact!(context, Input(:target, :value => "not a float"))
+    @test context._exchange.store.pending.value[] === Processes.context_exchange_no_update
 end
 
 @testset "InteractiveVar writes through ContextExchange" begin
@@ -47,27 +46,29 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => InteractiveVarTargetForTest(),
-        ContextExchange(),
+        ContextExchange(:value),
         (1, 1),
+        Route(:target => :_exchange, :value),
     ))
     context = initcontext(algo; lifetime = Repeat(3))
 
-    ref = view(context, Var(:target, :value))
-    @test ref[] == 1.0
+    ref = view(context, :value)
+    @test ref[] === missing
+    duplicate_ref = view(context, Var(:_exchange, :value))
 
     ref[] = 4
-    @test ref[] == 1.0
-    @test length(context._exchange.buffer) == 1
+    @test ref[] === missing
+    @test duplicate_ref[] === missing
+    @test context._exchange.store.pending.value[] == 4
 
-    context = Processes.step!(algo[:_exchange], context)
-    ref = view(context, Var(:target, :value))
+    context = Processes._step!(algo, context, Processes.Stable())
     @test ref[] == 4.0
-    @test isempty(context._exchange.buffer)
+    @test duplicate_ref[] == 4.0
+    @test context._exchange.store.pending.value[] === Processes.context_exchange_no_update
 
-    typed_ref = view(context, Var(InteractiveVarTargetForTest, :value); exchange = :_exchange)
+    typed_ref = view(context, :value)
     typed_ref[] = 5
-    context = Processes.step!(algo[:_exchange], context)
-    typed_ref = view(context, Var(InteractiveVarTargetForTest, :value); exchange = :_exchange)
+    context = Processes._step!(algo, context, Processes.Stable())
     @test typed_ref[] == 5.0
 end
 
@@ -84,13 +85,14 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => PollingInteractiveTargetForTest(),
-        ContextExchange(),
+        ContextExchange(:seen),
         (1, 1),
+        Route(:target => :_exchange, :seen),
     ))
     context = initcontext(algo; lifetime = Repeat(3))
 
-    seen_ref = view(context, Var(:target, :seen))
-    @test seen_ref[] == 0
+    seen_ref = view(context, :seen)
+    @test seen_ref[] === missing
 
     context = Processes._step!(algo, context, Processes.Stable())
     @test context.target.seen == 1
@@ -98,15 +100,16 @@ end
 
     interval_algo = resolve(CompositeAlgorithm(
         :target => PollingInteractiveTargetForTest(),
-        ContextExchange(),
+        ContextExchange(:seen),
         (1, 2),
+        Route(:target => :_exchange, :seen),
     ))
     interval_context = initcontext(interval_algo; lifetime = Repeat(4))
-    interval_ref = view(interval_context, Var(:target, :seen))
+    interval_ref = view(interval_context, :seen)
 
     interval_context = Processes._step!(interval_algo, interval_context, Processes.Stable())
     @test interval_context.target.seen == 1
-    @test interval_ref[] == 0
+    @test interval_ref[] === missing
 
     interval_context = Processes._step!(interval_algo, interval_context, Processes.Stable())
     @test interval_context.target.seen == 2
@@ -123,32 +126,31 @@ end
     algo = resolve(CompositeAlgorithm(:target => NoExchangeTargetForTest(), (1,)))
     context = initcontext(algo; lifetime = Repeat(1))
 
-    @test_throws ErrorException view(context, Var(:target, :value))
+    @test_throws ErrorException view(context, :value)
 end
 
-@testset "ContextExchange lets context merge reject missing runtime targets" begin
-    struct MissingRuntimeTargetForTest <: ProcessAlgorithm end
+@testset "ContextExchange writes through routes" begin
+    struct RoutedExchangeTargetForTest <: ProcessAlgorithm end
 
-    function Processes.init(::MissingRuntimeTargetForTest, context)
+    function Processes.init(::RoutedExchangeTargetForTest, context)
         return (; value = 1.0)
     end
 
-    function Processes.step!(::MissingRuntimeTargetForTest, context)
+    function Processes.step!(::RoutedExchangeTargetForTest, context)
         return (;)
     end
 
     algo = resolve(CompositeAlgorithm(
-        :target => MissingRuntimeTargetForTest(),
-        ContextExchange(),
+        :target => RoutedExchangeTargetForTest(),
+        ContextExchange(:value),
         (1, 1),
+        Route(:target => :_exchange, :value),
     ))
     context = initcontext(algo; lifetime = Repeat(1))
 
-    push!(context._exchange.buffer, Processes.BufferedContextUpdate(:missing_target, :value, 2.0))
-    push!(context._exchange.buffer, Processes.BufferedContextUpdate(:target, :missing_value, 3.0))
-
-    @test_throws Exception Processes.step!(algo[:_exchange], context)
-    @test context.target.value == 1.0
+    interact!(context, :value => 2.0)
+    context = Processes._step!(algo, context, Processes.Stable())
+    @test context.target.value == 2.0
 end
 
 @testset "ContextExchange updates running process state" begin
@@ -165,8 +167,9 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => SlowInteractiveTargetForTest(),
-        ContextExchange(),
+        ContextExchange(:value),
         (1, 1),
+        Route(:target => :_exchange, :value),
     ))
     process = Process(algo; repeat = Inf)
 
@@ -178,7 +181,7 @@ end
     end
     @test loopint(process) >= 3
 
-    ref = view(context(process), Var(:target, :value))
+    ref = view(context(process), :value)
     ref[] = 42
 
     injected_deadline = time() + 2.0

@@ -1,204 +1,73 @@
 # [Interactive Contexts](@id interactive_user)
 
-`Processes` supports queued context updates and scheduled value publishing through `ContextExchange`.
+`Processes` supports scheduled external reads and writes through `ContextExchange`.
 
-Use this when code outside the normal `step!` method needs to change one stored
-context value while a process is being stepped, or when external code needs a
-polled view of a stored value.
-
-This lets you:
-
-- queue a value change from outside normal `step!` code,
-- validate and convert that value before it reaches stored state,
-- apply queued updates whenever the exchange is scheduled by the loop algorithm,
-- publish watched values into external refs on the same schedule,
-- work with one variable at a time through a `view(context, Var(...))` handle that reads and writes like a `Ref`.
-
-Updates are converted before they enter the queue. The exchange step then only
-applies writes whose target and value type are already known, and publishes
-watched values after those writes have been applied.
+Use this when code outside normal `step!` methods needs a polled view of process
+state, or needs to queue a value change while a process is running.
 
 ## Overview
 
-Use a `ContextExchange` as one component of a resolved algorithm:
+Declare the exchange-local names in the `ContextExchange` constructor:
 
 ```julia
 algo = resolve(CompositeAlgorithm(
     :target => MyAlgo(),
-    ContextExchange(),
+    ContextExchange(:value),
     (1, 10),
+    Route(:target => :_exchange, :value),
 ))
-
-context = initcontext(algo; lifetime = Repeat(10))
 ```
 
-The exchange owns a small state subcontext named `:_exchange` with a plain buffer of pending writes and a shared store for watched values.
+The names are stored in the `ContextExchange` type. On each scheduled exchange
+step, generated code reads those names from the exchange view. `Route` and
+`Share` decide where those names come from and where queued writes go.
 
-Each buffered write stores the exact target `(subcontext, variable)` pair and a
-value that has already been converted to the target variable's current type.
+The exchange owns a persistent subcontext named `:_exchange`.
 
-## Checking Whether a Context Is Interactive
+## Polling
 
-Use `isinteractive(...)` to test whether a context or process has at least one `ContextExchange` in its registry.
-
-```julia
-isinteractive(context)
-isinteractive(process)
-```
-
-This is equivalent to asking whether the registry contains a `ContextExchange` target that `interact!(...)` or `view(context, Var(...))` can use.
-
-If you call the interactive APIs on a context without an exchange, they throw an error.
-
-## Programmatic Updates With `interact!`
-
-`interact!(context, input)` resolves an `Input(...)`, `Override(...)`, or `Var(...) => value` pair into concrete context variables and appends typed buffered writes into the exchange state.
-
-Example:
+`view(context, :value)` returns an `InteractiveVar` for the exchange-local
+`:value` slot:
 
 ```julia
-interact!(context, Input(:target, :value => 2))
-```
-
-This does **not** update the target immediately. It only appends a buffered write.
-
-The update becomes visible when the exchange is stepped:
-
-```julia
-context = Processes.step!(algo[:_exchange], context, Processes.Stable())
-```
-
-For scheduled execution, control the cadence with the `CompositeAlgorithm` interval tuple.
-
-### Example: Buffered Application Every Two Steps
-
-```julia
-algo = resolve(CompositeAlgorithm(
-    :target => MyAlgo(),
-    ContextExchange(),
-    (1, 2),
-))
-
-context = initcontext(algo; lifetime = Repeat(5))
-
-interact!(context, Input(:target, :value => 2))
-length(context._exchange.buffer) == 1
-
-context = Processes.step!(algo, context, Processes.Unstable())
-context.target.value == 1.0
-
-context = Processes.step!(algo, context, Processes.Stable())
-context.target.value == 2.0
-isempty(context._exchange.buffer)
-```
-
-This is the same behavior exercised in `test/ContextExchangeTest.jl`.
-
-## Ref-Like Interactive Access With `view(context, Var(...))`
-
-`view(context, Var(...))` returns an `InteractiveVar`, a small ref-like object for one concrete target variable.
-
-It supports:
-
-- `ref[]` to read the current value,
-- `ref[] = value` to enqueue a buffered update through the exchange.
-
-Example:
-
-```julia
-ref = view(context, Var(:target, :value))
-
+ref = view(context, :value)
 ref[]
+```
+
+`ref[]` reads the last value published by a scheduled exchange step. Before the
+first exchange step, the value is `missing`.
+
+With an interval of `10`, published values refresh every 10 composite steps.
+
+## Writes
+
+Assigning to the ref queues a write:
+
+```julia
 ref[] = 4
 ```
 
-Like `interact!(...)`, assigning through the ref queues a write but does not apply it immediately.
+The write is applied on the next scheduled exchange step. The generated exchange
+step converts the pending value to the type of the currently routed value, then
+returns it under the same exchange-local name. Normal merge and route machinery
+then applies the update.
+
+Programmatic writes use the same exchange-local names:
 
 ```julia
-ref = view(context, Var(:target, :value))
-ref[] == 1.0
-
-ref[] = 4
-ref[] == 1.0
-length(context._exchange.buffer) == 1
-
-context = Processes.step!(algo[:_exchange], context, Processes.Stable())
-ref[] == 4.0
+interact!(context, :value => 5)
+interact!(process, :value => 5)
 ```
 
-### Typed Selector Example
+## Explicit Exchange Key
 
-If the registry contains a unique algorithm of a given type, you can also use the type selector form:
+The default exchange key is `:_exchange`. You can address it explicitly:
 
 ```julia
-typed_ref = view(context, Var(MyAlgoType, :value); exchange = :_exchange)
-typed_ref[] = 5
-context = Processes.step!(algo[:_exchange], context, Processes.Stable())
-typed_ref[] == 5.0
+ref = view(context, Var(:_exchange, :value))
+ref = view(context, :value; exchange = :_exchange)
+interact!(context, :value => 2; exchange = :_exchange)
 ```
-
-If multiple algorithms of that type exist, interactive lookup will ask you to disambiguate by key or by concrete algorithm instance.
-
-## Input Forms Accepted by `interact!`
-
-The exchange supports the same user-facing naming styles already used elsewhere in the package:
-
-- `Input(:target, :value => 2)`
-- `Override(:target, :value => 2)`
-- `Var(:target, :value) => 2`
-- `Input(MyAlgoType, :value => 2)` when that target resolves uniquely
-
-Internally, these are resolved through the registry before the update is queued.
-
-## Type Conversion Rules
-
-The exchange validates types before writing into its buffer.
-
-If the target variable currently has type `Float64` and you enqueue `2`, the exchange converts that to `2.0` immediately and stores the typed value.
-
-If conversion fails, `interact!(...)` or `ref[] = value` throws before the bad value reaches the buffer.
-
-Example:
-
-```julia
-interact!(context, Input(:target, :value => 2))      # accepted
-interact!(context, Input(:target, :value => "bad"))  # throws
-```
-
-This means the exchange step itself does not need to guess how to stabilize a type change at runtime.
-
-## Missing Targets at Apply Time
-
-Buffered writes are resolved when they are queued. At apply time, the exchange uses the same context merge machinery as normal `step!` returns. If the target no longer exists, the context merge errors in the usual way.
-
-## Choosing an Exchange
-
-`ContextExchange` always uses the fixed key `:_exchange`. `interact!(...)` and `view(context, Var(...))` use that exchange automatically.
-
-You can also pass the key explicitly:
-
-```julia
-ref = view(context, Var(:target, :value); exchange = :_exchange)
-interact!(context, Input(:target, :value => 2); exchange = :_exchange)
-```
-
-## Process Overload
-
-There is also a convenience overload:
-
-```julia
-interact!(process, Input(:target, :value => 2))
-```
-
-This enqueues updates through the process' stored backing context.
-
-For the clearest semantics, the examples in this page use direct context stepping, because exchange application is defined in terms of stepping the context that owns the exchange state.
-
-## Relationship to `Var`
-
-`InteractiveVar` builds directly on `Var(...)` selectors.
-
-See [Vars (`Var` Selectors)](@ref vars_user) for the selector forms themselves, and [Contexts and Indexing](@ref contexts_user) for how context lookups and registry-based targeting work.
 
 ## Complete Example
 
@@ -217,34 +86,21 @@ end
 
 algo = resolve(CompositeAlgorithm(
     :target => InteractiveTarget(),
-    ContextExchange(),
+    ContextExchange(:value),
     (1, 1),
+    Route(:target => :_exchange, :value),
 ))
 
 context = initcontext(algo; lifetime = Repeat(3))
+ref = view(context, :value)
 
-isinteractive(context)
-
-ref = view(context, Var(:target, :value))
-ref[] == 1.0
+ref[] === missing
 
 ref[] = 4
-length(context._exchange.buffer) == 1
+context = Processes._step!(algo, context, Processes.Stable())
 
-context = Processes.step!(algo[:_exchange], context, Processes.Stable())
 ref[] == 4.0
-
-interact!(context, Input(:target, :value => 5))
-context = Processes.step!(algo[:_exchange], context, Processes.Stable())
-ref[] == 5.0
+context.target.value == 4.0
 ```
 
-## Tested Behavior
-
-The interactive API is covered in `test/ContextExchangeTest.jl`, including:
-
-- buffered updates via `interact!(...)`,
-- `view(context, Var(...))` reads and writes,
-- typed selector lookup,
-- missing-exchange errors,
-- context merge errors for missing runtime targets.
+The interactive API is covered in `test/ContextExchangeTest.jl`.
