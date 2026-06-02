@@ -14,13 +14,15 @@ using Processes
 
     algo = resolve(CompositeAlgorithm(
         :target => ExchangeTargetForTest(),
-        ContextExchange(Var(:target, :value)),
+        :_exchange => ContextExchange(),
         (1, 2),
     ))
-    context = initcontext(algo; lifetime = Repeat(5))
+    context = Processes.context(init(algo, Init(:_exchange; vars = (Var(:target, :value),)); lifetime = Repeat(5)))
 
     interact!(context, :value => 2)
     exchange_key = getkey(only(Processes._context_exchanges(context)))
+    @test keys(context[exchange_key]) == (:store,)
+    @test context[exchange_key].store.published.value isa Base.RefValue{Float64}
     @test context[exchange_key].store.pending.value[] == 2
 
     context = Processes._step!(algo, context, Processes.Unstable())
@@ -45,19 +47,20 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => InteractiveVarTargetForTest(),
-        ContextExchange(Var(:target, :value)),
+        :_exchange => ContextExchange(),
         (1, 1),
     ))
-    context = initcontext(algo; lifetime = Repeat(3))
+    context = Processes.context(init(algo, Init(:_exchange; vars = (Var(:target, :value),)); lifetime = Repeat(3)))
 
     ref = view(context, :value)
-    @test ref[] === missing
+    @test ref[] == 1.0
+    @test @inferred(ref[]) == 1.0
     exchange_key = getkey(only(Processes._context_exchanges(context)))
     duplicate_ref = view(context, Var(exchange_key, :value))
 
     ref[] = 4
-    @test ref[] === missing
-    @test duplicate_ref[] === missing
+    @test ref[] == 1.0
+    @test duplicate_ref[] == 1.0
     @test context[exchange_key].store.pending.value[] == 4
 
     context = Processes._step!(algo, context, Processes.Stable())
@@ -85,13 +88,13 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => PollingInteractiveTargetForTest(),
-        ContextExchange(Var(:target, :seen)),
+        :_exchange => ContextExchange(),
         (1, 1),
     ))
-    context = initcontext(algo; lifetime = Repeat(3))
+    context = Processes.context(init(algo, Init(:_exchange; vars = (Var(:target, :seen),)); lifetime = Repeat(3)))
 
     seen_ref = view(context, :seen)
-    @test seen_ref[] === missing
+    @test seen_ref[] == 0
 
     context = Processes._step!(algo, context, Processes.Stable())
     @test context.target.seen == 1
@@ -99,15 +102,15 @@ end
 
     interval_algo = resolve(CompositeAlgorithm(
         :target => PollingInteractiveTargetForTest(),
-        ContextExchange(Var(:target, :seen)),
+        :_exchange => ContextExchange(),
         (1, 2),
     ))
-    interval_context = initcontext(interval_algo; lifetime = Repeat(4))
+    interval_context = Processes.context(init(interval_algo, Init(:_exchange; vars = (Var(:target, :seen),)); lifetime = Repeat(4)))
     interval_ref = view(interval_context, :seen)
 
     interval_context = Processes._step!(interval_algo, interval_context, Processes.Stable())
     @test interval_context.target.seen == 1
-    @test interval_ref[] === missing
+    @test interval_ref[] == 0
 
     interval_context = Processes._step!(interval_algo, interval_context, Processes.Stable())
     @test interval_context.target.seen == 2
@@ -127,10 +130,14 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => AliasedExchangeTargetForTest(),
-        ContextExchange(:display => Var(AliasedExchangeTargetForTest, :value)),
+        :_exchange => ContextExchange(),
         (1, 1),
     ))
-    context = initcontext(algo; lifetime = Repeat(2))
+    context = Processes.context(init(
+        algo,
+        Init(:_exchange; vars = (:display => Var(AliasedExchangeTargetForTest, :value),));
+        lifetime = Repeat(2),
+    ))
 
     ref = view(context, :display)
     ref[] = 3
@@ -166,10 +173,14 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => TimedExchangeTargetForTest(),
-        ContextExchange(Var(:target, :value), Var(:target, :seen); period = 60.0),
+        :_exchange => ContextExchange(; period = 60.0),
         (1, 1),
     ))
-    context = initcontext(algo; lifetime = Repeat(3))
+    context = Processes.context(init(
+        algo,
+        Init(:_exchange; vars = (Var(:target, :value), Var(:target, :seen)));
+        lifetime = Repeat(3),
+    ))
     value_ref = view(context, :value)
     seen_ref = view(context, :seen)
 
@@ -198,10 +209,10 @@ end
 
     algo = resolve(CompositeAlgorithm(
         :target => SlowInteractiveTargetForTest(),
-        ContextExchange(Var(:target, :value)),
+        :_exchange => ContextExchange(),
         (1, 1),
     ))
-    process = Process(algo; repeat = Inf)
+    process = Process(algo, Init(:_exchange; vars = (Var(:target, :value),)); repeat = Inf)
 
     run(process)
 

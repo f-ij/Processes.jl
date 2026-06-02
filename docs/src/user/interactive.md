@@ -5,13 +5,19 @@ process variables.
 
 ## Selectors
 
-Construct an exchange from `Var` selectors:
+Add a `ContextExchange` child and pass its `Var` selectors as init-only
+`vars`:
 
 ```julia
 algo = resolve(CompositeAlgorithm(
     :target => MyAlgo(),
-    ContextExchange(Var(:target, :value), Var(:target, :seen)),
+    :_exchange => ContextExchange(),
     (1, 20),
+))
+
+context = Processes.context(init(
+    algo,
+    Init(:_exchange; vars = (Var(:target, :value), Var(:target, :seen))),
 ))
 ```
 
@@ -23,13 +29,13 @@ machinery.
 For a different external name, use a pair:
 
 ```julia
-ContextExchange(:display => Var(:target, :value))
+Init(:_exchange; vars = (:display => Var(:target, :value),))
 ```
 
 Type selectors are also supported when they resolve uniquely:
 
 ```julia
-ContextExchange(:display => Var(MyAlgo, :value))
+Init(:_exchange; vars = (:display => Var(MyAlgo, :value),))
 ```
 
 ## Polling And Writes
@@ -38,7 +44,7 @@ External code reads and writes exchange-local names:
 
 ```julia
 ref = view(context, :value)
-ref[]          # last published value, initially `missing`
+ref[]          # last published value, initialized from the target field
 ref[] = 4      # queued write
 ```
 
@@ -61,13 +67,15 @@ multiple exchanges, pass the exchange key explicitly.
 The outer loop schedule still controls how often the exchange child is called:
 
 ```julia
-CompositeAlgorithm(target, ContextExchange(Var(:target, :value)), (1, 20))
+CompositeAlgorithm(target, :_exchange => ContextExchange(), (1, 20))
+Processes.context(init(algo, Init(:_exchange; vars = (Var(:target, :value),))))
 ```
 
 The exchange also supports a wall-clock gate:
 
 ```julia
-ContextExchange(Var(:target, :value); period = 0.05)
+ContextExchange(; period = 0.05)
+Init(:_exchange; vars = (Var(:target, :value),))
 ```
 
 If the exchange is called before `period` seconds have elapsed, it returns
@@ -90,14 +98,18 @@ end
 
 algo = resolve(CompositeAlgorithm(
     :target => InteractiveTarget(),
-    ContextExchange(Var(:target, :value)),
+    :_exchange => ContextExchange(),
     (1, 1),
 ))
 
-context = initcontext(algo; lifetime = Repeat(3))
+context = Processes.context(init(
+    algo,
+    Init(:_exchange; vars = (Var(:target, :value),));
+    lifetime = Repeat(3),
+))
 ref = view(context, :value)
 
-ref[] === missing
+ref[] == 1.0
 
 ref[] = 4
 context = Processes._step!(algo, context, Processes.Stable())

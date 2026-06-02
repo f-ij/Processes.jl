@@ -3,15 +3,18 @@ export ContextExchange, InteractiveVar, interact!, isinteractive
 struct ContextExchangeNoUpdate end
 const context_exchange_no_update = ContextExchangeNoUpdate()
 
-struct ResolvedExchangeVar{Name, Subcontext, Varname} end
+struct ResolvedExchangeVar{Name, Subcontext, Varname, T}
+    initial::T
+end
 
-ResolvedExchangeVar(name::Symbol, subcontext::Symbol, varname::Symbol) =
-    ResolvedExchangeVar{name, subcontext, varname}()
+ResolvedExchangeVar(name::Symbol, subcontext::Symbol, varname::Symbol, initial::T) where {T} =
+    ResolvedExchangeVar{name, subcontext, varname, T}(initial)
 
 @inline _exchange_name(::ResolvedExchangeVar{Name}) where {Name} = Name
 @inline _exchange_name(::Type{<:ResolvedExchangeVar{Name}}) where {Name} = Name
 @inline _exchange_subcontext(::Type{<:ResolvedExchangeVar{Name, Subcontext}}) where {Name, Subcontext} = Subcontext
 @inline _exchange_varname(::Type{<:ResolvedExchangeVar{Name, Subcontext, Varname}}) where {Name, Subcontext, Varname} = Varname
+@inline _exchange_vartype(::Type{<:ResolvedExchangeVar{Name, Subcontext, Varname, T}}) where {Name, Subcontext, Varname, T} = T
 
 """
 Mutable buffers shared by `ContextExchange` and `InteractiveVar`.
@@ -30,8 +33,14 @@ end
 @generated function ContextExchangeStore(specs::Specs, period::Float64) where {Specs<:Tuple}
     spec_types = Specs.parameters
     names = tuple((_exchange_name(spec) for spec in spec_types)...)
-    published_values = (:(Ref{Any}(missing)) for _ in names)
-    pending_values = (:(Ref{Any}(context_exchange_no_update)) for _ in names)
+    published_values = map(enumerate(spec_types)) do (i, spec)
+        T = _exchange_vartype(spec)
+        :(Ref{$T}(getfield(getfield(specs, $i), :initial)))
+    end
+    pending_values = map(spec_types) do spec
+        T = _exchange_vartype(spec)
+        :(Ref{Union{ContextExchangeNoUpdate, $T}}(context_exchange_no_update))
+    end
 
     return quote
         published = NamedTuple{$names}(($(published_values...),))
@@ -49,38 +58,36 @@ end
 """
 Scheduled two-way exchange for concrete `Var` selectors.
 
-Selectors are supplied as values, for example:
+Selectors are supplied as init values, for example:
 
 ```julia
-ContextExchange(Var(:target, :value), :display_seen => Var(MyAlgo, :seen))
+ContextExchange()
+Init(:_exchange; vars = (Var(:target, :value), :display_seen => Var(MyAlgo, :seen)))
 ```
 
 Init resolves those selectors against the process registry/context and stores
 the resolved paths in `ContextExchangeStore`. The exchange has a custom `_step!`
 so it can read and write those paths directly.
 """
-struct ContextExchange{Selectors, Key} <: AbstractIdentifiableAlgo{
+struct ContextExchange{Key} <: AbstractIdentifiableAlgo{
     ContextExchange,
     ValMatcher(:ContextExchange),
     VarAliases(),
     Symbol(),
     Key,
 }
-    selectors::Selectors
     period::Float64
 end
 
-ContextExchange(selectors...; period::Real = 0.0) =
-    ContextExchange{typeof(selectors), :_exchange}(selectors, Float64(period))
+ContextExchange(; period::Real = 0.0) = ContextExchange{:_exchange}(Float64(period))
 
-@inline exchange_selectors(exchange::ContextExchange) = getfield(exchange, :selectors)
 @inline exchange_period(exchange::ContextExchange) = getfield(exchange, :period)
 @inline Base.getkey(exchange::ContextExchange) = getkey(typeof(exchange))
-@inline Base.getkey(::Type{<:ContextExchange{Selectors, Key}}) where {Selectors, Key} = Key
+@inline Base.getkey(::Type{<:ContextExchange{Key}}) where {Key} = Key
 @inline getalgo(exchange::ContextExchange) = exchange
 @inline getalgos(exchange::ContextExchange) = (exchange,)
-@inline setcontextkey(exchange::ContextExchange{Selectors}, key::Symbol) where {Selectors} =
-    ContextExchange{Selectors, key}(exchange_selectors(exchange), exchange_period(exchange))
+@inline setcontextkey(exchange::ContextExchange, key::Symbol) =
+    ContextExchange{key}(exchange_period(exchange))
 @inline setid(exchange::ContextExchange, newid) = exchange
 @inline setvaraliases(exchange::ContextExchange, newaliases) = exchange
 @inline match_by(::Union{ContextExchange, Type{<:ContextExchange}}) = ValMatcher(:ContextExchange)
@@ -90,7 +97,7 @@ ContextExchange(selectors...; period::Real = 0.0) =
     haskey(exchange) ? exchange : setcontextkey(exchange, static_symbol(:ContextExchange_, i))
 
 function _context_exchange_state(exchange::ContextExchange, context::ProcessContext)
-    specs = _resolve_exchange_specs(context, exchange_selectors(exchange))
+    specs = _resolve_exchange_specs(context, _exchange_init_selectors(context, getkey(exchange)))
     store = ContextExchangeStore(specs, exchange_period(exchange))
     return (; store)
 end
@@ -106,6 +113,20 @@ end
 
 @inline Processes.cleanup(::ContextExchange, context::AbstractContext) = context
 
+"""
+    _exchange_init_selectors(context, key)
+
+Read the init-only `vars` tuple for a `ContextExchange` namespace before that
+namespace is replaced by its resolved store.
+"""
+@inline function _exchange_init_selectors(context::ProcessContext, key::Symbol)
+    data = getdata(getproperty(context, key))
+    haskey(data, :vars) || error("ContextExchange requires init selectors: Init($(key); vars = (...,)).")
+    selectors = getfield(data, :vars)
+    selectors isa Tuple || error("ContextExchange init field `vars` must be a tuple of Var selectors or name => Var pairs.")
+    return selectors
+end
+
 function _resolve_exchange_specs(context::ProcessContext, selectors::Tuple)
     return ntuple(i -> _resolve_exchange_spec(context, selectors[i]), length(selectors))
 end
@@ -115,15 +136,15 @@ end
 
 function _resolve_exchange_spec(context::ProcessContext, selector)
     name, var = _exchange_selector_pair(selector)
-    subcontext, varname = _resolve_exchange_var(context, var)
-    return ResolvedExchangeVar(name, subcontext, varname)
+    subcontext, varname, initial = _resolve_exchange_var(context, var)
+    return ResolvedExchangeVar(name, subcontext, varname, initial)
 end
 
 function _resolve_exchange_var(context::ProcessContext, ::Var{Entity, Varname}) where {Entity, Varname}
     Entity == :globals && error("ContextExchange selectors must target stored subcontext variables, not globals.")
     subcontext = _resolve_exchange_entity(context, Entity)
-    _validate_exchange_target(context, subcontext, Varname)
-    return subcontext, Varname
+    initial = _validate_exchange_target(context, subcontext, Varname)
+    return subcontext, Varname, initial
 end
 
 function _resolve_exchange_entity(context::ProcessContext, entity::Symbol)
@@ -148,7 +169,7 @@ end
 function _validate_exchange_target(context::ProcessContext, subcontext::Symbol, varname::Symbol)
     subctx = getproperty(context, subcontext)
     haskey(getdata(subctx), varname) || error("ContextExchange target variable $(subcontext).$(varname) not found.")
-    return nothing
+    return getproperty(subctx, varname)
 end
 
 function _default_exchange_key(context::ProcessContext)
@@ -241,11 +262,18 @@ end
     return Expr(:block, exprs...)
 end
 
-@inline function _exchange_slot(store::ContextExchangeStore{Specs}, ::Val{name}) where {Specs, name}
-    names = propertynames(getfield(store, :published))
+@inline @generated function _exchange_slot(store::ContextExchangeStore{Specs}, ::Val{name}) where {Specs, name}
+    names = fieldnames(fieldtype(store, :published))
     name in names || error("ContextExchange does not expose variable $(name). Available variables are $(names).")
-    return getproperty(getfield(store, :published), name), getproperty(getfield(store, :pending), name)
+    return quote
+        published = getfield(store, :published)
+        pending = getfield(store, :pending)
+        return getfield(published, $(QuoteNode(name))), getfield(pending, $(QuoteNode(name)))
+    end
 end
+
+"""Return the concrete target type accepted by a typed pending slot."""
+@inline _pending_value_type(::Base.RefValue{Union{ContextExchangeNoUpdate, T}}) where {T} = T
 
 """
     interact!(context, :name => value; exchange = :_exchange)
@@ -256,7 +284,7 @@ the resolved subcontext.
 """
 function interact!(context::ProcessContext, pair::Pair{Symbol, <:Any}; exchange::Union{Nothing, Symbol} = nothing)
     _, pending = _exchange_slot(_context_exchange_store(context, exchange), Val(first(pair)))
-    pending[] = last(pair)
+    pending[] = convert(_pending_value_type(pending), last(pair))
     return context
 end
 
@@ -291,7 +319,8 @@ end
 
 @inline Base.getindex(ref::InteractiveVar) = getfield(ref, :published)[]
 
-function Base.setindex!(ref::InteractiveVar, value)
-    getfield(ref, :pending)[] = value
+@inline function Base.setindex!(ref::InteractiveVar, value)
+    pending = getfield(ref, :pending)
+    pending[] = convert(_pending_value_type(pending), value)
     return value
 end
