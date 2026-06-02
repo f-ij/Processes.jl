@@ -29,10 +29,16 @@ Route/share metadata deliberately does not live on `SubContext`. Plan routing is
 applied through `SubContextView` at step time so context shape stays independent
 from execution-plan wiring.
 """
-struct SubContext{T<:NamedTuple} <: AbstractSubContext
+struct SubContext{Name,T<:NamedTuple} <: AbstractSubContext
     name::Symbol
     data::T
+
+    function SubContext{Name,T}(data::T) where {Name,T<:NamedTuple}
+        new{Name,T}(Name, data)
+    end
 end
+
+SubContext(name::Symbol, data::D) where {D<:NamedTuple} = SubContext{name,D}(data)
 
 export inject
 #######################

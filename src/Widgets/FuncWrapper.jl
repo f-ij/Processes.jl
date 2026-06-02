@@ -146,7 +146,7 @@ end
     for name in fieldnames(R)
         location, _ = _compute_location(SCV, name)
         if isnothing(location)
-            name in DemandNames && push!(runtime_names, name)
+            (DemandNames === :all || name in DemandNames) && push!(runtime_names, name)
         else
             push!(view_names, name)
         end

@@ -23,9 +23,6 @@ end
     ProcessContext(NamedTuple{(name,)}((SubContext(name, data),)), nothing)
 
 @inline Base.@constprop :aggressive function Base.getproperty(pc::ProcessContext, name::Symbol)
-    if name === :subcontexts || name === :reg || name === :registry
-        return name === :registry ? getfield(pc, :reg) : getfield(pc, name)
-    end
     subcontexts = @inline get_subcontexts(pc)
     if haskey(subcontexts, name)
         return @inline getproperty(subcontexts, name)
@@ -40,6 +37,8 @@ end
     end
     error("Context has no persistent subcontext named `$name`.")
 end
+
+@inline Base.propertynames(pc::ProcessContext, private::Bool = false) = propertynames(@inline get_subcontexts(pc))
 
 @inline Base.@constprop :aggressive function Base.getindex(pc::ProcessContext, name::Symbol)
     name === :globals && return getglobals(pc)
@@ -217,6 +216,8 @@ end
 end
 
 """Filter a named tuple to the fields demanded by downstream runtime consumers."""
+@inline _demanded_namedtuple(args::A, ::ReturnDemand{:all}) where {A<:NamedTuple} = args
+
 @inline @generated function _demanded_namedtuple(args::A, ::ReturnDemand{Names}) where {A<:NamedTuple,Names}
     kept = tuple((name for name in fieldnames(A) if name in Names)...)
     exprs = (:(getproperty(args, $(QuoteNode(name)))) for name in kept)

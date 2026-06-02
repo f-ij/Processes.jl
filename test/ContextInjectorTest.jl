@@ -60,12 +60,14 @@ end
     @test length(context._injector.buffer) == 1
 
     context = Processes.step!(algo[:_injector], context)
+    ref = view(context, Var(:target, :value))
     @test ref[] == 4.0
     @test isempty(context._injector.buffer)
 
     typed_ref = view(context, Var(InteractiveVarTargetForTest, :value); injector = :_injector)
     typed_ref[] = 5
     context = Processes.step!(algo[:_injector], context)
+    typed_ref = view(context, Var(InteractiveVarTargetForTest, :value); injector = :_injector)
     @test typed_ref[] == 5.0
 end
 

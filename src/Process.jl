@@ -4,7 +4,7 @@ export Process, getallocator, getnewallocator, getcontext, getticks
 mutable struct Process{F,LT} <: AbstractProcess
     id::UUID
     algo::F
-    lifetime::LT
+    lifetime::Lifetime
     runtime_context::Union{Nothing, ProcessContext}
     timeout::Float64
     task::Union{Nothing, Task}

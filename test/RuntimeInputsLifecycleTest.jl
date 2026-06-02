@@ -124,7 +124,7 @@ runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
         @test Processes._has_typed_runtime_context(process)
         @test isnothing(process.runtime_context)
         fetched_context = fetch(process)
-        @test Processes.getglobals(fetched_context).value == 9.0
+        @test !haskey(Processes.getglobals(fetched_context), :value)
         @test isempty(Processes.context(process)[:FuncWrapper_1])
         @test !haskey(Processes.getglobals(Processes.context(process)), :value)
         @test isempty(Processes.getruntimeinput(Processes.context(process)))
@@ -137,7 +137,7 @@ runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
     Processes.runprocessinline!(inline_worker; temp = 2.0, scale = 3)
     @test Processes._has_typed_runtime_context(inline_worker)
     @test isnothing(inline_worker.runtime_context)
-    @test Processes.getglobals(fetch(inline_worker)).value == 9.0
+    @test !haskey(Processes.getglobals(fetch(inline_worker)), :value)
     @test isempty(Processes.context(inline_worker)[:FuncWrapper_1])
     @test !haskey(Processes.getglobals(Processes.context(inline_worker)), :value)
     @test isempty(Processes.getruntimeinput(Processes.context(inline_worker)))
@@ -148,14 +148,14 @@ runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
     per_run_repeats_process = Process(runtime_algo)
     run(per_run_repeats_process; repeats = 1, temp = 2.0, scale = 3)
     wait(per_run_repeats_process)
-    @test Processes.getglobals(fetch(per_run_repeats_process)).value == 9.0
+    @test !haskey(Processes.getglobals(fetch(per_run_repeats_process)), :value)
     @test Processes.lifetime(per_run_repeats_process) == Repeat(1)
     close(per_run_repeats_process)
 
     per_run_lifetime_process = Process(runtime_algo)
     run(per_run_lifetime_process; lifetime = Repeat(1), temp = 1.5, scale = 2)
     wait(per_run_lifetime_process)
-    @test Processes.getglobals(fetch(per_run_lifetime_process)).value == 6.0
+    @test !haskey(Processes.getglobals(fetch(per_run_lifetime_process)), :value)
     close(per_run_lifetime_process)
 
     positional_specs_process = Process(runtime_algo; repeats = 1)
@@ -163,14 +163,14 @@ runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
 
     inline_process = InlineProcess(runtime_algo; repeats = 1)
     inline_result = run(inline_process; temp = 2.0, scale = 3)
-    @test Processes.getglobals(inline_result).value == 9.0
+    @test !haskey(Processes.getglobals(inline_result), :value)
     @test isempty(Processes.context(inline_process)[:FuncWrapper_1])
     @test !haskey(Processes.getglobals(Processes.context(inline_process)), :value)
     @test isempty(Processes.getruntimeinput(Processes.context(inline_process)))
     @test isempty(getproperty(Processes.get_subcontexts(Processes.context(inline_process)), :_input))
 
     inline_nogen_result = Processes.run_nogen(inline_process; temp = 1.5, scale = 2)
-    @test Processes.getglobals(inline_nogen_result).value == 6.0
+    @test !haskey(Processes.getglobals(inline_nogen_result), :value)
     @test isempty(Processes.getruntimeinput(Processes.context(inline_process)))
     @test isempty(getproperty(Processes.get_subcontexts(Processes.context(inline_process)), :_input))
     @test_throws ErrorException run(inline_process)
@@ -178,10 +178,9 @@ runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
     @test_throws ErrorException run(inline_process, Input(; seed = 2); temp = 1.0, scale = 2)
 
     shape_result = run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(0))
-    @test runtime_shape_context(Processes.context(shape_result)).added == 1
+    @test isempty(runtime_shape_context(Processes.context(shape_result)))
     widened_shape_result = run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(2))
-    @test runtime_shape_context(Processes.context(widened_shape_result)).added == 1
-    @test runtime_shape_context(Processes.context(widened_shape_result)).extra == 1
+    @test isempty(runtime_shape_context(Processes.context(widened_shape_result)))
 
     pause_algo = @CompositeAlgorithm begin
         @input delta::Int

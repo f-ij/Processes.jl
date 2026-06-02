@@ -29,24 +29,55 @@ end
     return isempty(inputs) ? runtime : @inline with_subcontext(runtime, Val(:_input), SubContext(:_input, inputs))
 end
 
+"""Build the visible paused context that keeps runtime inputs for resuming."""
+@inline function _paused_visible_context(context::C, runtimecontext::RC) where {C<:ProcessContext,RC<:ProcessContext}
+    inputs = @inline getruntimeinput(runtimecontext)
+    return isempty(inputs) ? context : @inline with_subcontext(context, Val(:_input), SubContext(:_input, inputs))
+end
+
+"""Clear pause-only runtime inputs before re-entering the hot loop."""
+@inline function _paused_state_context(context::C) where {C<:ProcessContext}
+    return haskey(get_subcontexts(context), :_input) ? (@inline with_subcontext(context, Val(:_input), SubContext(:_input, (;)))) : context
+end
+
+@inline _loop_state_context(stored_context::C, ::Resuming{false}) where {C<:ProcessContext} = stored_context
+@inline _loop_state_context(stored_context::C, ::Resuming{true}) where {C<:ProcessContext} = @inline _paused_state_context(stored_context)
+
+@inline function _loop_runtime_context(inputs::NamedTuple, process::P, lifetime::LT, stored_context::C, ::Resuming{false}) where {P<:AbstractProcess,LT<:Lifetime,C<:ProcessContext}
+    return @inline _initial_runtime_context(inputs, process, lifetime)
+end
+
+@inline function _loop_runtime_context(inputs::NamedTuple, process::P, lifetime::LT, stored_context::C, ::Resuming{true}) where {P<:AbstractProcess,LT<:Lifetime,C<:ProcessContext}
+    runtime_inputs = @inline getruntimeinput(stored_context)
+    return @inline _initial_runtime_context(runtime_inputs, process, lifetime)
+end
+
+"""Return whether this loop exit is a pause rather than a final completion."""
+@inline _loop_ispaused(process::P) where {P<:AbstractProcess} = false
+@inline _loop_ispaused(process::P) where {P<:Process} = ispaused(process)
+
+"""Build the root wiring view for one loop execution."""
+@inline _root_wiring_view(algo, step_plan) = PlanWiringView(getwiring(step_plan), Val(()), _finalstep_demands_all_returns(algo))
+
 """Commit or return the persistent context produced by the loop."""
-@inline function after_while(p::P, func::F, context::C, returnvalue, stored_context::SC = context) where {P<:Process,F,C<:ProcessContext,SC<:ProcessContext}
+@inline function after_while(p::P, func::F, context::C, runtimecontext::RC, returnvalue, stored_context::SC = context) where {P<:Process,F,C<:ProcessContext,RC<:ProcessContext,SC<:ProcessContext}
     @inline set_endtime!(p)
     if ispaused(p)
-        _store_runtime_context!(p, context)
-        return context
+        paused_context = @inline _paused_visible_context(context, runtimecontext)
+        _store_runtime_context!(p, paused_context)
+        return paused_context
     end
     commit_context!(p, context)
     return returnvalue
 end
 
-@inline function after_while(ip::IP, func::F, context::C, returnvalue, stored_context::SC = context) where {IP<:InlineProcess,F,C<:ProcessContext,SC<:ProcessContext}
+@inline function after_while(ip::IP, func::F, context::C, runtimecontext::RC, returnvalue, stored_context::SC = context) where {IP<:InlineProcess,F,C<:ProcessContext,RC<:ProcessContext,SC<:ProcessContext}
     @inline set_endtime!(ip)
     Processes.context(ip, context)
     return returnvalue
 end
 
-@inline function after_while(p::P, func::F, context::C, returnvalue, stored_context::SC = context) where {P<:LoopRunProcess,F,C<:ProcessContext,SC<:ProcessContext}
+@inline function after_while(p::P, func::F, context::C, runtimecontext::RC, returnvalue, stored_context::SC = context) where {P<:LoopRunProcess,F,C<:ProcessContext,RC<:ProcessContext,SC<:ProcessContext}
     @inline set_endtime!(p)
     return context
 end
@@ -61,9 +92,10 @@ Run a single function in a loop indefinitely.
     @inline before_while(process)
 
     step_plan = @inline getplan(func)
-    step_wiring = @inline PlanWiringView(getwiring(step_plan))
-    context = stored_context
-    runtimecontext = @inline _initial_runtime_context(inputs, process, lifetime)
+    step_wiring = @inline _root_wiring_view(func, step_plan)
+    resume = Resuming{isresuming}()
+    context = @inline _loop_state_context(stored_context, resume)
+    runtimecontext = @inline _loop_runtime_context(inputs, process, lifetime, stored_context, resume)
 
     if isresuming
         @atomic process.paused = false
@@ -82,8 +114,13 @@ Run a single function in a loop indefinitely.
         end
     end
 
+    if @inline _loop_ispaused(process)
+        return @inline after_while(process, func, context, runtimecontext, context, stored_context)
+    end
+
+    final_runtimecontext = runtimecontext
     context, returnvalue = @inline finalizer!(func, context, runtimecontext, process, lifetime)
-    return @inline after_while(process, func, context, returnvalue, stored_context)
+    return @inline after_while(process, func, context, final_runtimecontext, returnvalue, stored_context)
 end
 
 """
@@ -98,9 +135,10 @@ Base.@constprop :aggressive @inline function loop(process::P, algo::F, stored_co
     @inline before_while(process)
     
     step_plan = @inline getplan(algo)
-    step_wiring = @inline PlanWiringView(getwiring(step_plan))
-    context = stored_context
-    runtimecontext = @inline _initial_runtime_context(inputs, process, lifetime)
+    step_wiring = @inline _root_wiring_view(algo, step_plan)
+    resume = Resuming{isresuming}()
+    context = @inline _loop_state_context(stored_context, resume)
+    runtimecontext = @inline _loop_runtime_context(inputs, process, lifetime, stored_context, resume)
 
     if isresuming
         @atomic process.paused = false
@@ -119,6 +157,11 @@ Base.@constprop :aggressive @inline function loop(process::P, algo::F, stored_co
         end
     end
 
+    if @inline _loop_ispaused(process)
+        return @inline after_while(process, algo, context, runtimecontext, context, stored_context)
+    end
+
+    final_runtimecontext = runtimecontext
     context, returnvalue = @inline finalizer!(algo, context, runtimecontext, process, lifetime)
-    return @inline after_while(process, algo, context, returnvalue, stored_context)
+    return @inline after_while(process, algo, context, final_runtimecontext, returnvalue, stored_context)
 end

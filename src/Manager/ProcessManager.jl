@@ -270,7 +270,7 @@ function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, rep
     algo = getalgo(worker)
     inputs = _validate_runtime_inputs(algo, (; kwargs...))
     base_context = _has_typed_runtime_context(worker) ? _typed_runtime_context(worker) : context(worker)
-    lt = lifetime(worker)
+    lt = Processes.lifetime(worker)
     result = loop(worker, algo, base_context, lt, inputs, Resuming{false}())
 
     worker.lastresult = result
@@ -783,7 +783,7 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
         workers,
         normalized_lifecycle,
     )
-    worker_names = _manager_worker_names(recipe, nworkers, build_manager, workers, normalized_lifecycle)
+    worker_names = _manager_worker_names(recipe, length(worker_values), build_manager, workers, normalized_lifecycle)
 
     slot_worker_type = _manager_slot_worker_type(worker_type, normalized_lifecycle)
     slot_name_type = _manager_slot_name_type(name_type, normalized_lifecycle)

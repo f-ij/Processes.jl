@@ -13,6 +13,7 @@ function _subcontext_view_merge_exprs(SCV::Type, Args::Type, demanded_runtime_na
     @nospecialize SCV Args
     SubKey = SCV.parameters[2]
     algo_varnames = fieldnames(Args)
+    demand_all = demanded_runtime_names === :all
 
     merge_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
     runtime_expressions_by_subcontext = Dict{Symbol, Vector{Expr}}()
@@ -36,7 +37,7 @@ function _subcontext_view_merge_exprs(SCV::Type, Args::Type, demanded_runtime_na
                 Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(algo_varname))))),
             )
 
-        elseif algo_varname in demanded_runtime_names # New demanded variable so add it to this subcontext's runtime bucket.
+        elseif demand_all || algo_varname in demanded_runtime_names # New demanded variable so add it to this subcontext's runtime bucket.
             exprs = get!(runtime_expressions_by_subcontext, SubKey, Expr[])
             push!(
                 exprs,

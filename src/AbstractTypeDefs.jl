@@ -141,12 +141,12 @@ The view keeps the full root `PlanWiring` and a type-level child path. Incoming
 routes/shares are read at the current path, while return demand can be computed
 from the whole tree for the current namespace.
 """
-struct PlanWiringView{W, Path} <: AbstractWiring
+struct PlanWiringView{W, Path, DemandAll} <: AbstractWiring
     wiring::W
 end
 
-PlanWiringView(wiring::W, ::Val{Path} = Val(())) where {W<:PlanWiring,Path} =
-    PlanWiringView{W,Path}(wiring)
+PlanWiringView(wiring::W, ::Val{Path} = Val(()), ::Val{DemandAll} = Val(false)) where {W<:PlanWiring,Path,DemandAll} =
+    PlanWiringView{W,Path,DemandAll}(wiring)
 
 Base.iterate(la::ALA) where {ALA<:AbstractLoopAlgorithm} = iterate(getalgos(la))
 

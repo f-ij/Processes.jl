@@ -33,6 +33,24 @@ using Processes
     @test isempty(context(p)[:SymbolOtherAlgo_1])
 end
 
+@testset "ProcessContext properties expose subcontexts without storage-field collisions" begin
+    ctx = Processes.ProcessContext(
+        (;
+            reg = Processes.SubContext(:reg, (; value = 1)),
+            registry = Processes.SubContext(:registry, (; value = 2)),
+            subcontexts = Processes.SubContext(:subcontexts, (; value = 3)),
+        ),
+        nothing,
+    )
+
+    @test propertynames(ctx) == (:reg, :registry, :subcontexts)
+    @test ctx.reg.value == 1
+    @test ctx.registry.value == 2
+    @test ctx.subcontexts.value == 3
+    @test isnothing(Processes.getregistry(ctx))
+    @test keys(Processes.get_subcontexts(ctx)) == (:reg, :registry, :subcontexts)
+end
+
 @testset "SubContextView aliases can be replaced from alias type" begin
     struct ViewAliasAlgo <: ProcessAlgorithm end
 
