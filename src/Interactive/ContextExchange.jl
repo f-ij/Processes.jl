@@ -1,4 +1,4 @@
-export ContextExchange, InteractiveVar, interact!, isinteractive
+export ContextExchange, interact!, isinteractive
 
 struct ResolvedExchangeVar{Name, Subcontext, Varname, T}
     initial::T
@@ -14,7 +14,7 @@ ResolvedExchangeVar(name::Symbol, subcontext::Symbol, varname::Symbol, initial::
 @inline _exchange_vartype(::Type{<:ResolvedExchangeVar{Name, Subcontext, Varname, T}}) where {Name, Subcontext, Varname, T} = T
 
 """
-Mutable buffers shared by `ContextExchange` and `InteractiveVar`.
+Mutable buffers shared by `ContextExchange` and `ContextExchangeVar`.
 
 The `Specs` type parameter contains the fully resolved `(exchange name,
 subcontext, variable)` triplets produced during init. Hot stepping specializes on
@@ -314,31 +314,31 @@ Ref-like view of one exchange variable.
 `ref[]` reads the last value published by the exchange. `ref[] = value` queues a
 write for the next due exchange step.
 """
-struct InteractiveVar{ExchangeKey, Varname, Published, Pending, HasPending}
+struct ContextExchangeVar{ExchangeKey, Varname, Published, Pending, HasPending}
     published::Published
     pending::Pending
     haspending::HasPending
 end
 
-@inline _interactive_varname(::InteractiveVar{ExchangeKey, Varname}) where {ExchangeKey, Varname} = Varname
+@inline _interactive_varname(::ContextExchangeVar{ExchangeKey, Varname}) where {ExchangeKey, Varname} = Varname
 
-function InteractiveVar(context::ProcessContext, varname::Symbol; exchange::Union{Nothing, Symbol} = nothing)
+function ContextExchangeVar(context::ProcessContext, varname::Symbol; exchange::Union{Nothing, Symbol} = nothing)
     published, pending, haspending, subscribed = _exchange_slot(_context_exchange_store(context, exchange), Val(varname))
     subscribed[] = true
-    return InteractiveVar{exchange, varname, typeof(published), typeof(pending), typeof(haspending)}(published, pending, haspending)
+    return ContextExchangeVar{exchange, varname, typeof(published), typeof(pending), typeof(haspending)}(published, pending, haspending)
 end
 
 function Base.view(context::ProcessContext, varname::Symbol; exchange::Union{Nothing, Symbol} = nothing)
-    return InteractiveVar(context, varname; exchange)
+    return ContextExchangeVar(context, varname; exchange)
 end
 
 function Base.view(context::ProcessContext, ::Var{Exchange, Varname}) where {Exchange, Varname}
-    return InteractiveVar(context, Varname; exchange = Exchange)
+    return ContextExchangeVar(context, Varname; exchange = Exchange)
 end
 
-@inline Base.getindex(ref::InteractiveVar) = getfield(ref, :published)[]
+@inline Base.getindex(ref::ContextExchangeVar) = getfield(ref, :published)[]
 
-@inline function Base.setindex!(ref::InteractiveVar, value)
+@inline function Base.setindex!(ref::ContextExchangeVar, value)
     pending = getfield(ref, :pending)
     pending[] = convert(_pending_value_type(pending), value)
     getfield(ref, :haspending)[] = true

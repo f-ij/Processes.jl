@@ -30,11 +30,19 @@ function _subcontext_view_merge_exprs(SCV::Type, Args::Type, demanded_runtime_na
 
             exprs = get!(merge_expressions_by_subcontext, target_subcontext, Expr[])
 
-            # Expression for targetname = getproperty(args, algo_varnames[var_idx])
-            # Which will be used to construct subcontext = (; targetname = getproperty(args, this_algo_varname), ...)
+            # Let the current stored value decide how an algorithm return is
+            # written back. Plain fields use the returned value directly; wrapper
+            # fields can absorb the write while preserving context shape.
             push!(
                 exprs,
-                Expr(:(=), targetname, :(getproperty(args, $(QuoteNode(algo_varname))))),
+                Expr(
+                    :(=),
+                    targetname,
+                    :(@inline subcontext_writeback_value(
+                        (@inline storedproperty_fromsubcontext(scv, Val($(QuoteNode(target_subcontext))), Val($(QuoteNode(targetname))))),
+                        getproperty(args, $(QuoteNode(algo_varname))),
+                    )),
+                ),
             )
 
         elseif demand_all || algo_varname in demanded_runtime_names # New demanded variable so add it to this subcontext's runtime bucket.

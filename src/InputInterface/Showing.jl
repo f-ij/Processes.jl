@@ -25,3 +25,11 @@ end
 function Base.show(io::IO, ov::Override)
     summary(io, ov)
 end
+
+function Base.summary(io::IO, spec::Interactive)
+    print(io, "Interactive(target=", _target_label(get_target(spec)), ", ref=", _target_label(get_ref(spec)), ", vars=", interactive_names(spec), ")")
+end
+
+function Base.show(io::IO, spec::Interactive)
+    summary(io, spec)
+end

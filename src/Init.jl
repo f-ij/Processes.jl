@@ -39,9 +39,9 @@ function initcontext(algo::F, c::ProcessContext; lifetime = Indefinite()) where 
     return @inline _init_state_context(prepared_context, c)
 end
 
-function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::Union{Input, Override}...; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
+function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), overrides_and_inputs::InputInterface...; lifetime = Indefinite()) where {F <: AbstractLoopAlgorithm}
     resolved = _resolve_lifecycle_specs(getregistry(c), overrides_and_inputs)
-    inputs, overrides = _split_init_override(resolved)
+    inputs, overrides, interactives = _split_lifecycle_specs(resolved)
     input_state_context = merge_resolved_inputs(c, inputs)
     runtime_context = @inline _init_runtime_context(algo, lifetime)
 
@@ -54,7 +54,7 @@ function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), override
     prepared_state_context = @inline _init_state_context(prepared_context, input_state_context)
     overridden_context = merge_resolved_inputs(prepared_state_context, overrides)
 
-    return overridden_context
+    return @inline apply_interactive_specs(overridden_context, interactives)
 end
 
 function makecontext(p::AbstractProcess, inputs_overrides...; lifetime=nothing)

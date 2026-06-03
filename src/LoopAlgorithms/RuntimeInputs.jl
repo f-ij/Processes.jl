@@ -204,10 +204,10 @@ to perform matcher lookup again.
 @inline function _resolve_lifecycle_specs(reg::R, specs) where {R<:NameSpaceRegistry}
     resolved = ()
     for spec in specs
-        if spec isa Union{Init, Override}
+        if spec isa InputInterface
             resolved = (resolved..., resolve(reg, spec)...)
         else
-            error("Expected Init or Override, got $(spec).")
+            error("Expected Init, Override, or Interactive, got $(spec).")
         end
     end
     return resolved
@@ -238,14 +238,16 @@ end
 Fully initialize `la`, replaying stored init/override specs and letting passed
 specs override stored specs per target.
 """
-@inline function init(la::LA, specs::Union{Init, Override}...; lifetime = Indefinite()) where {LA<:AbstractLoopAlgorithm}
+@inline function init(la::LA, specs::InputInterface...; lifetime = Indefinite()) where {LA<:AbstractLoopAlgorithm}
     resolved = _without_lifecycle(resolve(la))
     new_specs = _resolve_lifecycle_specs(getregistry(resolved), specs)
-    new_inits, new_overrides = _split_init_override(new_specs)
+    new_inits, new_overrides, new_interactives = _split_lifecycle_specs(new_specs)
+    stored_overrides, stored_interactives = _split_override_interactive(getstoredoverrides(la))
     inits = _merge_specs_by_target(getstoredinits(la), new_inits)
-    overrides = _merge_specs_by_target(getstoredoverrides(la), new_overrides)
-    context = _init_context_for(resolved, inits, overrides, lifetime)
-    return _with_lifecycle(resolved, context, inits, overrides)
+    overrides = _merge_specs_by_target(stored_overrides, new_overrides)
+    interactives = _merge_interactives_by_target(stored_interactives, new_interactives)
+    context = @inline apply_interactive_specs(_init_context_for(resolved, inits, overrides, lifetime), interactives)
+    return _with_lifecycle(resolved, context, inits, (overrides..., interactives...))
 end
 
 """
@@ -253,18 +255,22 @@ end
 
 Re-initialize only the targets named by the passed specs.
 """
-function partialinit(la::LA, specs::Union{Init, Override}...) where {LA<:AbstractLoopAlgorithm}
+function partialinit(la::LA, specs::InputInterface...) where {LA<:AbstractLoopAlgorithm}
     context = getstoredcontext(la)
     isnothing(context) && error("partialinit requires an initialized LoopAlgorithm.")
     resolved_specs = _resolve_lifecycle_specs(la, specs)
-    inits, overrides = _split_init_override(resolved_specs)
+    inits, overrides, interactives = _split_lifecycle_specs(resolved_specs)
+    stored_overrides, stored_interactives = _split_override_interactive(getstoredoverrides(la))
+    merged_overrides = _merge_specs_by_target(stored_overrides, overrides)
+    merged_interactives = _merge_interactives_by_target(stored_interactives, interactives)
     new_context = context
     for input in inits
         key = get_target_name(input)
-        ov = filter(o -> get_target_name(o) == key, overrides)
+        ov = filter(o -> get_target_name(o) == key, merged_overrides)
         new_context = initcontext(new_context, key; inputs = get_vars(input), overrides = isempty(ov) ? (;) : get_vars(first(ov)))
     end
-    return _with_lifecycle(la, new_context, _merge_specs_by_target(getstoredinits(la), inits), _merge_specs_by_target(getstoredoverrides(la), overrides))
+    new_context = @inline apply_interactive_specs(new_context, merged_interactives)
+    return _with_lifecycle(la, new_context, _merge_specs_by_target(getstoredinits(la), inits), (merged_overrides..., merged_interactives...))
 end
 
 """
