@@ -28,12 +28,12 @@ using Processes
     @test context[exchange_key].store.pending.value[] == 2.0
     @test context[exchange_key].store.haspending.value[]
 
-    context = Processes._step!(algo, context, Processes.Unstable())
+    context = Processes._step!(algo, context)
     @test context.target.value == 1.0
     @test context[exchange_key].store.pending.value[] == 2.0
     @test context[exchange_key].store.haspending.value[]
 
-    context = Processes._step!(algo, context, Processes.Stable())
+    context = Processes._step!(algo, context)
     @test context.target.value == 2.0
     @test !context[exchange_key].store.haspending.value[]
 end
@@ -68,7 +68,7 @@ end
     @test context[exchange_key].store.pending.value[] == 4.0
     @test context[exchange_key].store.haspending.value[]
 
-    context = Processes._step!(algo, context, Processes.Stable())
+    context = Processes._step!(algo, context)
     @test context.target.value == 4.0
     @test ref[] == 4.0
     @test duplicate_ref[] == 4.0
@@ -76,7 +76,7 @@ end
 
     typed_ref = view(context, :value)
     typed_ref[] = 5
-    context = Processes._step!(algo, context, Processes.Stable())
+    context = Processes._step!(algo, context)
     @test typed_ref[] == 5.0
 end
 
@@ -101,7 +101,7 @@ end
     seen_ref = view(context, :seen)
     @test seen_ref[] == 0
 
-    context = Processes._step!(algo, context, Processes.Stable())
+    context = Processes._step!(algo, context)
     @test context.target.seen == 1
     @test seen_ref[] == 1
 
@@ -113,11 +113,11 @@ end
     interval_context = Processes.context(init(interval_algo, Init(:_exchange; vars = (Var(:target, :seen),)); lifetime = Repeat(4)))
     interval_ref = view(interval_context, :seen)
 
-    interval_context = Processes._step!(interval_algo, interval_context, Processes.Stable())
+    interval_context = Processes._step!(interval_algo, interval_context)
     @test interval_context.target.seen == 1
     @test interval_ref[] == 0
 
-    interval_context = Processes._step!(interval_algo, interval_context, Processes.Stable())
+    interval_context = Processes._step!(interval_algo, interval_context)
     @test interval_context.target.seen == 2
     @test interval_ref[] == 2
 end
@@ -146,7 +146,7 @@ end
 
     ref = view(context, :display)
     ref[] = 3
-    context = Processes._step!(algo, context, Processes.Stable())
+    context = Processes._step!(algo, context)
 
     @test context.target.value == 3.0
     @test ref[] == 3.0
@@ -189,12 +189,12 @@ end
     value_ref = view(context, :value)
     seen_ref = view(context, :seen)
 
-    context = Processes._step!(algo, context, Processes.Stable())
+    context = Processes._step!(algo, context)
     @test value_ref[] == 1.0
     @test seen_ref[] == 1
 
     value_ref[] = 4
-    context = Processes._step!(algo, context, Processes.Stable())
+    context = Processes._step!(algo, context)
     @test context.target.value == 1.0
     @test value_ref[] == 1.0
     @test seen_ref[] == 1

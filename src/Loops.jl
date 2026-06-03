@@ -100,13 +100,13 @@ Run a single function in a loop indefinitely.
     if isresuming
         @atomic process.paused = false
     else
-        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
+        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime)
         @inline tick!(process)
         @inline inc!(process)
     end
 
     while true
-        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
+        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime)
         @inline tick!(process)
         @inline inc!(process)
         if @inline breakcondition(lifetime, process, context)
@@ -143,13 +143,13 @@ Base.@constprop :aggressive @inline function loop(process::P, algo::F, stored_co
     if isresuming
         @atomic process.paused = false
     else
-        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
+        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime)
         @inline tick!(process)
         @inline inc!(process)
     end
 
     for _ in (@inline loopidx(process)):(@inline repeats(lifetime))
-        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime, Stable())
+        context, runtimecontext = @inline _step!(step_plan, context, runtimecontext, step_wiring, Namespace{nothing}(), process, lifetime)
         @inline tick!(process)
         @inline inc!(process)
         if @inline breakcondition(lifetime, process, context)

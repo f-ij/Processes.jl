@@ -1,8 +1,8 @@
 # Immutable Context / Widened Field Diagnostics
 
 This folder tracks the `immutable_fix` branch experiment around removing the
-hot `Unstable()` merge path while keeping immutable `ProcessContext` updates
-specialized.
+old first-step widening merge path while keeping immutable `ProcessContext`
+updates specialized.
 
 ## Current Experiment
 

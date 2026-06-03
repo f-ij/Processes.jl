@@ -60,29 +60,30 @@ function scalar_replace_direct_plan_loop(process::IP) where {IP<:Processes.Inlin
     algo = Processes.getalgo(process)
     lifetime = Processes.lifetime(process)
     plan = Processes.getplan(algo)
-    wiring = Processes.getwiring(plan)
+    wiring = Processes._root_wiring_view(algo, plan)
     context = Processes.context(process)
+    runtimecontext = Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
 
-    context = Processes._step!(
+    context, runtimecontext = Processes._step!(
         plan,
         context,
+        runtimecontext,
         wiring,
         Processes.Namespace{nothing}(),
         process,
         lifetime,
-        Processes.Unstable(),
     )
     Processes.inc!(process)
 
     for _ in Processes.loopidx(process):Processes.repeats(lifetime)
-        context = Processes._step!(
+        context, runtimecontext = Processes._step!(
             plan,
             context,
+            runtimecontext,
             wiring,
             Processes.Namespace{nothing}(),
             process,
             lifetime,
-            Processes.Stable(),
         )
         Processes.inc!(process)
         Processes.breakcondition(lifetime, process, context) && break
@@ -137,8 +138,9 @@ function run_scalar_replace_probe(;
         algo = Processes.getalgo(process)
         lifetime = Processes.lifetime(process)
         plan = Processes.getplan(algo)
-        wiring = Processes.getwiring(plan)
+        wiring = Processes._root_wiring_view(algo, plan)
         namespace = Processes.Namespace{nothing}()
+        runtimecontext = Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
     end
 
     reset!(process)
@@ -149,7 +151,7 @@ function run_scalar_replace_probe(;
     # Warm the exact allocation probes before recording their steady-state value.
     reset!(process)
     Processes.merge_into_subcontexts(context, (; merge_target => (; prev = Int64(1), curr = Int64(1))))
-    has_direct_plan_api && Processes._step!(plan, context, wiring, namespace, process, lifetime, Processes.Stable())
+    has_direct_plan_api && Processes._step!(plan, context, runtimecontext, wiring, namespace, process, lifetime)
     reset!(process)
     run(process)
     if has_direct_plan_api
@@ -161,7 +163,7 @@ function run_scalar_replace_probe(;
     reset!(process)
     merge_alloc = @allocated Processes.merge_into_subcontexts(context, (; merge_target => (; prev = Int64(1), curr = Int64(1))))
     stable_step_alloc = if has_direct_plan_api
-        @allocated Processes._step!(plan, context, wiring, namespace, process, lifetime, Processes.Stable())
+        @allocated Processes._step!(plan, context, runtimecontext, wiring, namespace, process, lifetime)
     else
         missing
     end

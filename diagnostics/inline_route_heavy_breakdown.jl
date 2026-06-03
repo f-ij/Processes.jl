@@ -262,44 +262,45 @@ end
 
 """Run the repeat loop by calling the resolved step plan directly."""
 function inline_route_direct_plan_loop(process::IP) where {IP<:Processes.InlineProcess}
-    algo = Processes.getalgo(process)
-    lifetime = Processes.lifetime(process)
-    step_plan = Processes.getplan(algo)
-    step_wiring = Processes.getwiring(step_plan)
-    stable_context = Processes.context(process)
+    algo = @inline Processes.getalgo(process)
+    lifetime = @inline Processes.lifetime(process)
+    step_plan = @inline Processes.getplan(algo)
+    step_wiring = @inline Processes._root_wiring_view(algo, step_plan)
+    context = @inline Processes.context(process)
+    runtimecontext = @inline Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
 
     # This mirrors the repeat-lifetime `loop` body, minus run entrypoint
     # validation, runtime-input merge, timing stamps, cleanup, and context store.
-    stable_context = Processes._step!(
+    context, runtimecontext = @inline Processes._step!(
         step_plan,
-        stable_context,
+        context,
+        runtimecontext,
         step_wiring,
         Processes.Namespace{nothing}(),
         process,
         lifetime,
-        Processes.Unstable(),
     )
-    Processes.inc!(process)
+    @inline Processes.inc!(process)
 
-    start_idx = Processes.loopidx(process)
-    end_idx = Processes.repeats(lifetime)
+    start_idx = @inline Processes.loopidx(process)
+    end_idx = @inline Processes.repeats(lifetime)
     for _ in start_idx:end_idx
-        stable_context = Processes._step!(
+        context, runtimecontext = @inline Processes._step!(
             step_plan,
-            stable_context,
+            context,
+            runtimecontext,
             step_wiring,
             Processes.Namespace{nothing}(),
             process,
             lifetime,
-            Processes.Stable(),
         )
-        Processes.inc!(process)
-        if Processes.breakcondition(lifetime, process, stable_context)
+        @inline Processes.inc!(process)
+        if @inline Processes.breakcondition(lifetime, process, context)
             break
         end
     end
 
-    return stable_context
+    return context
 end
 
 """Measure one benchmark row while excluding setup from the timed expression."""

@@ -150,12 +150,12 @@ Internal single-step entrypoint for tests and manual loop-plan driving.
 This builds the minimal process handle needed by routines and interval logic,
 then enters the same `_step!` chain used by `run`.
 """
-@inline function _step!(la::LA, context::C, typestable::S = Stable()) where {LA<:AbstractLoopAlgorithm, C<:AbstractContext, S<:Stability}
+@inline function _step!(la::LA, context::C) where {LA<:AbstractLoopAlgorithm, C<:AbstractContext}
     lifetime = get(getglobals(context), :lifetime, Indefinite())
     process = LoopRunProcess(lifetime)
     plan = @inline getplan(la)
     runtimecontext = @inline _merge_into_globals(_empty_context(), (; lifetime))
-    newcontext, _ = @inline _step!(plan, context, runtimecontext, PlanWiringView(getwiring(plan)), Namespace{nothing}(), process, lifetime, typestable)
+    newcontext, _ = @inline _step!(plan, context, runtimecontext, PlanWiringView(getwiring(plan)), Namespace{nothing}(), process, lifetime)
     return newcontext
 end
 

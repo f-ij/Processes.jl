@@ -14,26 +14,27 @@ end
 function inline_route_check_child_steps(process::IP) where {IP<:Processes.InlineProcess}
     algo = Processes.getalgo(process)
     plan = Processes.getplan(algo)
-    wirings = Processes.child_wiring(Processes.getwiring(plan))
+    root_wiring = Processes._root_wiring_view(algo, plan)
     namespace_type = typeof(plan).parameters[3]
     algos = Processes.getalgos(plan)
     context = Processes.context(process)
     lifetime = Processes.lifetime(process)
+    runtimecontext = Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
 
     # Step children in resolved plan order so each routed input is available
     # exactly as it is during the real composite loop.
     for index in eachindex(algos)
         child = getfield(algos, index)
-        child_wiring = getfield(wirings, index)
+        child_wiring = Processes.child_wiring_view(root_wiring, Val(index))
         child_namespace = fieldtype(namespace_type, index)()
-        context = @inferred Processes._step!(
+        context, runtimecontext = @inferred Processes._step!(
             child,
             context,
+            runtimecontext,
             child_wiring,
             child_namespace,
             process,
             lifetime,
-            Processes.Stable(),
         )
     end
 

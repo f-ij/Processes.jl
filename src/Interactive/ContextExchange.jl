@@ -218,14 +218,13 @@ end
     ::Namespace{Name},
     process::P,
     lifetime::LT,
-    stability::S = Stable(),
-) where {E<:ContextExchange, C<:ProcessContext, RC<:ProcessContext, W<:PlanWiringView, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+) where {E<:ContextExchange, C<:ProcessContext, RC<:ProcessContext, W<:PlanWiringView, Name, P<:AbstractProcess, LT<:Lifetime}
     store = _context_exchange_store(context, Name)
     _context_exchange_due!(store) || return context, runtimecontext
     return (@inline _step_context_exchange_store(context, store)), runtimecontext
 end
 
-@inline function Processes.step!(exchange::ContextExchange, context::C, stability::S = Stable()) where {C<:ProcessContext, S<:Stability}
+@inline function Processes.step!(exchange::ContextExchange, context::C) where {C<:ProcessContext}
     store = _context_exchange_store(context, getkey(exchange))
     _context_exchange_due!(store) || return context
     return @inline _step_context_exchange_store(context, store)

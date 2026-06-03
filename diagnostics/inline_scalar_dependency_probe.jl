@@ -250,14 +250,14 @@ end
 
 """Run the dependency workload through the direct plan entrypoint."""
 function scalar_dependency_direct_plan_loop(process::IP) where {IP<:Processes.InlineProcess}
-    algo = Processes.getalgo(process)
-    lifetime = Processes.lifetime(process)
-    plan = Processes.getplan(algo)
-    wiring = Processes._root_wiring_view(algo, plan)
-    context = Processes.context(process)
-    runtimecontext = Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
+    algo = @inline Processes.getalgo(process)
+    lifetime = @inline Processes.lifetime(process)
+    plan = @inline Processes.getplan(algo)
+    wiring = @inline Processes._root_wiring_view(algo, plan)
+    context = @inline Processes.context(process)
+    runtimecontext = @inline Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
 
-    context, runtimecontext = Processes._step!(
+    context, runtimecontext = @inline Processes._step!(
         plan,
         context,
         runtimecontext,
@@ -265,12 +265,11 @@ function scalar_dependency_direct_plan_loop(process::IP) where {IP<:Processes.In
         Processes.Namespace{nothing}(),
         process,
         lifetime,
-        Processes.Unstable(),
     )
-    Processes.inc!(process)
+    @inline Processes.inc!(process)
 
-    for _ in Processes.loopidx(process):Processes.repeats(lifetime)
-        context, runtimecontext = Processes._step!(
+    for _ in (@inline Processes.loopidx(process)):(@inline Processes.repeats(lifetime))
+        context, runtimecontext = @inline Processes._step!(
             plan,
             context,
             runtimecontext,
@@ -278,10 +277,9 @@ function scalar_dependency_direct_plan_loop(process::IP) where {IP<:Processes.In
             Processes.Namespace{nothing}(),
             process,
             lifetime,
-            Processes.Stable(),
         )
-        Processes.inc!(process)
-        Processes.breakcondition(lifetime, process, context) && break
+        @inline Processes.inc!(process)
+        (@inline Processes.breakcondition(lifetime, process, context)) && break
     end
 
     return context

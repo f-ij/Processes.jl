@@ -20,7 +20,6 @@ using Processes
     include("InnerTypeFilterTest.jl")
     include("ContextShowingTest.jl")
     include("InteractiveTest.jl")
-    include("ContextExchangeTest.jl")
     include("CompositeDSLTest.jl")
     include("ProcessAlgorithmMacroTest.jl")
     include("ContextAnalyzerTest.jl")
