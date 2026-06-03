@@ -461,6 +461,8 @@ end
 
         until_result = run(until_routine; repeats = 1, looptype = Processes.RuntimeGenerated())
         @test Processes.context(until_result)[DSLRepeatLifetimeCounter].count == 3
+        until_generated_result = run(until_routine; repeats = 1, looptype = Processes.Generated())
+        @test Processes.context(until_generated_result)[DSLRepeatLifetimeCounter].count == 3
 
         until_ten_routine = @Routine begin
             count = @repeat Until(x -> x >= 10, count) DSLRepeatLifetimeCounter
@@ -489,6 +491,8 @@ end
 
         atleast_result = run(atleast_routine; repeats = 1, looptype = Processes.RuntimeGenerated())
         @test Processes.context(atleast_result)[DSLRepeatLifetimeCounter].count == 4
+        atleast_generated_result = run(atleast_routine; repeats = 1, looptype = Processes.Generated())
+        @test Processes.context(atleast_generated_result)[DSLRepeatLifetimeCounter].count == 4
 
         atleast_atmost_routine = @Routine begin
             count = @repeat AtLeastAtMost(x -> x >= 10, 2, 5, count) DSLRepeatLifetimeCounter

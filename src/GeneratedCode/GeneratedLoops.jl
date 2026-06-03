@@ -3,7 +3,7 @@ Generated top-level loop path that inlines `step!_expr`.
 
 This path does not call the resolve-time RuntimeGeneratedFunction steps. The
 resolved plan wiring is compile-time data for `step!_expr`, and concrete child
-steps build `OnDemandContext` values inside the generated loop body.
+steps build `ContextSlice` values inside the generated loop body.
 """
 
 """Return the persistent subcontext names carried by a typed process context."""
@@ -20,12 +20,6 @@ end
 function _generated_loop_subcontext_bindings(names::Tuple)
     return Any[:(local $name = @inline getproperty(subcontexts, $(QuoteNode(name)))) for name in names]
 end
-
-"""Return whether one schedule value can use the context-free generated break path."""
-@inline _generated_loop_simple_lifetime_supported(::Type{T}) where {T} =
-    T <: Union{Repeat, Indefinite}
-@inline _generated_loop_simple_lifetime_supported(value) =
-    value isa Union{Repeat, Indefinite}
 
 """Return whether a plan tree only contains generated-loop-supported lifetimes."""
 function _generated_loop_plan_supported(::Type{T}) where {T}
@@ -49,9 +43,6 @@ function _generated_loop_plan_supported(::Type{CA}) where {CA<:CompositeAlgorith
 end
 
 function _generated_loop_plan_supported(::Type{R}) where {R<:Routine}
-    for lifetime_value in lifetimes(R)
-        _generated_loop_simple_lifetime_supported(lifetime_value) || return false
-    end
     for child_type in tuple(algotypes(R)...)
         child_type <: AbstractLoopAlgorithm || continue
         _generated_loop_plan_supported(child_type) || return false
@@ -60,10 +51,10 @@ function _generated_loop_plan_supported(::Type{R}) where {R<:Routine}
 end
 
 """Generate the common setup used by repeat and indefinite generated loops."""
-function _generated_loop_setup(::Type{F}, ::Type{C}) where {F<:AbstractLoopAlgorithm, C<:ProcessContext}
+function _generated_loop_setup(::Type{F}, ::Type{C}, ::Type{LT}) where {F<:AbstractLoopAlgorithm, C<:ProcessContext, LT<:Lifetime}
     top_names = _generated_loop_subcontext_names(C)
     bindings = _generated_loop_subcontext_bindings(top_names)
-    state = GeneratedStepState(top_names, :runtime_globals, :runtime_inputs, :process, :lifetime)
+    state = GeneratedStepState(top_names, :runtime_globals, :runtime_inputs, :process, :lifetime, LT)
     return top_names, bindings, state
 end
 
@@ -76,15 +67,16 @@ end
     inputs::I,
     resume::Resuming{isresuming},
     ::Generated,
-) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:ProcessContext, RL<:Repeat, I<:NamedTuple, isresuming}
+) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:ProcessContext, RL<:RepeatLifetime, I<:NamedTuple, isresuming}
     if !_generated_loop_plan_supported(F)
         return quote
             error("Generated() does not support this plan tree yet. Use RuntimeGenerated() explicitly for plans with unsupported child lifetimes.")
         end
     end
-    top_names, bindings, state = _generated_loop_setup(F, C)
+    top_names, bindings, state = _generated_loop_setup(F, C, RL)
     plan_body = step!_expr(F, C, :algo, nothing, nothing, state)
     subcontexts_expr = _generated_loop_subcontexts_expr(top_names)
+    break_context_expr = _generated_breakcondition_context_expr(RL, top_names, :runtime_inputs, :runtime_globals)
 
     resume_expr = isresuming ? :(@atomic process.paused = false) : :(nothing)
     return quote
@@ -105,7 +97,7 @@ end
             $plan_body
             @inline tick!(process)
             @inline inc!(process)
-            if @inline breakcondition(lifetime, process, nothing)
+            if @inline breakcondition(lifetime, process, $break_context_expr)
                 break
             end
         end
@@ -126,15 +118,16 @@ end
     inputs::I,
     resume::Resuming{isresuming},
     ::Generated,
-) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:ProcessContext, LT<:Indefinite, I<:NamedTuple, isresuming}
+) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:ProcessContext, LT<:IndefiniteLifetime, I<:NamedTuple, isresuming}
     if !_generated_loop_plan_supported(F)
         return quote
             error("Generated() does not support this plan tree yet. Use RuntimeGenerated() explicitly for plans with unsupported child lifetimes.")
         end
     end
-    top_names, bindings, state = _generated_loop_setup(F, C)
+    top_names, bindings, state = _generated_loop_setup(F, C, LT)
     plan_body = step!_expr(F, C, :algo, nothing, nothing, state)
     subcontexts_expr = _generated_loop_subcontexts_expr(top_names)
+    break_context_expr = _generated_breakcondition_context_expr(LT, top_names, :runtime_inputs, :runtime_globals)
 
     resume_expr = isresuming ? :(@atomic process.paused = false) : :(nothing)
     return quote
@@ -152,7 +145,7 @@ end
             $plan_body
             @inline tick!(process)
             @inline inc!(process)
-            if @inline breakcondition(lifetime, process, nothing)
+            if @inline breakcondition(lifetime, process, $break_context_expr)
                 break
             end
         end

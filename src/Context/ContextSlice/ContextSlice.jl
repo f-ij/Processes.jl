@@ -1,40 +1,45 @@
 """
-Context view used by resolve-time step factories.
+Context slice used by generated step factories.
 
-`OnDemandContext` contains only the variables visible to one generated child
+`ContextSlice` contains only the variables visible to one generated child
 step. The resolved wiring and namespace decide where returned values are merged.
 """
-struct OnDemandContext{Variables, Locations, W, I, G, A, N} <: AbstractContext
+struct ContextSlice{Variables, Locations, W, I, G, A, N} <: AbstractContext
     variables::Variables
     input::I
     globals::G
 end
 
-"""Construct an on-demand context while keeping routing metadata in the type."""
-@inline function OnDemandContext(variables::Variables, locations::Locations, wiring::W, input::I, globals::G, algorithm::A, namespace::N) where {Variables, Locations, W, I, G, A, N}
-    return OnDemandContext{Variables, Locations, W, I, G, A, N}(variables, input, globals)
+"""Construct a context slice while keeping routing metadata in the type."""
+@inline function ContextSlice(variables::Variables, locations::Locations, wiring::W, input::I, globals::G, algorithm::A, namespace::N) where {Variables, Locations, W, I, G, A, N}
+    return ContextSlice{Variables, Locations, W, I, G, A, N}(variables, input, globals)
 end
 
-"""Construct an on-demand context when generated code already knows the location type."""
-@inline function OnDemandContext(variables::Variables, ::Type{Locations}, wiring::W, input::I, globals::G, algorithm::A, namespace::N) where {Variables, Locations, W, I, G, A, N}
-    return OnDemandContext{Variables, Locations, W, I, G, A, N}(variables, input, globals)
+"""Construct a context slice when generated code already knows the location type."""
+@inline function ContextSlice(variables::Variables, ::Type{Locations}, wiring::W, input::I, globals::G, algorithm::A, namespace::N) where {Variables, Locations, W, I, G, A, N}
+    return ContextSlice{Variables, Locations, W, I, G, A, N}(variables, input, globals)
 end
+
+"""Backward-compatible name for `ContextSlice`."""
+const OnDemandContext = ContextSlice
 
 """
 Small context-like wrapper used for lifetime checks over active subcontexts.
 """
-struct SubcontextsContext{Subcontexts, I} <: AbstractContext
+struct SubcontextsContext{Subcontexts, I, G} <: AbstractContext
     subcontexts::Subcontexts
     input::I
+    globals::G
 end
 
-@inline get_variables(context::OnDemandContext) = getfield(context, :variables)
-@inline get_locations(context::ODC) where {ODC<:OnDemandContext} =
-    _on_demand_locations_from_type(ODC.parameters[2])
-@inline getruntimeinput(context::OnDemandContext) = getfield(context, :input)
-@inline getglobals(context::OnDemandContext) = getfield(context, :globals)
+@inline get_variables(context::ContextSlice) = getfield(context, :variables)
+@inline get_locations(context::CS) where {CS<:ContextSlice} =
+    _context_slice_locations_from_type(CS.parameters[2])
+@inline getruntimeinput(context::ContextSlice) = getfield(context, :input)
+@inline getglobals(context::ContextSlice) = getfield(context, :globals)
 @inline get_subcontexts(context::SubcontextsContext) = getfield(context, :subcontexts)
 @inline getruntimeinput(context::SubcontextsContext) = getfield(context, :input)
+@inline getglobals(context::SubcontextsContext) = getfield(context, :globals)
 
 @inline _step_varaliases(::Type{A}) where {A} = A <: AbstractIdentifiableAlgo ? varaliases(A) : VarAliases()
 
@@ -57,11 +62,11 @@ end
 end
 
 """Build a small context for lifetime conditions from active subcontexts."""
-@inline break_context_from_subcontexts(subcontexts::S, inputs::I) where {S<:NamedTuple, I<:NamedTuple} =
-    SubcontextsContext(subcontexts, inputs)
+@inline break_context_from_subcontexts(subcontexts::S, inputs::I, globals::G = (;)) where {S<:NamedTuple, I<:NamedTuple, G} =
+    SubcontextsContext(subcontexts, inputs, globals)
 
 @inline function Base.getproperty(context::SubcontextsContext, name::Symbol)
-    if name === :subcontexts || name === :input
+    if name === :subcontexts || name === :input || name === :globals
         return getfield(context, name)
     end
     subcontexts = get_subcontexts(context)
@@ -74,6 +79,11 @@ end
     end
     error("Variable $(name) is not available in the generated subcontext break-condition view.")
 end
+
+@inline Base.getindex(context::SubcontextsContext, name::Symbol) =
+    name === :globals || name === :_runtime ? getglobals(context) :
+    name === :_input ? getruntimeinput(context) :
+    getproperty(context, name)
 
 """Resolve a `Var` entity selector to one active subcontext key."""
 @inline _subcontext_key_for_entity(::Type{Subcontexts}, entity::Symbol) where {Subcontexts<:NamedTuple} = entity
@@ -93,11 +103,15 @@ end
     getproperty(getproperty(get_subcontexts(context), _subcontext_key_for_entity(Subcontexts, Entity)), name)
 @inline Base.getindex(context::SubcontextsContext, var::Var{:_input, name}) where {name} =
     getproperty(getruntimeinput(context), name)
+@inline Base.getindex(context::SubcontextsContext, var::Var{:globals, name}) where {name} =
+    getproperty(getglobals(context), name)
+@inline Base.getindex(context::SubcontextsContext, var::Var{:_runtime, name}) where {name} =
+    getproperty(getglobals(context), name)
 @inline Base.getindex(context::SubcontextsContext, vars::Var...) =
     ntuple(i -> getindex(context, vars[i]), length(vars))
 
-"""Return local variable names available in the on-demand local subcontext."""
-function _on_demand_local_locations(::Type{Subcontexts}, ::Type{N}) where {Subcontexts<:NamedTuple, N<:Namespace}
+"""Return local variable names available in the context-slice local subcontext."""
+function _context_slice_local_locations(::Type{Subcontexts}, ::Type{N}) where {Subcontexts<:NamedTuple, N<:Namespace}
     namespace = N
     names = _namespace_names(namespace)
     isempty(names) && return (;)
@@ -109,8 +123,8 @@ function _on_demand_local_locations(::Type{Subcontexts}, ::Type{N}) where {Subco
     return NamedTuple{local_varnames}(locations)
 end
 
-"""Return shared variable locations available in an on-demand child context."""
-function _on_demand_shared_locations(::Type{Subcontexts}, ::Type{W}) where {Subcontexts<:NamedTuple, W<:Wiring}
+"""Return shared variable locations available in a context slice."""
+function _context_slice_shared_locations(::Type{Subcontexts}, ::Type{W}) where {Subcontexts<:NamedTuple, W<:Wiring}
     shared_context_names = contextname.(shares(W()))
     return named_flat_collect_broadcast(shared_context_names) do name
         name isa Symbol || return (;)
@@ -122,8 +136,8 @@ function _on_demand_shared_locations(::Type{Subcontexts}, ::Type{W}) where {Subc
     end
 end
 
-"""Return routed variable locations available in an on-demand child context."""
-function _on_demand_routed_locations(::Type{W}) where {W<:Wiring}
+"""Return routed variable locations available in a context slice."""
+function _context_slice_routed_locations(::Type{W}) where {W<:Wiring}
     return named_flat_collect_broadcast(routes(W())) do route
         fromname = get_fromname(route)
         _localnames = localnames(route)
@@ -135,26 +149,26 @@ function _on_demand_routed_locations(::Type{W}) where {W<:Wiring}
     end
 end
 
-"""Return all readable and writable variable locations for an on-demand context."""
-function _on_demand_locations(::Type{Subcontexts}, ::Type{W}, ::Type{N}) where {Subcontexts<:NamedTuple, W<:Wiring, N<:Namespace}
-    return (; _on_demand_shared_locations(Subcontexts, W)..., _on_demand_routed_locations(W)..., _on_demand_local_locations(Subcontexts, N)...)
+"""Return all readable and writable variable locations for a context slice."""
+function _context_slice_locations(::Type{Subcontexts}, ::Type{W}, ::Type{N}) where {Subcontexts<:NamedTuple, W<:Wiring, N<:Namespace}
+    return (; _context_slice_shared_locations(Subcontexts, W)..., _context_slice_routed_locations(W)..., _context_slice_local_locations(Subcontexts, N)...)
 end
 
 """Return singleton values from a locations `NamedTuple` type."""
-function _on_demand_locations_from_type(::Type{L}) where {L<:NamedTuple}
+function _context_slice_locations_from_type(::Type{L}) where {L<:NamedTuple}
     names = fieldnames(L)
     values = ntuple(i -> fieldtype(L, i)(), fieldcount(L))
     return NamedTuple{names}(values)
 end
 
 """Return location metadata for the variables visible to one child step."""
-@inline @generated function on_demand_locations(subcontexts::S, wiring::W, algorithm::A, namespace::N) where {S<:NamedTuple, W<:Wiring, A, N<:Namespace}
-    locations = _on_demand_locations(S, W, N)
+@inline @generated function context_slice_locations(subcontexts::S, wiring::W, algorithm::A, namespace::N) where {S<:NamedTuple, W<:Wiring, A, N<:Namespace}
+    locations = _context_slice_locations(S, W, N)
     return :($locations)
 end
 
 """Return a value expression that reads one variable location from live sources."""
-function _on_demand_variable_value_expr(vl)
+function _context_slice_variable_value_expr(vl)
     target_subcontext = get_subcontextname(vl)
     target_variables = get_originalname(vl)
     varnames = target_variables isa Tuple ? target_variables : (target_variables,)
@@ -169,80 +183,80 @@ function _on_demand_variable_value_expr(vl)
 end
 
 """Flatten child-visible subcontext variables into an algorithm-facing tuple."""
-@inline @generated function on_demand_variables(subcontexts::S, locations::L, inputs::I, globals::G) where {S<:NamedTuple, L<:NamedTuple, I<:NamedTuple, G}
-    location_values = _on_demand_locations_from_type(L)
+@inline @generated function context_slice_variables(subcontexts::S, locations::L, inputs::I, globals::G) where {S<:NamedTuple, L<:NamedTuple, I<:NamedTuple, G}
+    location_values = _context_slice_locations_from_type(L)
     names = fieldnames(L)
-    values = Any[_on_demand_variable_value_expr(getfield(location_values, i)) for i in eachindex(names)]
+    values = Any[_context_slice_variable_value_expr(getfield(location_values, i)) for i in eachindex(names)]
     return :(NamedTuple{$names}(($(values...),)))
 end
 
-"""Return all readable and writable variable locations for an on-demand context."""
-function _on_demand_locations(::Type{ODC}) where {ODC<:OnDemandContext}
-    return _on_demand_locations_from_type(ODC.parameters[2])
+"""Return all readable and writable variable locations for a context slice."""
+function _context_slice_locations(::Type{CS}) where {CS<:ContextSlice}
+    return _context_slice_locations_from_type(CS.parameters[2])
 end
 
-"""Resolve one algorithm-visible name to its on-demand storage location."""
-function _on_demand_location(::Type{ODC}, name::Symbol) where {ODC<:OnDemandContext}
-    aliases = _step_varaliases(ODC.parameters[6])
+"""Resolve one algorithm-visible name to its context-slice storage location."""
+function _context_slice_location(::Type{CS}, name::Symbol) where {CS<:ContextSlice}
+    aliases = _step_varaliases(CS.parameters[6])
     subcontext_name = algo_to_subcontext_names(aliases, name)
-    locations = _on_demand_locations(ODC)
+    locations = _context_slice_locations(CS)
     hasproperty(locations, subcontext_name) && return getproperty(locations, subcontext_name), subcontext_name
     return nothing, subcontext_name
 end
 
-"""Return the on-demand variable names that store one resolved location."""
-function _on_demand_names_for_location(::Type{ODC}, ::Type{VL}) where {ODC<:OnDemandContext, VL<:VarLocation}
-    Locations = ODC.parameters[2]
+"""Return the context-slice variable names that store one resolved location."""
+function _context_slice_names_for_location(::Type{CS}, ::Type{VL}) where {CS<:ContextSlice, VL<:VarLocation}
+    Locations = CS.parameters[2]
     names = fieldnames(Locations)
     matches = Symbol[]
     for name in names
         fieldtype(Locations, name) === VL && push!(matches, name)
     end
-    isempty(matches) && error("Location $(VL) is not available in this on-demand context. Available names are $(names).")
+    isempty(matches) && error("Location $(VL) is not available in this context slice. Available names are $(names).")
     return Tuple(matches)
 end
 
-Base.@constprop :aggressive @inline Base.getproperty(context::ODC, name::Symbol) where {ODC<:OnDemandContext} =
+Base.@constprop :aggressive @inline Base.getproperty(context::CS, name::Symbol) where {CS<:ContextSlice} =
     getproperty(context, Val(name))
 
-@inline @generated function Base.haskey(context::ODC, ::Val{name}) where {ODC<:OnDemandContext, name}
-    Variables = ODC.parameters[1]
-    has_input = name in fieldnames(ODC.parameters[4])
+@inline @generated function Base.haskey(context::CS, ::Val{name}) where {CS<:ContextSlice, name}
+    Variables = CS.parameters[1]
+    has_input = name in fieldnames(CS.parameters[4])
     return :($( name in fieldnames(Variables) || has_input ))
 end
 
-@inline Base.haskey(context::OnDemandContext, name::Symbol) = haskey(context, Val(name))
+@inline Base.haskey(context::ContextSlice, name::Symbol) = haskey(context, Val(name))
 
-@inline function Base.get(context::OnDemandContext, name::Symbol, default)
+@inline function Base.get(context::ContextSlice, name::Symbol, default)
     return haskey(context, name) ? getproperty(context, name) : default
 end
 
-@inline @generated function Base.getproperty(context::ODC, ::Val{name}) where {ODC<:OnDemandContext, name}
+@inline @generated function Base.getproperty(context::CS, ::Val{name}) where {CS<:ContextSlice, name}
     name === :variables && return :(return getfield(context, :variables))
     name === :input && return :(return getfield(context, :input))
     name === :globals && return :(return getfield(context, :globals))
-    name === :locations && return :(return _on_demand_locations_from_type($(ODC.parameters[2])))
-    name === :wiring && return :(return $(ODC.parameters[3])())
-    name === :algorithm && return :(return $(ODC.parameters[6]))
-    name === :namespace && return :(return $(ODC.parameters[7])())
+    name === :locations && return :(return _context_slice_locations_from_type($(CS.parameters[2])))
+    name === :wiring && return :(return $(CS.parameters[3])())
+    name === :algorithm && return :(return $(CS.parameters[6]))
+    name === :namespace && return :(return $(CS.parameters[7])())
 
-    Variables = ODC.parameters[1]
+    Variables = CS.parameters[1]
     if name in fieldnames(Variables)
         return quote
             return @inline getproperty(get_variables(context), $(QuoteNode(name)))
         end
     end
-    if name in fieldnames(ODC.parameters[4])
+    if name in fieldnames(CS.parameters[4])
         return quote
             return @inline getproperty(getruntimeinput(context), $(QuoteNode(name)))
         end
     end
-    available = (fieldnames(Variables)..., fieldnames(ODC.parameters[4])...)
-    return :(error("Variable $(name) requested from on-demand context, but it is not available. Available names are $available."))
+    available = (fieldnames(Variables)..., fieldnames(CS.parameters[4])...)
+    return :(error("Variable $(name) requested from context slice, but it is not available. Available names are $available."))
 end
 
-@inline @generated function Base.getproperty(context::ODC, vl::VL) where {ODC<:OnDemandContext, VL<:Union{VarLocation{:subcontext}, VarLocation{:local}, VarLocation{:input}, VarLocation{:runtime}}}
-    variable_names = _on_demand_names_for_location(ODC, VL)
+@inline @generated function Base.getproperty(context::CS, vl::VL) where {CS<:ContextSlice, VL<:Union{VarLocation{:subcontext}, VarLocation{:local}, VarLocation{:input}, VarLocation{:runtime}}}
+    variable_names = _context_slice_names_for_location(CS, VL)
     if length(variable_names) == 1
         variable_name = only(variable_names)
         return quote
@@ -254,28 +268,28 @@ end
     return :(return ($(value_exprs...),))
 end
 
-@inline Base.propertynames(context::OnDemandContext) = (fieldnames(typeof(get_variables(context)))..., fieldnames(typeof(getruntimeinput(context)))...)
-@inline Base.keys(context::OnDemandContext) = propertynames(context)
+@inline Base.propertynames(context::ContextSlice) = (fieldnames(typeof(get_variables(context)))..., fieldnames(typeof(getruntimeinput(context)))...)
+@inline Base.keys(context::ContextSlice) = propertynames(context)
 
-@inline merge_by_wiring(context::OnDemandContext, ::Nothing) =
+@inline merge_by_wiring(context::ContextSlice, ::Nothing) =
     (; globals = getglobals(context))
 
 """Return unchanged active subcontexts for a generated child with no writeback."""
-@inline function backmerge_by_wiring(context::ODC, ::Nothing, subcontexts::S) where {ODC<:OnDemandContext, S<:NamedTuple}
+@inline function backmerge_by_wiring(context::CS, ::Nothing, subcontexts::S) where {CS<:ContextSlice, S<:NamedTuple}
     return (; globals = getglobals(context), subcontexts...)
 end
 
 """Return globals after merging only runtime-targeted child outputs."""
-@inline backmerge_globals_by_wiring(context::OnDemandContext, ::Nothing) =
+@inline backmerge_globals_by_wiring(context::ContextSlice, ::Nothing) =
     getglobals(context)
 
-"""Return globals with temporary runtime outputs produced inside an on-demand step."""
-@inline function merge_ondemand_runtime(context::ODC, patch::P) where {ODC<:OnDemandContext, P<:NamedTuple}
+"""Return globals with temporary runtime outputs produced inside a context-slice step."""
+@inline function merge_context_slice_runtime(context::CS, patch::P) where {CS<:ContextSlice, P<:NamedTuple}
     return merge(getglobals(context), patch)
 end
 
 """Return one active subcontext after merging only writes targeting that subcontext."""
-@inline backmerge_subcontext_by_wiring(context::OnDemandContext, ::Nothing, ::Val{name}, subcontext::S) where {name, S} =
+@inline backmerge_subcontext_by_wiring(context::ContextSlice, ::Nothing, ::Val{name}, subcontext::S) where {name, S} =
     subcontext
 
 """Merge one generated block return into the loop-level `ProcessContext`.
@@ -285,7 +299,7 @@ through the loop. Returned runtime values update `_runtime`; returned
 subcontext values must update existing fields without changing their concrete
 types.
 """
-@inline function backmerge_context_by_wiring(context::ODC, ::Nothing, process_context::PC) where {ODC<:OnDemandContext, PC<:ProcessContext}
+@inline function backmerge_context_by_wiring(context::CS, ::Nothing, process_context::PC) where {CS<:ContextSlice, PC<:ProcessContext}
     return process_context
 end
 
@@ -293,16 +307,16 @@ end
 @inline _merge_unlocated_returns_to_runtime(::Type{T}) where {T} = nameof(T) === :FuncWrapper
 
 """Merge a child `step!` return into the subcontexts available to that child."""
-@inline @generated function merge_by_wiring(context::ODC, retval::R) where {ODC<:OnDemandContext, R<:NamedTuple}
-    A = ODC.parameters[6]
-    local_names = _namespace_names(ODC.parameters[7])
+@inline @generated function merge_by_wiring(context::CS, retval::R) where {CS<:ContextSlice, R<:NamedTuple}
+    A = CS.parameters[6]
+    local_names = _namespace_names(CS.parameters[7])
     isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
     local_subcontext = first(local_names)
 
     updates = Dict{Symbol, Vector{Expr}}()
     runtime_fields = Expr[]
     for retval_name in fieldnames(R)
-        location, subcontext_name = _on_demand_location(ODC, retval_name)
+        location, subcontext_name = _context_slice_location(CS, retval_name)
         target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
         target_variable = isnothing(location) ? subcontext_name : get_originalname(location)
         target_variable isa Symbol || error("Algorithm returned $(retval_name), which maps to multiple target variables $(target_variable). Inverse transform merges are not supported.")
@@ -319,7 +333,7 @@ end
     ]
     if !isempty(runtime_fields)
         runtime_patch_expr = Expr(:tuple, Expr(:parameters, runtime_fields...))
-        push!(merge_exprs, :(_globals = @inline merge_ondemand_runtime(context, $runtime_patch_expr)))
+        push!(merge_exprs, :(_globals = @inline merge_context_slice_runtime(context, $runtime_patch_expr)))
     end
     return_fields = Expr[]
     for subcontext_name in sort!(collect(keys(updates)); by = string)
@@ -332,15 +346,15 @@ end
 end
 
 """Return globals after merging only runtime-targeted child outputs."""
-@inline @generated function backmerge_globals_by_wiring(context::ODC, retval::R) where {ODC<:OnDemandContext, R<:NamedTuple}
-    A = ODC.parameters[6]
-    local_names = _namespace_names(ODC.parameters[7])
+@inline @generated function backmerge_globals_by_wiring(context::CS, retval::R) where {CS<:ContextSlice, R<:NamedTuple}
+    A = CS.parameters[6]
+    local_names = _namespace_names(CS.parameters[7])
     isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
     local_subcontext = first(local_names)
 
     runtime_fields = Expr[]
     for retval_name in fieldnames(R)
-        location, subcontext_name = _on_demand_location(ODC, retval_name)
+        location, subcontext_name = _context_slice_location(CS, retval_name)
         target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
         target_variable = isnothing(location) ? subcontext_name : get_originalname(location)
         target_variable isa Symbol || error("Algorithm returned $(retval_name), which maps to multiple target variables $(target_variable). Inverse transform merges are not supported.")
@@ -352,14 +366,14 @@ end
     isempty(runtime_fields) && return :(return @inline getglobals(context))
     runtime_patch_expr = Expr(:tuple, Expr(:parameters, runtime_fields...))
     return quote
-        return @inline merge_ondemand_runtime(context, $runtime_patch_expr)
+        return @inline merge_context_slice_runtime(context, $runtime_patch_expr)
     end
 end
 
 """Return one active subcontext after merging only writes targeting that subcontext."""
-@inline @generated function backmerge_subcontext_by_wiring(context::ODC, retval::R, ::Val{name}, subcontext::S) where {ODC<:OnDemandContext, R<:NamedTuple, name, S}
-    A = ODC.parameters[6]
-    local_names = _namespace_names(ODC.parameters[7])
+@inline @generated function backmerge_subcontext_by_wiring(context::CS, retval::R, ::Val{name}, subcontext::S) where {CS<:ContextSlice, R<:NamedTuple, name, S}
+    A = CS.parameters[6]
+    local_names = _namespace_names(CS.parameters[7])
     isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
     local_subcontext = first(local_names)
 
@@ -369,7 +383,7 @@ end
     data_names = fieldnames(data_type)
     can_rebuild_stably = true
     for retval_name in fieldnames(R)
-        location, subcontext_name = _on_demand_location(ODC, retval_name)
+        location, subcontext_name = _context_slice_location(CS, retval_name)
         target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
         target_variable = isnothing(location) ? subcontext_name : get_originalname(location)
         target_variable isa Symbol || error("Algorithm returned $(retval_name), which maps to multiple target variables $(target_variable). Inverse transform merges are not supported.")
@@ -410,9 +424,9 @@ end
 end
 
 """Merge one generated block return into the loop-level `ProcessContext`."""
-@inline @generated function backmerge_context_by_wiring(context::ODC, retval::R, process_context::PC) where {ODC<:OnDemandContext, R<:NamedTuple, PC<:ProcessContext}
-    A = ODC.parameters[6]
-    local_names = _namespace_names(ODC.parameters[7])
+@inline @generated function backmerge_context_by_wiring(context::CS, retval::R, process_context::PC) where {CS<:ContextSlice, R<:NamedTuple, PC<:ProcessContext}
+    A = CS.parameters[6]
+    local_names = _namespace_names(CS.parameters[7])
     isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
     local_subcontext = first(local_names)
     subcontext_type = PC.parameters[1]
@@ -421,7 +435,7 @@ end
     updates = Dict{Symbol, Dict{Symbol, Expr}}()
     runtime_fields = Expr[]
     for retval_name in fieldnames(R)
-        location, subcontext_name = _on_demand_location(ODC, retval_name)
+        location, subcontext_name = _context_slice_location(CS, retval_name)
         target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
         target_variable = isnothing(location) ? subcontext_name : get_originalname(location)
         target_variable isa Symbol || error("Algorithm returned $(retval_name), which maps to multiple target variables $(target_variable). Inverse transform merges are not supported.")
@@ -442,7 +456,7 @@ end
     merge_exprs = Any[:(_updated_context = process_context)]
     if !isempty(runtime_fields)
         runtime_patch_expr = Expr(:tuple, Expr(:parameters, runtime_fields...))
-        push!(merge_exprs, :(_updated_context = @inline withruntime_if_changed(_updated_context, @inline merge_ondemand_runtime(context, $runtime_patch_expr))))
+        push!(merge_exprs, :(_updated_context = @inline withruntime_if_changed(_updated_context, @inline merge_context_slice_runtime(context, $runtime_patch_expr))))
     end
 
     if !isempty(updates)
@@ -479,9 +493,9 @@ end
 end
 
 """Merge a generated child return directly into the active subcontext tuple."""
-@inline @generated function backmerge_by_wiring(context::ODC, retval::R, subcontexts::S) where {ODC<:OnDemandContext, R<:NamedTuple, S<:NamedTuple}
-    A = ODC.parameters[6]
-    local_names = _namespace_names(ODC.parameters[7])
+@inline @generated function backmerge_by_wiring(context::CS, retval::R, subcontexts::S) where {CS<:ContextSlice, R<:NamedTuple, S<:NamedTuple}
+    A = CS.parameters[6]
+    local_names = _namespace_names(CS.parameters[7])
     isempty(local_names) && error("Generated concrete child step needs a resolved namespace for local return values.")
     local_subcontext = first(local_names)
     active_names = fieldnames(S)
@@ -489,7 +503,7 @@ end
     updates = Dict{Symbol, Vector{Expr}}()
     runtime_fields = Expr[]
     for retval_name in fieldnames(R)
-        location, subcontext_name = _on_demand_location(ODC, retval_name)
+        location, subcontext_name = _context_slice_location(CS, retval_name)
         target_subcontext = isnothing(location) ? local_subcontext : get_subcontextname(location)
         target_variable = isnothing(location) ? subcontext_name : get_originalname(location)
         target_variable isa Symbol || error("Algorithm returned $(retval_name), which maps to multiple target variables $(target_variable). Inverse transform merges are not supported.")
@@ -505,7 +519,7 @@ end
     merge_exprs = Any[:(_globals = @inline getglobals(context))]
     if !isempty(runtime_fields)
         runtime_patch_expr = Expr(:tuple, Expr(:parameters, runtime_fields...))
-        push!(merge_exprs, :(_globals = @inline merge_ondemand_runtime(context, $runtime_patch_expr)))
+        push!(merge_exprs, :(_globals = @inline merge_context_slice_runtime(context, $runtime_patch_expr)))
     end
 
     return_fields = Any[Expr(:(=), :globals, :_globals)]

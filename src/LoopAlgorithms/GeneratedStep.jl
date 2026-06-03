@@ -2,10 +2,10 @@
 Compile-time state used while expanding a generated loop step expression.
 
 The generated loop keeps every root subcontext as a local variable. Concrete
-child steps build an `OnDemandContext` from those variables, while nested plans
+child steps build a `ContextSlice` from those variables, while nested plans
 reuse the same local variables and only add composite/routine control flow.
 """
-struct GeneratedStepState{TopNames, GlobalsSym, InputsSym, ProcessSym, LifetimeSym}
+struct GeneratedStepState{TopNames, GlobalsSym, InputsSym, ProcessSym, LifetimeSym, LifetimeType}
 end
 
 GeneratedStepState(
@@ -14,8 +14,9 @@ GeneratedStepState(
     inputs_sym::InputsSym,
     process_sym::ProcessSym,
     lifetime_sym::LifetimeSym,
-) where {TopNames<:Tuple, GlobalsSym<:Symbol, InputsSym<:Symbol, ProcessSym<:Symbol, LifetimeSym<:Symbol} =
-    GeneratedStepState{top_names, globals_sym, inputs_sym, process_sym, lifetime_sym}()
+    lifetime_type::Type{LT} = Lifetime,
+) where {TopNames<:Tuple, GlobalsSym<:Symbol, InputsSym<:Symbol, ProcessSym<:Symbol, LifetimeSym<:Symbol, LT<:Lifetime} =
+    GeneratedStepState{top_names, globals_sym, inputs_sym, process_sym, lifetime_sym, LT}()
 
 """Return the top-level subcontext names available to generated child blocks."""
 _generated_step_top_names(::GeneratedStepState{TopNames}) where {TopNames} = TopNames
@@ -31,6 +32,33 @@ _generated_step_process_sym(::GeneratedStepState{TopNames, GlobalsSym, InputsSym
 
 """Return the symbol bound to the current process lifetime in generated code."""
 _generated_step_lifetime_sym(::GeneratedStepState{TopNames, GlobalsSym, InputsSym, ProcessSym, LifetimeSym}) where {TopNames, GlobalsSym, InputsSym, ProcessSym, LifetimeSym} = LifetimeSym
+
+"""Return the type of the process lifetime bound in generated code."""
+_generated_step_lifetime_type(::GeneratedStepState{TopNames, GlobalsSym, InputsSym, ProcessSym, LifetimeSym, LifetimeType}) where {TopNames, GlobalsSym, InputsSym, ProcessSym, LifetimeSym, LifetimeType} = LifetimeType
+
+"""Return the variable selectors referenced by one lifetime type."""
+_generated_lifetime_vars(::Type) = ()
+_generated_lifetime_vars(::Type{<:Union{Repeat, Indefinite}}) = ()
+_generated_lifetime_vars(::Type{<:Until{Vars}}) where {Vars} = Vars
+_generated_lifetime_vars(::Type{<:AtLeast{Vars}}) where {Vars} = Vars
+_generated_lifetime_vars(::Type{<:RepeatOrUntil{Vars}}) where {Vars} = Vars
+_generated_lifetime_vars(::Type{<:AtLeastAtMost{Vars}}) where {Vars} = Vars
+
+"""Return the lifetime type represented by a generated routine schedule entry."""
+_generated_lifetime_value_type(value::Type{<:Lifetime}) = value
+_generated_lifetime_value_type(value) = typeof(value)
+
+"""Return a live subcontext break-condition context expression."""
+function _generated_live_break_context_expr(top_names::Tuple, inputs_sym::Symbol, globals_sym::Symbol)
+    subcontexts_expr = _generated_step_subcontexts_expr(top_names)
+    return :(break_context_from_subcontexts($subcontexts_expr, $inputs_sym, $globals_sym))
+end
+
+"""Return a live context expression for generated break-condition checks."""
+function _generated_breakcondition_context_expr(::Type{LT}, top_names::Tuple, inputs_sym::Symbol, globals_sym::Symbol) where {LT<:Lifetime}
+    isempty(_generated_lifetime_vars(LT)) && return :(nothing)
+    return _generated_live_break_context_expr(top_names, inputs_sym, globals_sym)
+end
 
 """Return a named-tuple expression from live generated subcontext variables."""
 function _generated_step_subcontexts_expr(names::Tuple)
@@ -53,7 +81,7 @@ function _generated_step_subcontexts_type(::Type{C}, names::Tuple) where {C<:Pro
 end
 
 """Return a generated expression that reads one routed variable from live locals."""
-function _generated_on_demand_variable_value_expr(vl, inputs_sym::Symbol, globals_sym::Symbol)
+function _generated_context_slice_variable_value_expr(vl, inputs_sym::Symbol, globals_sym::Symbol)
     target_subcontext = get_subcontextname(vl)
     target_variables = get_originalname(vl)
     varnames = target_variables isa Tuple ? target_variables : (target_variables,)
@@ -68,13 +96,38 @@ function _generated_on_demand_variable_value_expr(vl, inputs_sym::Symbol, global
 end
 
 """Return the variables tuple and static location type for one generated child."""
-function _generated_on_demand_variables_expr(::Type{C}, available_names::Tuple, wiring_type::Type{<:Wiring}, namespace_type::Type{<:Namespace}, inputs_sym::Symbol, globals_sym::Symbol) where {C<:ProcessContext}
+function _generated_context_slice_variables_expr(::Type{C}, available_names::Tuple, wiring_type::Type{<:Wiring}, namespace_type::Type{<:Namespace}, inputs_sym::Symbol, globals_sym::Symbol) where {C<:ProcessContext}
     subcontexts_type = _generated_step_subcontexts_type(C, available_names)
-    locations = _on_demand_locations(subcontexts_type, wiring_type, namespace_type)
+    locations = _context_slice_locations(subcontexts_type, wiring_type, namespace_type)
     location_type = typeof(locations)
+    if _generated_context_slice_can_reuse_local_data(C, available_names, locations, namespace_type)
+        local_name = only(_namespace_names(namespace_type))
+        return :(getdata($local_name)), location_type
+    end
     names = fieldnames(location_type)
-    values = Any[_generated_on_demand_variable_value_expr(getfield(locations, i), inputs_sym, globals_sym) for i in eachindex(names)]
+    values = Any[_generated_context_slice_variable_value_expr(getfield(locations, i), inputs_sym, globals_sym) for i in eachindex(names)]
     return Expr(:tuple, Expr(:parameters, (Expr(:(=), names[i], values[i]) for i in eachindex(names))...)), location_type
+end
+
+"""Return whether generated leaf variables can alias one local subcontext's data."""
+function _generated_context_slice_can_reuse_local_data(::Type{C}, available_names::Tuple, locations::L, namespace_type::Type{<:Namespace}) where {C<:ProcessContext, L<:NamedTuple}
+    local_names = _namespace_names(namespace_type)
+    length(local_names) == 1 || return false
+    local_name = only(local_names)
+    available_names == (local_name,) || return false
+
+    subcontexts_type = C.parameters[1]
+    local_name in fieldnames(subcontexts_type) || return false
+    data_names = fieldnames(getdatatype(fieldtype(subcontexts_type, local_name)))
+    fieldnames(L) == data_names || return false
+
+    for data_name in data_names
+        location = getproperty(locations, data_name)
+        get_subcontextname(location) == local_name || return false
+        get_originalname(location) == data_name || return false
+        isnothing(getfunc(location)) || return false
+    end
+    return true
 end
 
 """Return an expression that reconstructs a tuple of resolved route/share values."""
@@ -186,6 +239,10 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiring_exp
     lifetime_values = lifetimes(routine)
     process_sym = _generated_step_process_sym(state)
     lifetime_sym = _generated_step_lifetime_sym(state)
+    inputs_sym = _generated_step_inputs_sym(state)
+    globals_sym = _generated_step_globals_sym(state)
+    top_lifetime_type = _generated_step_lifetime_type(state)
+    top_names = _generated_step_top_names(state)
     sizehint!(exprs, algo_count)
 
     for i in 1:algo_count
@@ -199,17 +256,25 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiring_exp
         repeat_count = gensym(:repeat_count)
         resume_point = gensym(:resume_point)
         lidx = gensym(:lidx)
+        break_context = gensym(:break_context)
         child_expr = _generated_step_child_expr(child_type, C, child_name, child_wiring_type, child_namespace_type, state)
+        child_lifetime_type = _generated_lifetime_value_type(lifetime_value)
+        child_needs_context = !isempty(_generated_lifetime_vars(child_lifetime_type))
+        top_needs_context = !isempty(_generated_lifetime_vars(top_lifetime_type))
+        break_context_expr = (child_needs_context || top_needs_context) ?
+            _generated_live_break_context_expr(top_names, inputs_sym, globals_sym) :
+            :(nothing)
         push!(exprs, quote
             local $child_idx = $i
             local $child_name = @inline getalgo($name, $child_idx)
-            local $child_lifetime = $lifetime_value
+            local $child_lifetime = @inline lifetimes($name, $child_idx)
             local $repeat_count = @inline routine_repeat_count($child_lifetime)
             local $resume_point = @inline get_resume_point($name, $child_idx)
             if $resume_point <= $repeat_count
                 for $lidx in $resume_point:$repeat_count
-                    if @inline routine_breakcondition($child_lifetime, $lifetime_sym, $process_sym, nothing, $lidx)
-                        if !(@inline _routine_local_breakcondition($child_lifetime, $process_sym, nothing, $lidx))
+                    local $break_context = $break_context_expr
+                    if @inline routine_breakcondition($child_lifetime, $lifetime_sym, $process_sym, $break_context, $lidx)
+                        if !(@inline _routine_local_breakcondition($child_lifetime, $process_sym, $break_context, $lidx))
                             @inline set_resume_point!($name, $child_idx, $lidx)
                         end
                         break
@@ -229,19 +294,19 @@ function _generated_process_algorithm_step_expr(::Type{T}, ::Type{C}, funcname::
     globals_sym = _generated_step_globals_sym(state)
     inputs_sym = _generated_step_inputs_sym(state)
     available_variables = gensym(:available_variables)
-    on_demand_context = gensym(:on_demand_context)
+    context_slice = gensym(:context_slice)
     retval = gensym(:retval)
-    variables_expr, locations_type = _generated_on_demand_variables_expr(C, available_names, wiring_type, namespace_type, inputs_sym, globals_sym)
-    assignments = _generated_step_backmerge_assignments(available_names, on_demand_context, retval)
+    variables_expr, locations_type = _generated_context_slice_variables_expr(C, available_names, wiring_type, namespace_type, inputs_sym, globals_sym)
+    assignments = _generated_step_backmerge_assignments(available_names, context_slice, retval)
 
     isnothing(wiring_expr) && error("Concrete generated child step requires resolved child wiring.")
     isnothing(namespace_expr) && error("Concrete generated child step requires a resolved child namespace.")
 
     return quote
         local $available_variables = $variables_expr
-        local $on_demand_context = @inline OnDemandContext($available_variables, $locations_type, $wiring_expr, $inputs_sym, $globals_sym, $funcname, $namespace_expr)
-        local $retval = @inline step!($funcname, $on_demand_context)
-        $globals_sym = @inline backmerge_globals_by_wiring($on_demand_context, $retval)
+        local $context_slice = @inline ContextSlice($available_variables, $locations_type, $wiring_expr, $inputs_sym, $globals_sym, $funcname, $namespace_expr)
+        local $retval = @inline step!($funcname, $context_slice)
+        $globals_sym = @inline backmerge_globals_by_wiring($context_slice, $retval)
         $(assignments...)
     end
 end
@@ -266,7 +331,7 @@ end
 Generated expression form for concrete `ProcessAlgorithm` children.
 
 The child sees the public `step!(algo, context)` extension point. The context is
-an `OnDemandContext` over the root subcontext variables currently live in the
+a `ContextSlice` over the root subcontext variables currently live in the
 generated loop; the resolved wiring decides which fields are actually exposed
 and where returned fields are merged.
 """
