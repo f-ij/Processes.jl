@@ -51,11 +51,11 @@ function cleanup(algos::LA, context::C, runtimecontext::RC) where {LA<:AbstractL
     registry = getregistry(context)
     named_algos = all_algos(registry)
 
-    for named_algo in named_algos
-        context, runtimecontext = @inline cleanup(named_algo, context, runtimecontext)
+    # Keep cleanup on the same statically unrolled path as init. A runtime loop
+    # over heterogeneous registered algorithms boxes the returned context tuple.
+    return @inline unrollreplace((context, runtimecontext), named_algos) do state, named_algo
+        @inline cleanup(named_algo, getfield(state, 1), getfield(state, 2))
     end
-    
-    return context, runtimecontext
 end
 
 
