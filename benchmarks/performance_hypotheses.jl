@@ -166,13 +166,13 @@ function stable_step_probe(algo)
     )
     runtime_context = Processes._merge_into_globals(Processes.context(ip), (; process = ip))
     graph = Processes.getalgo(Processes.taskdata(ip))
-    boot_context = Processes.step!(graph, runtime_context, Processes.Unstable())
+    boot_context = Processes.step!(graph, runtime_context)
     return graph, boot_context
 end
 
 function direct_stable_step_alloc(algo)
     graph, boot_context = stable_step_probe(algo)
-    return @allocated Processes.step!(graph, boot_context, Processes.Stable())
+    return @allocated Processes.step!(graph, boot_context)
 end
 
 function run_inline_default(ip)
@@ -211,7 +211,7 @@ function print_llvm_probe()
     code_llvm(
         stdout,
         Processes.step!,
-        Tuple{typeof(graph), typeof(boot_context), Processes.Stable};
+        Tuple{typeof(graph), typeof(boot_context)};
         debuginfo = :none,
         optimize = true,
     )
@@ -254,4 +254,3 @@ function main()
 end
 
 main()
-

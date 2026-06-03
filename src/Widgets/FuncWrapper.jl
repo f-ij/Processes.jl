@@ -54,7 +54,7 @@ function replacecontextkeys(fw::FuncWrapper, key_replacement::Pair)
     return setcontextkey(fw, key_replacement.second)
 end
 
-function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:PlanWiringView, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, process::P, lifetime::LT) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:PlanWiringView, P<:AbstractProcess, LT<:Lifetime}
     contextview = @inline view(
         context,
         runtimecontext,
@@ -64,7 +64,7 @@ function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, process::P, l
     )
 
     retval = @inline step!(fw, contextview)
-    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability, return_demand(wiring, Namespace{:_runtime}()))
+    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, return_demand(wiring, Namespace{:_runtime}()))
 end
 
 """
@@ -73,7 +73,7 @@ Step a resolved `FuncWrapper` child using its explicit plan namespace.
 Resolved plans keep the namespace outside the wrapper value, so generated and
 non-generated child stepping must view the context through `Namespace{Name}`.
 """
-function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT, stability::S = Stable()) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:PlanWiringView, Name, P<:AbstractProcess, LT<:Lifetime, S<:Stability}
+function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, namespace::Namespace{Name}, process::P, lifetime::LT) where {FW<:FuncWrapper, C<:AbstractContext, RC<:ProcessContext, W<:PlanWiringView, Name, P<:AbstractProcess, LT<:Lifetime}
     contextview = @inline view(
         context,
         runtimecontext,
@@ -84,7 +84,7 @@ function _step!(fw::FW, context::C, runtimecontext::RC, wiring::W, namespace::Na
     )
 
     retval = @inline step!(fw, contextview)
-    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability, return_demand(wiring, Namespace{:_runtime}()))
+    return @inline merge_funcwrapper_return(contextview, context, runtimecontext, retval, return_demand(wiring, Namespace{:_runtime}()))
 end
 
 """
@@ -99,10 +99,9 @@ DSL temporaries and remain in `ProcessContext._runtime` for later statements.
     context::C,
     runtimecontext::RC,
     retval::R,
-    stability::S,
-) where {SCV<:SubContextView, C<:ProcessContext, RC<:ProcessContext, R<:NamedTuple, S<:Stability}
+    ) where {SCV<:SubContextView, C<:ProcessContext, RC<:ProcessContext, R<:NamedTuple}
     demand_type = ReturnDemand{fieldnames(R)}
-    return :(merge_funcwrapper_return(contextview, context, runtimecontext, retval, stability, $demand_type()))
+    return :(merge_funcwrapper_return(contextview, context, runtimecontext, retval, $demand_type()))
 end
 
 @inline @generated function merge_funcwrapper_return(
@@ -110,9 +109,8 @@ end
     context::C,
     runtimecontext::RC,
     retval::R,
-    stability::S,
     demand::ReturnDemand{DemandNames},
-) where {SCV<:SubContextView, C<:ProcessContext, RC<:ProcessContext, R<:NamedTuple, S<:Stability, DemandNames}
+) where {SCV<:SubContextView, C<:ProcessContext, RC<:ProcessContext, R<:NamedTuple, DemandNames}
     view_names = Symbol[]
     runtime_names = Symbol[]
 
@@ -159,8 +157,8 @@ end
 """
 Treat a `FuncWrapper` with no return value as a pure side-effecting step.
 """
-@inline merge_funcwrapper_return(contextview::SCV, context::C, runtimecontext::RC, ::Nothing, stability::S) where {SCV<:SubContextView, C<:ProcessContext, RC<:ProcessContext, S<:Stability} = context, runtimecontext
-@inline merge_funcwrapper_return(contextview::SCV, context::C, runtimecontext::RC, ::Nothing, stability::S, demand::ReturnDemand) where {SCV<:SubContextView, C<:ProcessContext, RC<:ProcessContext, S<:Stability} = context, runtimecontext
+@inline merge_funcwrapper_return(contextview::SCV, context::C, runtimecontext::RC, ::Nothing) where {SCV<:SubContextView, C<:ProcessContext, RC<:ProcessContext} = context, runtimecontext
+@inline merge_funcwrapper_return(contextview::SCV, context::C, runtimecontext::RC, ::Nothing, demand::ReturnDemand) where {SCV<:SubContextView, C<:ProcessContext, RC<:ProcessContext} = context, runtimecontext
 
 @inline _funcwrapper_render_value(value; io::IO = stdout) = sprint(show, value; context = io)
 

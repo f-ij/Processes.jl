@@ -9,7 +9,7 @@ Step each scheduled child of a composite plan with explicit loop runtime.
 The `process` and `lifetime` values are forwarded so nested loop algorithms can
 run without storing those transient values in the context.
 """
-Base.@constprop :aggressive @inline @generated function _step!(ca::CA, context::C, runtimecontext::RC, wiring::W, namespace::N, process::P, lifetime::LT, typestable::S = Stable()) where {CA <: CompositeAlgorithm, C <: AbstractContext, RC <: ProcessContext, W <: PlanWiringView, N <: Namespace, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+Base.@constprop :aggressive @inline @generated function _step!(ca::CA, context::C, runtimecontext::RC, wiring::W, namespace::N, process::P, lifetime::LT) where {CA <: CompositeAlgorithm, C <: AbstractContext, RC <: ProcessContext, W <: PlanWiringView, N <: Namespace, P <: AbstractProcess, LT <: Lifetime}
     algo_count = numalgos(CA)
     interval_values = CA.parameters[2]
     child_namespace_tuple_type = CA.parameters[3]
@@ -31,7 +31,7 @@ Base.@constprop :aggressive @inline @generated function _step!(ca::CA, context::
                 local algo = @inline getfield(algos, $i)
                 local child_step_wiring = @inline child_wiring_view(wiring, Val($i))
                 local child_namespace = $child_namespace_type()
-                context, runtimecontext = @inline _step!(algo, context, runtimecontext, child_step_wiring, child_namespace, process, lifetime, typestable)
+                context, runtimecontext = @inline _step!(algo, context, runtimecontext, child_step_wiring, child_namespace, process, lifetime)
             end
         end)
     end
@@ -49,16 +49,15 @@ end
     r::R,
     process::P,
     lifetime::LT,
-    typestable::S,
     idx::Int,
     subroutine_lifetime::SL,
     child_step_wiring::W,
     namespace::N,
-) where {C,RC<:ProcessContext,F,R<:Routine,P<:AbstractProcess,LT<:Lifetime,S<:Stability,SL<:Lifetime,W,N<:Namespace}
+) where {C,RC<:ProcessContext,F,R<:Routine,P<:AbstractProcess,LT<:Lifetime,SL<:Lifetime,W,N<:Namespace}
     resume_point = @inline get_resume_point(r, idx)
     this_repeat_count = @inline routine_repeat_count(subroutine_lifetime)
     if resume_point <= this_repeat_count
-        context, runtimecontext = @inline _step!(func, context, runtimecontext, child_step_wiring, namespace, process, lifetime, typestable)
+        context, runtimecontext = @inline _step!(func, context, runtimecontext, child_step_wiring, namespace, process, lifetime)
         @inline tick!(process)
 
         next_idx = resume_point + 1
@@ -76,7 +75,7 @@ end
                 end
                 return context, runtimecontext
             end
-            context, runtimecontext = @inline _step!(func, context, runtimecontext, child_step_wiring, namespace, process, lifetime, typestable)
+            context, runtimecontext = @inline _step!(func, context, runtimecontext, child_step_wiring, namespace, process, lifetime)
             @inline tick!(process)
         end
     end
@@ -89,7 +88,7 @@ Step each child routine in sequence with explicit loop runtime.
 Each child is run once at its resume point, then repeated until its declared
 repeat count is reached or the lifetime stops.
 """
-Base.@constprop :aggressive @inline @generated function _step!(r::R, context::C, runtimecontext::RC, wiring::W, namespace::N, process::P, lifetime::LT, typestable::S = Stable()) where {R <: Routine, C <: AbstractContext, RC <: ProcessContext, W <: PlanWiringView, N <: Namespace, P <: AbstractProcess, LT <: Lifetime, S <: Stability}
+Base.@constprop :aggressive @inline @generated function _step!(r::R, context::C, runtimecontext::RC, wiring::W, namespace::N, process::P, lifetime::LT) where {R <: Routine, C <: AbstractContext, RC <: ProcessContext, W <: PlanWiringView, N <: Namespace, P <: AbstractProcess, LT <: Lifetime}
     algo_count = numalgos(R)
     repeat_values = R.parameters[2]
     child_namespace_tuple_type = R.parameters[3]
@@ -105,7 +104,7 @@ Base.@constprop :aggressive @inline @generated function _step!(r::R, context::C,
             local func = @inline getfield(algos, $i)
             local child_step_wiring = @inline child_wiring_view(wiring, Val($i))
             local child_namespace = $child_namespace_type()
-            context, runtimecontext = @inline _subroutine_step!(context, runtimecontext, func, r, process, lifetime, typestable, $i, $repeat_value, child_step_wiring, child_namespace)
+            context, runtimecontext = @inline _subroutine_step!(context, runtimecontext, func, r, process, lifetime, $i, $repeat_value, child_step_wiring, child_namespace)
         end)
     end
 

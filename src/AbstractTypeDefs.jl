@@ -203,9 +203,3 @@ The type of loop to use for a process. This is determined by the system and can 
 #     Generated()
 # end
 const sys_looptype = NonGenerated()
-    
-
-#### Type Stabliity of steps
-abstract type Stability end
-struct Stable <: Stability end
-struct Unstable <: Stability end

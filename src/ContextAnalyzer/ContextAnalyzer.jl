@@ -368,7 +368,7 @@ end
 
 function analyse_step(sa::AbstractIdentifiableAlgo, analyser::ContextAnalyser)
     try
-        step!(sa, analyser, Unstable())
+        step!(sa, analyser)
     catch err
         _record_error!(analyser, err)
     end

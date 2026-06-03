@@ -20,8 +20,7 @@ through that view.
     namespace::Namespace{Name},
     process::P,
     lifetime::LT,
-    stability::S = Stable(),
-) where {A<:ProcessAlgorithm,C<:AbstractContext,RC<:AbstractContext,W<:PlanWiringView,Name,P<:AbstractProcess,LT<:Lifetime,S<:Stability}
+) where {A<:ProcessAlgorithm,C<:AbstractContext,RC<:AbstractContext,W<:PlanWiringView,Name,P<:AbstractProcess,LT<:Lifetime}
     contextview = @inline view(
         context,
         runtimecontext,
@@ -48,8 +47,7 @@ the current plan wiring.
     wiring::W,
     process::P,
     lifetime::LT,
-    stability::S = Stable(),
-) where {A<:ProcessAlgorithm,C<:AbstractContext,RC<:AbstractContext,W<:PlanWiringView,P<:AbstractProcess,LT<:Lifetime,S<:Stability}
+) where {A<:ProcessAlgorithm,C<:AbstractContext,RC<:AbstractContext,W<:PlanWiringView,P<:AbstractProcess,LT<:Lifetime}
     retval = @inline step!(algo, context)
     runtimecontext = @inline merge_owner_runtime_return(
         runtimecontext,

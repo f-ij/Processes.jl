@@ -5,11 +5,11 @@ Generated process loops receive the resolved wrapper at the root. Inline the
 stored plan directly so generated code does not call the old no-runtime
 `step!` entry point.
 """
-function step!_expr(::Type{LA}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {Plan, LA<:LoopAlgorithm{Plan}, C<:AbstractContext}
+function step!_expr(::Type{LA}, context::Type{C}, name::Symbol, wiringname::Symbol) where {Plan, LA<:LoopAlgorithm{Plan}, C<:AbstractContext}
     plan_name = gensym(:plan)
     return quote
         local $plan_name = @inline getplan($name)
-        $(step!_expr(Plan, C, plan_name, wiringname, stability))
+        $(step!_expr(Plan, C, plan_name, wiringname))
     end
 end
 
@@ -19,19 +19,19 @@ Generated expression form for a finalized root loop algorithm.
 Finalization affects the result after cleanup, not the loop step itself, so the
 generated step expression delegates to the wrapped algorithm.
 """
-function step!_expr(::Type{FA}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {LA, FA<:FinalizedAlgorithm{LA}, C<:AbstractContext}
+function step!_expr(::Type{FA}, context::Type{C}, name::Symbol, wiringname::Symbol) where {LA, FA<:FinalizedAlgorithm{LA}, C<:AbstractContext}
     plan_type = getplan(FA)
     plan_name = gensym(:plan)
     return quote
         local $plan_name = @inline getplan($name)
-        $(step!_expr(plan_type, C, plan_name, wiringname, stability))
+        $(step!_expr(plan_type, C, plan_name, wiringname))
     end
 end
 
 """
 Generated expression form of the composite step! with a caller-provided name binding.
 """
-function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {CA<:CompositeAlgorithm, C<:AbstractContext}
+function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, wiringname::Symbol) where {CA<:CompositeAlgorithm, C<:AbstractContext}
     # This method does not execute the algorithm directly. Instead, it *builds an Expr*
     # representing the body of a `step!` method specialized to:
     # - the CompositeAlgorithm type `ca`
@@ -45,8 +45,6 @@ function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, wiringname::Sy
     interval_values = ca.parameters[2]
     child_namespace_tuple_type = ca.parameters[3]
     child_wiring_type = ca.parameters[4].parameters[2]
-    stability_expr = stability === :stable ? :(Stable()) : stability === :unstable ? :(Stable()) :
-        error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
     sizehint!(exprs, algo_count + 4)
     # Generated line: `this_inc = inc(name)` (read the composite's step counter once).
     push!(exprs, :(local this_inc = @inline inc($name)))
@@ -64,7 +62,7 @@ function step!_expr(ca::Type{CA}, context::Type{C}, name::Symbol, wiringname::Sy
                 local $local_name = @inline getalgo($name, $i)
                 local $local_wiring = $child_step_wiring_type()
                 local $local_namespace = $child_namespace_type()
-                context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime, $stability_expr)
+                context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime)
             end
         end)
     end
@@ -79,7 +77,7 @@ end
 """
 Generated expression form of the routine step! with a caller-provided name binding.
 """
-function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname::Symbol, stability::Symbol) where {R<:Routine, C<:AbstractContext}
+function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname::Symbol) where {R<:Routine, C<:AbstractContext}
     # Builds an Expr representing the body of `step!` for a Routine:
     # each child algorithm runs `reps[i]` times before moving to the next.
 
@@ -88,9 +86,6 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
     repeat_values = routine.parameters[2]
     child_namespace_tuple_type = routine.parameters[3]
     child_wiring_type = routine.parameters[5].parameters[2]
-    stable_expr = :(Stable())
-    stability_expr = stability === :stable ? stable_expr : stability === :unstable ? stable_expr :
-        error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
     sizehint!(exprs, algo_count + 3)
 
     for i in 1:algo_count
@@ -112,7 +107,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
             local _subroutine_lifetime = $this_lifetime
             local _routine_repeat_count = @inline routine_repeat_count(_subroutine_lifetime)
             if resume_idx($name, $i) <= _routine_repeat_count
-                context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime, $stability_expr)
+                context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime)
                 @inline tick!(process)
 
                 local _routine_next_idx = resume_idx($name, $i) + 1
@@ -131,7 +126,7 @@ function step!_expr(routine::Type{R}, context::Type{C}, name::Symbol, wiringname
                         end
                         return context
                     end
-                    context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime, $stability_expr)
+                    context = @inline _step!($local_name, context, $local_wiring, $local_namespace, process, lifetime)
                     @inline tick!(process)
                 end
             end
@@ -146,17 +141,10 @@ end
 """
 Fallback expression form for non-CLA algorithms.
 """
-function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiringname::Symbol, stability::Symbol) where {T, C<:AbstractContext}
+function step!_expr(::Type{T}, ::Type{C}, funcname::Symbol, wiringname::Symbol) where {T, C<:AbstractContext}
     # Generated single line:
-    #   context = _step!(funcname, context, wiring, namespace, process, lifetime, stability)
+    #   context = _step!(funcname, context, wiring, namespace, process, lifetime)
     # This keeps generated loops aligned with the normal runtime route/share
     # semantics for algorithms that do not provide a custom expression form.
-    stability_expr = if stability === :stable
-        :(Stable())
-    elseif stability === :unstable
-        :(Stable())
-    else
-        error("Unknown step!_expr stability $(stability). Expected :stable or :unstable.")
-    end
-    return :(context = @inline _step!($funcname, context, $wiringname, Namespace{nothing}(), process, lifetime, $stability_expr))
+    return :(context = @inline _step!($funcname, context, $wiringname, Namespace{nothing}(), process, lifetime))
 end
