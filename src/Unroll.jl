@@ -32,14 +32,21 @@ f requires two arguments: the value to be replaced, and the next argument from t
     return @inline unrollreplace(f, replaced, gettail(args))
 end
 
-@inline @generated function unrollreplace_withcallback(f::F, to_replace::C, callback::CB, args::T) where {F,C,CB,T<:Tuple}
-    N = fieldcount(T)
-    block = Expr(:block, :(r = to_replace))
-    for i in 1:N
-        push!(block.args, :(r = f(r, getfield(args, $i))))
-    end
-    push!(block.args, :(callback(r)))
-    return block
+"""
+    unrollreplace_withcallback(f, to_replace, callback, args::Tuple)
+
+Recursively apply `f` across `args`, then apply `callback` to the final
+accumulator at the tuple terminator.
+"""
+@inline function unrollreplace_withcallback(f::F, to_replace::C, callback::CB, ::Tuple{}) where {F,C,CB}
+    return @inline callback(to_replace)
+end
+
+@inline function unrollreplace_withcallback(f::F, to_replace::C, callback::CB, args::T) where {F,C,CB,T<:Tuple}
+    # Recur through the same small-step path as `unrollreplace`, then apply the
+    # callback at the terminator.
+    replaced = @inline f(to_replace, gethead(args))
+    return @inline unrollreplace_withcallback(f, replaced, callback, gettail(args))
 end
 
 """
@@ -169,13 +176,13 @@ end
     return block
 end
 
-@inline @generated function unrollreplace_splat_withcallback(f::F, to_replace::C, callback::CB, args::Vararg{Any,N}) where {F,C,CB,N}
-    block = Expr(:block, :(r = to_replace))
-    for i in 1:N
-        push!(block.args, :(r = f(r, getfield(args, $i))))
-    end
-    push!(block.args, :(callback(r)))
-    return block
+"""
+    unrollreplace_splat_withcallback(f, to_replace, callback, args...)
+
+Splat-call wrapper for `unrollreplace_withcallback`.
+"""
+@inline function unrollreplace_splat_withcallback(f::F, to_replace::C, callback::CB, args::Vararg{Any,N}) where {F,C,CB,N}
+    return @inline unrollreplace_withcallback(f, to_replace, callback, args)
 end
 
 @inline @generated function unrollreplace_splat_withargs(f::F, to_replace::C, as::Vararg{Any,N}; args) where {F,C,N}
