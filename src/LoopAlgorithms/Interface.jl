@@ -154,12 +154,18 @@ then enters the same `_step!` chain used by `run`.
     lifetime = get(getglobals(context), :lifetime, Indefinite())
     process = LoopRunProcess(lifetime)
     plan = @inline getplan(la)
-    return @inline _step!(plan, context, getwiring(plan), Namespace{nothing}(), process, lifetime, typestable)
+    runtimecontext = @inline _merge_into_globals(_empty_context(), (; lifetime))
+    newcontext, _ = @inline _step!(plan, context, runtimecontext, PlanWiringView(getwiring(plan)), Namespace{nothing}(), process, lifetime, typestable)
+    return newcontext
 end
 
 """
 Return the public result for a loop after cleanup has produced the stored context.
 """
 @inline function _loop_final_result(algo, cleaned_context)
+    return cleaned_context
+end
+
+@inline function _loop_final_result(algo, cleaned_context, runtimecontext)
     return cleaned_context
 end

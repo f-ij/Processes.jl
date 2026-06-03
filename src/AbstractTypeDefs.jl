@@ -108,6 +108,14 @@ Wiring(routes::Routes, shares::Shares) where {Routes<:Tuple, Shares<:Tuple} = Wi
 Wiring() = Wiring((), ())
 
 """
+Compile-time set of runtime return fields demanded from one executed child.
+
+The names are attached to resolved child wiring, so generated step/merge code can
+avoid writing owner-scoped runtime returns that no downstream route asks for.
+"""
+struct ReturnDemand{Names} end
+
+"""
 Plan-level wiring propagated through composite and routine execution.
 
 `global_wiring` records grouped plan-global wiring for inspection and
@@ -125,6 +133,20 @@ end
 PlanWiring(global_wiring::GlobalWiring, child_wiring::ChildWiring) where {GlobalWiring, ChildWiring<:Tuple} =
     PlanWiring{GlobalWiring, ChildWiring}(global_wiring, child_wiring)
 PlanWiring() = PlanWiring(Wiring(), ())
+
+"""
+View into a resolved plan-wiring tree.
+
+The view keeps the full root `PlanWiring` and a type-level child path. Incoming
+routes/shares are read at the current path, while return demand can be computed
+from the whole tree for the current namespace.
+"""
+struct PlanWiringView{W, Path, DemandAll} <: AbstractWiring
+    wiring::W
+end
+
+PlanWiringView(wiring::W, ::Val{Path} = Val(()), ::Val{DemandAll} = Val(false)) where {W<:PlanWiring,Path,DemandAll} =
+    PlanWiringView{W,Path,DemandAll}(wiring)
 
 Base.iterate(la::ALA) where {ALA<:AbstractLoopAlgorithm} = iterate(getalgos(la))
 

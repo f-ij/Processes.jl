@@ -266,7 +266,7 @@ end
         @test ctx[:source].produced == 2
         @test ctx[:source].passthrough == 3
         @test ctx[:DSLCombineAlgo_1].combined == 11
-        @test ctx[:DSLSinkAlgo_1].seen == 11
+        @test isempty(ctx[:DSLSinkAlgo_1])
     end
 
     @testset "Named state uses explicit key" begin
@@ -339,9 +339,9 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[:sink].seen == 2
+        @test isempty(ctx[:sink])
         @test getkey(ctx[:sink]) == :sink
-        @test only(typeof(ctx[:sink]).parameters) <: NamedTuple
+        @test Processes.getdatatype(ctx[:sink]) <: NamedTuple
     end
 
     @testset "Local routes occlude top-level @route aliases" begin
@@ -364,9 +364,9 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[:sink].seen == 7
+        @test isempty(ctx[:sink])
         @test getkey(ctx[:sink]) == :sink
-        @test only(typeof(ctx[:sink]).parameters) <: NamedTuple
+        @test Processes.getdatatype(ctx[:sink]) <: NamedTuple
     end
 
     @testset "Transform routes use explicit @transform syntax" begin
@@ -387,7 +387,7 @@ end
         p_one_var = Process(resolved_one_var, repeat = 1)
         Processes.run(p_one_var)
         ctx_one_var = fetch(p_one_var)
-        @test ctx_one_var[:DSLSinkAlgo_1].seen == 6
+        @test isempty(ctx_one_var[:DSLSinkAlgo_1])
 
         bias = 3
         two_var_transform = @CompositeAlgorithm begin
@@ -406,7 +406,7 @@ end
         p_two_var = Process(resolved_two_var, repeat = 1)
         Processes.run(p_two_var)
         ctx_two_var = fetch(p_two_var)
-        @test ctx_two_var[:DSLValueAlgo_1].result == 5
+        @test isempty(ctx_two_var[:DSLValueAlgo_1])
     end
 
     @testset "Implicit transform expressions are rejected in route syntax" begin
@@ -539,7 +539,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test Processes.getglobals(ctx).result == 4
+        @test !haskey(Processes.getglobals(ctx), :result)
         @test isempty(context(p)[wrapper_key])
         @test !haskey(Processes.getglobals(context(p)), :result)
     end
@@ -566,7 +566,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test Processes.getglobals(ctx).result == 5
+        @test !haskey(Processes.getglobals(ctx), :result)
     end
 
     @testset "FuncWrapper positional @transform routes can source @state fields" begin
@@ -591,7 +591,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test Processes.getglobals(ctx).result == -2
+        @test !haskey(Processes.getglobals(ctx), :result)
     end
 
     @testset "State fields can be assigned captured values directly" begin
@@ -618,7 +618,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].clamping_beta === 3.0
-        @test Processes.getglobals(ctx).result === 3.0
+        @test !haskey(Processes.getglobals(ctx), :result)
     end
 
     @testset "State buffer indexes can be assigned directly" begin
@@ -636,7 +636,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].somebuffer == [2, 4, 5]
-        @test Processes.getglobals(ctx).result == [2, 4, 5]
+        @test !haskey(Processes.getglobals(ctx), :result)
     end
 
     @testset "State buffers support broadcast assignment syntax" begin
@@ -655,7 +655,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].somebuffer == [1, 7, 8]
-        @test Processes.getglobals(ctx).result == [1, 7, 8]
+        @test !haskey(Processes.getglobals(ctx), :result)
     end
 
     @testset "Owned state fields can be assigned from ref values" begin
@@ -678,7 +678,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test ctx[:_state].nudged_beta === 2.0
-        @test Processes.getglobals(ctx).result === 2.0
+        @test !haskey(Processes.getglobals(ctx), :result)
     end
 
     @testset "FuncWrapper keyword args preserve routed display expressions" begin
@@ -700,7 +700,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test Processes.getglobals(ctx).result == 4
+        @test !haskey(Processes.getglobals(ctx), :result)
     end
 
     @testset "Alias field routes work before later output bindings" begin
@@ -721,7 +721,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[sink_key].result == 11
+        @test isempty(ctx[sink_key])
         @test ctx[:dynamics].state == 11
     end
 
@@ -751,10 +751,10 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test Processes.getglobals(ctx).result == 11
-        @test Processes.getglobals(ctx).doubled == 22
-        @test Processes.getglobals(ctx).transformed == 12
-        @test ctx[sink_key].result == 11
+        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(Processes.getglobals(ctx), :doubled)
+        @test !haskey(Processes.getglobals(ctx), :transformed)
+        @test isempty(ctx[sink_key])
     end
 
     @testset "Nested repeat blocks inherit alias owned-field routes" begin
@@ -780,8 +780,8 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test Processes.getglobals(ctx).result == 11
-        @test Processes.getglobals(ctx).doubled == 22
+        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(Processes.getglobals(ctx), :doubled)
     end
 
     @testset "ProcessAlgorithm direct-call positional args accept alias field routes" begin
@@ -802,7 +802,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[sink_key].seen == 11
+        @test isempty(ctx[sink_key])
         @test ctx[:dynamics].state == 11
     end
 
@@ -822,7 +822,7 @@ end
         p = Process(resolved, repeat = 1)
         Processes.run(p)
         ctx = fetch(p)
-        @test ctx[sink_key].result == 11
+        @test isempty(ctx[sink_key])
     end
 
     @testset "@include_if filters DSL entries at construction time" begin
@@ -842,7 +842,7 @@ end
         p_skipped = Process(resolved_skipped, repeat = 1)
         Processes.run(p_skipped)
         ctx_skipped = fetch(p_skipped)
-        @test ctx_skipped[:DSLValueAlgo_1].result == 3
+        @test isempty(ctx_skipped[:DSLValueAlgo_1])
 
         include_source = true
         included = @CompositeAlgorithm begin
@@ -858,7 +858,7 @@ end
         p_included = Process(resolved_included, repeat = 1)
         Processes.run(p_included)
         ctx_included = fetch(p_included)
-        @test ctx_included[:DSLValueAlgo_1].result == 2
+        @test isempty(ctx_included[:DSLValueAlgo_1])
     end
 
     @testset "@include_if supports blocks, schedules, and routines" begin
@@ -915,7 +915,7 @@ end
         Processes.run(p)
         ctx = fetch(p)
         wrapper = Processes.getalgo(resolved, 2)
-        @test Processes.getglobals(ctx).result == 4
+        @test !haskey(Processes.getglobals(ctx), :result)
     end
 
     @testset "@include_if rejects state and alias declarations" begin
@@ -952,7 +952,7 @@ end
         p = Process(resolved, repeat = 1)
         run(p)
         @test fetch(p) == (; result = 8)
-        @test context(p)[DSLValueAlgo].result == 8
+        @test isempty(context(p)[DSLValueAlgo])
 
         close(p)
         @test fetch(p) == (; result = 8)
@@ -1019,7 +1019,9 @@ end
         run(p)
         fetched = fetch(p)
 
-        @test fetched.result == (; y = 1, z = 2)
+        @test fetched isa Processes.ProcessContext
+        @test !haskey(Processes.getglobals(fetched), :result)
+        @test count[] == 2
         @test isempty(context(p)[:FuncWrapper_1])
         @test !haskey(Processes.getglobals(context(p)), :result)
         close(p)

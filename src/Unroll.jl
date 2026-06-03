@@ -23,24 +23,30 @@ f requires two arguments: the value to be replaced, and the next argument from t
 #     end
 # end
 
-@inline @generated function unrollreplace(f::F, to_replace::C, args::T) where {F,C,T<:Tuple}
-    N = fieldcount(T)
-    block = Expr(:block, :(r = to_replace))
-    for i in 1:N
-        push!(block.args, :(r = f(r, getfield(args, $i))))
-    end
-    push!(block.args, :r)
-    return block
+@inline unrollreplace(f::F, to_replace::C, ::Tuple{}) where {F,C} = to_replace
+
+@inline function unrollreplace(f::F, to_replace::C, args::T) where {F,C,T<:Tuple}
+    # Recur through tuple head/tail instead of emitting one large generated
+    # block.
+    replaced = @inline f(to_replace, gethead(args))
+    return @inline unrollreplace(f, replaced, gettail(args))
 end
 
-@inline @generated function unrollreplace_withcallback(f::F, to_replace::C, callback::CB, args::T) where {F,C,CB,T<:Tuple}
-    N = fieldcount(T)
-    block = Expr(:block, :(r = to_replace))
-    for i in 1:N
-        push!(block.args, :(r = f(r, getfield(args, $i))))
-    end
-    push!(block.args, :(callback(r)))
-    return block
+"""
+    unrollreplace_withcallback(f, to_replace, callback, args::Tuple)
+
+Recursively apply `f` across `args`, then apply `callback` to the final
+accumulator at the tuple terminator.
+"""
+@inline function unrollreplace_withcallback(f::F, to_replace::C, callback::CB, ::Tuple{}) where {F,C,CB}
+    return @inline callback(to_replace)
+end
+
+@inline function unrollreplace_withcallback(f::F, to_replace::C, callback::CB, args::T) where {F,C,CB,T<:Tuple}
+    # Recur through the same small-step path as `unrollreplace`, then apply the
+    # callback at the terminator.
+    replaced = @inline f(to_replace, gethead(args))
+    return @inline unrollreplace_withcallback(f, replaced, callback, gettail(args))
 end
 
 """
@@ -59,7 +65,37 @@ f(acc, as[i], args..., zips[1][i], zips[2][i], ...)
 Use `zip` for one tuple or vector whose length matches `as`. Use `zips` for a
 tuple of such tuple/vector zip inputs. `zip` and `zips` are mutually exclusive.
 """
-@inline @generated function unrollreplace_withargs(f::F, to_replace::C, as::T; args::AS = nothing, zip::Z = nothing, zips::ZS = nothing) where {F,C,T<:Tuple, AS, Z, ZS}
+@inline function unrollreplace_withargs(
+    f::F,
+    to_replace::C,
+    as::T;
+    args::AS = nothing,
+    zip::Z = nothing,
+    zips::ZS = nothing,
+) where {F,C,T<:Tuple,AS,Z,ZS}
+    if isnothing(zip) && isnothing(zips)
+        return @inline _unrollreplace_withargs_recursive(f, to_replace, as, args)
+    end
+    return @inline _unrollreplace_withargs_generated(f, to_replace, as, args, zip, zips)
+end
+
+@inline _unrollreplace_withargs_recursive(f::F, to_replace::C, ::Tuple{}, args::A) where {F,C,A} = to_replace
+
+"""Apply one recursive `unrollreplace_withargs` step with optional extra args."""
+@inline function _unrollreplace_withargs_apply(f::F, to_replace::C, item, ::Nothing) where {F,C}
+    return @inline f(to_replace, item)
+end
+
+@inline function _unrollreplace_withargs_apply(f::F, to_replace::C, item, args::A) where {F,C,A<:Tuple}
+    return @inline f(to_replace, item, args...)
+end
+
+@inline function _unrollreplace_withargs_recursive(f::F, to_replace::C, as::T, args::A) where {F,C,T<:Tuple,A}
+    replaced = @inline _unrollreplace_withargs_apply(f, to_replace, gethead(as), args)
+    return @inline _unrollreplace_withargs_recursive(f, replaced, gettail(as), args)
+end
+
+@inline @generated function _unrollreplace_withargs_generated(f::F, to_replace::C, as::T, args::AS, zip::Z, zips::ZS) where {F,C,T<:Tuple, AS, Z, ZS}
     N = fieldcount(T)
     has_args = !(AS <: Nothing)
     has_zip = !(Z <: Nothing)
@@ -140,13 +176,13 @@ end
     return block
 end
 
-@inline @generated function unrollreplace_splat_withcallback(f::F, to_replace::C, callback::CB, args::Vararg{Any,N}) where {F,C,CB,N}
-    block = Expr(:block, :(r = to_replace))
-    for i in 1:N
-        push!(block.args, :(r = f(r, getfield(args, $i))))
-    end
-    push!(block.args, :(callback(r)))
-    return block
+"""
+    unrollreplace_splat_withcallback(f, to_replace, callback, args...)
+
+Splat-call wrapper for `unrollreplace_withcallback`.
+"""
+@inline function unrollreplace_splat_withcallback(f::F, to_replace::C, callback::CB, args::Vararg{Any,N}) where {F,C,CB,N}
+    return @inline unrollreplace_withcallback(f, to_replace, callback, args)
 end
 
 @inline @generated function unrollreplace_splat_withargs(f::F, to_replace::C, as::Vararg{Any,N}; args) where {F,C,N}

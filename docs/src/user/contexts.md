@@ -109,5 +109,5 @@ process-level values, not values owned by one algorithm.
 You can also select globals with `Var(:name)` in APIs like `Until(...)`.
 See [Vars (`Var` Selectors)](@ref vars_user).
 
-For buffered external writes through `ContextInjector` and ref-like
+For buffered external writes through `ContextExchange` and ref-like
 `view(context, Var(...))` handles, see [Interactive Contexts](@ref interactive_user).

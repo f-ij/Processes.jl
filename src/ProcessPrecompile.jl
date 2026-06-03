@@ -26,11 +26,6 @@ function precompile_loop!(
     return nothing
 end
 
-function _global_context_type(p::Process)
-    base_context = _has_typed_runtime_context(p) ? _typed_runtime_context(p) : context(p)
-    return typeof(_merge_into_globals(base_context, (; process = p)))
-end
-
 function _schedule_loop_precompile!(
     loopfunc_type::Type,
     process_type::Type,

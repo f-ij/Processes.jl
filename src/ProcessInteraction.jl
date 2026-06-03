@@ -41,7 +41,7 @@ function Base.run(p::Process, run_lifetime = nothing, inputs_and_overrides...; r
 
     lt = _process_run_lifetime(getalgo(p), run_lifetime, repeats, lifetime)
     if !isnothing(lt)
-        context(p, _merge_into_globals(context(p), (; lifetime = lt)))
+        p.lifetime = lt
     end
 
     makeloop!(p, (; kwargs...))
@@ -66,9 +66,13 @@ function _cleanup_paused_process!(p::Process, fetched_result)
     # `close` turns that paused lifecycle into a final one, so cleanup must run
     # here because the loop will not re-enter `after_while`.
     cleanup_context = fetched_result isa AbstractContext ? fetched_result : context(p)
-    cleaned_context = @inline cleanup(getalgo(p), cleanup_context)
-    p.lastresult = @inline _loop_final_result(getalgo(p), cleaned_context)
-    commit_context!(p, _strip_runtime_inputs(cleaned_context, getstoredcontext(getalgo(p))))
+    cleanup_runtimecontext = @inline _initial_runtime_context(getruntimeinput(cleanup_context), p, lifetime(p))
+    cleanup_state_context = @inline _paused_state_context(cleanup_context)
+    cleaned_context, cleaned_runtimecontext = @inline cleanup(getalgo(p), cleanup_state_context, cleanup_runtimecontext)
+    cleaned_context = @inline _paused_state_context(cleaned_context)
+    final_context = @inline final_visible_context(cleaned_context, cleaned_runtimecontext)
+    p.lastresult = @inline _loop_final_result(getalgo(p), final_context, cleaned_runtimecontext)
+    commit_context!(p, cleaned_context)
     return p.lastresult
 end
 

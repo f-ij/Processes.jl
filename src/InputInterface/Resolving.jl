@@ -9,19 +9,22 @@ to the resolved namespace symbol.
 """
 @inline _retarget_input(::Init{Target,NT,Ref}, name) where {Target,NT,Ref} = Init{name,NT,Nothing}
 @inline _retarget_input(::Override{Target,NT,Ref}, name) where {Target,NT,Ref} = Override{name,NT,Nothing}
-@inline retarget(ov::InputInterface, name) = _retarget_input(ov, name)(get_vars(ov), nothing)
+@inline _retarget_input(::Interactive{Target,Names,Ref}, name) where {Target,Names,Ref} = Interactive{name,Names,Nothing}
+@inline retarget(ov::Union{Init, Override}, name) = _retarget_input(ov, name)(get_vars(ov), nothing)
+@inline retarget(spec::Interactive, name) = _retarget_input(spec, name)(nothing)
 
-@inline get_target(::Union{Init{Target}, Override{Target}}) where {Target} = Target
-@inline get_ref(ov::OI) where {OI<:Union{Override, Input}} = ov.ref
+@inline get_target(::Union{Init{Target}, Override{Target}, Interactive{Target}}) where {Target} = Target
+@inline get_target(::Type{<:Union{Init{Target}, Override{Target}, Interactive{Target}}}) where {Target} = Target
+@inline get_ref(ov::OI) where {OI<:InputInterface} = ov.ref
 @inline get_vars(ov::OI) where {OI<:Union{Override, Input}} = ov.vars
 
-@inline get_target_name(ov::Union{Init, Override}) = get_target(ov)
+@inline get_target_name(ov::InputInterface) = get_target(ov)
 
 @inline _resolve_input_target_key(reg::NameSpaceRegistry, target) = static_findkey(reg, target)
 @inline _resolve_input_target_key(reg::NameSpaceRegistry, matcher::AbstractMatcher) = getkey(get_by_matcher(reg, matcher))
 
 """Resolve one lifecycle input/override against the loop algorithm registry."""
-@inline function resolve(cla::LA, ov::OI) where {LA<:AbstractLoopAlgorithm, OI<:Union{Override, Input}}
+@inline function resolve(cla::LA, ov::OI) where {LA<:AbstractLoopAlgorithm, OI<:InputInterface}
     return resolve(getregistry(cla), ov)
 end
 
@@ -29,7 +32,7 @@ end
     resolve(reg, o)
 end
 
-@inline function resolve(reg::R, ov::OI) where {R<:NameSpaceRegistry, OI<:Union{Override, Input}}
+@inline function resolve(reg::R, ov::OI) where {R<:NameSpaceRegistry, OI<:InputInterface}
     target = get_target(ov)
     if target isa Symbol
         @assert haskey(reg, target) "Target algorithm $(target) not found in registry: $reg \n Cannot resolve lifecycle target."

@@ -1,4 +1,3 @@
-export Interactive, ContextInjector, Injector, InteractiveVar, interact!, isinteractive
+export Interactive, ContextExchange, InteractiveVar, interact!, isinteractive
 
-include("ChannelInteractive.jl")
-include("Injector.jl")
+include("ContextExchange.jl")

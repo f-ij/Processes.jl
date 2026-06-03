@@ -10,42 +10,8 @@ Generated process loop that inlines the step! expression when available.
     ::Resuming{isresuming},
     ::Generated,
 ) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:AbstractContext, RL<:RepeatLifetime, I<:NamedTuple, isresuming}
-    first_step_expr = step!_expr(F, C, :algo, :step_wiring, :unstable)
-    for_step_expr = step!_expr(F, C, :algo, :step_wiring, :stable)
-
-    bootstrap_expr = if isresuming
-        quote
-            @atomic process.paused = false
-        end
-    else
-        quote
-            $(first_step_expr)
-            @inline inc!(process)
-            @inline tick!(process)
-        end
-    end
-
     return quote
-        # First we do ONE step which is allowed to change the context,
-        # After this we're not allowed to
-
-        @inline before_while(process)
-        stored_context = context
-        step_wiring = @inline getwiring(algo)
-        context = @inline _merge_runtime_inputs(context, inputs)
-        $bootstrap_expr
-
-        first_step_idx = @inline loopidx(process)
-        final_idx = @inline repeats(lifetime)
-        for _ in first_step_idx:final_idx
-            $(for_step_expr)
-            @inline inc!(process)
-            @inline tick!(process)
-            if @inline breakcondition(lifetime, process, context)
-                break
-            end
-        end
-        return @inline after_while(process, algo, context, stored_context)
+        return @inline loop(process, algo, context, lifetime, inputs, Resuming{$isresuming}(), NonGenerated())
     end
 end
 
@@ -117,34 +83,7 @@ Generated process loop that inlines the step! expression when available.
     ::Resuming{isresuming},
     ::Generated,
 ) where {P<:AbstractProcess, F<:AbstractLoopAlgorithm, C<:AbstractContext, LT<:IndefiniteLifetime, I<:NamedTuple, isresuming}
-    unstable_step_expr = step!_expr(F, C, :func, :step_wiring, :unstable)
-    stable_step_expr = step!_expr(F, C, :func, :step_wiring, :stable)
-    bootstrap_expr = if isresuming
-        quote
-            @atomic process.paused = false
-        end
-    else
-        quote
-            $(unstable_step_expr)
-            @inline inc!(process)
-            @inline tick!(process)
-        end
-    end
     return quote
-        # println("Running generated process loop indefinitely from thread $(Threads.threadid())")
-        @inline before_while(process)
-        stored_context = context
-        step_wiring = @inline getwiring(func)
-        context = @inline _merge_runtime_inputs(context, inputs)
-        $bootstrap_expr
-        while true
-            $(stable_step_expr)
-            @inline inc!(process)
-            @inline tick!(process)
-            if @inline breakcondition(lifetime, process, context)
-                break
-            end
-        end
-        return @inline after_while(process, func, context, stored_context)
+        return @inline loop(process, func, context, lifetime, inputs, Resuming{$isresuming}(), NonGenerated())
     end
 end

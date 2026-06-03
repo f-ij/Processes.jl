@@ -44,7 +44,7 @@ function get_routed_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, 
         _localnames = localnames(sv)
         _subvarcontextnames = subvarcontextnames(sv)
         _transform = gettransform(sv)
-        location_type = fromname == :_runtime ? :runtime : :subcontext
+        location_type = (fromname == :_runtime || fromname == :_input) ? :runtime : :subcontext
         pairs = (_localnames[i] => VarLocation{location_type}(fromname, _subvarcontextnames[i], _transform) for i in 1:length(_localnames))
         return NamedTuple(pairs)
     end
@@ -127,22 +127,88 @@ end
 @inline Base.propertynames(scv::SCV) where SCV <: SubContextView = @inline propertynames(@inline get_all_locations(scv))
 @inline Base.haskey(scv::SCV, name::Symbol) where SCV <: SubContextView = @inline haskey(get_all_locations(scv), name)
 @inline getregistry(scv::SCV) where SCV <: SubContextView = getregistry(getcontext(scv))
+
+@inline function _runtime_subcontext_data(runtimecontext::ProcessContext, ::Val{subcontextname}) where {subcontextname}
+    subcontexts = @inline get_subcontexts(runtimecontext)
+    return haskey(subcontexts, subcontextname) ? getdata(getproperty(subcontexts, subcontextname)) : (;)
+end
+
+@inline function _runtime_has_var(runtimecontext::ProcessContext, ::Val{subcontextname}, ::Val{varname}) where {subcontextname,varname}
+    return haskey(_runtime_subcontext_data(runtimecontext, Val(subcontextname)), varname)
+end
+
+@inline function _runtime_get_var(runtimecontext::ProcessContext, ::Val{subcontextname}, ::Val{varname}) where {subcontextname,varname}
+    return getproperty(_runtime_subcontext_data(runtimecontext, Val(subcontextname)), varname)
+end
+
+"""
+    subcontext_view_value(value)
+
+Return the value exposed by `SubContextView` reads for one stored field.
+Wrapper storage types can overload this to present algorithm-facing values
+without changing the persistent context representation.
+"""
+@inline subcontext_view_value(value) = value
+
+"""
+    subcontext_writeback_value(old, returned)
+
+Return the value that should be written to context when an algorithm returns
+`returned` for a field currently storing `old`.
+"""
+@inline subcontext_writeback_value(::Any, returned) = returned
+
 @inline function getproperty_fromsubcontext(
     scv::SCV,
     ::Val{subcontextname},
     ::Val{varname},
 ) where {SCV<:SubContextView, subcontextname, varname}
-    if subcontextname === :_input
-        return @inline getproperty(getruntimeinput(getcontext(scv)), varname)
+    runtimecontext = @inline getruntimecontext(scv)
+    if subcontextname === :_input || subcontextname === :_runtime
+        return @inline subcontext_view_value(_runtime_get_var(runtimecontext, Val(subcontextname), Val(varname)))
     end
-    subcontext = @inline getproperty(get_subcontexts(getcontext(scv)), subcontextname)
-    if @inline haskey(getdata(subcontext), varname)
-        return @inline getproperty(subcontext, varname)
+    context = @inline getcontext(scv)
+    subcontexts = @inline get_subcontexts(context)
+    if haskey(subcontexts, subcontextname)
+        subcontext = @inline getproperty(subcontexts, subcontextname)
+        if @inline haskey(getdata(subcontext), varname)
+            return @inline subcontext_view_value(getproperty(subcontext, varname))
+        end
     end
-    if @inline has_widened_var(getcontext(scv), Val(subcontextname), Val(varname))
-        return @inline get_widened_var(getcontext(scv), Val(subcontextname), Val(varname))
+    if @inline _runtime_has_var(runtimecontext, Val(subcontextname), Val(varname))
+        return @inline subcontext_view_value(_runtime_get_var(runtimecontext, Val(subcontextname), Val(varname)))
     end
-    return @inline getproperty(subcontext, varname)
+    if haskey(subcontexts, subcontextname)
+        subcontext = @inline getproperty(subcontexts, subcontextname)
+        return @inline subcontext_view_value(getproperty(subcontext, varname))
+    end
+    error("Subcontext `$subcontextname` is not available in state or runtime context.")
+end
+
+"""
+    storedproperty_fromsubcontext(scv, Val(subcontext), Val(varname))
+
+Return the backing value stored for one `SubContextView` location without
+applying `subcontext_view_value`. Writeback hooks use this to inspect wrappers
+that are hidden from algorithm code during normal reads.
+"""
+@inline function storedproperty_fromsubcontext(
+    scv::SCV,
+    ::Val{subcontextname},
+    ::Val{varname},
+) where {SCV<:SubContextView, subcontextname, varname}
+    context = @inline getcontext(scv)
+    subcontexts = @inline get_subcontexts(context)
+    if haskey(subcontexts, subcontextname)
+        subcontext = @inline getproperty(subcontexts, subcontextname)
+        if @inline haskey(getdata(subcontext), varname)
+            return @inline getproperty(subcontext, varname)
+        end
+    end
+    if @inline _runtime_has_var(getruntimecontext(scv), Val(subcontextname), Val(varname))
+        return @inline _runtime_get_var(getruntimecontext(scv), Val(subcontextname), Val(varname))
+    end
+    error("Variable `$subcontextname.$varname` is not available in state or runtime context.")
 end
 @inline getinjected(scv::SCV, key) where SCV <: SubContextView = getproperty(getinjected(scv), key)
 @inline function Base.get(scv::SCV, name::Symbol, default) where SCV <: SubContextView
@@ -154,6 +220,7 @@ end
 end
 
 @inline Base.@constprop :aggressive Base.getproperty(sct::SubContextView, v::Symbol) = getproperty(sct, Val(v))
+@inline Base.@constprop :aggressive Base.getindex(sct::SubContextView, v::Symbol) = getproperty(sct, Val(v))
 
 # """
 # Equivalent to getproperty(sct, Val(name)), but allows for inlining and constant propagation on the name argument
@@ -184,21 +251,21 @@ end
 end
 
 """
-Read a routed runtime variable from `ProcessContext._runtime`.
+Read a routed runtime variable from the runtime context.
 """
 @inline @generated function Base.getproperty(sct::SCV, vl::VarLocation{:runtime}) where SCV <: SubContextView
+    target_subcontext = get_subcontextname(vl)
     target_variables = get_originalname(vl)
     if isnothing(getfunc(vl)) && target_variables isa Symbol
         return quote
-            runtime = @inline getglobals(getcontext(sct))
-            return @inline getproperty(runtime, $(QuoteNode(target_variables)))
+            return @inline subcontext_view_value(_runtime_get_var(getruntimecontext(sct), Val($(QuoteNode(target_subcontext))), Val($(QuoteNode(target_variables)))))
         end
     end
 
     varnames = target_variables isa Tuple ? target_variables : (target_variables,)
     varsymbols = ntuple(i -> gensym(:runtime_var), length(varnames))
     assign_exprs = [
-        :($(varsymbols[i]) = @inline getproperty(getglobals(getcontext(sct)), $(QuoteNode(varnames[i]))))
+        :($(varsymbols[i]) = @inline subcontext_view_value(_runtime_get_var(getruntimecontext(sct), Val($(QuoteNode(target_subcontext))), Val($(QuoteNode(varnames[i]))))))
         for i in eachindex(varnames)
     ]
     fexpr = funcexpr(vl, varsymbols...)
@@ -235,8 +302,8 @@ end
             locations = get_all_locations(sct)
             available = keys(locations)
             return quote
-                if @inline has_widened_var(getcontext(sct), Val($(QuoteNode(SubKey))), Val($(QuoteNode(key))))
-                    return @inline get_widened_var(getcontext(sct), Val($(QuoteNode(SubKey))), Val($(QuoteNode(key))))
+                if @inline _runtime_has_var(getruntimecontext(sct), Val($(QuoteNode(SubKey))), Val($(QuoteNode(key))))
+                    return @inline _runtime_get_var(getruntimecontext(sct), Val($(QuoteNode(SubKey))), Val($(QuoteNode(key))))
                 end
                 if $(QuoteNode(subcontextname)) == $(QuoteNode(key))
                     $(LineNumberNode(@__LINE__, @__FILE__))

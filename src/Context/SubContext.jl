@@ -3,23 +3,21 @@
 """
     withdata(sc, data)
 
-Return an immutable `SubContext` rebuild with the same logical key and new local
-data. This is the package-local replacement for `@set sc.data = data`.
+Return an immutable `SubContext` rebuild with the same logical key and new
+local data.
 """
-@inline function withdata(sc::SC, data::D) where {SC<:SubContext, D<:NamedTuple}
-    return SubContext(getkey(sc), data)
+@inline function withdata(sc::SubContext{Name}, data::D) where {Name,D<:NamedTuple}
+    return SubContext{Name,D}(data)
 end
 
-function newdata(sc::SubContext, data::NamedTuple)
+@inline function newdata(sc::SubContext, data::NamedTuple)
     return @inline withdata(sc, data)
-    # Mutable SubContext path kept for comparison:
-    # setfield!(sc, :data, data)
-    # return sc
 end
 
 @inline Base.isempty(sc::SubContext) = isempty(getdata(sc))
-@inline getdatatype(sct::Type{<:SubContext{T}}) where {T} = T
+@inline getdatatype(sct::Type{<:SubContext{Name,T}}) where {Name,T} = T
 @inline Base.getkey(sc::SubContext) = getfield(sc, :name)
+@inline Base.getkey(::Type{<:SubContext{Name}}) where {Name} = Name
 @inline getdatatype(sc::SubContext) = getdatatype(typeof(sc))
 
 @inline Base.pairs(sc::SubContext) = pairs(getdata(sc))
@@ -33,7 +31,7 @@ end
     getproperty(getdata(sc), name)
 end
 
-@inline function Base.merge(sc::SubContext{T}, args::NamedTuple) where {T}
+@inline function Base.merge(sc::SubContext{Name,T}, args::NamedTuple) where {Name,T}
     merged = merge(getdata(sc), args)
     return @inline withdata(sc, merged)
 end
@@ -41,11 +39,11 @@ end
 """
 Merge subcontext into a NamedTuple.
 """
-@inline function Base.merge(args::NamedTuple, sc::SubContext{T}) where {T}
+@inline function Base.merge(args::NamedTuple, sc::SubContext{Name,T}) where {Name,T}
     return merge(args, getdata(sc))
 end
 
-@inline function Base.replace(sc::SubContext{T}, args::NamedTuple = (;)) where {T}
+@inline function Base.replace(sc::SubContext{Name,T}, args::NamedTuple = (;)) where {Name,T}
     return @inline withdata(sc, args)
     # Accessors path kept for comparison:
     # return @inline @set sc.data = args

@@ -262,8 +262,7 @@ function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, rep
     launch_kwargs = (; lifetime, repeats, repeat)
     launch_lifetime = _manager_launch_lifetime(worker, launch_kwargs)
     if !isnothing(launch_lifetime)
-        lt = launch_lifetime
-        context(worker, _merge_into_globals(context(worker), (; lifetime = lt)))
+        worker.lifetime = launch_lifetime
     end
 
     # Build the same runtime context as the asynchronous Process path, but call
@@ -271,11 +270,10 @@ function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, rep
     algo = getalgo(worker)
     inputs = _validate_runtime_inputs(algo, (; kwargs...))
     base_context = _has_typed_runtime_context(worker) ? _typed_runtime_context(worker) : context(worker)
-    lt = _has_typed_runtime_context(worker) ? _context_lifetime(base_context) : get(getglobals(base_context), :lifetime, Indefinite())
+    lt = Processes.lifetime(worker)
     result = loop(worker, algo, base_context, lt, inputs, Resuming{false}())
 
     worker.lastresult = result
-    result isa AbstractContext && commit_context!(worker, _strip_runtime_inputs(result, base_context))
     worker.task = nothing
     worker.loopidx = 1
     @atomic worker.shouldrun = false
@@ -785,7 +783,7 @@ function ProcessManager(recipe; nworkers::Integer = Threads.nthreads(), workers 
         workers,
         normalized_lifecycle,
     )
-    worker_names = _manager_worker_names(recipe, nworkers, build_manager, workers, normalized_lifecycle)
+    worker_names = _manager_worker_names(recipe, length(worker_values), build_manager, workers, normalized_lifecycle)
 
     slot_worker_type = _manager_slot_worker_type(worker_type, normalized_lifecycle)
     slot_name_type = _manager_slot_name_type(name_type, normalized_lifecycle)

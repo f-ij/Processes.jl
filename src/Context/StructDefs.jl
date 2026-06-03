@@ -2,27 +2,21 @@
 ############# CONTEXT #################
 #######################################
 """
-Previously args system
-This stores the context of a process
+Persistent state for a resolved process.
+
+`ProcessContext` stores named subcontexts and the registry needed to resolve
+external references. Runtime inputs, loop handles, and transient step returns
+live in a separate runtime `ProcessContext` passed explicitly through loop
+execution.
 """
-# mutable struct ProcessContext{D,Reg,R,I,W} <: AbstractContext
-struct ProcessContext{D,Reg,R,I,W} <: AbstractContext
+struct ProcessContext{D,R} <: AbstractContext
     subcontexts::D
-    registry::Reg
-    _runtime::R
-    _input::I
-    _widened::W
-    function ProcessContext{D,Reg,R,I,W}(
-        subcontexts::D,
-        registry::Reg,
-        runtime::R,
-        input::I,
-        widened::W,
-    ) where {D,Reg,R,I,W}
-        new{D,Reg,R,I,W}(subcontexts, registry, runtime, input, widened)
+    reg::R
+
+    function ProcessContext{D,R}(subcontexts::D, reg::R) where {D,R}
+        new{D,R}(subcontexts, reg)
     end
 end
-
 
 ########################
     ### SUBCONTEXT ###
@@ -35,10 +29,16 @@ Route/share metadata deliberately does not live on `SubContext`. Plan routing is
 applied through `SubContextView` at step time so context shape stays independent
 from execution-plan wiring.
 """
-struct SubContext{T<:NamedTuple} <: AbstractSubContext
+struct SubContext{Name,T<:NamedTuple} <: AbstractSubContext
     name::Symbol
     data::T
+
+    function SubContext{Name,T}(data::T) where {Name,T<:NamedTuple}
+        new{Name,T}(Name, data)
+    end
 end
+
+SubContext(name::Symbol, data::D) where {D<:NamedTuple} = SubContext{name,D}(data)
 
 export inject
 #######################

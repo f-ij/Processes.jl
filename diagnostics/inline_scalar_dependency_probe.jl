@@ -253,12 +253,14 @@ function scalar_dependency_direct_plan_loop(process::IP) where {IP<:Processes.In
     algo = Processes.getalgo(process)
     lifetime = Processes.lifetime(process)
     plan = Processes.getplan(algo)
-    wiring = Processes.getwiring(plan)
+    wiring = Processes._root_wiring_view(algo, plan)
     context = Processes.context(process)
+    runtimecontext = Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
 
-    context = Processes._step!(
+    context, runtimecontext = Processes._step!(
         plan,
         context,
+        runtimecontext,
         wiring,
         Processes.Namespace{nothing}(),
         process,
@@ -268,9 +270,10 @@ function scalar_dependency_direct_plan_loop(process::IP) where {IP<:Processes.In
     Processes.inc!(process)
 
     for _ in Processes.loopidx(process):Processes.repeats(lifetime)
-        context = Processes._step!(
+        context, runtimecontext = Processes._step!(
             plan,
             context,
+            runtimecontext,
             wiring,
             Processes.Namespace{nothing}(),
             process,

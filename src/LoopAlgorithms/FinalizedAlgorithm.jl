@@ -52,6 +52,8 @@ end
 
 @inline inneralgorithm(fa::FinalizedAlgorithm) = getfield(fa, :inner)
 @inline finalfunction(fa::FinalizedAlgorithm) = getfield(fa, :final)
+@inline _finalstep_demands_all_returns(::FinalizedAlgorithm) = Val(true)
+@inline _finalstep_demands_all_returns(::Any) = Val(false)
 
 @inline getalgos(fa::FinalizedAlgorithm) = getalgos(inneralgorithm(fa))
 @inline getalgo(fa::FinalizedAlgorithm, idx) = getalgo(inneralgorithm(fa), idx)
@@ -106,6 +108,11 @@ end
 
 @inline function _loop_final_result(fa::FinalizedAlgorithm, cleaned_context)
     return finalfunction(fa)(cleaned_context)
+end
+
+@inline function _loop_final_result(fa::FinalizedAlgorithm, cleaned_context, runtimecontext)
+    final = finalfunction(fa)
+    return applicable(final, cleaned_context, runtimecontext) ? final(cleaned_context, runtimecontext) : final(cleaned_context)
 end
 
 function _strip_nested_finalized_algorithm(algo)
