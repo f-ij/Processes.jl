@@ -722,6 +722,76 @@ end
     @test all(isnothing(slot.worker.task) for slot in slots(manager))
 end
 
+@testset "ProcessManager channel mode keeps worker tasks online until jobs drain" begin
+    template = Process(ManagerProcessAccumulator(); repeats = 1)
+    external = Int[]
+    recipe = (;
+        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
+        prepare! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job
+            nothing
+        end,
+        flush! = manager -> begin
+            for slot in slots(manager)
+                local_context = manager_process_context(slot.worker)
+                append!(external, local_context.buffer)
+                empty!(local_context.buffer)
+            end
+        end,
+    )
+
+    manager = ProcessManager(recipe; nworkers = 2, flush_policy = FlushAtEnd(), job_type = Int)
+    run!(manager, 1:6, ChannelWorkers(; channel_size = 2))
+
+    @test sort(external) == collect(1:6)
+    @test manager.dispatched == 6
+    @test manager.completions == 6
+    @test manager.active_count == 0
+    @test sum(slot.runs for slot in slots(manager)) == 6
+    @test all(isnothing(slot.worker.task) for slot in slots(manager))
+end
+
+@testset "ProcessManager channel mode can consume an externally closed channel" begin
+    template = Process(ManagerProcessAccumulator(); repeats = 1)
+    external = Int[]
+    recipe = (;
+        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
+        prepare! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job
+            nothing
+        end,
+        flush! = manager -> begin
+            for slot in slots(manager)
+                local_context = manager_process_context(slot.worker)
+                append!(external, local_context.buffer)
+                empty!(local_context.buffer)
+            end
+        end,
+    )
+
+    jobs = Channel{Int}(1)
+    producer = Threads.@spawn begin
+        try
+            for job in 1:5
+                put!(jobs, job)
+            end
+        finally
+            close(jobs)
+        end
+    end
+
+    manager = ProcessManager(recipe; nworkers = 3, flush_policy = FlushAtEnd(), job_type = Int)
+    run!(manager, jobs, ChannelWorkers())
+    fetch(producer)
+
+    @test sort(external) == collect(1:5)
+    @test manager.dispatched == 5
+    @test manager.completions == 5
+    @test all(isnothing(slot.worker.task) for slot in slots(manager))
+end
+
 @testset "reinitworker! rebuilds Process context through init pipeline" begin
     worker = Process(
         ManagerProcessAccumulator,
