@@ -34,8 +34,8 @@ function init(algos::LA, inputcontext::C, runtimecontext::RC) where {LA<:Abstrac
     registry = @inline getregistry(inputcontext)
     named_algos = @inline all_algos(registry)
 
-    context = @inline unrollreplace(inputcontext, named_algos) do context, named_algo # Recursively replace context
-        init(named_algo, context, runtimecontext)
+    context = @inline unrollreplace_withargs(inputcontext, named_algos; args = (runtimecontext,)) do context, named_algo, runtimecontext
+        @inline init(named_algo, context, runtimecontext)
     end
 
     return context
