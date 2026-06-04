@@ -165,6 +165,28 @@ Transforms are route syntax, not general Julia expression syntax. Write
 `@transform(x -> -x, clamping_beta)`, not `-clamping_beta`, when the value must
 come from the process context.
 
+Use an explicit `@route` statement when a transformed route also needs writeback
+through a reverse transform:
+
+```julia
+algo = @CompositeAlgorithm begin
+    @alias source = SourceAlgo
+    @alias target = TargetAlgo
+
+    source()
+    target()
+
+    @route source.value => target.input transform = x -> 2x reverse_transform = y -> y / 2
+end
+```
+
+Here `target` reads `input` through the forward transform. If it returns
+`(; input = new_input)`, the source field `value` is updated through
+`reverse_transform`.
+
+`@transform(f, source)` is read-transform syntax for call arguments. Reverse
+writeback uses `@route ... reverse_transform = g`.
+
 ## Ref and Indexed Reads
 
 Indexed reads from context values are routed as transform routes.

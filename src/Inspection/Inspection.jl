@@ -75,8 +75,9 @@ end
 struct InspectionRoute
     target::Symbol
     source::Symbol
-    mappings::Vector{Pair{Symbol, Symbol}}
+    mappings::Vector{Pair}
     transform::Any
+    reverse_transform::Any
 end
 
 struct InspectionRuntimeInput
@@ -192,8 +193,8 @@ function _inspection_resolved_sharing(la::LA) where {LA<:AbstractLoopAlgorithm}
             source isa Symbol || continue
             varnames = collect(subvarcontextnames(shared))
             aliases = collect(localnames(shared))
-            mappings = Pair{Symbol, Symbol}[varnames[i] => aliases[i] for i in eachindex(varnames)]
-            push!(routes, InspectionRoute(target, source, mappings, gettransform(shared)))
+            mappings = Pair[varnames[i] => aliases[i] for i in eachindex(varnames)]
+            push!(routes, InspectionRoute(target, source, mappings, gettransform(shared), getreverse_transform(shared)))
         end
     end
 

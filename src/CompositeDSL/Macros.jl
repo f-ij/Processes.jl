@@ -314,6 +314,7 @@ source endpoint; keyed matching is left to normal runtime registration logic.
 
 Top-level plan routes can be written as route statements:
 - `@route source.produced => sink.value`
+- `@route source.value => sink.input transform = x -> 2x reverse_transform = y -> y / 2`
 
 Known `@alias` names and `@context` references are accepted in those endpoint
 positions. Normal call inputs still create statement-local wiring.
@@ -342,6 +343,9 @@ example:
 The `source` part is resolved exactly like a normal route source, so it can be a
 previous DSL output symbol such as `a` or an owned-field reference such as
 `dynamics.state` or `c1.plus_capture.captured`.
+
+Use a top-level `@route ... reverse_transform = g` statement when transformed
+route writeback should update the backing source field.
 
 State rebinding
 ===============

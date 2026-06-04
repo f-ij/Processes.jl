@@ -42,8 +42,8 @@ using Processes
     @test Processes.get_firstalgo(raw_share) === WiringSource
     @test Processes.get_secondalgo(raw_share) === WiringTarget
 
-    route_a = Route{:a, :target, nothing, (:x,), (:value,), Nothing, Nothing}()
-    route_b = Route{:b, :target, nothing, (:y,), (:value,), Nothing, Nothing}()
+    route_a = Route{:a, :target, nothing, nothing, (:x,), (:value,), Nothing, Nothing}()
+    route_b = Route{:b, :target, nothing, nothing, (:y,), (:value,), Nothing, Nothing}()
     share_a = Share{:a, :target, true, Nothing, Nothing}()
     merged = Processes.merge_wiring(Processes.Wiring((route_a,), ()), Processes.Wiring((route_b,), ()))
     @test Processes.routes(merged) == (route_b,)

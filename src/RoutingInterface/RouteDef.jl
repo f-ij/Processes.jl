@@ -27,10 +27,12 @@ _wiring_endpoint_ref(endpoint) = endpoint isa Symbol ? nothing : endpoint
 Route one or more variables from one subcontext to another.
 
 The first two type parameters are either unresolved endpoint identities or resolved
-context-name symbols. Resolved routes have `Nothing` endpoint fields, allowing
-`typeof(route)()` to reconstruct the same compile-time route value.
+context-name symbols. `transform` maps backing source values into the target
+view, and `reverse_transform` maps returned target-view values back into backing
+source values during writeback. Resolved routes have `Nothing` endpoint fields,
+allowing `typeof(route)()` to reconstruct the same compile-time route value.
 """
-struct Route{Fmatch, Tmatch, FT, varnames, aliases, F, T} <: AbstractWiring
+struct Route{Fmatch, Tmatch, FT, RFT, varnames, aliases, F, T} <: AbstractWiring
     from::F
     to::T
 end
@@ -40,11 +42,14 @@ Construct route wiring from endpoint references and variable mappings.
 
 Endpoint symbols are treated as already-resolved context names. Algorithm and
 state references are kept in the value fields until registry resolution.
+`transform` maps source values into the target view. `reverse_transform` maps a
+returned target-view value back into source storage during merge/writeback.
 """
 function Route(
     from_to::Pair,
     originalname_or_aliaspairs::Union{Symbol, Pair{Symbol, Symbol}, Pair{NTuple{N, Symbol}, Symbol}}...;
     transform = nothing,
+    reverse_transform = nothing,
 ) where {N}
     from, to = from_to
     _assert_route_endpoint(from, "Origin")
@@ -57,7 +62,7 @@ function Route(
     varnames = first.(completed_pairs)
     aliases = last.(completed_pairs)
 
-    @assert !isnothing(transform) ? (length(originalname_or_aliaspairs) == 1) : true "Transform-based routes must have exactly one variable mapping, but got $(originalname_or_aliaspairs)"
+    @assert (!isnothing(transform) || !isnothing(reverse_transform)) ? (length(originalname_or_aliaspairs) == 1) : true "Transform-based routes must have exactly one variable mapping, but got $(originalname_or_aliaspairs)"
 
     from_ref = _wiring_endpoint_ref(from)
     to_ref = _wiring_endpoint_ref(to)
@@ -65,6 +70,7 @@ function Route(
         _wiring_endpoint_match(from),
         _wiring_endpoint_match(to),
         transform,
+        reverse_transform,
         varnames,
         aliases,
         typeof(from_ref),
@@ -73,10 +79,10 @@ function Route(
 end
 
 """Construct a resolved route from its type parameters."""
-function Route{Fmatch, Tmatch, FT, varnames, aliases, Nothing, Nothing}() where {Fmatch, Tmatch, FT, varnames, aliases}
+function Route{Fmatch, Tmatch, FT, RFT, varnames, aliases, Nothing, Nothing}() where {Fmatch, Tmatch, FT, RFT, varnames, aliases}
     _assert_resolved_endpoint(Fmatch, "Route origin")
     _assert_resolved_endpoint(Tmatch, "Route target")
-    return Route{Fmatch, Tmatch, FT, varnames, aliases, Nothing, Nothing}(nothing, nothing)
+    return Route{Fmatch, Tmatch, FT, RFT, varnames, aliases, Nothing, Nothing}(nothing, nothing)
 end
 
 """Validate route endpoints accepted by user-facing constructors."""
@@ -106,7 +112,7 @@ function resolve_wiring(reg::NameSpaceRegistry, r::R) where {R<:Route}
 
     # Resolved routes are pure type data: endpoint refs are dropped so
     # `typeof(route)()` reconstructs the same route without runtime lookup.
-    resolved = Route{fromname, toname, gettransform(r), getvarnames(r), getaliases(r), Nothing, Nothing}()
+    resolved = Route{fromname, toname, gettransform(r), getreverse_transform(r), getvarnames(r), getaliases(r), Nothing, Nothing}()
     return toname => resolved
 end
 
@@ -118,7 +124,7 @@ function update_keys(r::R, reg::NameSpaceRegistry) where {R<:Route}
     varnames = getvarnames(r)
     aliases = getaliases(r)
     mappings = ntuple(i -> varnames[i] == aliases[i] ? varnames[i] : (varnames[i] => aliases[i]), length(varnames))
-    return Route(newfrom => newto, mappings...; transform = gettransform(r))
+    return Route(newfrom => newto, mappings...; transform = gettransform(r), reverse_transform = getreverse_transform(r))
 end
 
 @inline function _route_endpoint_label(x)

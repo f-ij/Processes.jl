@@ -110,4 +110,60 @@ using Processes
     log2 = c2[Logger2].log
     @test all((log1 .^ 2) .== log2)
 
+    # Reverse transforms let algorithm-facing route aliases write back through
+    # the inverse mapping to their backing source fields.
+    struct ReverseRouteSource <: ProcessAlgorithm end
+    struct ReverseRouteTarget <: ProcessAlgorithm end
+
+    Processes.init(::ReverseRouteSource, context) = (; value = 1.0)
+    Processes.step!(::ReverseRouteSource, context) = (;)
+    Processes.init(::ReverseRouteTarget, context) = (;)
+    Processes.step!(::ReverseRouteTarget, context) = (; input = context.input + 2.0)
+
+    reverse_algo = CompositeAlgorithm(
+        ReverseRouteSource,
+        ReverseRouteTarget,
+        (1, 1),
+        Route(
+            ReverseRouteSource => ReverseRouteTarget,
+            :value => :input;
+            transform = x -> 2x,
+            reverse_transform = x -> x / 2,
+        ),
+    )
+
+    reverse_process = Process(reverse_algo, repeats = 1)
+    run(reverse_process)
+    reverse_context = fetch(reverse_process)
+    @test reverse_context[ReverseRouteSource].value == 2.0
+
+    struct ReverseTupleRouteSource <: ProcessAlgorithm end
+    struct ReverseTupleRouteTarget <: ProcessAlgorithm end
+
+    Processes.init(::ReverseTupleRouteSource, context) = (; x = 1, y = 2)
+    Processes.step!(::ReverseTupleRouteSource, context) = (;)
+    Processes.init(::ReverseTupleRouteTarget, context) = (;)
+    Processes.step!(::ReverseTupleRouteTarget, context) = (; total = context.total + 5)
+
+    reverse_tuple_algo = CompositeAlgorithm(
+        ReverseTupleRouteSource,
+        ReverseTupleRouteTarget,
+        (1, 1),
+        Route(
+            ReverseTupleRouteSource => ReverseTupleRouteTarget,
+            (:x, :y) => :total;
+            transform = (x, y) -> x + y,
+            reverse_transform = total -> (; x = total - 4, y = 4),
+        ),
+    )
+
+    reverse_tuple_process = Process(reverse_tuple_algo, repeats = 1)
+    run(reverse_tuple_process)
+    reverse_tuple_context = fetch(reverse_tuple_process)
+    @test reverse_tuple_context[ReverseTupleRouteSource].x == 4
+    @test reverse_tuple_context[ReverseTupleRouteSource].y == 4
+
+    missing_reverse_location = Processes.VarLocation{:subcontext}(:source, :value, x -> 2x)
+    @test_throws ErrorException Processes._subcontext_view_writeback_exprs(missing_reverse_location, :source, :input)
+
 end

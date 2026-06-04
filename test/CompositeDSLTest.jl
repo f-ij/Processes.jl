@@ -48,6 +48,7 @@ end
 scaled_double_dsl_test(x; scale = 1) = scale * (2x)
 zero_input_dsl_test() = 7
 keyword_only_capture_dsl_test(; plus_capture, minus_capture, β, buffers) = plus_capture + minus_capture + β + buffers
+keyword_semicolon_dsl_test(; a, x, y) = a + 10x + 100y
 literal_join_dsl_test(prefix, value, marker) = string(prefix, value, marker)
 constant_value_dsl_test() = 0.25
 square_dsl_test(x) = x^2
@@ -367,6 +368,37 @@ end
         @test isempty(ctx[:sink])
         @test getkey(ctx[:sink]) == :sink
         @test Processes.getdatatype(ctx[:sink]) <: NamedTuple
+    end
+
+    @testset "@route statements support reverse transforms" begin
+        @info "Composite DSL: @route statements support reverse transforms"
+        struct DSLReverseRouteSource <: Processes.ProcessAlgorithm end
+        struct DSLReverseRouteTarget <: Processes.ProcessAlgorithm end
+
+        Processes.init(::DSLReverseRouteSource, context) = (; value = 1.0)
+        Processes.step!(::DSLReverseRouteSource, context) = (;)
+        Processes.init(::DSLReverseRouteTarget, context) = (;)
+        Processes.step!(::DSLReverseRouteTarget, context) = (; input = context.input + 2.0)
+
+        algo = @CompositeAlgorithm begin
+            @alias source = DSLReverseRouteSource
+            @alias target = DSLReverseRouteTarget
+            source()
+            target()
+            @route source.value => target.input transform = x -> 2x reverse_transform = x -> x / 2
+        end
+
+        resolved = resolve(algo)
+        step_wiring = Processes.child_wiring(Processes.getwiring(Processes.getplan(resolved)))
+        target_routes = @inferred Processes.routes(step_wiring[2])
+        @test length(target_routes) == 1
+        @test Processes.gettransform(only(target_routes)) !== nothing
+        @test Processes.getreverse_transform(only(target_routes)) !== nothing
+
+        p = Process(resolved, repeat = 1)
+        Processes.run(p)
+        ctx = fetch(p)
+        @test ctx[:source].value == 2.0
     end
 
     @testset "Transform routes use explicit @transform syntax" begin
@@ -701,6 +733,30 @@ end
         Processes.run(p)
         ctx = fetch(p)
         @test !haskey(Processes.getglobals(ctx), :result)
+    end
+
+    @testset "FuncWrapper keyword args accept semicolon same-name syntax" begin
+        @info "Composite DSL: FuncWrapper keyword args accept semicolon same-name syntax"
+        algo = @CompositeAlgorithm begin
+            @state b = 1
+            @state x = 2
+            @state y = 3
+            result = keyword_semicolon_dsl_test(a = b; x, y)
+            @finally dsl_runtime_final_summary
+        end
+
+        resolved = resolve(algo)
+        wrapper = Processes.getalgo(resolved, 1)
+        wrapper_summary = sprint(show, wrapper)
+        @test occursin("a = b", wrapper_summary)
+        @test occursin("x = x", wrapper_summary)
+        @test occursin("y = y", wrapper_summary)
+
+        p = Process(resolved, repeat = 1)
+        run(p)
+        @test fetch(p) == (; result = 321)
+        @test !haskey(Processes.getglobals(context(p)), :result)
+        close(p)
     end
 
     @testset "Alias field routes work before later output bindings" begin

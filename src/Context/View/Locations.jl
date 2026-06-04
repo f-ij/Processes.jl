@@ -44,8 +44,9 @@ function get_routed_locations(sct::Type{SCT}) where {SCT<:SubContextView{CType, 
         _localnames = localnames(sv)
         _subvarcontextnames = subvarcontextnames(sv)
         _transform = gettransform(sv)
+        _reverse_transform = getreverse_transform(sv)
         location_type = (fromname == :_runtime || fromname == :_input) ? :runtime : :subcontext
-        pairs = (_localnames[i] => VarLocation{location_type}(fromname, _subvarcontextnames[i], _transform) for i in 1:length(_localnames))
+        pairs = (_localnames[i] => VarLocation{location_type}(fromname, _subvarcontextnames[i], _transform, _reverse_transform) for i in 1:length(_localnames))
         return NamedTuple(pairs)
     end
 

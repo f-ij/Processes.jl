@@ -110,6 +110,7 @@ the top-level plan route bucket. To define a top-level plan route/share in the
 DSL, write it as an explicit route statement:
 
 - `@route source.x => sink.y`
+- `@route source.x => sink.y transform = f reverse_transform = g`
 
 Known `@alias` names and `@context` references are rewritten to their keyed
 endpoint in those positions.

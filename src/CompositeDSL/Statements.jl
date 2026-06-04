@@ -107,18 +107,27 @@ function _dsl_build_global_route_statement(stmt, alias_map, context_map; include
     isnothing(target) && error("@route target must be an owned field reference like `sink.value`.")
 
     transform = nothing
+    reverse_transform = nothing
     for arg in stmt.args[4:end]
         if arg isa Expr && arg.head == :(=) && arg.args[1] == :transform
+            isnothing(transform) || error("@route received duplicate `transform` arguments.")
             transform = arg.args[2]
+        elseif arg isa Expr && arg.head == :(=) && arg.args[1] == :reverse_transform
+            isnothing(reverse_transform) || error("@route received duplicate `reverse_transform` arguments.")
+            reverse_transform = arg.args[2]
         else
-            error("Unsupported @route argument `$arg`. Use `@route source.x => target.y` or `@route source.x => target.y transform = f`.")
+            error("Unsupported @route argument `$arg`. Use `@route source.x => target.y`, optionally with `transform = f` and `reverse_transform = g`.")
         end
     end
 
-    route = if isnothing(transform)
+    route = if isnothing(transform) && isnothing(reverse_transform)
         :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source))))
-    else
+    elseif isnothing(reverse_transform)
         :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); transform = $(esc(transform))))
+    elseif isnothing(transform)
+        :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); reverse_transform = $(esc(reverse_transform))))
+    else
+        :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); transform = $(esc(transform)), reverse_transform = $(esc(reverse_transform))))
     end
     return _dsl_maybe_guard_metadata_expr(:(push!(_dsl_options, $route)), include_condition)
 end

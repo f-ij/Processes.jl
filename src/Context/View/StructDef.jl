@@ -4,11 +4,14 @@ A location of a variable in subcontext: subcontextname and which has the local n
 the type parameter indicates whether its a local, shared or routed variable
 TODO: is type really neccesary anywhere?
 """
-struct VarLocation{Type, subcontextname, originalname, func} end
-VarLocation{Type}(subcontextname::Symbol, originalname::Union{Tuple, Symbol}, func = nothing) where {Type} = VarLocation{Type, subcontextname, originalname, func}()
-VarLocation(type, subcontextname::Symbol, originalname::Union{Tuple, Symbol}, func = nothing) = VarLocation{type, subcontextname, originalname, func}()
+struct VarLocation{Type, subcontextname, originalname, func, reversefunc} end
+VarLocation{Type}(subcontextname::Symbol, originalname::Union{Tuple, Symbol}, func = nothing, reversefunc = nothing) where {Type} = VarLocation{Type, subcontextname, originalname, func, reversefunc}()
+VarLocation(type, subcontextname::Symbol, originalname::Union{Tuple, Symbol}, func = nothing, reversefunc = nothing) = VarLocation{type, subcontextname, originalname, func, reversefunc}()
 
 @inline getfunc(vl::Union{VarLocation{T, subcontextname, originalname, func}, Type{<:VarLocation{T, subcontextname, originalname, func}}}) where {T, subcontextname, originalname, func} = func
+
+"""Return the writeback transform carried by a `VarLocation`."""
+@inline getreversefunc(vl::Union{VarLocation{T, subcontextname, originalname, func, reversefunc}, Type{<:VarLocation{T, subcontextname, originalname, func, reversefunc}}}) where {T, subcontextname, originalname, func, reversefunc} = reversefunc
 @inline get_subcontextname(vl::Union{VarLocation{T, SCN, ON}, Type{<:VarLocation{T, SCN, ON}}}) where {T, SCN, ON} = SCN
 @inline get_originalname(vl::Union{VarLocation{T, SCN, ON}, Type{<:VarLocation{T, SCN, ON}}}) where {T, SCN, ON} = ON
 
