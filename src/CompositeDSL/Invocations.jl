@@ -97,11 +97,12 @@ Supported function-call forms:
 - `f(:name, x)`
 - `f(x; scale = 2)`
 - `f(x, y; scale = 2, offset = bias)`
+- `f(a = b; x, y)`
 
 Positional arguments may be routed symbols, quoted symbol literals, or ordinary
 Julia expressions captured inline into the wrapper. Keyword values may be routed
-from previous DSL outputs/@context references or captured as normal Julia
-expressions.
+from previous DSL outputs/@context references, captured as normal Julia
+expressions, or written as same-name semicolon keywords like `; x`.
 """
 function _dsl_parse_function_positional_arg(alias_map, context_map, arg, known_outputs::Set{Symbol}, index::Int)
     if arg isa Symbol && (arg in known_outputs)
@@ -195,10 +196,17 @@ function _dsl_parse_function_call(alias_map, context_map, ex, known_outputs::Set
             _record_function_kwarg!(name, arg.args[2])
         elseif arg isa Expr && arg.head == :parameters
             for kw in arg.args
-                kw isa Expr && kw.head == :kw || error("Invalid keyword argument `$kw` in DSL function call.")
-                name = kw.args[1]
-                name isa Symbol || error("Function keyword names must be symbols. Got `$name`.")
-                _record_function_kwarg!(name, kw.args[2])
+                # Julia lowers `f(; x)` to a bare `:x` inside the parameters
+                # node. Treat it like the explicit `x = x` form.
+                if kw isa Symbol
+                    _record_function_kwarg!(kw, kw)
+                elseif kw isa Expr && kw.head == :kw
+                    name = kw.args[1]
+                    name isa Symbol || error("Function keyword names must be symbols. Got `$name`.")
+                    _record_function_kwarg!(name, kw.args[2])
+                else
+                    error("Invalid keyword argument `$kw` in DSL function call.")
+                end
             end
         else
             positional_index += 1

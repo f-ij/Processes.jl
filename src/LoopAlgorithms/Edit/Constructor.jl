@@ -115,6 +115,7 @@ end
         _rename_item(getfrom(r), replacements) => _rename_item(getto(r), replacements),
         mappings...;
         transform = gettransform(r),
+        reverse_transform = getreverse_transform(r),
     )
 end
 

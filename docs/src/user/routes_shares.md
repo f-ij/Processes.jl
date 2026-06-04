@@ -39,6 +39,22 @@ You can provide `transform = f` (single mapping route) to expose transformed sou
 Route(Source => Target, :series => :latest, transform = x -> x[end])
 ```
 
+If the target may return the routed alias and you want that return written back
+through the transformed route, provide `reverse_transform = g`:
+
+```julia
+Route(
+    Source => Target,
+    :value => :input,
+    transform = x -> 2x,
+    reverse_transform = y -> y / 2,
+)
+```
+
+In this example, `Target` reads `context.input == 2 * Source.value`. If `Target`
+returns `(; input = new_input)`, `Source.value` is updated with
+`new_input / 2`.
+
 ### Transform From Multiple Source Variables
 
 A transform route can also read multiple source variables by using a tuple on the left-hand side:
@@ -48,14 +64,17 @@ Route(
     Source => Target,
     (:x, :y) => :norm_xy,
     transform = (x, y) -> sqrt(x^2 + y^2),
+    reverse_transform = norm_xy -> (; x = norm_xy, y = 0.0),
 )
 ```
 
 Important constraints from the current implementation:
 
-- If `transform` is provided, the route must define exactly one mapping.
-- Multi-source tuple mappings are for derived read values in the target view.
-- Writing back to that transformed alias is not supported (merging into multiple source variables is currently an error).
+- If `transform` or `reverse_transform` is provided, the route must define exactly one mapping.
+- Multi-source reverse transforms may return a tuple in source-variable order or
+  a named tuple keyed by source variable name.
+- Returning a transformed route alias without `reverse_transform` is an error,
+  because the writeback would otherwise be ambiguous.
 
 ## `Share`: Whole Subcontext
 

@@ -19,20 +19,25 @@ Relevant files:
 - routed source variable names
 - local aliases in target view
 - optional transform function
+- optional reverse transform function
 - precomputed `match_by` identities for from/to
 
 `resolve_options(reg, routes...)` converts each route into:
 
-- target subcontext name => tuple of `SharedVars{from_name,varnames,aliases,transform}`.
+- target subcontext name => tuple of resolved `Route` metadata, including
+  source names, target aliases, transform, and reverse transform.
 
 `to_sharedvar` resolves endpoints by matcher identity in the registry, then binds concrete source/target keys.
 
 Transform details:
 
-- `Route(...; transform = f)` is restricted to exactly one mapping entry.
+- `Route(...; transform = f)` or `Route(...; reverse_transform = g)` is
+  restricted to exactly one mapping entry.
 - That single mapping can still be multi-source by mapping `(:a, :b, ...) => :local_name`.
 - At view-read time this becomes a `VarLocation` with tuple `originalname` and `func = f`, so the generated getter reads each source variable and calls `f(a, b, ...)`.
-- Merge-back into tuple targets is currently disallowed in generated merge code, so transformed multi-source routes are effectively read-only derived inputs.
+- At writeback time, transformed route aliases must have a reverse transform.
+  Multi-source reverse transforms can return a tuple in source-variable order or
+  a named tuple keyed by source variable name.
 
 ## 2. Share Resolution
 
@@ -48,7 +53,8 @@ This metadata is attached to the target child's `StepRouting`.
 When creating `SubContextView` locations (`src/Context/View/Locations.jl`):
 
 - `SharedContext` contributes all variables from the shared subcontext.
-- `SharedVars` contributes only specified routed vars (plus transform if provided).
+- Route metadata contributes only specified routed vars, plus transform and
+  reverse transform if provided.
 
 Both become `VarLocation{:subcontext}` entries, so reads and writes are directed to the source subcontext.
 
