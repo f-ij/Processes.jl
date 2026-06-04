@@ -107,16 +107,16 @@ function _context_exchange_state(exchange::ContextExchange, context::ProcessCont
     return (; store)
 end
 
-function Processes.init(exchange::ContextExchange, ::NamedTuple = (;))
+function StatefulAlgorithms.init(exchange::ContextExchange, ::NamedTuple = (;))
     error("ContextExchange init needs a ProcessContext so its Var selectors can be resolved.")
 end
 
-function Processes.init(exchange::ContextExchange, context::C) where {C<:ProcessContext}
+function StatefulAlgorithms.init(exchange::ContextExchange, context::C) where {C<:ProcessContext}
     key = getkey(exchange)
     return replace(context, NamedTuple{(key,)}((_context_exchange_state(exchange, context),)))
 end
 
-@inline Processes.cleanup(::ContextExchange, context::AbstractContext) = context
+@inline StatefulAlgorithms.cleanup(::ContextExchange, context::AbstractContext) = context
 
 """
     _exchange_init_selectors(context, key)
@@ -210,7 +210,7 @@ end
     return false
 end
 
-@inline function Processes._step!(
+@inline function StatefulAlgorithms._step!(
     exchange::E,
     context::C,
     runtimecontext::RC,
@@ -224,7 +224,7 @@ end
     return (@inline _step_context_exchange_store(context, store)), runtimecontext
 end
 
-@inline function Processes.step!(exchange::ContextExchange, context::C) where {C<:ProcessContext}
+@inline function StatefulAlgorithms.step!(exchange::ContextExchange, context::C) where {C<:ProcessContext}
     store = _context_exchange_store(context, getkey(exchange))
     _context_exchange_due!(store) || return context
     return @inline _step_context_exchange_store(context, store)

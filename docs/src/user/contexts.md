@@ -21,7 +21,7 @@ That view exposes:
 ## Reading Variables
 
 ```julia
-function Processes.step!(::MyAlgo, context)
+function StatefulAlgorithms.step!(::MyAlgo, context)
     (; state, dt) = context
     # ...
     return (;)

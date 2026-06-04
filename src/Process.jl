@@ -276,10 +276,10 @@ function makeloop!(p::Process, inputs::NamedTuple, lt; threaded = true, loopfunc
 end
 
 @noinline _makeloop_dynamic!(p::Process, inputs::NamedTuple; threaded = true, loopfunc::LF = loop) where {LF} =
-    _makeloop!(p, inputs, lifetime(p), Processes.context(p); threaded, loopfunc)
+    _makeloop!(p, inputs, lifetime(p), StatefulAlgorithms.context(p); threaded, loopfunc)
 
 @noinline _makeloop_dynamic!(p::Process, inputs::NamedTuple, lt; threaded = true, loopfunc::LF = loop) where {LF} =
-    _makeloop!(p, inputs, lt, Processes.context(p); threaded, loopfunc)
+    _makeloop!(p, inputs, lt, StatefulAlgorithms.context(p); threaded, loopfunc)
 
 function _makeloop!(p::Process, inputs::NamedTuple, lt, base_context; threaded = true, loopfunc::LF = loop) where {LF}
     @atomic p.paused = false
@@ -307,7 +307,7 @@ function _resume_paused_loop!(p::Process; threaded = true)
     p.lastresult = nothing
 
     func = getalgo(p)
-    runtime_context = Processes.context(p)
+    runtime_context = StatefulAlgorithms.context(p)
     lt = lifetime(p)
     return _makeloop_prepared!(p, func, runtime_context, lt, (;); threaded, resume = Resuming{true}())
 end

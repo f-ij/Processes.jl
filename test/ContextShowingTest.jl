@@ -1,10 +1,10 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
 @testset "Context showing wraps prefixed lines to display width" begin
     buf = IOBuffer()
     io = IOContext(buf, :displaysize => (24, 20))
-    Processes._print_wrapped_prefixed(
+    StatefulAlgorithms._print_wrapped_prefixed(
         io,
         "state = IsingGraph{Float32, β, VeryLongTypeName}",
         "│    ├── ",

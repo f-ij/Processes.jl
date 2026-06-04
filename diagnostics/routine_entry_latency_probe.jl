@@ -4,7 +4,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 using Printf
 using Statistics
 using Test
-using Processes
+using StatefulAlgorithms
 
 const ROUTINE_ENTRY_SIZE = parse(Int, get(ENV, "ROUTINE_ENTRY_SIZE", "64"))
 const ROUTINE_ENTRY_REPEATS = parse(Int, get(ENV, "ROUTINE_ENTRY_REPEATS", "16"))
@@ -19,7 +19,7 @@ mutable struct RoutineEntryModel{S,F,B}
     buffer::B
 end
 
-struct RoutineEntryDynamics <: Processes.ProcessAlgorithm end
+struct RoutineEntryDynamics <: StatefulAlgorithms.ProcessAlgorithm end
 
 """Record a timestamped region marker from inside the synthetic routine body."""
 function routine_entry_marker!(label::Symbol)
@@ -79,12 +79,12 @@ function routine_entry_copy!(dest::D, src::S) where {D<:AbstractVector,S<:Abstra
 end
 
 """Initialize the dynamics algorithm with the externally supplied model object."""
-function Processes.init(::RoutineEntryDynamics, context::C) where {C}
+function StatefulAlgorithms.init(::RoutineEntryDynamics, context::C) where {C}
     return (; model = context.model)
 end
 
 """Run one dynamics step and return the model so DSL copy-out can route it."""
-function Processes.step!(::RoutineEntryDynamics, context::C) where {C}
+function StatefulAlgorithms.step!(::RoutineEntryDynamics, context::C) where {C}
     routine_entry_dynamics!(context.model)
     return (; model = context.model)
 end
@@ -113,7 +113,7 @@ function routine_entry_process()
     return process, model
 end
 
-"""Run the same semantic work directly, outside the Processes routine loop."""
+"""Run the same semantic work directly, outside the StatefulAlgorithms routine loop."""
 function routine_entry_direct!(model::M, x::X, weights::W, pattern::P, equilibrium::E) where {M<:RoutineEntryModel,X<:AbstractVector,W<:AbstractVector,P<:AbstractVector,E<:AbstractVector}
     routine_entry_reset!(model)
     routine_entry_project!(model, weights, x, pattern)
@@ -172,18 +172,18 @@ end
 """Run one warmed `runprocessinline!` pass after resetting process counters."""
 function routine_entry_inline_call!(process::P) where {P<:Process}
     reset!(process)
-    Processes.runprocessinline!(process)
+    StatefulAlgorithms.runprocessinline!(process)
     return context(process)[:_state].equilibrium_state
 end
 
 """Run one explicit loop-type pass to compare generated and non-generated entry."""
 function routine_entry_looptype_call!(process::P, looptype::LT) where {P<:Process,LT}
     reset!(process)
-    algo = Processes.getalgo(process)
-    base_context = Processes.context(process)
-    lifetime = Processes.lifetime(process)
-    result = Processes.loop(process, algo, base_context, lifetime, (;), Processes.Resuming{false}(), looptype)
-    result isa Processes.AbstractContext && Processes.context(process, result)
+    algo = StatefulAlgorithms.getalgo(process)
+    base_context = StatefulAlgorithms.context(process)
+    lifetime = StatefulAlgorithms.lifetime(process)
+    result = StatefulAlgorithms.loop(process, algo, base_context, lifetime, (;), StatefulAlgorithms.Resuming{false}(), looptype)
+    result isa StatefulAlgorithms.AbstractContext && StatefulAlgorithms.context(process, result)
     process.loopidx = 1
     return context(process)[:_state].equilibrium_state
 end
@@ -238,22 +238,22 @@ function run_routine_entry_latency_probe()
     routine_entry_print_row("runprocessinline", inline_first, inline_medians, inline_checksum)
 
     non_generated_process, _ = routine_entry_process()
-    non_generated_first = routine_entry_measure(() -> routine_entry_looptype_call!(non_generated_process, Processes.NonGenerated()))
+    non_generated_first = routine_entry_measure(() -> routine_entry_looptype_call!(non_generated_process, StatefulAlgorithms.NonGenerated()))
     for _ in 1:ROUTINE_ENTRY_WARMUPS
-        routine_entry_measure(() -> routine_entry_looptype_call!(non_generated_process, Processes.NonGenerated()))
+        routine_entry_measure(() -> routine_entry_looptype_call!(non_generated_process, StatefulAlgorithms.NonGenerated()))
     end
-    non_generated_samples = [routine_entry_measure(() -> routine_entry_looptype_call!(non_generated_process, Processes.NonGenerated())) for _ in 1:ROUTINE_ENTRY_RUNS]
+    non_generated_samples = [routine_entry_measure(() -> routine_entry_looptype_call!(non_generated_process, StatefulAlgorithms.NonGenerated())) for _ in 1:ROUTINE_ENTRY_RUNS]
     non_generated_medians = routine_entry_medians(non_generated_samples)
     non_generated_checksum = routine_entry_checksum(context(non_generated_process)[:_state].equilibrium_state)
     routine_entry_print_row("loop_nongenerated", non_generated_first, non_generated_medians, non_generated_checksum)
 
     if ROUTINE_ENTRY_MEASURE_GENERATED
         generated_process, _ = routine_entry_process()
-        generated_first = routine_entry_measure(() -> routine_entry_looptype_call!(generated_process, Processes.Generated()))
+        generated_first = routine_entry_measure(() -> routine_entry_looptype_call!(generated_process, StatefulAlgorithms.Generated()))
         for _ in 1:ROUTINE_ENTRY_WARMUPS
-            routine_entry_measure(() -> routine_entry_looptype_call!(generated_process, Processes.Generated()))
+            routine_entry_measure(() -> routine_entry_looptype_call!(generated_process, StatefulAlgorithms.Generated()))
         end
-        generated_samples = [routine_entry_measure(() -> routine_entry_looptype_call!(generated_process, Processes.Generated())) for _ in 1:ROUTINE_ENTRY_RUNS]
+        generated_samples = [routine_entry_measure(() -> routine_entry_looptype_call!(generated_process, StatefulAlgorithms.Generated())) for _ in 1:ROUTINE_ENTRY_RUNS]
         generated_medians = routine_entry_medians(generated_samples)
         generated_checksum = routine_entry_checksum(context(generated_process)[:_state].equilibrium_state)
         routine_entry_print_row("loop_generated", generated_first, generated_medians, generated_checksum)

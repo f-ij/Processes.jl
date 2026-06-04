@@ -1,8 +1,8 @@
 include("_env.jl")
 using Test
-import Processes as ps
+import StatefulAlgorithms as ps
 
-# TimedProcess is not included in src/Processes.jl yet.
+# TimedProcess is not included in src/StatefulAlgorithms.jl yet.
 if !isdefined(ps, :TimedProcess)
     Base.include(ps, joinpath(@__DIR__, "..", "src", "TimedProcess.jl"))
 end

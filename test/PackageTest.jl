@@ -1,48 +1,48 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
-struct PackFib <: Processes.ProcessAlgorithm end
-struct PackLuc <: Processes.ProcessAlgorithm end
+struct PackFib <: StatefulAlgorithms.ProcessAlgorithm end
+struct PackLuc <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.step!(::PackFib, context)
+function StatefulAlgorithms.step!(::PackFib, context)
     fiblist = context.fiblist
     push!(fiblist, fiblist[end] + fiblist[end - 1])
     return (;)
 end
 
-struct NewPackSource <: Processes.ProcessAlgorithm end
-struct NewPackTarget <: Processes.ProcessAlgorithm end
-struct NewPackOuterSource <: Processes.ProcessAlgorithm end
-struct NewPackNeedsRoute <: Processes.ProcessAlgorithm end
-struct NewPackCounter <: Processes.ProcessAlgorithm end
+struct NewPackSource <: StatefulAlgorithms.ProcessAlgorithm end
+struct NewPackTarget <: StatefulAlgorithms.ProcessAlgorithm end
+struct NewPackOuterSource <: StatefulAlgorithms.ProcessAlgorithm end
+struct NewPackNeedsRoute <: StatefulAlgorithms.ProcessAlgorithm end
+struct NewPackCounter <: StatefulAlgorithms.ProcessAlgorithm end
 
-Processes.init(::NewPackSource, context) = (; value = 0)
-Processes.init(::NewPackOuterSource, context) = (; delta = 0)
+StatefulAlgorithms.init(::NewPackSource, context) = (; value = 0)
+StatefulAlgorithms.init(::NewPackOuterSource, context) = (; delta = 0)
 
-function Processes.step!(::NewPackSource, context)
+function StatefulAlgorithms.step!(::NewPackSource, context)
     return (; value = context.value + 1)
 end
 
-function Processes.step!(::NewPackOuterSource, context)
+function StatefulAlgorithms.step!(::NewPackOuterSource, context)
     return (; delta = context.delta + 1)
 end
 
-function Processes.init(::NewPackTarget, context)
+function StatefulAlgorithms.init(::NewPackTarget, context)
     log = Int[]
     processsizehint!(log, context)
-    return (; log, expected_calls = Processes.num_calls(context))
+    return (; log, expected_calls = StatefulAlgorithms.num_calls(context))
 end
 
-Processes.init(::NewPackCounter, context) = (; expected_calls = Processes.num_calls(context))
-Processes.step!(::NewPackCounter, context) = (;)
+StatefulAlgorithms.init(::NewPackCounter, context) = (; expected_calls = StatefulAlgorithms.num_calls(context))
+StatefulAlgorithms.step!(::NewPackCounter, context) = (;)
 
-function Processes.step!(::NewPackTarget, context)
+function StatefulAlgorithms.step!(::NewPackTarget, context)
     push!(context.log, context.input)
     return (;)
 end
 
-Processes.init(::NewPackNeedsRoute, context) = (; seen = 0)
-Processes.step!(::NewPackNeedsRoute, context) = (; seen = context.delta)
+StatefulAlgorithms.init(::NewPackNeedsRoute, context) = (; seen = 0)
+StatefulAlgorithms.step!(::NewPackNeedsRoute, context) = (; seen = context.delta)
 
 @testset "Package runs as a ProcessAlgorithm" begin
     comp = CompositeAlgorithm(
@@ -54,17 +54,17 @@ Processes.step!(::NewPackNeedsRoute, context) = (; seen = context.delta)
     pkg = Package(comp, "NewPack")
 
     @test pkg isa ProcessAlgorithm
-    @test !(pkg isa Processes.AbstractIdentifiableAlgo)
-    @test Processes.getname(pkg) == :NewPack
-    @test Processes.intervals(pkg) == Processes.intervals(comp)
-    @test all(child -> child isa SubPackage, Processes.getalgos(pkg))
-    @test all(child -> !haskey(child), Processes.getalgos(pkg))
-    @test map(child -> Processes.getalgo(child), Processes.getalgos(pkg)) == map(Processes.getalgo, Processes.getalgos(comp))
-    @test Processes.algo_to_subcontext_names(Processes.getvaraliases(Processes.getalgo(pkg, 2)), :input) == :value
-    reg = Processes.NameSpaceRegistry()
-    reg, registered_pkg = Processes.add(reg, pkg, 1.0)
-    @test Processes.getkey(registered_pkg) == :NewPack_1
-    @test Processes.algoname(registered_pkg) == :NewPack
+    @test !(pkg isa StatefulAlgorithms.AbstractIdentifiableAlgo)
+    @test StatefulAlgorithms.getname(pkg) == :NewPack
+    @test StatefulAlgorithms.intervals(pkg) == StatefulAlgorithms.intervals(comp)
+    @test all(child -> child isa SubPackage, StatefulAlgorithms.getalgos(pkg))
+    @test all(child -> !haskey(child), StatefulAlgorithms.getalgos(pkg))
+    @test map(child -> StatefulAlgorithms.getalgo(child), StatefulAlgorithms.getalgos(pkg)) == map(StatefulAlgorithms.getalgo, StatefulAlgorithms.getalgos(comp))
+    @test StatefulAlgorithms.algo_to_subcontext_names(StatefulAlgorithms.getvaraliases(StatefulAlgorithms.getalgo(pkg, 2)), :input) == :value
+    reg = StatefulAlgorithms.NameSpaceRegistry()
+    reg, registered_pkg = StatefulAlgorithms.add(reg, pkg, 1.0)
+    @test StatefulAlgorithms.getkey(registered_pkg) == :NewPack_1
+    @test StatefulAlgorithms.algoname(registered_pkg) == :NewPack
 
     p = Process(pkg; repeats = 6)
     run(p)
@@ -74,7 +74,7 @@ Processes.step!(::NewPackNeedsRoute, context) = (; seen = context.delta)
     @test ctx[pkg].value == 6
     @test ctx[pkg].log == [2, 4, 6]
     @test ctx[pkg].expected_calls == 3
-    @test Processes.inc(pkg) == 1
+    @test StatefulAlgorithms.inc(pkg) == 1
 
     nested_pkg = Package(comp)
     outer = CompositeAlgorithm(nested_pkg, (2,))
@@ -94,7 +94,7 @@ Processes.step!(::NewPackNeedsRoute, context) = (; seen = context.delta)
 
     @test repeated_ctx[repeated].expected_calls == 10
 
-    unique_pkg = Processes.Unique(Package(comp, "UniquePack"))
+    unique_pkg = StatefulAlgorithms.Unique(Package(comp, "UniquePack"))
     unique_process = Process(unique_pkg; repeats = 6)
     run(unique_process)
     wait(unique_process)
@@ -118,37 +118,37 @@ Processes.step!(::NewPackNeedsRoute, context) = (; seen = context.delta)
     @test routed_ctx[routed_into_package].seen == 4
 end
 
-function Processes.init(::PackFib, context)
+function StatefulAlgorithms.init(::PackFib, context)
     fiblist = Int[0, 1]
     processsizehint!(fiblist, context)
     return (;fiblist)
 end
 
-function Processes.step!(::PackLuc, context)
+function StatefulAlgorithms.step!(::PackLuc, context)
     luclist = context.luclist
     push!(luclist, luclist[end] + luclist[end - 1])
     return (;)
 end
 
-function Processes.init(::PackLuc, context)
+function StatefulAlgorithms.init(::PackLuc, context)
     luclist = Int[2, 1]
     processsizehint!(luclist, context)
     return (;luclist)
 end
 
 @testset "Registry findall by algorithm type" begin
-    fib1 = Processes.Unique(PackFib)
-    fib2 = Processes.Unique(PackFib)
+    fib1 = StatefulAlgorithms.Unique(PackFib)
+    fib2 = StatefulAlgorithms.Unique(PackFib)
     comp = resolve(CompositeAlgorithm(fib1, fib2, PackLuc, (1, 1, 1)))
-    reg = Processes.getregistry(comp)
+    reg = StatefulAlgorithms.getregistry(comp)
 
     fib_matches = findall(PackFib, reg)
     luc_matches = findall(PackLuc, reg)
 
     @test length(fib_matches) == 2
-    @test all(match -> Processes.getalgo(match) isa PackFib, fib_matches)
+    @test all(match -> StatefulAlgorithms.getalgo(match) isa PackFib, fib_matches)
     @test length(luc_matches) == 1
-    @test Processes.getalgo(only(luc_matches)) isa PackLuc
+    @test StatefulAlgorithms.getalgo(only(luc_matches)) isa PackLuc
 end
 
 @testset "Package runs and benchmarks" begin
@@ -158,16 +158,16 @@ end
     pack = Package(fibluc, "FLPack")
 
     @test !haskey(pack)
-    @test !Processes.hasautokey(pack)
-    keyed_pack = Processes.Autokey(pack, 1)
+    @test !StatefulAlgorithms.hasautokey(pack)
+    keyed_pack = StatefulAlgorithms.Autokey(pack, 1)
     @test haskey(keyed_pack)
-    @test Processes.hasautokey(keyed_pack)
+    @test StatefulAlgorithms.hasautokey(keyed_pack)
 
-    reg = Processes.NameSpaceRegistry()
-    reg, registered_pack = Processes.add(reg, pack, 1.0)
-    reg, reregistered_pack = Processes.add(reg, pack, 1.0)
-    @test Processes.getkey(registered_pack) == :FLPack_1
-    @test Processes.getkey(reregistered_pack) == :FLPack_1
+    reg = StatefulAlgorithms.NameSpaceRegistry()
+    reg, registered_pack = StatefulAlgorithms.add(reg, pack, 1.0)
+    reg, reregistered_pack = StatefulAlgorithms.add(reg, pack, 1.0)
+    @test StatefulAlgorithms.getkey(registered_pack) == :FLPack_1
+    @test StatefulAlgorithms.getkey(reregistered_pack) == :FLPack_1
 
     p = Process(pack; repeats = n)
     run(p)
@@ -184,8 +184,8 @@ end
         Route(PackFib => PackLuc, :fiblist => :source_fib),
     )
     routed_pack = Package(routed_fibluc, "RoutedFLPack")
-    routed_aliases = Processes.getvaraliases(Processes.getalgo(routed_pack, 2))
-    @test Processes.algo_to_subcontext_names(routed_aliases, :source_fib) == :fiblist
+    routed_aliases = StatefulAlgorithms.getvaraliases(StatefulAlgorithms.getalgo(routed_pack, 2))
+    @test StatefulAlgorithms.algo_to_subcontext_names(routed_aliases, :source_fib) == :fiblist
 
     bench = benchmark(pack, n, 1)
     @test bench > 0
@@ -195,12 +195,12 @@ end
     struct PackLogger{T} <: ProcessAlgorithm end
     PackLogger(name::Symbol) = PackLogger{name}()
 
-    function Processes.init(::PackLogger{T}, _input) where {T}
+    function StatefulAlgorithms.init(::PackLogger{T}, _input) where {T}
         log = Vector{Any}()
         processsizehint!(log, _input)
         return (;log)
     end
-    function Processes.step!(::PackLogger{T}, context) where {T}
+    function StatefulAlgorithms.step!(::PackLogger{T}, context) where {T}
         (;log, targetnum) = context
         push!(log, targetnum)
         return (;)

@@ -120,5 +120,5 @@ For full `Var` details, see [Vars (`Var` Selectors)](@ref vars_user).
 
 ## Notes
 
-- The lifetime types are exported, so `Repeat(10)` and `Processes.Repeat(10)` both work after `using Processes`.
+- The lifetime types are exported, so `Repeat(10)` and `StatefulAlgorithms.Repeat(10)` both work after `using StatefulAlgorithms`.
 - Manual stop and pause still work regardless of lifetime.

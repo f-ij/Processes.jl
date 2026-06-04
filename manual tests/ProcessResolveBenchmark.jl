@@ -9,51 +9,51 @@ struct ResolveBenchSink <: ProcessAlgorithm end
 struct ResolveBenchVectorPush <: ProcessAlgorithm end
 struct ResolveBenchSharedReader <: ProcessAlgorithm end
 
-function Processes.init(::ResolveBenchCounter, context)
+function StatefulAlgorithms.init(::ResolveBenchCounter, context)
     value = get(context, :value, 0)
     total = get(context, :total, 0)
     return (; value, total)
 end
 
-function Processes.step!(::ResolveBenchCounter, context)
+function StatefulAlgorithms.step!(::ResolveBenchCounter, context)
     value = context.value + 1
     return (; value, total = context.total + value)
 end
 
-function Processes.init(::ResolveBenchScaler, context)
+function StatefulAlgorithms.init(::ResolveBenchScaler, context)
     factor = get(context, :factor, 2)
     scaled = get(context, :scaled, 0)
     return (; factor, scaled)
 end
 
-function Processes.step!(::ResolveBenchScaler, context)
+function StatefulAlgorithms.step!(::ResolveBenchScaler, context)
     return (; scaled = context.scaled + context.factor)
 end
 
-function Processes.init(::ResolveBenchSink, context)
+function StatefulAlgorithms.init(::ResolveBenchSink, context)
     return (; seen = get(context, :seen, 0))
 end
 
-function Processes.step!(::ResolveBenchSink, context)
+function StatefulAlgorithms.step!(::ResolveBenchSink, context)
     return (; seen = context.seen + context.value)
 end
 
-function Processes.init(::ResolveBenchVectorPush, context)
+function StatefulAlgorithms.init(::ResolveBenchVectorPush, context)
     values = Float64[]
-    Processes.processsizehint!(values, context)
+    StatefulAlgorithms.processsizehint!(values, context)
     return (; values, source = get(context, :source, 0.0))
 end
 
-function Processes.step!(::ResolveBenchVectorPush, context)
+function StatefulAlgorithms.step!(::ResolveBenchVectorPush, context)
     push!(context.values, context.source)
     return (;)
 end
 
-function Processes.init(::ResolveBenchSharedReader, context)
+function StatefulAlgorithms.init(::ResolveBenchSharedReader, context)
     return (; total = 0.0)
 end
 
-function Processes.step!(::ResolveBenchSharedReader, context)
+function StatefulAlgorithms.step!(::ResolveBenchSharedReader, context)
     return (; total = context.total + context.source)
 end
 

@@ -1,11 +1,11 @@
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
-using Processes, Random
-import Processes as ps
+using StatefulAlgorithms, Random
+import StatefulAlgorithms as ps
 
 struct Walker <: ProcessAlgorithm end
 
-function Processes.step!(::Walker, context::C) where C
+function StatefulAlgorithms.step!(::Walker, context::C) where C
     (;state, momentum, dt) = context
     println("State is now $state")
     println("pushing : $(momentum) * dt)")
@@ -13,7 +13,7 @@ function Processes.step!(::Walker, context::C) where C
     return (;momentum)
 end
 
-function Processes.init(::Walker, input::A) where A
+function StatefulAlgorithms.init(::Walker, input::A) where A
     (;dt) = input
 
     state = Float64[1.0]

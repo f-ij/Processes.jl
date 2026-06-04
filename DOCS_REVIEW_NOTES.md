@@ -165,7 +165,7 @@ than user-facing pages.
   through `repeats = 1000`, or explicit lifetime objects such as
   `lifetime = Repeat(1000)`.
 - Lifetime types are exported, so docs no longer say to always use the
-  `Processes.` prefix.
+  `StatefulAlgorithms.` prefix.
 - Registry identity docs now match source: direct immutable instances can match
   by value, mutable instances match by object identity, and types match by type.
 - Context view read precedence in internals now matches source merge order:

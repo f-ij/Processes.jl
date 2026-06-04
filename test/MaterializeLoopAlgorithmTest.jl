@@ -1,5 +1,5 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
 @testset "Loop algorithm materialization" begin
     struct PrepSource <: ProcessAlgorithm end
@@ -15,66 +15,66 @@ using Processes
         Route(PrepSource => PrepOther, :value => :target),
     )
 
-    @test length(Processes.getoptions(algo, Processes.Route)) == 1
-    @test algo isa Processes.CompositeAlgorithm
-    @test Processes.getplan(algo) isa Processes.CompositeAlgorithm
-    @test length(Processes.getoptions(Processes.getplan(algo), Processes.Route)) == 1
+    @test length(StatefulAlgorithms.getoptions(algo, StatefulAlgorithms.Route)) == 1
+    @test algo isa StatefulAlgorithms.CompositeAlgorithm
+    @test StatefulAlgorithms.getplan(algo) isa StatefulAlgorithms.CompositeAlgorithm
+    @test length(StatefulAlgorithms.getoptions(StatefulAlgorithms.getplan(algo), StatefulAlgorithms.Route)) == 1
 
-    resolved = Processes.resolve(algo)
-    registry = Processes.getregistry(resolved)
+    resolved = StatefulAlgorithms.resolve(algo)
+    registry = StatefulAlgorithms.getregistry(resolved)
 
-    source_name = Processes.static_findkey(registry, PrepSource)
-    target_name = Processes.static_findkey(registry, PrepTarget)
-    other_name = Processes.static_findkey(registry, PrepOther)
+    source_name = StatefulAlgorithms.static_findkey(registry, PrepSource)
+    target_name = StatefulAlgorithms.static_findkey(registry, PrepTarget)
+    other_name = StatefulAlgorithms.static_findkey(registry, PrepOther)
 
-    @test resolved isa Processes.LoopAlgorithm
-    @test Processes.getplan(resolved) isa Processes.CompositeAlgorithm
-    @test Processes.isresolved(resolved)
-    @test all(child -> !(child isa Processes.AbstractIdentifiableAlgo), Processes.getalgos(resolved))
-    @test all(entry -> entry isa Processes.AbstractIdentifiableAlgo, Processes.all_algos(registry))
-    @test length(Processes.getoptions(Processes.getplan(resolved), Processes.Route)) == 1
-    @test length(Processes.child_wiring(Processes.getwiring(Processes.getplan(resolved)))) == length(Processes.getalgos(resolved))
+    @test resolved isa StatefulAlgorithms.LoopAlgorithm
+    @test StatefulAlgorithms.getplan(resolved) isa StatefulAlgorithms.CompositeAlgorithm
+    @test StatefulAlgorithms.isresolved(resolved)
+    @test all(child -> !(child isa StatefulAlgorithms.AbstractIdentifiableAlgo), StatefulAlgorithms.getalgos(resolved))
+    @test all(entry -> entry isa StatefulAlgorithms.AbstractIdentifiableAlgo, StatefulAlgorithms.all_algos(registry))
+    @test length(StatefulAlgorithms.getoptions(StatefulAlgorithms.getplan(resolved), StatefulAlgorithms.Route)) == 1
+    @test length(StatefulAlgorithms.child_wiring(StatefulAlgorithms.getwiring(StatefulAlgorithms.getplan(resolved)))) == length(StatefulAlgorithms.getalgos(resolved))
     @test !isnothing(source_name)
     @test !isnothing(target_name)
     @test !isnothing(other_name)
-    @test isempty(Processes.getoptions(resolved, Processes.Route))
+    @test isempty(StatefulAlgorithms.getoptions(resolved, StatefulAlgorithms.Route))
 
-    sharedcontexts, sharedvars = Processes._resolve_options(resolved)
-    @test Processes.contextname(only(sharedcontexts[source_name])) == target_name
-    @test Processes.contextname(only(sharedcontexts[target_name])) == source_name
+    sharedcontexts, sharedvars = StatefulAlgorithms._resolve_options(resolved)
+    @test StatefulAlgorithms.contextname(only(sharedcontexts[source_name])) == target_name
+    @test StatefulAlgorithms.contextname(only(sharedcontexts[target_name])) == source_name
 
     @test haskey(sharedvars, other_name)
     @test length(sharedvars[other_name]) == 1
-    @test Processes.get_fromname(only(sharedvars[other_name])) == source_name
+    @test StatefulAlgorithms.get_fromname(only(sharedvars[other_name])) == source_name
 
-    initialized = Processes.init(algo)
-    reinitialized = Processes.init(initialized)
-    @test typeof(Processes.getplan(initialized)) === typeof(Processes.getplan(reinitialized))
-    @test Processes.getplan(initialized) === Processes.getplan(reinitialized)
+    initialized = StatefulAlgorithms.init(algo)
+    reinitialized = StatefulAlgorithms.init(initialized)
+    @test typeof(StatefulAlgorithms.getplan(initialized)) === typeof(StatefulAlgorithms.getplan(reinitialized))
+    @test StatefulAlgorithms.getplan(initialized) === StatefulAlgorithms.getplan(reinitialized)
 
     routine = Routine(algo, PrepOther, (2, 3))
-    resolved_routine = Processes.resolve(routine)
-    nested_comp = first(Processes.getalgos(resolved_routine))
+    resolved_routine = StatefulAlgorithms.resolve(routine)
+    nested_comp = first(StatefulAlgorithms.getalgos(resolved_routine))
 
-    @test resolved_routine isa Processes.LoopAlgorithm
-    @test Processes.getplan(resolved_routine) isa Processes.Routine
-    @test Processes.isresolved(resolved_routine)
-    @test nested_comp isa Processes.CompositeAlgorithm
-    @test all(child -> !(child isa Processes.AbstractIdentifiableAlgo), Processes.getalgos(resolved_routine))
-    @test all(child -> !(child isa Processes.AbstractIdentifiableAlgo), Processes.getalgos(nested_comp))
-    @test all(Processes.plan_child_namespace(nested_comp, i) != Symbol() for i in eachindex(Processes.getalgos(nested_comp)))
-    routine_wiring = Processes.getwiring(Processes.getplan(resolved_routine))
-    nested_plan_wiring = getfield(Processes.child_wiring(routine_wiring), 1)
-    nested_wiring = Processes.child_wiring(nested_plan_wiring)
-    @test length(Processes.child_wiring(routine_wiring)) == length(Processes.getalgos(resolved_routine))
-    @test length(nested_wiring) == length(Processes.getalgos(nested_comp))
-    @test length(Processes.shares(nested_wiring[2])) == 1
-    @test length(Processes.routes(nested_wiring[3])) == 1
+    @test resolved_routine isa StatefulAlgorithms.LoopAlgorithm
+    @test StatefulAlgorithms.getplan(resolved_routine) isa StatefulAlgorithms.Routine
+    @test StatefulAlgorithms.isresolved(resolved_routine)
+    @test nested_comp isa StatefulAlgorithms.CompositeAlgorithm
+    @test all(child -> !(child isa StatefulAlgorithms.AbstractIdentifiableAlgo), StatefulAlgorithms.getalgos(resolved_routine))
+    @test all(child -> !(child isa StatefulAlgorithms.AbstractIdentifiableAlgo), StatefulAlgorithms.getalgos(nested_comp))
+    @test all(StatefulAlgorithms.plan_child_namespace(nested_comp, i) != Symbol() for i in eachindex(StatefulAlgorithms.getalgos(nested_comp)))
+    routine_wiring = StatefulAlgorithms.getwiring(StatefulAlgorithms.getplan(resolved_routine))
+    nested_plan_wiring = getfield(StatefulAlgorithms.child_wiring(routine_wiring), 1)
+    nested_wiring = StatefulAlgorithms.child_wiring(nested_plan_wiring)
+    @test length(StatefulAlgorithms.child_wiring(routine_wiring)) == length(StatefulAlgorithms.getalgos(resolved_routine))
+    @test length(nested_wiring) == length(StatefulAlgorithms.getalgos(nested_comp))
+    @test length(StatefulAlgorithms.shares(nested_wiring[2])) == 1
+    @test length(StatefulAlgorithms.routes(nested_wiring[3])) == 1
 
     threaded = ThreadedCompositeAlgorithm(PrepSource, PrepTarget, (1, 1))
-    @test threaded isa Processes.ThreadedCompositeAlgorithm
-    @test !Processes.isresolved(threaded)
-    @test Processes.intervals(threaded) == (Processes.Interval(1), Processes.Interval(1))
+    @test threaded isa StatefulAlgorithms.ThreadedCompositeAlgorithm
+    @test !StatefulAlgorithms.isresolved(threaded)
+    @test StatefulAlgorithms.intervals(threaded) == (StatefulAlgorithms.Interval(1), StatefulAlgorithms.Interval(1))
 
     algo1 = CompositeAlgorithm(
         PrepSource,
@@ -88,34 +88,34 @@ using Processes
         (1, 1),
     )
 
-    resolved1, resolved2 = Processes.resolve(algo1, algo2)
+    resolved1, resolved2 = StatefulAlgorithms.resolve(algo1, algo2)
 
-    @test Processes.isresolved(resolved1)
-    @test Processes.isresolved(resolved2)
-    @test Processes.getregistry(resolved1) === Processes.getregistry(resolved2)
+    @test StatefulAlgorithms.isresolved(resolved1)
+    @test StatefulAlgorithms.isresolved(resolved2)
+    @test StatefulAlgorithms.getregistry(resolved1) === StatefulAlgorithms.getregistry(resolved2)
 
-    shared_registry = Processes.getregistry(resolved1)
-    source_name = Processes.static_findkey(shared_registry, PrepSource)
-    target_name = Processes.static_findkey(shared_registry, PrepTarget)
-    other_name = Processes.static_findkey(shared_registry, PrepOther)
+    shared_registry = StatefulAlgorithms.getregistry(resolved1)
+    source_name = StatefulAlgorithms.static_findkey(shared_registry, PrepSource)
+    target_name = StatefulAlgorithms.static_findkey(shared_registry, PrepTarget)
+    other_name = StatefulAlgorithms.static_findkey(shared_registry, PrepOther)
 
-    sharedcontexts1, sharedvars1 = Processes._resolve_options(resolved1)
-    sharedcontexts2, sharedvars2 = Processes._resolve_options(resolved2)
+    sharedcontexts1, sharedvars1 = StatefulAlgorithms._resolve_options(resolved1)
+    sharedcontexts2, sharedvars2 = StatefulAlgorithms._resolve_options(resolved2)
 
     @test haskey(sharedcontexts1, source_name)
-    @test Processes.contextname(only(sharedcontexts1[source_name])) == target_name
+    @test StatefulAlgorithms.contextname(only(sharedcontexts1[source_name])) == target_name
     @test haskey(sharedcontexts1, target_name)
-    @test Processes.contextname(only(sharedcontexts1[target_name])) == source_name
+    @test StatefulAlgorithms.contextname(only(sharedcontexts1[target_name])) == source_name
     @test haskey(sharedvars1, other_name)
     @test length(sharedvars1[other_name]) == 1
-    @test Processes.get_fromname(only(sharedvars1[other_name])) == source_name
+    @test StatefulAlgorithms.get_fromname(only(sharedvars1[other_name])) == source_name
     @test isempty(sharedcontexts2)
     @test isempty(sharedvars2)
 
-    unique_comp = Processes.resolve(CompositeAlgorithm(Unique(PrepSource()), Unique(PrepSource()), (1, 1)))
-    unique_keys = (Processes.plan_child_namespace(unique_comp, 1), Processes.plan_child_namespace(unique_comp, 2))
+    unique_comp = StatefulAlgorithms.resolve(CompositeAlgorithm(Unique(PrepSource()), Unique(PrepSource()), (1, 1)))
+    unique_keys = (StatefulAlgorithms.plan_child_namespace(unique_comp, 1), StatefulAlgorithms.plan_child_namespace(unique_comp, 2))
     @test unique_keys[1] != unique_keys[2]
-    @test all(child -> child isa PrepSource, Processes.getalgos(unique_comp))
-    @test all(child -> !(child isa Processes.AbstractIdentifiableAlgo), Processes.getalgos(unique_comp))
-    @test length(Processes.findall(PrepSource, Processes.getregistry(unique_comp))) == 2
+    @test all(child -> child isa PrepSource, StatefulAlgorithms.getalgos(unique_comp))
+    @test all(child -> !(child isa StatefulAlgorithms.AbstractIdentifiableAlgo), StatefulAlgorithms.getalgos(unique_comp))
+    @test length(StatefulAlgorithms.findall(PrepSource, StatefulAlgorithms.getregistry(unique_comp))) == 2
 end

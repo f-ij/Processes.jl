@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
-using Processes
-import Processes as ps
+using StatefulAlgorithms
+import StatefulAlgorithms as ps
 
 @ProcessAlgorithm function OscillatorA(phase, freq, dt)
     phase = phase + freq * dt
@@ -19,15 +19,15 @@ end
     return (;phase_a, phase_b)
 end
 
-function Processes.init(::OscillatorA, input)
+function StatefulAlgorithms.init(::OscillatorA, input)
     return (;phase = 0.0, freq = 1.0, dt = 0.05)
 end
 
-function Processes.init(::OscillatorB, input)
+function StatefulAlgorithms.init(::OscillatorB, input)
     return (;phase = 1.0, freq = 0.9, dt = 0.05)
 end
 
-function Processes.init(::Coupling, input)
+function StatefulAlgorithms.init(::Coupling, input)
     return (;strength = 0.1)
 end
 

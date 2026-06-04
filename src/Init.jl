@@ -58,7 +58,7 @@ function initcontext(algo::F, c::ProcessContext = ProcessContext(algo), override
 end
 
 function makecontext(p::AbstractProcess, inputs_overrides...; lifetime=nothing)
-    lt = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
+    lt = isnothing(lifetime) ? StatefulAlgorithms.lifetime(p) : lifetime
     context(init(getalgo(p), inputs_overrides...; lifetime = lt))
 end
 """Build a fresh context for a process by replaying lifecycle init on its LA."""

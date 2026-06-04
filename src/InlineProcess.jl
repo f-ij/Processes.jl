@@ -71,7 +71,7 @@ getalgo(ip::InlineProcess) = ip.algo
 @inline function reset!(p::InlineProcess, inputs_overrides...)
     p.loopidx = 1
     initialized = init(getalgo(p), inputs_overrides...; lifetime = lifetime(p))
-    p.context = Processes.context(initialized)
+    p.context = StatefulAlgorithms.context(initialized)
     # TODO: Probably remove consumed flag
     p.consumed = false
     return true
@@ -93,7 +93,7 @@ end
     algo = getalgo(p)
     
     run_context = if isnothing(context)
-        Processes.context(p)
+        StatefulAlgorithms.context(p)
     else
         @assert context isa contexttype(p) "Wrong context shape for this process\n Context is of type $(typeof(context)), but expected $(contexttype(p))."
         context
@@ -101,7 +101,7 @@ end
 
     p.loopidx = 1
     runtime_inputs = _inline_runtime_inputs(algo, inputs_overrides, (; kwargs...))
-    inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
+    inputlifetime = isnothing(lifetime) ? StatefulAlgorithms.lifetime(p) : lifetime
     run_lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
 
     if (isnothing(threaded) && isthreaded(p)) || threaded === true
@@ -117,7 +117,7 @@ end
     algo = getalgo(p)
     
     run_context = if isnothing(context)
-        Processes.context(p)
+        StatefulAlgorithms.context(p)
     else
         @assert context isa contexttype(p) "Wrong context shape for this process\n Context is of type $(typeof(context)), but expected $(contexttype(p))."
         context
@@ -125,7 +125,7 @@ end
 
     p.loopidx = 1
     # loopdispatch = isnothing(repeat) ? lifetime(p) : _inline_process_lifetime(algo, repeat, nothing)
-    inputlifetime = isnothing(lifetime) ? Processes.lifetime(p) : lifetime
+    inputlifetime = isnothing(lifetime) ? StatefulAlgorithms.lifetime(p) : lifetime
     run_lifetime = _inline_process_lifetime(algo, repeats, inputlifetime)
     runtime_inputs = _inline_runtime_inputs(algo, inputs_overrides, (; kwargs...))
 

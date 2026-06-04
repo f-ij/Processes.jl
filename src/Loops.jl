@@ -73,7 +73,7 @@ end
 
 @inline function after_while(ip::IP, func::F, context::C, runtimecontext::RC, returnvalue, stored_context::SC = context) where {IP<:InlineProcess,F,C<:ProcessContext,RC<:ProcessContext,SC<:ProcessContext}
     @inline set_endtime!(ip)
-    Processes.context(ip, context)
+    StatefulAlgorithms.context(ip, context)
     return returnvalue
 end
 

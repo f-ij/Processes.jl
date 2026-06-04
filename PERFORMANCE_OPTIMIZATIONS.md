@@ -1,6 +1,6 @@
 # Performance optimization opportunities
 
-This document lists semantics-preserving optimization ideas for `Processes.jl`.
+This document lists semantics-preserving optimization ideas for `StatefulAlgorithms.jl`.
 It separates actual implementation ideas from validation work, benchmark notes,
 and things to avoid.
 
@@ -242,7 +242,7 @@ metadata when first-run latency matters.
 
 Relevant file:
 
-- `src/Processes.jl`
+- `src/StatefulAlgorithms.jl`
 
 `PrecompileTools` is loaded, but the workload block is commented. Add a small
 representative workload covering:

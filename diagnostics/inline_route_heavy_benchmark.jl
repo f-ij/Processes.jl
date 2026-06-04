@@ -3,17 +3,17 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 
 using Printf
 using Test
-using Processes
+using StatefulAlgorithms
 
 const INLINE_ROUTE_HEAVY_STEPS = parse(Int, get(ENV, "INLINE_ROUTE_HEAVY_STEPS", "20000"))
 const INLINE_ROUTE_HEAVY_RUNS = parse(Int, get(ENV, "INLINE_ROUTE_HEAVY_RUNS", "40"))
 const INLINE_ROUTE_HEAVY_SINK = Ref{Any}(nothing)
 
-struct InlineRouteSensor <: Processes.ProcessAlgorithm end
-struct InlineRouteFilter <: Processes.ProcessAlgorithm end
-struct InlineRouteController <: Processes.ProcessAlgorithm end
-struct InlineRoutePlant <: Processes.ProcessAlgorithm end
-struct InlineRouteAudit <: Processes.ProcessAlgorithm end
+struct InlineRouteSensor <: StatefulAlgorithms.ProcessAlgorithm end
+struct InlineRouteFilter <: StatefulAlgorithms.ProcessAlgorithm end
+struct InlineRouteController <: StatefulAlgorithms.ProcessAlgorithm end
+struct InlineRoutePlant <: StatefulAlgorithms.ProcessAlgorithm end
+struct InlineRouteAudit <: StatefulAlgorithms.ProcessAlgorithm end
 
 """Update the synthetic sensor state from the previous plant and controller state."""
 function inline_route_sensor_kernel(
@@ -137,12 +137,12 @@ function inline_route_audit_kernel(
 end
 
 """Initialize the sensor's local scalar state."""
-function Processes.init(::InlineRouteSensor, context::C) where {C}
+function StatefulAlgorithms.init(::InlineRouteSensor, context::C) where {C}
     return (; phase = 0.2, raw = 0.25, reference = 0.0, quality = 0.9, excitation = 0.1)
 end
 
 """Step the sensor and expose the routed signal fields."""
-function Processes.step!(::InlineRouteSensor, context::C) where {C}
+function StatefulAlgorithms.step!(::InlineRouteSensor, context::C) where {C}
     phase, raw, reference, quality, excitation = inline_route_sensor_kernel(
         context.phase,
         context.excitation,
@@ -155,12 +155,12 @@ function Processes.step!(::InlineRouteSensor, context::C) where {C}
 end
 
 """Initialize the estimator's local scalar state."""
-function Processes.init(::InlineRouteFilter, context::C) where {C}
+function StatefulAlgorithms.init(::InlineRouteFilter, context::C) where {C}
     return (; estimate = 0.2, rate = 0.0, bias = 0.0, residual = 0.0, tracking_error = 0.0)
 end
 
 """Step the estimator from routed sensor and plant values."""
-function Processes.step!(::InlineRouteFilter, context::C) where {C}
+function StatefulAlgorithms.step!(::InlineRouteFilter, context::C) where {C}
     estimate, rate, bias, residual, tracking_error = inline_route_filter_kernel(
         context.estimate,
         context.rate,
@@ -174,12 +174,12 @@ function Processes.step!(::InlineRouteFilter, context::C) where {C}
 end
 
 """Initialize the controller's local scalar state."""
-function Processes.init(::InlineRouteController, context::C) where {C}
+function StatefulAlgorithms.init(::InlineRouteController, context::C) where {C}
     return (; control = 0.0, integral = 0.0, command_power = 0.0, saturation = 0.0)
 end
 
 """Step the controller from routed estimator, sensor, and plant values."""
-function Processes.step!(::InlineRouteController, context::C) where {C}
+function StatefulAlgorithms.step!(::InlineRouteController, context::C) where {C}
     control, integral, command_power, saturation = inline_route_controller_kernel(
         context.control,
         context.integral,
@@ -196,12 +196,12 @@ function Processes.step!(::InlineRouteController, context::C) where {C}
 end
 
 """Initialize the plant's local scalar state."""
-function Processes.init(::InlineRoutePlant, context::C) where {C}
+function StatefulAlgorithms.init(::InlineRoutePlant, context::C) where {C}
     return (; position = 0.25, velocity = -0.08, energy = 0.2, load = 0.15, heat = 0.02, dt = 0.015)
 end
 
 """Step the plant from routed controller and estimator values."""
-function Processes.step!(::InlineRoutePlant, context::C) where {C}
+function StatefulAlgorithms.step!(::InlineRoutePlant, context::C) where {C}
     position, velocity, energy, load, heat, dt = inline_route_plant_kernel(
         context.position,
         context.velocity,
@@ -219,12 +219,12 @@ function Processes.step!(::InlineRoutePlant, context::C) where {C}
 end
 
 """Initialize the audit metrics."""
-function Processes.init(::InlineRouteAudit, context::C) where {C}
+function StatefulAlgorithms.init(::InlineRouteAudit, context::C) where {C}
     return (; checksum = 0.0, risk = 0.0, trend = 0.0, score = 0.0)
 end
 
 """Step the audit metrics from every routed subsystem output."""
-function Processes.step!(::InlineRouteAudit, context::C) where {C}
+function StatefulAlgorithms.step!(::InlineRouteAudit, context::C) where {C}
     checksum, risk, trend, score = inline_route_audit_kernel(
         context.checksum,
         context.risk,
@@ -436,8 +436,8 @@ function inline_route_plain_loop(steps::I) where {I<:Integer}
 end
 
 """Extract comparable scalar outputs from a routed inline process result."""
-function inline_route_summary(result::R) where {R<:Union{Processes.AbstractLoopAlgorithm, Processes.ProcessContext}}
-    ctx = result isa Processes.AbstractLoopAlgorithm ? Processes.context(result) : result
+function inline_route_summary(result::R) where {R<:Union{StatefulAlgorithms.AbstractLoopAlgorithm, StatefulAlgorithms.ProcessContext}}
+    ctx = result isa StatefulAlgorithms.AbstractLoopAlgorithm ? StatefulAlgorithms.context(result) : result
     sensor = ctx[:sensor]
     filter = ctx[:filter]
     controller = ctx[:controller]
@@ -478,7 +478,7 @@ function inline_route_process(steps::I) where {I<:Integer}
 end
 
 """Measure elapsed time and allocation for inline `run` from entrypoint to completion."""
-function inline_route_measure_process(process::IP, runs::I) where {IP<:Processes.InlineProcess, I<:Integer}
+function inline_route_measure_process(process::IP, runs::I) where {IP<:StatefulAlgorithms.InlineProcess, I<:Integer}
     reset!(process)
     INLINE_ROUTE_HEAVY_SINK[] = run(process)
 

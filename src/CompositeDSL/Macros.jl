@@ -98,17 +98,17 @@ function _dsl_expand_loopalgorithm(block, constructor_name::Symbol, expected_sch
             $(collected.step_exprs...)
 
             isempty(_dsl_algos) && error("`@$constructor_name` requires at least one algorithm entry.")
-            $(print_constructor ? :(Processes._dsl_print_constructor_call($(QuoteNode(constructor_name)), _dsl_algos, _dsl_specification, _dsl_states, _dsl_options)) : nothing)
+            $(print_constructor ? :(StatefulAlgorithms._dsl_print_constructor_call($(QuoteNode(constructor_name)), _dsl_algos, _dsl_specification, _dsl_states, _dsl_options)) : nothing)
             # Build the final `CompositeAlgorithm`/`Routine` using the same
             # constructor surface users would write by hand.
-            local _dsl_loopalgorithm = Processes._dsl_build_loopalgorithm(
+            local _dsl_loopalgorithm = StatefulAlgorithms._dsl_build_loopalgorithm(
                 Val{$(QuoteNode(constructor_name))}(),
                 _dsl_algos,
                 _dsl_specification,
                 _dsl_states,
                 _dsl_options,
             )
-            $(isnothing(final_expr) ? :(_dsl_loopalgorithm) : :(Processes.finalstep(_dsl_loopalgorithm, $(esc(final_expr)))))
+            $(isnothing(final_expr) ? :(_dsl_loopalgorithm) : :(StatefulAlgorithms.finalstep(_dsl_loopalgorithm, $(esc(final_expr)))))
         end
     end
     return _dsl_strip_generated_linenums!(expanded)
@@ -176,7 +176,7 @@ function _dsl_expand_simplealgorithm_resolved(
             $(collected.step_exprs...)
 
             isempty(_dsl_algos) && error("`@repeat n begin ... end` requires at least one algorithm entry.")
-            local _dsl_algo = Processes._dsl_build_loopalgorithm(
+            local _dsl_algo = StatefulAlgorithms._dsl_build_loopalgorithm(
                 Val{:CompositeAlgorithm}(),
                 _dsl_algos,
                 _dsl_specification,
@@ -186,7 +186,7 @@ function _dsl_expand_simplealgorithm_resolved(
             # Return the same resolved wrapper the outer builder expects from any
             # other DSL statement.
             local _dsl_inputs = Tuple((; kind = :simple, source = input.first, destination = input.second) for input in _dsl_external_inputs)
-            Processes._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
+            StatefulAlgorithms._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
         end
     end
     return _dsl_strip_generated_linenums!(expanded)
@@ -206,9 +206,9 @@ function _dsl_expand_repeated_block(
             local _dsl_owner = nothing
             local _dsl_outputs = ()
             local _dsl_repeats = $(_dsl_repeat_schedule_expr(repeats_expr))
-            local _dsl_algo = Processes.Routine(_dsl_inner.entity, (_dsl_repeats,))
+            local _dsl_algo = StatefulAlgorithms.Routine(_dsl_inner.entity, (_dsl_repeats,))
             local _dsl_inputs = _dsl_inner.inputs
-            Processes._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
+            StatefulAlgorithms._CompositeDSLResolved{:algo, typeof(_dsl_algo), typeof(_dsl_inputs)}(_dsl_algo, _dsl_inputs)
         end
     end
     return _dsl_strip_generated_linenums!(expanded)

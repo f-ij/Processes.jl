@@ -3,7 +3,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 
 using Printf
 using Test
-using Processes
+using StatefulAlgorithms
 
 const ROUTE_TRANSPARENCY_STEPS = parse(Int, get(ENV, "ROUTE_TRANSPARENCY_STEPS", "2000"))
 const ROUTE_TRANSPARENCY_RUNS = parse(Int, get(ENV, "ROUTE_TRANSPARENCY_RUNS", "40"))
@@ -203,15 +203,15 @@ end
 @doc "Observer process that writes a checksum and returns routed buffers." RouteDiagnosticObserver
 
 """Mirror process used several times to fan routed buffers into multiple writers."""
-struct RouteDiagnosticMirror{MirrorId} <: Processes.ProcessAlgorithm end
+struct RouteDiagnosticMirror{MirrorId} <: StatefulAlgorithms.ProcessAlgorithm end
 
 """Initialize the mirror's local score storage."""
-function Processes.init(::RouteDiagnosticMirror{MirrorId}, context::C) where {MirrorId, C}
+function StatefulAlgorithms.init(::RouteDiagnosticMirror{MirrorId}, context::C) where {MirrorId, C}
     return (; score = 0.0, samples = 0, mirror_buffer = zeros(Float64, 3))
 end
 
 """Update one mirror and return both local fields and routed buffers."""
-function Processes.step!(::RouteDiagnosticMirror{MirrorId}, context::C) where {MirrorId, C}
+function StatefulAlgorithms.step!(::RouteDiagnosticMirror{MirrorId}, context::C) where {MirrorId, C}
     score, samples, trace, scratch, mirror_buffer = diagnostic_mirror_kernel!(
         context.trace,
         context.scratch,
@@ -388,8 +388,8 @@ function bespoke_route_transparency_loop(steps::I) where {I<:Integer}
 end
 
 """Extract a compact comparable summary from a routed run result."""
-function route_transparency_summary(result::A) where {A<:Processes.AbstractLoopAlgorithm}
-    ctx = Processes.context(result)
+function route_transparency_summary(result::A) where {A<:StatefulAlgorithms.AbstractLoopAlgorithm}
+    ctx = StatefulAlgorithms.context(result)
     state = ctx[:_state]
     plant = ctx[:plant]
     controller = ctx[:controller]

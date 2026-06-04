@@ -3,7 +3,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 
 using BenchmarkTools
 using InteractiveUtils
-using Processes
+using StatefulAlgorithms
 
 struct IncBy{T}
     value::T
@@ -24,8 +24,8 @@ end
 const HOMOGENEOUS_ARGS = (IncBy(1), IncBy(2), IncBy(3), IncBy(4), IncBy(5), IncBy(6))
 const HETEROGENEOUS_ARGS = (IncBy(1), ScaleBy(3), IncBy(2.5), ScaleBy(4.0), ShiftLeft(1))
 
-old_unrollreplace(args) = Processes.unrollreplace_splat(apply_op, 1, args...)
-new_unrollreplace(args) = Processes.unrollreplace(apply_op, 1, args)
+old_unrollreplace(args) = StatefulAlgorithms.unrollreplace_splat(apply_op, 1, args...)
+new_unrollreplace(args) = StatefulAlgorithms.unrollreplace(apply_op, 1, args)
 
 function run_case(label, args)
     old_result = old_unrollreplace(args)

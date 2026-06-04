@@ -1,6 +1,6 @@
 include("_env.jl")
 include("FibLucDef.jl")
-import Processes as ps
+import StatefulAlgorithms as ps
 
 Fdup = Unique(Fib())
 Fdup2 = Unique(Fib)

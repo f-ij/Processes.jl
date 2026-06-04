@@ -52,7 +52,7 @@ macro ProcessAlgorithmOld(ex)
             # struct $FFunction <: ProcessAlgorithm end
             $struct_def
 
-            @inline function Processes.step!(f::$FFunction, context::C) where C <: Processes.AbstractContext
+            @inline function StatefulAlgorithms.step!(f::$FFunction, context::C) where C <: StatefulAlgorithms.AbstractContext
                 $(LineNumberNode(__source__.line, __source__.file))
                 (;$(splatnames...)) = context
                 @inline $FSymbol($(typeless_args...))

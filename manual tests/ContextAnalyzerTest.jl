@@ -1,8 +1,8 @@
 include("_env.jl")
 
-Base.include(Processes, joinpath(dirname(pathof(Processes)), "ContextAnalyzer", "ContextAnalyzer.jl"))
+Base.include(StatefulAlgorithms, joinpath(dirname(pathof(StatefulAlgorithms)), "ContextAnalyzer", "ContextAnalyzer.jl"))
 
-Processes.@ProcessAlgorithm function CaptureSeed(
+StatefulAlgorithms.@ProcessAlgorithm function CaptureSeed(
     @managed(history = Int[]);
     @inputs((; seed::Int, scale::Float64 = 1.0))
 )
@@ -10,9 +10,9 @@ Processes.@ProcessAlgorithm function CaptureSeed(
     return (; noise = seed * scale)
 end
 
-struct DirectContextRead <: Processes.ProcessAlgorithm end
+struct DirectContextRead <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::DirectContextRead, context::C) where {C <: Processes.AbstractContext}
+function StatefulAlgorithms.init(::DirectContextRead, context::C) where {C <: StatefulAlgorithms.AbstractContext}
     upstream = context.noise
     mis = get(context, :missing_value, 99)
     indexed = context[:capture_seed]
@@ -26,15 +26,15 @@ comp = @CompositeAlgorithm begin
     Logger(value = noise)
 end
 
-analysis = Processes.analyse_inits(comp)
-analysis_with_inputs = Processes.analyse_inits(
+analysis = StatefulAlgorithms.analyse_inits(comp)
+analysis_with_inputs = StatefulAlgorithms.analyse_inits(
     comp;
     inputs = (;
         CaptureSeed_1 = (; seed = 4, scale = 2.0),
         DirectContextRead_1 = (; noise = 8.0),
     ),
 )
-step_analysis = Processes.analyse_steps(
+step_analysis = StatefulAlgorithms.analyse_steps(
     comp;
     inputs = (;
         CaptureSeed_1 = (; seed = 4, scale = 2.0),
@@ -43,8 +43,8 @@ step_analysis = Processes.analyse_steps(
 )
 
 println("Requested inputs by view:")
-for view_key in sort!(collect(keys(Processes.requested_inputs(analysis))); by = string)
-    println("  ", view_key, " => ", Processes.requested_inputs(analysis)[view_key])
+for view_key in sort!(collect(keys(StatefulAlgorithms.requested_inputs(analysis))); by = string)
+    println("  ", view_key, " => ", StatefulAlgorithms.requested_inputs(analysis)[view_key])
 end
 
 println()
@@ -52,15 +52,15 @@ println(analysis)
 
 println()
 println("Stored inputs after seeded analysis:")
-for view_key in sort!(collect(keys(Processes.stored_inputs(analysis_with_inputs))); by = string)
-    println("  ", view_key, " => ", Processes.stored_inputs(analysis_with_inputs)[view_key])
+for view_key in sort!(collect(keys(StatefulAlgorithms.stored_inputs(analysis_with_inputs))); by = string)
+    println("  ", view_key, " => ", StatefulAlgorithms.stored_inputs(analysis_with_inputs)[view_key])
 end
 
 println()
-Processes.printevents(analysis_with_inputs)
+StatefulAlgorithms.printevents(analysis_with_inputs)
 
 println()
 println("Stored inputs after seeded step analysis:")
-for view_key in sort!(collect(keys(Processes.stored_inputs(step_analysis))); by = string)
-    println("  ", view_key, " => ", Processes.stored_inputs(step_analysis)[view_key])
+for view_key in sort!(collect(keys(StatefulAlgorithms.stored_inputs(step_analysis))); by = string)
+    println("  ", view_key, " => ", StatefulAlgorithms.stored_inputs(step_analysis)[view_key])
 end

@@ -3,17 +3,17 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 
 using Printf
 using Test
-using Processes
+using StatefulAlgorithms
 
 const SCALAR_DEPENDENCY_STEPS = parse(Int, get(ENV, "SCALAR_DEPENDENCY_STEPS", "100000"))
 const SCALAR_DEPENDENCY_TRIALS = parse(Int, get(ENV, "SCALAR_DEPENDENCY_TRIALS", "100"))
 const SCALAR_DEPENDENCY_SINK = Ref{Any}(nothing)
 
-struct DependencySource <: Processes.ProcessAlgorithm end
-struct DependencyMid <: Processes.ProcessAlgorithm end
-struct DependencySink <: Processes.ProcessAlgorithm end
-struct DependencyTopState <: Processes.ProcessAlgorithm end
-struct DependencyFeedback <: Processes.ProcessAlgorithm end
+struct DependencySource <: StatefulAlgorithms.ProcessAlgorithm end
+struct DependencyMid <: StatefulAlgorithms.ProcessAlgorithm end
+struct DependencySink <: StatefulAlgorithms.ProcessAlgorithm end
+struct DependencyTopState <: StatefulAlgorithms.ProcessAlgorithm end
+struct DependencyFeedback <: StatefulAlgorithms.ProcessAlgorithm end
 
 """Mutate a tiny preallocated buffer and return a compact checksum contribution."""
 function dependency_touch_buffer!(buffer::B, value::T, offset::I) where {T<:AbstractFloat, B<:AbstractVector{T}, I<:Integer}
@@ -23,7 +23,7 @@ function dependency_touch_buffer!(buffer::B, value::T, offset::I) where {T<:Abst
 end
 
 """Initialize the source state that owns the shared scalar fields."""
-function Processes.init(::A, context::C) where {A<:DependencySource,C<:Processes.AbstractContext}
+function StatefulAlgorithms.init(::A, context::C) where {A<:DependencySource,C<:StatefulAlgorithms.AbstractContext}
     return (;
         x = 0.25,
         feedback = 0.05,
@@ -35,22 +35,22 @@ function Processes.init(::A, context::C) where {A<:DependencySource,C<:Processes
 end
 
 """Initialize the middle stage that consumes source writes in the same iteration."""
-function Processes.init(::A, context::C) where {A<:DependencyMid,C<:Processes.AbstractContext}
+function StatefulAlgorithms.init(::A, context::C) where {A<:DependencyMid,C<:StatefulAlgorithms.AbstractContext}
     return (; y = -0.2, mid_accum = 0.0, mid_buffer = zeros(Float64, 3))
 end
 
 """Initialize the sink stage that consumes middle-stage writes in the same iteration."""
-function Processes.init(::A, context::C) where {A<:DependencySink,C<:Processes.AbstractContext}
+function StatefulAlgorithms.init(::A, context::C) where {A<:DependencySink,C<:StatefulAlgorithms.AbstractContext}
     return (; z = 0.3, sink_accum = 0.0, sink_buffer = zeros(Float64, 3))
 end
 
 """Initialize the feedback stage that writes back into the shared source state."""
-function Processes.init(::A, context::C) where {A<:DependencyFeedback,C<:Processes.AbstractContext}
+function StatefulAlgorithms.init(::A, context::C) where {A<:DependencyFeedback,C<:StatefulAlgorithms.AbstractContext}
     return (; local_feedback = 0.0, feedback_accum = 0.0, feedback_buffer = zeros(Float64, 3))
 end
 
 """Advance the source and publish values for later stages in this iteration."""
-function Processes.step!(::A, context::C) where {A<:DependencySource,C<:Processes.AbstractContext}
+function StatefulAlgorithms.step!(::A, context::C) where {A<:DependencySource,C<:StatefulAlgorithms.AbstractContext}
     x = muladd(0.91, context.x, 0.07 * context.feedback + 0.02 * context.shared + 0.005 * context.top_signal + 0.001)
     shared = muladd(0.97, context.shared, 0.03 * (x + context.feedback) + 0.0005)
     trace = context.trace
@@ -62,7 +62,7 @@ function Processes.step!(::A, context::C) where {A<:DependencySource,C<:Processe
 end
 
 """Read source writes, update a middle value, and mutate shared source state."""
-function Processes.step!(::A, context::C) where {A<:DependencyMid,C<:Processes.AbstractContext}
+function StatefulAlgorithms.step!(::A, context::C) where {A<:DependencyMid,C<:StatefulAlgorithms.AbstractContext}
     trace = context.trace
     scratch = context.scratch
     mid_buffer = context.mid_buffer
@@ -76,7 +76,7 @@ function Processes.step!(::A, context::C) where {A<:DependencyMid,C<:Processes.A
 end
 
 """Read middle and source writes, update a sink value, and mutate shared source state again."""
-function Processes.step!(::A, context::C) where {A<:DependencySink,C<:Processes.AbstractContext}
+function StatefulAlgorithms.step!(::A, context::C) where {A<:DependencySink,C<:StatefulAlgorithms.AbstractContext}
     trace = context.trace
     scratch = context.scratch
     sink_buffer = context.sink_buffer
@@ -91,7 +91,7 @@ function Processes.step!(::A, context::C) where {A<:DependencySink,C<:Processes.
 end
 
 """Merge route results into the composite-owned top-level state."""
-function Processes.step!(::A, context::C) where {A<:DependencyTopState,C<:Processes.AbstractContext}
+function StatefulAlgorithms.step!(::A, context::C) where {A<:DependencyTopState,C<:StatefulAlgorithms.AbstractContext}
     top_buffer = context.top_buffer
     top_term = dependency_touch_buffer!(top_buffer, context.z + context.y + context.shared, 1)
     top_signal = muladd(0.81, context.top_signal, 0.11 * context.feedback + 0.06 * context.z + 0.02 * top_term + 0.0001)
@@ -100,7 +100,7 @@ function Processes.step!(::A, context::C) where {A<:DependencyTopState,C<:Proces
 end
 
 """Read sink/middle/source writes and write feedback into the shared source state."""
-function Processes.step!(::A, context::C) where {A<:DependencyFeedback,C<:Processes.AbstractContext}
+function StatefulAlgorithms.step!(::A, context::C) where {A<:DependencyFeedback,C<:StatefulAlgorithms.AbstractContext}
     trace = context.trace
     scratch = context.scratch
     feedback_buffer = context.feedback_buffer
@@ -156,7 +156,7 @@ end
 
 """Create an inline process for the scalar dependency workload."""
 function scalar_dependency_process(steps::I) where {I<:Integer}
-    return Processes.InlineProcess(scalar_dependency_algorithm(); repeats = steps)
+    return StatefulAlgorithms.InlineProcess(scalar_dependency_algorithm(); repeats = steps)
 end
 
 """Run the dependency workload as ordinary local variables with the same write order."""
@@ -249,70 +249,70 @@ function scalar_dependency_plain(steps::I) where {I<:Integer}
 end
 
 """Run the dependency workload through the direct plan entrypoint."""
-function scalar_dependency_direct_plan_loop(process::IP) where {IP<:Processes.InlineProcess}
-    algo = @inline Processes.getalgo(process)
-    lifetime = @inline Processes.lifetime(process)
-    plan = @inline Processes.getplan(algo)
-    wiring = @inline Processes._root_wiring_view(algo, plan)
-    context = @inline Processes.context(process)
-    runtimecontext = @inline Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
+function scalar_dependency_direct_plan_loop(process::IP) where {IP<:StatefulAlgorithms.InlineProcess}
+    algo = @inline StatefulAlgorithms.getalgo(process)
+    lifetime = @inline StatefulAlgorithms.lifetime(process)
+    plan = @inline StatefulAlgorithms.getplan(algo)
+    wiring = @inline StatefulAlgorithms._root_wiring_view(algo, plan)
+    context = @inline StatefulAlgorithms.context(process)
+    runtimecontext = @inline StatefulAlgorithms._merge_into_globals(StatefulAlgorithms._empty_context(), (; process, lifetime))
 
-    context, runtimecontext = @inline Processes._step!(
+    context, runtimecontext = @inline StatefulAlgorithms._step!(
         plan,
         context,
         runtimecontext,
         wiring,
-        Processes.Namespace{nothing}(),
+        StatefulAlgorithms.Namespace{nothing}(),
         process,
         lifetime,
     )
-    @inline Processes.inc!(process)
+    @inline StatefulAlgorithms.inc!(process)
 
-    for _ in (@inline Processes.loopidx(process)):(@inline Processes.repeats(lifetime))
-        context, runtimecontext = @inline Processes._step!(
+    for _ in (@inline StatefulAlgorithms.loopidx(process)):(@inline StatefulAlgorithms.repeats(lifetime))
+        context, runtimecontext = @inline StatefulAlgorithms._step!(
             plan,
             context,
             runtimecontext,
             wiring,
-            Processes.Namespace{nothing}(),
+            StatefulAlgorithms.Namespace{nothing}(),
             process,
             lifetime,
         )
-        @inline Processes.inc!(process)
-        (@inline Processes.breakcondition(lifetime, process, context)) && break
+        @inline StatefulAlgorithms.inc!(process)
+        (@inline StatefulAlgorithms.breakcondition(lifetime, process, context)) && break
     end
 
     return context
 end
 
-"""Run the dependency workload through `Processes.loop` for an already reset inline process."""
-function scalar_dependency_direct_loop(process::IP) where {IP<:Processes.InlineProcess}
-    algo = Processes.getalgo(process)
-    context = Processes.context(process)
-    lifetime = Processes.lifetime(process)
+"""Run the dependency workload through `StatefulAlgorithms.loop` for an already reset inline process."""
+function scalar_dependency_direct_loop(process::IP) where {IP<:StatefulAlgorithms.InlineProcess}
+    algo = StatefulAlgorithms.getalgo(process)
+    context = StatefulAlgorithms.context(process)
+    lifetime = StatefulAlgorithms.lifetime(process)
     runtime_inputs = (;)
-    return Processes.loop(process, algo, context, lifetime, runtime_inputs)
+    return StatefulAlgorithms.loop(process, algo, context, lifetime, runtime_inputs)
 end
 
 """Run the dependency workload through the generated process-loop entrypoint."""
-function scalar_dependency_generated_processloop(process::IP) where {IP<:Processes.InlineProcess}
-    algo = Processes.getalgo(process)
-    context = Processes.context(process)
-    lifetime = Processes.lifetime(process)
+function scalar_dependency_generated_processloop(process::IP) where {IP<:StatefulAlgorithms.InlineProcess}
+    algo = StatefulAlgorithms.getalgo(process)
+    context = StatefulAlgorithms.context(process)
+    lifetime = StatefulAlgorithms.lifetime(process)
     runtime_inputs = (;)
-    return Processes.loop(
+    return StatefulAlgorithms.loop(
         process,
         algo,
         context,
         lifetime,
         runtime_inputs,
-        Processes.Resuming{false}(),
-        Processes.Generated(),
+        StatefulAlgorithms.Resuming{false}(),
+        StatefulAlgorithms.Generated(),
     )
 end
 
 """Extract comparable scalar values from the process result."""
-function scalar_dependency_summary(context::C) where {C<:Processes.ProcessContext}
+function scalar_dependency_summary(context::C) where {C<:StatefulAlgorithms.ProcessContext}
     source = context[:source]
     mid = context[:mid]
     sink = context[:sink]

@@ -1,14 +1,14 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
 @testset "ContextExchange buffers interactive updates" begin
     struct ExchangeTargetForTest <: ProcessAlgorithm end
 
-    function Processes.init(::ExchangeTargetForTest, context)
+    function StatefulAlgorithms.init(::ExchangeTargetForTest, context)
         return (; value = 1.0, count = 1)
     end
 
-    function Processes.step!(::ExchangeTargetForTest, context)
+    function StatefulAlgorithms.step!(::ExchangeTargetForTest, context)
         return (;)
     end
 
@@ -17,10 +17,10 @@ using Processes
         :_exchange => ContextExchange(),
         (1, 2),
     ))
-    context = Processes.context(init(algo, Init(:_exchange; vars = (Var(:target, :value),)); lifetime = Repeat(5)))
+    context = StatefulAlgorithms.context(init(algo, Init(:_exchange; vars = (Var(:target, :value),)); lifetime = Repeat(5)))
 
     interact!(context, :value => 2)
-    exchange_key = getkey(only(Processes._context_exchanges(context)))
+    exchange_key = getkey(only(StatefulAlgorithms._context_exchanges(context)))
     @test keys(context[exchange_key]) == (:store,)
     @test context[exchange_key].store.published.value isa Base.RefValue{Float64}
     @test context[exchange_key].store.pending.value isa Base.RefValue{Float64}
@@ -28,12 +28,12 @@ using Processes
     @test context[exchange_key].store.pending.value[] == 2.0
     @test context[exchange_key].store.haspending.value[]
 
-    context = Processes._step!(algo, context)
+    context = StatefulAlgorithms._step!(algo, context)
     @test context.target.value == 1.0
     @test context[exchange_key].store.pending.value[] == 2.0
     @test context[exchange_key].store.haspending.value[]
 
-    context = Processes._step!(algo, context)
+    context = StatefulAlgorithms._step!(algo, context)
     @test context.target.value == 2.0
     @test !context[exchange_key].store.haspending.value[]
 end
@@ -41,11 +41,11 @@ end
 @testset "InteractiveVar writes through ContextExchange" begin
     struct InteractiveVarTargetForTest <: ProcessAlgorithm end
 
-    function Processes.init(::InteractiveVarTargetForTest, context)
+    function StatefulAlgorithms.init(::InteractiveVarTargetForTest, context)
         return (; value = 1.0)
     end
 
-    function Processes.step!(::InteractiveVarTargetForTest, context)
+    function StatefulAlgorithms.step!(::InteractiveVarTargetForTest, context)
         return (;)
     end
 
@@ -54,12 +54,12 @@ end
         :_exchange => ContextExchange(),
         (1, 1),
     ))
-    context = Processes.context(init(algo, Init(:_exchange; vars = (Var(:target, :value),)); lifetime = Repeat(3)))
+    context = StatefulAlgorithms.context(init(algo, Init(:_exchange; vars = (Var(:target, :value),)); lifetime = Repeat(3)))
 
     ref = view(context, :value)
     @test ref[] == 1.0
     @test @inferred(ref[]) == 1.0
-    exchange_key = getkey(only(Processes._context_exchanges(context)))
+    exchange_key = getkey(only(StatefulAlgorithms._context_exchanges(context)))
     duplicate_ref = view(context, Var(exchange_key, :value))
 
     ref[] = 4
@@ -68,7 +68,7 @@ end
     @test context[exchange_key].store.pending.value[] == 4.0
     @test context[exchange_key].store.haspending.value[]
 
-    context = Processes._step!(algo, context)
+    context = StatefulAlgorithms._step!(algo, context)
     @test context.target.value == 4.0
     @test ref[] == 4.0
     @test duplicate_ref[] == 4.0
@@ -76,18 +76,18 @@ end
 
     typed_ref = view(context, :value)
     typed_ref[] = 5
-    context = Processes._step!(algo, context)
+    context = StatefulAlgorithms._step!(algo, context)
     @test typed_ref[] == 5.0
 end
 
 @testset "InteractiveVar polls ContextExchange state" begin
     struct PollingInteractiveTargetForTest <: ProcessAlgorithm end
 
-    function Processes.init(::PollingInteractiveTargetForTest, context)
+    function StatefulAlgorithms.init(::PollingInteractiveTargetForTest, context)
         return (; value = 1, seen = 0)
     end
 
-    function Processes.step!(::PollingInteractiveTargetForTest, context)
+    function StatefulAlgorithms.step!(::PollingInteractiveTargetForTest, context)
         return (; seen = context.seen + 1)
     end
 
@@ -96,12 +96,12 @@ end
         :_exchange => ContextExchange(),
         (1, 1),
     ))
-    context = Processes.context(init(algo, Init(:_exchange; vars = (Var(:target, :seen),)); lifetime = Repeat(3)))
+    context = StatefulAlgorithms.context(init(algo, Init(:_exchange; vars = (Var(:target, :seen),)); lifetime = Repeat(3)))
 
     seen_ref = view(context, :seen)
     @test seen_ref[] == 0
 
-    context = Processes._step!(algo, context)
+    context = StatefulAlgorithms._step!(algo, context)
     @test context.target.seen == 1
     @test seen_ref[] == 1
 
@@ -110,14 +110,14 @@ end
         :_exchange => ContextExchange(),
         (1, 2),
     ))
-    interval_context = Processes.context(init(interval_algo, Init(:_exchange; vars = (Var(:target, :seen),)); lifetime = Repeat(4)))
+    interval_context = StatefulAlgorithms.context(init(interval_algo, Init(:_exchange; vars = (Var(:target, :seen),)); lifetime = Repeat(4)))
     interval_ref = view(interval_context, :seen)
 
-    interval_context = Processes._step!(interval_algo, interval_context)
+    interval_context = StatefulAlgorithms._step!(interval_algo, interval_context)
     @test interval_context.target.seen == 1
     @test interval_ref[] == 0
 
-    interval_context = Processes._step!(interval_algo, interval_context)
+    interval_context = StatefulAlgorithms._step!(interval_algo, interval_context)
     @test interval_context.target.seen == 2
     @test interval_ref[] == 2
 end
@@ -125,11 +125,11 @@ end
 @testset "ContextExchange supports aliases and type selectors" begin
     struct AliasedExchangeTargetForTest <: ProcessAlgorithm end
 
-    function Processes.init(::AliasedExchangeTargetForTest, context)
+    function StatefulAlgorithms.init(::AliasedExchangeTargetForTest, context)
         return (; value = 1.0)
     end
 
-    function Processes.step!(::AliasedExchangeTargetForTest, context)
+    function StatefulAlgorithms.step!(::AliasedExchangeTargetForTest, context)
         return (;)
     end
 
@@ -138,7 +138,7 @@ end
         :_exchange => ContextExchange(),
         (1, 1),
     ))
-    context = Processes.context(init(
+    context = StatefulAlgorithms.context(init(
         algo,
         Init(:_exchange; vars = (:display => Var(AliasedExchangeTargetForTest, :value),));
         lifetime = Repeat(2),
@@ -146,7 +146,7 @@ end
 
     ref = view(context, :display)
     ref[] = 3
-    context = Processes._step!(algo, context)
+    context = StatefulAlgorithms._step!(algo, context)
 
     @test context.target.value == 3.0
     @test ref[] == 3.0
@@ -155,7 +155,7 @@ end
 @testset "InteractiveVar requires a ContextExchange" begin
     struct NoExchangeTargetForTest <: ProcessAlgorithm end
 
-    function Processes.init(::NoExchangeTargetForTest, context)
+    function StatefulAlgorithms.init(::NoExchangeTargetForTest, context)
         return (; value = 1.0)
     end
 
@@ -168,11 +168,11 @@ end
 @testset "ContextExchange timer skips reads and writes" begin
     struct TimedExchangeTargetForTest <: ProcessAlgorithm end
 
-    function Processes.init(::TimedExchangeTargetForTest, context)
+    function StatefulAlgorithms.init(::TimedExchangeTargetForTest, context)
         return (; value = 1.0, seen = 0)
     end
 
-    function Processes.step!(::TimedExchangeTargetForTest, context)
+    function StatefulAlgorithms.step!(::TimedExchangeTargetForTest, context)
         return (; seen = context.seen + 1)
     end
 
@@ -181,7 +181,7 @@ end
         :_exchange => ContextExchange(; period = 60.0),
         (1, 1),
     ))
-    context = Processes.context(init(
+    context = StatefulAlgorithms.context(init(
         algo,
         Init(:_exchange; vars = (Var(:target, :value), Var(:target, :seen)));
         lifetime = Repeat(3),
@@ -189,12 +189,12 @@ end
     value_ref = view(context, :value)
     seen_ref = view(context, :seen)
 
-    context = Processes._step!(algo, context)
+    context = StatefulAlgorithms._step!(algo, context)
     @test value_ref[] == 1.0
     @test seen_ref[] == 1
 
     value_ref[] = 4
-    context = Processes._step!(algo, context)
+    context = StatefulAlgorithms._step!(algo, context)
     @test context.target.value == 1.0
     @test value_ref[] == 1.0
     @test seen_ref[] == 1
@@ -203,11 +203,11 @@ end
 @testset "ContextExchange updates running process state" begin
     struct SlowInteractiveTargetForTest <: ProcessAlgorithm end
 
-    function Processes.init(::SlowInteractiveTargetForTest, context)
+    function StatefulAlgorithms.init(::SlowInteractiveTargetForTest, context)
         return (; value = 1, seen = 0)
     end
 
-    function Processes.step!(::SlowInteractiveTargetForTest, context)
+    function StatefulAlgorithms.step!(::SlowInteractiveTargetForTest, context)
         sleep(0.01)
         return (; seen = context.seen + 1)
     end

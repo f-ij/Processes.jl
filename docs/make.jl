@@ -1,14 +1,14 @@
 push!(LOAD_PATH, joinpath(@__DIR__, "..", "src"))
 
 using Documenter
-using Processes
+using StatefulAlgorithms
 
-Base.include(Processes, joinpath(@__DIR__, "..", "src", "ContextAnalyzer", "ContextAnalyzer.jl"))
+Base.include(StatefulAlgorithms, joinpath(@__DIR__, "..", "src", "ContextAnalyzer", "ContextAnalyzer.jl"))
 
 makedocs(
-    modules = [Processes],
+    modules = [StatefulAlgorithms],
     checkdocs = :none,
-    sitename = "Processes",
+    sitename = "StatefulAlgorithms",
     format = Documenter.HTML(),
     pages = [
         "Home" => "index.md",
@@ -38,7 +38,7 @@ makedocs(
 )
 
 deploydocs(
-    repo = "github.com/f-ij/Processes.jl.git",
+    repo = "github.com/f-ij/StatefulAlgorithms.jl.git",
     devbranch = "main",
     versions = ["stable" => "dev", "dev" => "dev"],
 )

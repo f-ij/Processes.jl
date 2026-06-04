@@ -71,9 +71,9 @@ julia --startup-file=no --project=. diagnostics/immutable_fix/run_checks.jl
 Manual commands:
 
 ```sh
-julia --startup-file=no --project=. -e 'using Test, Processes; include("test/CompositeDSLTest.jl")'
-julia --startup-file=no --project=. -e 'using Test, Processes; include("test/RuntimeInputsLifecycleTest.jl")'
-julia --startup-file=no --project=. -e 'using Test, Processes; include("test/ContextInjectorTest.jl")'
+julia --startup-file=no --project=. -e 'using Test, StatefulAlgorithms; include("test/CompositeDSLTest.jl")'
+julia --startup-file=no --project=. -e 'using Test, StatefulAlgorithms; include("test/RuntimeInputsLifecycleTest.jl")'
+julia --startup-file=no --project=. -e 'using Test, StatefulAlgorithms; include("test/ContextInjectorTest.jl")'
 ```
 
 Current status:

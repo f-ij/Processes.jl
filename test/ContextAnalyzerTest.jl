@@ -1,12 +1,12 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
-isdefined(Processes, :ContextAnalyzer) || Base.include(
-    Processes,
-    joinpath(dirname(pathof(Processes)), "ContextAnalyzer", "ContextAnalyzer.jl"),
+isdefined(StatefulAlgorithms, :ContextAnalyzer) || Base.include(
+    StatefulAlgorithms,
+    joinpath(dirname(pathof(StatefulAlgorithms)), "ContextAnalyzer", "ContextAnalyzer.jl"),
 )
 
-Processes.@ProcessAlgorithm function CaptureSeedForAnalyzerTest(
+StatefulAlgorithms.@ProcessAlgorithm function CaptureSeedForAnalyzerTest(
     @managed(history = Int[]);
     @inputs((; seed::Int, scale::Float64 = 1.0))
 )
@@ -14,9 +14,9 @@ Processes.@ProcessAlgorithm function CaptureSeedForAnalyzerTest(
     return (; noise = seed * scale)
 end
 
-struct DirectContextReadForAnalyzerTest <: Processes.ProcessAlgorithm end
+struct DirectContextReadForAnalyzerTest <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::DirectContextReadForAnalyzerTest, context::C) where {C <: Processes.AbstractContext}
+function StatefulAlgorithms.init(::DirectContextReadForAnalyzerTest, context::C) where {C <: StatefulAlgorithms.AbstractContext}
     upstream = context.noise
     mis = get(context, :missing_value, 99)
     indexed = context[:capture_seed]
@@ -31,8 +31,8 @@ end
         Logger(value = noise)
     end
 
-    analysis = Processes.analyse_inits(comp)
-    analysis_with_inputs = Processes.analyse_inits(
+    analysis = StatefulAlgorithms.analyse_inits(comp)
+    analysis_with_inputs = StatefulAlgorithms.analyse_inits(
         comp;
         inputs = (;
             CaptureSeedForAnalyzerTest_1 = (; seed = 4, scale = 2.0),
@@ -40,13 +40,13 @@ end
         ),
     )
 
-    @test Processes.requested_inputs(analysis) == Dict(
+    @test StatefulAlgorithms.requested_inputs(analysis) == Dict(
         :_state => [:seed],
         :CaptureSeedForAnalyzerTest_1 => [:seed],
         :DirectContextReadForAnalyzerTest_1 => [:noise, :missing_value, :capture_seed],
     )
 
-    stored = Processes.stored_inputs(analysis_with_inputs)
+    stored = StatefulAlgorithms.stored_inputs(analysis_with_inputs)
     @test stored[:_state] == (; seed = 4)
     @test stored[:CaptureSeedForAnalyzerTest_1] == (; seed = 4, scale = 2.0, history = Int[])
     @test stored[:DirectContextReadForAnalyzerTest_1] == (; noise = 8.0, upstream = 8.0, mis = 99, indexed = nothing)
@@ -58,7 +58,7 @@ end
     @test length(memory.errors) == 1
     @test isempty(seeded_memory.errors)
 
-    printed = sprint(io -> Processes.printevents(io, analysis_with_inputs))
+    printed = sprint(io -> StatefulAlgorithms.printevents(io, analysis_with_inputs))
     @test occursin("ContextAnalyser events:", printed)
     @test occursin("DirectContextReadForAnalyzerTest_1", printed)
 end

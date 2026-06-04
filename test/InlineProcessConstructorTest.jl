@@ -1,15 +1,15 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
 @testset "InlineProcess constructor matches Process inputs and overrides" begin
     struct InlineAccumulator <: ProcessAlgorithm end
 
-    function Processes.init(::InlineAccumulator, context)
+    function StatefulAlgorithms.init(::InlineAccumulator, context)
         (; start) = context
         return (; value = start, delta = 0)
     end
 
-    function Processes.step!(::InlineAccumulator, context)
+    function StatefulAlgorithms.step!(::InlineAccumulator, context)
         return (; value = context.value + context.delta)
     end
 
@@ -30,11 +30,11 @@ end
 @testset "Process constructor resolves inputs for algorithm types" begin
     struct TypeInputAccumulator <: ProcessAlgorithm end
 
-    function Processes.init(::TypeInputAccumulator, context)
+    function StatefulAlgorithms.init(::TypeInputAccumulator, context)
         return (; value = context.start)
     end
 
-    function Processes.step!(::TypeInputAccumulator, context)
+    function StatefulAlgorithms.step!(::TypeInputAccumulator, context)
         return (; value = context.value + 1)
     end
 
@@ -51,18 +51,18 @@ end
     @test context(p)[TypeInputAccumulator].value == 6
 
     unresolved = CompositeAlgorithm(TypeInputAccumulator)
-    @test_throws ArgumentError Processes.resolve_process_inputs_overrides(
+    @test_throws ArgumentError StatefulAlgorithms.resolve_process_inputs_overrides(
         unresolved,
         (Input(TypeInputAccumulator, :start => 4),),
     )
 
     resolved = resolve(unresolved)
     specs = (Input(TypeInputAccumulator, :start => 4),)
-    named_inputs, named_overrides = Processes.resolve_process_inputs_overrides(
+    named_inputs, named_overrides = StatefulAlgorithms.resolve_process_inputs_overrides(
         resolved,
         specs,
     )
     @test length(named_inputs) == 1
     @test isempty(named_overrides)
-    @test @inferred(Processes.resolve_process_inputs_overrides(resolved, specs)) == (named_inputs, named_overrides)
+    @test @inferred(StatefulAlgorithms.resolve_process_inputs_overrides(resolved, specs)) == (named_inputs, named_overrides)
 end

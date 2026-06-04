@@ -1,12 +1,12 @@
-# Processes.jl
+# StatefulAlgorithms.jl
 
-Processes.jl helps you build Julia loops from small named pieces.
+StatefulAlgorithms.jl helps you build Julia loops from small named pieces.
 
 An **algorithm** is a piece of loop code. It is a subtype of
-`ProcessAlgorithm` and usually defines `Processes.step!`.
+`ProcessAlgorithm` and usually defines `StatefulAlgorithms.step!`.
 
 A **state** is a piece of setup data. It is a subtype of `ProcessState` and
-usually defines `Processes.init`.
+usually defines `StatefulAlgorithms.init`.
 
 A **process** combines algorithms, states, inputs, and stop rules into a running
 loop. While it runs, values live in a **context**. Each algorithm or state gets

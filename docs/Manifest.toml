@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.12.5"
+julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "b2c97a8bead9a6fbe13631ff76579ceb82b7de12"
+project_hash = "e31d76ceeaef41f2b2bd8a7a3ef061a82af50b4b"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
@@ -318,12 +318,6 @@ deps = ["Unicode"]
 uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 version = "1.11.0"
 
-[[deps.Processes]]
-deps = ["DataStructures", "Documenter", "JLD2", "MacroTools", "PrecompileTools", "Preferences", "StaticArrays", "UUIDs"]
-path = "/Users/fabian/Documents/GitHub/Processes.jl"
-uuid = "6a369836-0793-447d-b7ee-625716f2d05b"
-version = "0.1.2"
-
 [[deps.REPL]]
 deps = ["InteractiveUtils", "JuliaSyntaxHighlighting", "Markdown", "Sockets", "StyledStrings", "Unicode"]
 uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -369,6 +363,12 @@ version = "1.11.0"
 [[deps.Sockets]]
 uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
 version = "1.11.0"
+
+[[deps.StatefulAlgorithms]]
+deps = ["DataStructures", "Documenter", "JLD2", "MacroTools", "PrecompileTools", "Preferences", "StaticArrays", "UUIDs"]
+path = "/Users/fabian/Documents/GitHub/Processes.jl"
+uuid = "3c03ca44-5aad-4ad5-81af-1baae4bc194b"
+version = "0.1.2"
 
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "PrecompileTools", "Random", "StaticArraysCore"]

@@ -63,10 +63,10 @@ end
 
 RuntimeInputState(specs::Tuple = ()) = RuntimeInputState{typeof(specs)}(specs)
 
-Processes.registry_allowmerge(::Union{RuntimeInputState, Type{<:RuntimeInputState}}) = true
+StatefulAlgorithms.registry_allowmerge(::Union{RuntimeInputState, Type{<:RuntimeInputState}}) = true
 match_by(ia::Union{IdentifiableAlgo{<:RuntimeInputState}, Type{<:IdentifiableAlgo{<:RuntimeInputState}}}) = ValMatcher(getkey(ia))
 
-Processes.init(::RuntimeInputState, context) = (;)
+StatefulAlgorithms.init(::RuntimeInputState, context) = (;)
 
 Base.merge(a::RuntimeInputState, b::RuntimeInputState) = RuntimeInputState((a.specs..., b.specs...))
 

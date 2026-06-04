@@ -31,7 +31,7 @@ macro ProcessState(ex)
     q = quote
             struct $FFunction <: ProcessState end
 
-            @inline function Processes.init(s::$FFunction, context::C) where C <: Processes.AbstractContext
+            @inline function StatefulAlgorithms.init(s::$FFunction, context::C) where C <: StatefulAlgorithms.AbstractContext
                 (;$(splatnames...)) = context
                 return @inline $FSymbol($(typeless_args...))
             end

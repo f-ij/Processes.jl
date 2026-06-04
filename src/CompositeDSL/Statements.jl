@@ -24,7 +24,7 @@ end
 """Rewrite one DSL variable selector into a runtime `Var` selector expression."""
 function _dsl_repeat_lifetime_selector_expr(selector::S) where {S}
     if selector isa Symbol
-        return :(Processes._composite_dsl_var_selector(_dsl_producers, _dsl_owner, _dsl_outputs, $(QuoteNode(selector))))
+        return :(StatefulAlgorithms._composite_dsl_var_selector(_dsl_producers, _dsl_owner, _dsl_outputs, $(QuoteNode(selector))))
     end
     return esc(selector)
 end
@@ -35,31 +35,31 @@ function _dsl_repeat_schedule_expr(schedule_value::SV) where {SV}
         constructor = _dsl_lifetime_constructor_name(schedule_value.args[1])
         if constructor == :Repeat
             length(schedule_value.args) == 2 || error("Repeat schedules must be written as `Repeat(n)`.")
-            return :(Processes.Repeat($(esc(schedule_value.args[2]))))
+            return :(StatefulAlgorithms.Repeat($(esc(schedule_value.args[2]))))
         elseif constructor == :Indefinite
             length(schedule_value.args) == 1 || error("Indefinite schedules must be written as `Indefinite()`.")
-            return :(Processes.Indefinite())
+            return :(StatefulAlgorithms.Indefinite())
         elseif constructor == :Until
             length(schedule_value.args) == 3 || error("Until schedules must be written as `Until(condition, selector)`.")
-            return :(Processes.Until($(esc(schedule_value.args[2])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[3]))))
+            return :(StatefulAlgorithms.Until($(esc(schedule_value.args[2])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[3]))))
         elseif constructor == :RepeatOrUntil
             length(schedule_value.args) == 4 || error("RepeatOrUntil schedules must be written as `RepeatOrUntil(condition, n, selector)`.")
-            return :(Processes.RepeatOrUntil($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[4]))))
+            return :(StatefulAlgorithms.RepeatOrUntil($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[4]))))
         elseif constructor == :AtLeast
             length(schedule_value.args) == 4 || error("AtLeast schedules must be written as `AtLeast(condition, n, selector)`.")
-            return :(Processes.AtLeast($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[4]))))
+            return :(StatefulAlgorithms.AtLeast($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[4]))))
         elseif constructor == :AtLeastAtMost
             length(schedule_value.args) == 5 || error("AtLeastAtMost schedules must be written as `AtLeastAtMost(condition, min, max, selector)`.")
-            return :(Processes.AtLeastAtMost($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(esc(schedule_value.args[4])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[5]))))
+            return :(StatefulAlgorithms.AtLeastAtMost($(esc(schedule_value.args[2])), $(esc(schedule_value.args[3])), $(esc(schedule_value.args[4])), $(_dsl_repeat_lifetime_selector_expr(schedule_value.args[5]))))
         end
     end
-    return :(Processes.Repeat(Int($(esc(schedule_value)))))
+    return :(StatefulAlgorithms.Repeat(Int($(esc(schedule_value)))))
 end
 
 """Validate schedule usage and turn it into the constructor specification entry."""
 function _dsl_schedule_expr(schedule_kind::Symbol, schedule_value, expected_schedule::Symbol, owner_name::Symbol)
     if schedule_kind == :default
-        return expected_schedule == :repeat ? :(Processes.Repeat(1)) : :(1)
+        return expected_schedule == :repeat ? :(StatefulAlgorithms.Repeat(1)) : :(1)
     elseif expected_schedule == :none
         got = schedule_kind == :every ? "@interval" : "@repeat"
         error("Use plain entries inside `@$(owner_name) ... begin ... end`, not `$got`.")
@@ -74,13 +74,13 @@ end
 
 """Emit either `algo` or `:alias => algo` for the target constructor call."""
 function _dsl_algorithm_entry_expr(alias_name::Symbol, entity_expr::E = :(_dsl_entity)) where {E}
-    return :(Processes._composite_dsl_entry($entity_expr, $(QuoteNode(alias_name))))
+    return :(StatefulAlgorithms._composite_dsl_entry($entity_expr, $(QuoteNode(alias_name))))
 end
 
 """Wrap an algorithm constructor entry in a parser option when conditionally included."""
 function _dsl_maybe_conditional_entry_expr(entry_expr, include_condition)
     isnothing(include_condition) && return entry_expr
-    return :(Processes.IfWrapped($entry_expr, $include_condition))
+    return :(StatefulAlgorithms.IfWrapped($entry_expr, $include_condition))
 end
 
 """Guard constructor-side metadata for conditionally included entries."""
@@ -121,13 +121,13 @@ function _dsl_build_global_route_statement(stmt, alias_map, context_map; include
     end
 
     route = if isnothing(transform) && isnothing(reverse_transform)
-        :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source))))
+        :(StatefulAlgorithms.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source))))
     elseif isnothing(reverse_transform)
-        :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); transform = $(esc(transform))))
+        :(StatefulAlgorithms.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); transform = $(esc(transform))))
     elseif isnothing(transform)
-        :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); reverse_transform = $(esc(reverse_transform))))
+        :(StatefulAlgorithms.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); reverse_transform = $(esc(reverse_transform))))
     else
-        :(Processes.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); transform = $(esc(transform)), reverse_transform = $(esc(reverse_transform))))
+        :(StatefulAlgorithms.Route($(esc(source.owner)) => $(esc(target.owner)), $(QuoteNode(source.source)) => $(QuoteNode(target.source)); transform = $(esc(transform)), reverse_transform = $(esc(reverse_transform))))
     end
     return _dsl_maybe_guard_metadata_expr(:(push!(_dsl_options, $route)), include_condition)
 end
@@ -147,7 +147,7 @@ end
 """Return an expression that prefixes nested state warning paths with one context alias."""
 function _dsl_contextual_entity_expr(context_alias::Symbol)
     context_alias == Symbol() && return :(_dsl_resolved.entity)
-    return :(Processes._composite_dsl_prefix_state_diagnostic_paths(_dsl_resolved.entity, $(QuoteNode(context_alias))))
+    return :(StatefulAlgorithms._composite_dsl_prefix_state_diagnostic_paths(_dsl_resolved.entity, $(QuoteNode(context_alias))))
 end
 
 """Remember the pushed algorithm index for a `@context` alias."""
@@ -210,8 +210,8 @@ function _dsl_build_state_bind_statement(stmt::S, context_map::CM) where {S, CM<
     source.field == target.field || error("@bind currently requires matching field names. Got `$(source.display)` and `$(target.display)`.")
 
     return quote
-        Processes._composite_dsl_mark_local_shared_state_field!(_dsl_states, $(QuoteNode(source.field)))
-        Processes._composite_dsl_mark_context_shared_state_field!(_dsl_algos, _dsl_context_indices, $(QuoteNode(target.context_alias)), $(QuoteNode(target.field)))
+        StatefulAlgorithms._composite_dsl_mark_local_shared_state_field!(_dsl_states, $(QuoteNode(source.field)))
+        StatefulAlgorithms._composite_dsl_mark_context_shared_state_field!(_dsl_algos, _dsl_context_indices, $(QuoteNode(target.context_alias)), $(QuoteNode(target.field)))
     end
 end
 
@@ -227,7 +227,7 @@ function _dsl_build_state_merge_statement(stmt::S, context_map::CM) where {S, CM
     all(selector -> selector.field == field, selectors) || error("@merge currently requires matching field names. Got `$(join(getproperty.(selectors, :display), ", "))`.")
 
     shared_field_marks = map(selectors) do selector
-        :(Processes._composite_dsl_mark_context_shared_state_field!(_dsl_algos, _dsl_context_indices, $(QuoteNode(selector.context_alias)), $(QuoteNode(selector.field))))
+        :(StatefulAlgorithms._composite_dsl_mark_context_shared_state_field!(_dsl_algos, _dsl_context_indices, $(QuoteNode(selector.context_alias)), $(QuoteNode(selector.field))))
     end
     return quote
         $(shared_field_marks...)
@@ -256,9 +256,9 @@ function _dsl_parse_context_write_assignment(alias_map, context_map, outputs::Tu
     value_spec, value_input = _dsl_parse_function_positional_arg(alias_map, context_map, inner, known_outputs, 1)
     inputs = isnothing(value_input) ? () : (_dsl_context_write_value_input(value_input),)
     spec_expr = if isnothing(value_input)
-        :(Processes.ContextWrite($(QuoteNode(output)), $(_dsl_context_write_value_expr(value_spec))))
+        :(StatefulAlgorithms.ContextWrite($(QuoteNode(output)), $(_dsl_context_write_value_expr(value_spec))))
     else
-        :(Processes.ContextWrite($(QuoteNode(output))))
+        :(StatefulAlgorithms.ContextWrite($(QuoteNode(output))))
     end
     return (
         kind = :entity,
@@ -283,9 +283,9 @@ end
 """Lower `buffer .= value` and `buffer[idx...] .= value` to broadcast mutation calls."""
 function _dsl_broadcast_assignment_call(lhs, rhs)
     if lhs isa Expr && lhs.head == :ref && !isempty(lhs.args)
-        return Expr(:call, :(Processes.context_broadcast_index!), lhs.args[1], rhs, lhs.args[2:end]...)
+        return Expr(:call, :(StatefulAlgorithms.context_broadcast_index!), lhs.args[1], rhs, lhs.args[2:end]...)
     end
-    return Expr(:call, :(Processes.context_broadcast!), lhs, rhs)
+    return Expr(:call, :(StatefulAlgorithms.context_broadcast!), lhs, rhs)
 end
 
 function _dsl_context_write_value_expr(spec)
@@ -316,7 +316,7 @@ function _dsl_parse_owned_write_target(alias_map, context_map, lhs)
         source isa Symbol || return nothing
         base = lhs.args[1]
         if base isa Symbol && haskey(alias_map, base)
-            return (; owner = :(Processes._composite_dsl_write_owner($(alias_map[base]), $(QuoteNode(base)))), source)
+            return (; owner = :(StatefulAlgorithms._composite_dsl_write_owner($(alias_map[base]), $(QuoteNode(base)))), source)
         end
     end
     return _dsl_parse_owned_route_expr(alias_map, context_map, lhs)
@@ -339,19 +339,19 @@ function _dsl_build_owned_write_statement(lhs, rhs, alias_map, context_map, know
     end
     inputs_expr = _dsl_inputs_expr(inputs)
     spec_expr = if isnothing(value_input)
-        :(Processes.ContextWrite($(QuoteNode(owned_route.source)), $(_dsl_context_write_value_expr(value_spec))))
+        :(StatefulAlgorithms.ContextWrite($(QuoteNode(owned_route.source)), $(_dsl_context_write_value_expr(value_spec))))
     else
-        :(Processes.ContextWrite($(QuoteNode(owned_route.source))))
+        :(StatefulAlgorithms.ContextWrite($(QuoteNode(owned_route.source))))
     end
 
     return quote
         local _dsl_outputs = ()
-        local _dsl_resolved = Processes._resolve_composite_dsl_entity($(esc(spec_expr)), $inputs_expr, _dsl_outputs, Val{Symbol()}())
+        local _dsl_resolved = StatefulAlgorithms._resolve_composite_dsl_entity($(esc(spec_expr)), $inputs_expr, _dsl_outputs, Val{Symbol()}())
         local _dsl_owner = _dsl_resolved.entity
         push!(_dsl_algos, _dsl_resolved.entity)
         push!(_dsl_specification, $schedule_expr)
         $(_dsl_maybe_guard_metadata_expr(quote
-            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+            StatefulAlgorithms._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
         end, include_condition))
     end
 end
@@ -414,10 +414,10 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
             local _dsl_output = $(QuoteNode(output))
             local _dsl_owner = $(esc(owned_route.owner))
             if haskey(_dsl_state_owners, _dsl_output)
-                Processes._composite_dsl_push_local_option!(
+                StatefulAlgorithms._composite_dsl_push_local_option!(
                     _dsl_options,
                     _dsl_owner,
-                    Processes.Route(_dsl_owner => _dsl_state_owners[_dsl_output], _dsl_output => _dsl_output),
+                    StatefulAlgorithms.Route(_dsl_owner => _dsl_state_owners[_dsl_output], _dsl_output => _dsl_output),
                 )
                 _dsl_producers[_dsl_output] = _dsl_state_owners[_dsl_output]
             else
@@ -441,24 +441,24 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
         inputs_expr = _dsl_inputs_expr(parsed.inputs)
         metadata_expr = quote
             $(map(parsed.shares) do share_source
-                :(Processes._composite_dsl_push_local_option!(_dsl_options, _dsl_owner, Processes.Share($(share_source), _dsl_owner)))
+                :(StatefulAlgorithms._composite_dsl_push_local_option!(_dsl_options, _dsl_owner, StatefulAlgorithms.Share($(share_source), _dsl_owner)))
             end...)
-            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
-            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+            StatefulAlgorithms._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+            StatefulAlgorithms._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
         end
         return quote
             local _dsl_outputs = $outputs_expr
             # Resolve the user-facing DSL entity into a normal algorithm/state
             # object plus the routed input metadata the builder needs.
-            local _dsl_resolved = Processes._resolve_composite_dsl_entity($(esc(parsed.spec_expr)), $inputs_expr, _dsl_outputs, Val{$(QuoteNode(customname))}())
+            local _dsl_resolved = StatefulAlgorithms._resolve_composite_dsl_entity($(esc(parsed.spec_expr)), $inputs_expr, _dsl_outputs, Val{$(QuoteNode(customname))}())
             local _dsl_entity = $entity_expr
             local _dsl_owner = $share_target_expr
-            if _dsl_resolved isa Processes._CompositeDSLResolved{:state}
+            if _dsl_resolved isa StatefulAlgorithms._CompositeDSLResolved{:state}
                 # Inline states are stored separately and claim ownership of
                 # their outputs immediately.
                 $(_dsl_maybe_guard_metadata_expr(quote
                     push!(_dsl_states, _dsl_entity)
-                    Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_owner, _dsl_outputs)
+                    StatefulAlgorithms._composite_dsl_register_outputs!(_dsl_producers, _dsl_owner, _dsl_outputs)
                 end, include_condition))
             else
                 # Algorithms are appended to the constructor argument list and
@@ -475,8 +475,8 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
         algo_entry_expr = _dsl_maybe_conditional_entry_expr(_dsl_algorithm_entry_expr(parsed.alias_name), include_condition)
         owner_expr = _dsl_share_endpoint_expr(parsed.alias_name)
         metadata_expr = quote
-            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
-            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+            StatefulAlgorithms._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+            StatefulAlgorithms._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
         end
         return quote
             local _dsl_outputs = $outputs_expr
@@ -505,14 +505,14 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     if parsed.kind == :keyword_call
         metadata_expr = quote
             $(map(parsed.shares) do share_source
-                :(Processes._composite_dsl_push_local_option!(_dsl_options, _dsl_owner, Processes.Share($(share_source), _dsl_owner)))
+                :(StatefulAlgorithms._composite_dsl_push_local_option!(_dsl_options, _dsl_owner, StatefulAlgorithms.Share($(share_source), _dsl_owner)))
             end...)
-            Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
-            Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+            StatefulAlgorithms._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+            StatefulAlgorithms._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
         end
         return quote
             local _dsl_outputs = $outputs_expr
-            local _dsl_resolved = Processes._resolve_composite_dsl_keyword_call(
+            local _dsl_resolved = StatefulAlgorithms._resolve_composite_dsl_keyword_call(
                 $(esc(parsed.spec_expr)),
                 $keyword_args_expr,
                 $keyword_display_expr,
@@ -530,14 +530,14 @@ function _dsl_build_statement(stmt, alias_map, context_map, known_outputs::Set{S
     end
 
     metadata_expr = quote
-        Processes._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
-        Processes._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
+        StatefulAlgorithms._composite_dsl_add_routes!(_dsl_options, _dsl_producers, _dsl_external_inputs, _dsl_owner, _dsl_resolved.inputs)
+        StatefulAlgorithms._composite_dsl_bind_outputs!(_dsl_options, _dsl_producers, _dsl_state_owners, _dsl_owner, _dsl_outputs)
     end
     return quote
         local _dsl_outputs = $outputs_expr
         # Function-call syntax stays on a dedicated path so we can recover
         # positional inputs and keyword captures for `FuncWrapper`.
-        local _dsl_resolved = Processes._resolve_composite_dsl_call(
+        local _dsl_resolved = StatefulAlgorithms._resolve_composite_dsl_call(
             $(esc(parsed.spec_expr)),
             $keyword_args_expr,
             $positional_values_expr,

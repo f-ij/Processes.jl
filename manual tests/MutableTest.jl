@@ -4,12 +4,12 @@ mutable struct MutableTestAlgo <: ProcessAlgorithm
     value::Int
 end
 
-function Processes.init(algo::MutableTestAlgo, _input)
+function StatefulAlgorithms.init(algo::MutableTestAlgo, _input)
     algo.value = 0
     return (;)
 end
 
-function Processes.step!(algo::MutableTestAlgo, context)
+function StatefulAlgorithms.step!(algo::MutableTestAlgo, context)
     algo.value += 1
     return (;)
 end

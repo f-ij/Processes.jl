@@ -1,4 +1,4 @@
-module Processes
+module StatefulAlgorithms
     const modulefolder = @__DIR__
 
     export getcontext, context, Process, start, quit
@@ -93,26 +93,26 @@ module Processes
     #         struct Fib <: ProcessAlgorithm end
     #         struct Luc <: ProcessAlgorithm end
 
-    #         function Processes.step!(::Fib, context)
+    #         function StatefulAlgorithms.step!(::Fib, context)
     #             fiblist = context.fiblist
     #             push!(fiblist, fiblist[end] + fiblist[end-1])
     #             return (;)
     #         end
 
-    #         function Processes.init(::Fib, context)
+    #         function StatefulAlgorithms.init(::Fib, context)
     #             n_calls = num_calls(context)
     #             fiblist = Int[0, 1]
     #             processsizehint!(fiblist, context)
     #             return (;fiblist)
     #         end
 
-    #         function Processes.step!(::Luc, context)
+    #         function StatefulAlgorithms.step!(::Luc, context)
     #             luclist = context.luclist
     #             push!(luclist, luclist[end] + luclist[end-1])
     #             return (;)
     #         end
 
-    #         function Processes.init(::Luc, context)
+    #         function StatefulAlgorithms.init(::Luc, context)
     #             luclist = Int[2, 1]
     #             processsizehint!(luclist,context)
     #             return (;luclist)

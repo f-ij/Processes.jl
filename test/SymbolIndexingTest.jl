@@ -1,23 +1,23 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
 @testset "Symbol indexing and targeted initcontext" begin
     struct SymbolInitAlgo <: ProcessAlgorithm end
     struct SymbolOtherAlgo <: ProcessAlgorithm end
 
-    function Processes.init(::SymbolInitAlgo, context)
+    function StatefulAlgorithms.init(::SymbolInitAlgo, context)
         (; value = context.seed)
     end
-    Processes.init(::SymbolOtherAlgo, context) = (;)
-    Processes.step!(::SymbolInitAlgo, context) = (;)
-    Processes.step!(::SymbolOtherAlgo, context) = (;)
+    StatefulAlgorithms.init(::SymbolOtherAlgo, context) = (;)
+    StatefulAlgorithms.step!(::SymbolInitAlgo, context) = (;)
+    StatefulAlgorithms.step!(::SymbolOtherAlgo, context) = (;)
 
     resolved = resolve(CompositeAlgorithm(SymbolInitAlgo, SymbolOtherAlgo, (1, 1)))
     reg = getregistry(resolved)
 
-    @test Processes.getalgo(reg[:SymbolInitAlgo_1]) == resolved[:SymbolInitAlgo_1]
+    @test StatefulAlgorithms.getalgo(reg[:SymbolInitAlgo_1]) == resolved[:SymbolInitAlgo_1]
     @test resolved[:SymbolInitAlgo_1] == resolved.SymbolInitAlgo_1
-    @test Processes.getkey(reg[:SymbolOtherAlgo_1]) == :SymbolOtherAlgo_1
+    @test StatefulAlgorithms.getkey(reg[:SymbolOtherAlgo_1]) == :SymbolOtherAlgo_1
 
     ctx = ProcessContext(resolved)
     ctx = initcontext(ctx, :SymbolInitAlgo_1; inputs = (; seed = 3))
@@ -34,11 +34,11 @@ using Processes
 end
 
 @testset "ProcessContext properties expose subcontexts without storage-field collisions" begin
-    ctx = Processes.ProcessContext(
+    ctx = StatefulAlgorithms.ProcessContext(
         (;
-            reg = Processes.SubContext(:reg, (; value = 1)),
-            registry = Processes.SubContext(:registry, (; value = 2)),
-            subcontexts = Processes.SubContext(:subcontexts, (; value = 3)),
+            reg = StatefulAlgorithms.SubContext(:reg, (; value = 1)),
+            registry = StatefulAlgorithms.SubContext(:registry, (; value = 2)),
+            subcontexts = StatefulAlgorithms.SubContext(:subcontexts, (; value = 3)),
         ),
         nothing,
     )
@@ -47,23 +47,23 @@ end
     @test ctx.reg.value == 1
     @test ctx.registry.value == 2
     @test ctx.subcontexts.value == 3
-    @test isnothing(Processes.getregistry(ctx))
-    @test keys(Processes.get_subcontexts(ctx)) == (:reg, :registry, :subcontexts)
+    @test isnothing(StatefulAlgorithms.getregistry(ctx))
+    @test keys(StatefulAlgorithms.get_subcontexts(ctx)) == (:reg, :registry, :subcontexts)
 end
 
 @testset "SubContextView aliases can be replaced from alias type" begin
     struct ViewAliasAlgo <: ProcessAlgorithm end
 
-    Processes.init(::ViewAliasAlgo, context) = (; foo = 1)
-    Processes.step!(::ViewAliasAlgo, context) = (;)
+    StatefulAlgorithms.init(::ViewAliasAlgo, context) = (; foo = 1)
+    StatefulAlgorithms.step!(::ViewAliasAlgo, context) = (;)
 
     resolved = resolve(CompositeAlgorithm(:view_alias => ViewAliasAlgo(), (1,)))
     ctx = initcontext(resolved; lifetime = Repeat(1))
     scv = view(ctx, resolved[:view_alias])
-    alias = Processes.VarAliases(foo = :bar)
-    aliased = Processes.withaliases(scv, alias)
+    alias = StatefulAlgorithms.VarAliases(foo = :bar)
+    aliased = StatefulAlgorithms.withaliases(scv, alias)
 
-    @test Processes.varaliases(aliased) === typeof(alias)
-    @test Processes.algo_to_subcontext_names(aliased, :bar) == :foo
+    @test StatefulAlgorithms.varaliases(aliased) === typeof(alias)
+    @test StatefulAlgorithms.algo_to_subcontext_names(aliased, :bar) == :foo
     @test aliased.bar == 1
 end

@@ -270,7 +270,7 @@ function runprocessinline!(worker::P; lifetime = nothing, repeats = nothing, rep
     algo = getalgo(worker)
     inputs = _validate_runtime_inputs(algo, (; kwargs...))
     base_context = _has_typed_runtime_context(worker) ? _typed_runtime_context(worker) : context(worker)
-    lt = Processes.lifetime(worker)
+    lt = StatefulAlgorithms.lifetime(worker)
     result = loop(worker, algo, base_context, lt, inputs, Resuming{false}())
 
     worker.lastresult = result

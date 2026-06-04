@@ -18,8 +18,8 @@ The analyzer lives in `src/ContextAnalyzer/ContextAnalyzer.jl` and is currently 
 Load it into the module with:
 
 ```julia
-using Processes
-Base.include(Processes, joinpath(dirname(pathof(Processes)), "ContextAnalyzer", "ContextAnalyzer.jl"))
+using StatefulAlgorithms
+Base.include(StatefulAlgorithms, joinpath(dirname(pathof(StatefulAlgorithms)), "ContextAnalyzer", "ContextAnalyzer.jl"))
 ```
 
 ## Running Analysis
@@ -27,7 +27,7 @@ Base.include(Processes, joinpath(dirname(pathof(Processes)), "ContextAnalyzer", 
 Use `analyse_inits` on a loop algorithm:
 
 ```julia
-analysis = Processes.analyse_inits(comp)
+analysis = StatefulAlgorithms.analyse_inits(comp)
 ```
 
 This first builds a mock loop algorithm from the resolved one, with all repeats
@@ -47,7 +47,7 @@ The analyzer records:
 Use `analyse_steps` when you want to probe runtime reads as well:
 
 ```julia
-analysis = Processes.analyse_steps(comp)
+analysis = StatefulAlgorithms.analyse_steps(comp)
 ```
 
 By default this first runs the init analysis pass and then executes each flattened
@@ -56,7 +56,7 @@ step-capable leaf once from that mock loop algorithm.
 You can disable the init pass when you already have enough seeded state:
 
 ```julia
-analysis = Processes.analyse_steps(comp; init = false, inputs = (; ...))
+analysis = StatefulAlgorithms.analyse_steps(comp; init = false, inputs = (; ...))
 ```
 
 Step analysis is still best-effort.
@@ -68,7 +68,7 @@ It does not try to perfectly reproduce every runtime routing/share writeback cas
 You can pass per-view inputs with the `inputs` keyword:
 
 ```julia
-analysis = Processes.analyse_inits(
+analysis = StatefulAlgorithms.analyse_inits(
     comp;
     inputs = (;
         CaptureSeed_1 = (; seed = 4, scale = 2.0),
@@ -100,8 +100,8 @@ println(analysis)
 Use these helpers for programmatic access:
 
 ```julia
-Processes.requested_inputs(analysis)
-Processes.stored_inputs(analysis)
+StatefulAlgorithms.requested_inputs(analysis)
+StatefulAlgorithms.stored_inputs(analysis)
 analysis.memory.errors
 ```
 
@@ -119,7 +119,7 @@ Event traces are not printed by default.
 Print them explicitly with:
 
 ```julia
-Processes.printevents(analysis)
+StatefulAlgorithms.printevents(analysis)
 ```
 
 This prints the recorded `view`, `getproperty`, `get`, `haskey`, and `getindex` events in order.
@@ -148,6 +148,6 @@ If you want better analysis results, prefer direct view reads over indirect look
 ## Typical Workflow
 
 1. Run `analyse_inits(comp)` once.
-2. Inspect `Processes.requested_inputs(analysis)`.
+2. Inspect `StatefulAlgorithms.requested_inputs(analysis)`.
 3. Seed the next round with `analyse_inits(comp; inputs = ...)`.
 4. Repeat until the interesting init paths stop asking for unknown values.

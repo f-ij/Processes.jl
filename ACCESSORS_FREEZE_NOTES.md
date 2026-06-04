@@ -14,7 +14,7 @@ types, the generic reconstruction machinery can produce a much harder compiler
 problem than the equivalent package-specific constructor rebuild.
 
 The current source avoids that path. Context updates stay immutable, but use
-small Processes-specific rebuild helpers instead:
+small StatefulAlgorithms-specific rebuild helpers instead:
 
 - `withdata(sc, data)` rebuilds `SubContext`.
 - `withruntime(pc, runtime)` rebuilds `ProcessContext` with a new `_runtime`.
@@ -77,7 +77,7 @@ large concrete immutable context rebuild types all compiled together.
 
 ## Accessors Experiment Results
 
-The vendored `InteractiveIsing.jl/deps/Processes` copy was patched locally to
+The vendored `InteractiveIsing.jl/deps/StatefulAlgorithms` copy was patched locally to
 compare context rebuild strategies against the same probe.
 
 Results:
@@ -181,7 +181,7 @@ replace_namedtuple_field(nt, Val(name), value)
 The old Accessors and mutable `setfield!` alternatives are left as comments near
 the relevant code paths where useful for comparison.
 
-`src/Processes.jl` no longer imports `Accessors.@set` for these context rebuilds,
+`src/StatefulAlgorithms.jl` no longer imports `Accessors.@set` for these context rebuilds,
 and Accessors is no longer a direct dependency in `Project.toml` or
 `Manifest.toml`.
 

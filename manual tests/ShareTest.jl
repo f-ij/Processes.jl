@@ -1,5 +1,5 @@
 include("_env.jl")
-import Processes as ps
+import StatefulAlgorithms as ps
 
 @ProcessAlgorithm function Oscillator(state, velocity, dt, trajectory)
     new_vel = velocity - state * dt
@@ -8,7 +8,7 @@ import Processes as ps
     return (;state = new_state, velocity = new_vel)
 end
 
-function Processes.init(::Oscillator, context)
+function StatefulAlgorithms.init(::Oscillator, context)
     (;dt) = context
     trajectory = Float64[1.0]
     processsizehint!(trajectory, context)
@@ -21,7 +21,7 @@ end
     return (;velocity)
 end
 
-function Processes.init(::DampedFollower, context)
+function StatefulAlgorithms.init(::DampedFollower, context)
     return (;damp = 0.05)
 end
 

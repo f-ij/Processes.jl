@@ -39,7 +39,7 @@ specialization/codegen cost rather than semantic runtime work.
    replacement is package-local and deliberately small: `replace_namedtuple_field`
    rebuilds one existing `NamedTuple` field, while `withdata`, `withruntime`, and
    `withsubcontexts` rebuild the immutable context wrappers. This mimics only
-   the behavior Processes needs from `@set`, without generic lens machinery.
+   the behavior StatefulAlgorithms needs from `@set`, without generic lens machinery.
 
 5. Constructor-time async loop precompile was disabled for user-shaped
    `Process` values. The previous constructor scheduled `Base.precompile` on a
@@ -166,7 +166,7 @@ routine made entirely of plain function calls, state routes, keyword routes, and
 one transform route. This is intended to precompile generic DSL construction
 machinery that applies to any user DSL. It cannot precompile a user's exact
 function/lambda types or exact context shape, so it improves but does not
-eliminate construction latency. On this machine it increased Processes package
+eliminate construction latency. On this machine it increased StatefulAlgorithms package
 precompile by roughly 5 seconds and moved the 30-statement diagnostic's
 construction phases modestly lower, especially resolve and cold entry.
 

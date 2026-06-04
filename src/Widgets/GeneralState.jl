@@ -46,7 +46,7 @@ end
     GeneralState{Fields, Required, DefaultValuesBuilder, ExplicitlySharedFields, DiagnosticFieldPaths}(default_values_builder)
 end
 
-Processes.registry_allowmerge(::Union{GeneralState, Type{<:GeneralState}}) = true
+StatefulAlgorithms.registry_allowmerge(::Union{GeneralState, Type{<:GeneralState}}) = true
 
 @inline general_state_fields(::GeneralState{Fields}) where {Fields} = Fields
 @inline general_state_required_fields(::GeneralState{Fields, Required}) where {Fields, Required} = Required
@@ -221,7 +221,7 @@ end
 end
 
 """Initialize a `GeneralState` from a context or plain named tuple."""
-@generated function Processes.init(state::GeneralState{Fields, Required, DefaultValuesBuilder}, context::C) where {Fields, Required, DefaultValuesBuilder, C <: Union{Processes.AbstractContext, NamedTuple}}
+@generated function StatefulAlgorithms.init(state::GeneralState{Fields, Required, DefaultValuesBuilder}, context::C) where {Fields, Required, DefaultValuesBuilder, C <: Union{StatefulAlgorithms.AbstractContext, NamedTuple}}
     values = Expr[]
     for field in Fields
         if field in Required

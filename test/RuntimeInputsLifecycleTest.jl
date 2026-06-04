@@ -1,100 +1,100 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
-struct LifecycleInitA <: Processes.ProcessAlgorithm end
-struct LifecycleInitB <: Processes.ProcessAlgorithm end
-mutable struct RuntimeShapeChanger <: Processes.ProcessAlgorithm
+struct LifecycleInitA <: StatefulAlgorithms.ProcessAlgorithm end
+struct LifecycleInitB <: StatefulAlgorithms.ProcessAlgorithm end
+mutable struct RuntimeShapeChanger <: StatefulAlgorithms.ProcessAlgorithm
     count::Int
 end
-struct PauseRuntimeInputConsumer <: Processes.ProcessAlgorithm end
+struct PauseRuntimeInputConsumer <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::LifecycleInitA, context)
+function StatefulAlgorithms.init(::LifecycleInitA, context)
     return (; x = Ref(get(context, :x, 0)), z = get(context, :z, 0))
 end
 
-function Processes.init(::LifecycleInitB, context)
+function StatefulAlgorithms.init(::LifecycleInitB, context)
     return (; y = Ref(get(context, :y, 0)))
 end
 
-function Processes.step!(::LifecycleInitA, context)
+function StatefulAlgorithms.step!(::LifecycleInitA, context)
     context.x[] += 1
     return (;)
 end
 
-function Processes.step!(::LifecycleInitB, context)
+function StatefulAlgorithms.step!(::LifecycleInitB, context)
     context.y[] += 1
     return (;)
 end
 
-function Processes.step!(algo::RuntimeShapeChanger, context)
+function StatefulAlgorithms.step!(algo::RuntimeShapeChanger, context)
     algo.count += 1
     return algo.count == 1 ? (; added = 1) : (; added = 1, extra = 1)
 end
 
-Processes.init(::PauseRuntimeInputConsumer, context) = (; total = 0)
+StatefulAlgorithms.init(::PauseRuntimeInputConsumer, context) = (; total = 0)
 
-function Processes.step!(::PauseRuntimeInputConsumer, context)
+function StatefulAlgorithms.step!(::PauseRuntimeInputConsumer, context)
     sleep(0.005)
     return (; total = context.total + context.delta)
 end
 
 runtime_inputs_lifecycle_value(seed, temp, scale; bias = 0) = seed + temp * scale + bias
-runtime_shape_context(ctx) = getproperty(Processes.get_subcontexts(ctx), :RuntimeShapeChanger_1)
-runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
+runtime_shape_context(ctx) = getproperty(StatefulAlgorithms.get_subcontexts(ctx), :RuntimeShapeChanger_1)
+runtime_input_bucket(ctx) = getproperty(StatefulAlgorithms.get_subcontexts(ctx), :_input)
 
 @testset "Runtime inputs and LoopAlgorithm lifecycle" begin
     @test Input === Init
     @test Init(LifecycleInitA; x = 1).vars == (; x = 1)
     @test Init(; x = 1).vars == (; x = 1)
     @test Input(LifecycleInitA, :x => 2).vars == (; x = 2)
-    @test !Processes.isresolved(Init(LifecycleInitA; x = 1))
-    @test !Processes.isresolved(typeof(Init(LifecycleInitA; x = 1)))
-    @test !Processes.isresolved(Init(; x = 1))
-    @test !Processes.isresolved(typeof(Init(; x = 1)))
-    @test Processes.isalltargets(Init(; x = 1))
-    @test Processes.isalltargets(typeof(Init(; x = 1)))
-    @test !Processes.isalltargets(Init(LifecycleInitA; x = 1))
-    @test !Processes.isalltargets(Override(LifecycleInitA; x = 1))
-    @test Processes.isresolved(Init(:LifecycleInitA_1; x = 1))
-    @test Processes.isresolved(typeof(Init(:LifecycleInitA_1; x = 1)))
+    @test !StatefulAlgorithms.isresolved(Init(LifecycleInitA; x = 1))
+    @test !StatefulAlgorithms.isresolved(typeof(Init(LifecycleInitA; x = 1)))
+    @test !StatefulAlgorithms.isresolved(Init(; x = 1))
+    @test !StatefulAlgorithms.isresolved(typeof(Init(; x = 1)))
+    @test StatefulAlgorithms.isalltargets(Init(; x = 1))
+    @test StatefulAlgorithms.isalltargets(typeof(Init(; x = 1)))
+    @test !StatefulAlgorithms.isalltargets(Init(LifecycleInitA; x = 1))
+    @test !StatefulAlgorithms.isalltargets(Override(LifecycleInitA; x = 1))
+    @test StatefulAlgorithms.isresolved(Init(:LifecycleInitA_1; x = 1))
+    @test StatefulAlgorithms.isresolved(typeof(Init(:LifecycleInitA_1; x = 1)))
 
     la = CompositeAlgorithm(LifecycleInitA, LifecycleInitB, (1, 1))
     initialized = init(la, Init(LifecycleInitA; x = 1), Init(LifecycleInitB; y = 2))
     replayed = init(initialized)
     overridden = init(replayed, Init(LifecycleInitA; x = 5))
 
-    @test Processes.context(replayed)[LifecycleInitA].x[] == 1
-    @test Processes.context(replayed)[LifecycleInitB].y[] == 2
-    @test Processes.context(overridden)[LifecycleInitA].x[] == 5
-    @test Processes.context(overridden)[LifecycleInitB].y[] == 2
+    @test StatefulAlgorithms.context(replayed)[LifecycleInitA].x[] == 1
+    @test StatefulAlgorithms.context(replayed)[LifecycleInitB].y[] == 2
+    @test StatefulAlgorithms.context(overridden)[LifecycleInitA].x[] == 5
+    @test StatefulAlgorithms.context(overridden)[LifecycleInitB].y[] == 2
 
     general_init = init(la, Init(; x = 3, y = 4, z = 5))
-    @test Processes.context(general_init)[LifecycleInitA].x[] == 3
-    @test Processes.context(general_init)[LifecycleInitA].z == 5
-    @test Processes.context(general_init)[LifecycleInitB].y[] == 4
+    @test StatefulAlgorithms.context(general_init)[LifecycleInitA].x[] == 3
+    @test StatefulAlgorithms.context(general_init)[LifecycleInitA].z == 5
+    @test StatefulAlgorithms.context(general_init)[LifecycleInitB].y[] == 4
 
     targeted_after_general = init(la, Init(; x = 3, y = 4), Init(LifecycleInitA; x = 8))
-    @test Processes.context(targeted_after_general)[LifecycleInitA].x[] == 8
-    @test Processes.context(targeted_after_general)[LifecycleInitB].y[] == 4
+    @test StatefulAlgorithms.context(targeted_after_general)[LifecycleInitA].x[] == 8
+    @test StatefulAlgorithms.context(targeted_after_general)[LifecycleInitB].y[] == 4
 
-    b_ref = Processes.context(overridden)[LifecycleInitB].y
+    b_ref = StatefulAlgorithms.context(overridden)[LifecycleInitB].y
     partial = partialinit(overridden, Init(LifecycleInitA; x = 9, z = 4))
 
-    @test Processes.context(partial)[LifecycleInitA].x[] == 9
-    @test Processes.context(partial)[LifecycleInitA].z == 4
-    @test Processes.context(partial)[LifecycleInitB].y === b_ref
+    @test StatefulAlgorithms.context(partial)[LifecycleInitA].x[] == 9
+    @test StatefulAlgorithms.context(partial)[LifecycleInitA].z == 4
+    @test StatefulAlgorithms.context(partial)[LifecycleInitB].y === b_ref
 
     resolved_la = resolve(la)
-    resolved_target = getkey(only(findall(LifecycleInitA, Processes.getregistry(resolved_la))))
-    resolved_input = only(Processes.resolve(Processes.getregistry(resolved_la), Init(resolved_target; x = 7)))
-    @test Processes.get_ref(resolved_input) === nothing
-    @test Processes.isresolved(resolved_input)
-    @test Processes.isresolved(typeof(resolved_input))
-    resolved_general_inputs = Processes.resolve(Processes.getregistry(resolved_la), Init(; x = 11))
-    @test length(resolved_general_inputs) == length(keys(Processes.getregistry(resolved_la)))
-    @test all(Processes.isresolved, resolved_general_inputs)
+    resolved_target = getkey(only(findall(LifecycleInitA, StatefulAlgorithms.getregistry(resolved_la))))
+    resolved_input = only(StatefulAlgorithms.resolve(StatefulAlgorithms.getregistry(resolved_la), Init(resolved_target; x = 7)))
+    @test StatefulAlgorithms.get_ref(resolved_input) === nothing
+    @test StatefulAlgorithms.isresolved(resolved_input)
+    @test StatefulAlgorithms.isresolved(typeof(resolved_input))
+    resolved_general_inputs = StatefulAlgorithms.resolve(StatefulAlgorithms.getregistry(resolved_la), Init(; x = 11))
+    @test length(resolved_general_inputs) == length(keys(StatefulAlgorithms.getregistry(resolved_la)))
+    @test all(StatefulAlgorithms.isresolved, resolved_general_inputs)
     initialized_by_symbol = init(resolved_la, Init(resolved_target; x = 7))
-    @test Processes.context(initialized_by_symbol)[LifecycleInitA].x[] == 7
+    @test StatefulAlgorithms.context(initialized_by_symbol)[LifecycleInitA].x[] == 7
 
     runtime_algo = @CompositeAlgorithm begin
         @state seed = 1
@@ -110,52 +110,52 @@ runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
     @test_throws ErrorException run(initialized_runtime; temp = 1, scale = 2)
 
     runtime_result = run(initialized_runtime; temp = 1.5, scale = 2)
-    runtime_context = Processes.context(runtime_result)
+    runtime_context = StatefulAlgorithms.context(runtime_result)
     @test isempty(runtime_context[:FuncWrapper_1])
-    @test !haskey(Processes.getglobals(runtime_context), :value)
-    @test isempty(Processes.getruntimeinput(runtime_context))
+    @test !haskey(StatefulAlgorithms.getglobals(runtime_context), :value)
+    @test isempty(StatefulAlgorithms.getruntimeinput(runtime_context))
     @test isempty(runtime_input_bucket(runtime_context))
-    @test !haskey(Processes.getglobals(runtime_context), :process)
+    @test !haskey(StatefulAlgorithms.getglobals(runtime_context), :process)
 
     for entry in (runtime_algo, resolve(runtime_algo), initialized_runtime)
         process = Process(entry; repeats = 1)
         run(process; temp = 2.0, scale = 3)
         wait(process)
-        @test Processes._has_typed_runtime_context(process)
+        @test StatefulAlgorithms._has_typed_runtime_context(process)
         @test isnothing(process.runtime_context)
         fetched_context = fetch(process)
-        @test !haskey(Processes.getglobals(fetched_context), :value)
-        @test isempty(Processes.context(process)[:FuncWrapper_1])
-        @test !haskey(Processes.getglobals(Processes.context(process)), :value)
-        @test isempty(Processes.getruntimeinput(Processes.context(process)))
-        @test isempty(runtime_input_bucket(Processes.context(process)))
-        @test !haskey(Processes.getglobals(Processes.context(process)), :process)
+        @test !haskey(StatefulAlgorithms.getglobals(fetched_context), :value)
+        @test isempty(StatefulAlgorithms.context(process)[:FuncWrapper_1])
+        @test !haskey(StatefulAlgorithms.getglobals(StatefulAlgorithms.context(process)), :value)
+        @test isempty(StatefulAlgorithms.getruntimeinput(StatefulAlgorithms.context(process)))
+        @test isempty(runtime_input_bucket(StatefulAlgorithms.context(process)))
+        @test !haskey(StatefulAlgorithms.getglobals(StatefulAlgorithms.context(process)), :process)
         close(process)
     end
 
     inline_worker = Process(runtime_algo; repeats = 1)
-    Processes.runprocessinline!(inline_worker; temp = 2.0, scale = 3)
-    @test Processes._has_typed_runtime_context(inline_worker)
+    StatefulAlgorithms.runprocessinline!(inline_worker; temp = 2.0, scale = 3)
+    @test StatefulAlgorithms._has_typed_runtime_context(inline_worker)
     @test isnothing(inline_worker.runtime_context)
-    @test !haskey(Processes.getglobals(fetch(inline_worker)), :value)
-    @test isempty(Processes.context(inline_worker)[:FuncWrapper_1])
-    @test !haskey(Processes.getglobals(Processes.context(inline_worker)), :value)
-    @test isempty(Processes.getruntimeinput(Processes.context(inline_worker)))
-    @test isempty(runtime_input_bucket(Processes.context(inline_worker)))
-    @test !haskey(Processes.getglobals(Processes.context(inline_worker)), :process)
+    @test !haskey(StatefulAlgorithms.getglobals(fetch(inline_worker)), :value)
+    @test isempty(StatefulAlgorithms.context(inline_worker)[:FuncWrapper_1])
+    @test !haskey(StatefulAlgorithms.getglobals(StatefulAlgorithms.context(inline_worker)), :value)
+    @test isempty(StatefulAlgorithms.getruntimeinput(StatefulAlgorithms.context(inline_worker)))
+    @test isempty(runtime_input_bucket(StatefulAlgorithms.context(inline_worker)))
+    @test !haskey(StatefulAlgorithms.getglobals(StatefulAlgorithms.context(inline_worker)), :process)
     close(inline_worker)
 
     per_run_repeats_process = Process(runtime_algo)
     run(per_run_repeats_process; repeats = 1, temp = 2.0, scale = 3)
     wait(per_run_repeats_process)
-    @test !haskey(Processes.getglobals(fetch(per_run_repeats_process)), :value)
-    @test Processes.lifetime(per_run_repeats_process) == Repeat(1)
+    @test !haskey(StatefulAlgorithms.getglobals(fetch(per_run_repeats_process)), :value)
+    @test StatefulAlgorithms.lifetime(per_run_repeats_process) == Repeat(1)
     close(per_run_repeats_process)
 
     per_run_lifetime_process = Process(runtime_algo)
     run(per_run_lifetime_process; lifetime = Repeat(1), temp = 1.5, scale = 2)
     wait(per_run_lifetime_process)
-    @test !haskey(Processes.getglobals(fetch(per_run_lifetime_process)), :value)
+    @test !haskey(StatefulAlgorithms.getglobals(fetch(per_run_lifetime_process)), :value)
     close(per_run_lifetime_process)
 
     positional_specs_process = Process(runtime_algo; repeats = 1)
@@ -163,24 +163,24 @@ runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
 
     inline_process = InlineProcess(runtime_algo; repeats = 1)
     inline_result = run(inline_process; temp = 2.0, scale = 3)
-    @test !haskey(Processes.getglobals(inline_result), :value)
-    @test isempty(Processes.context(inline_process)[:FuncWrapper_1])
-    @test !haskey(Processes.getglobals(Processes.context(inline_process)), :value)
-    @test isempty(Processes.getruntimeinput(Processes.context(inline_process)))
-    @test isempty(getproperty(Processes.get_subcontexts(Processes.context(inline_process)), :_input))
+    @test !haskey(StatefulAlgorithms.getglobals(inline_result), :value)
+    @test isempty(StatefulAlgorithms.context(inline_process)[:FuncWrapper_1])
+    @test !haskey(StatefulAlgorithms.getglobals(StatefulAlgorithms.context(inline_process)), :value)
+    @test isempty(StatefulAlgorithms.getruntimeinput(StatefulAlgorithms.context(inline_process)))
+    @test isempty(getproperty(StatefulAlgorithms.get_subcontexts(StatefulAlgorithms.context(inline_process)), :_input))
 
-    inline_nogen_result = Processes.run_nogen(inline_process; temp = 1.5, scale = 2)
-    @test !haskey(Processes.getglobals(inline_nogen_result), :value)
-    @test isempty(Processes.getruntimeinput(Processes.context(inline_process)))
-    @test isempty(getproperty(Processes.get_subcontexts(Processes.context(inline_process)), :_input))
+    inline_nogen_result = StatefulAlgorithms.run_nogen(inline_process; temp = 1.5, scale = 2)
+    @test !haskey(StatefulAlgorithms.getglobals(inline_nogen_result), :value)
+    @test isempty(StatefulAlgorithms.getruntimeinput(StatefulAlgorithms.context(inline_process)))
+    @test isempty(getproperty(StatefulAlgorithms.get_subcontexts(StatefulAlgorithms.context(inline_process)), :_input))
     @test_throws ErrorException run(inline_process)
     @test_throws ErrorException run(inline_process; temp = 1, scale = 2)
     @test_throws ErrorException run(inline_process, Input(; seed = 2); temp = 1.0, scale = 2)
 
     shape_result = run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(0))
-    @test isempty(runtime_shape_context(Processes.context(shape_result)))
+    @test isempty(runtime_shape_context(StatefulAlgorithms.context(shape_result)))
     widened_shape_result = run(init(CompositeAlgorithm(RuntimeShapeChanger(0))); lifetime = Repeat(2))
-    @test isempty(runtime_shape_context(Processes.context(widened_shape_result)))
+    @test isempty(runtime_shape_context(StatefulAlgorithms.context(widened_shape_result)))
 
     pause_algo = @CompositeAlgorithm begin
         @input delta::Int
@@ -199,7 +199,7 @@ runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
     paused_context = context(process)
     paused_total = paused_context[PauseRuntimeInputConsumer].total
     @test paused_total > 0
-    @test haskey(Processes.get_subcontexts(paused_context), :_input)
+    @test haskey(StatefulAlgorithms.get_subcontexts(paused_context), :_input)
     @test_throws ErrorException run(process; delta = 3)
 
     run(process)
@@ -212,8 +212,8 @@ runtime_input_bucket(ctx) = getproperty(Processes.get_subcontexts(ctx), :_input)
 
     @test context(process)[PauseRuntimeInputConsumer].total > paused_total
     close(process)
-    @test Processes._has_typed_runtime_context(process)
+    @test StatefulAlgorithms._has_typed_runtime_context(process)
     @test isnothing(process.runtime_context)
-    @test isempty(Processes.getruntimeinput(context(process)))
+    @test isempty(StatefulAlgorithms.getruntimeinput(context(process)))
     @test isempty(runtime_input_bucket(context(process)))
 end

@@ -1,6 +1,6 @@
 using Printf
 using Profile
-using Processes
+using StatefulAlgorithms
 using Statistics
 
 struct ThreadedModeJob{Id, Work, Alloc, Sleep}

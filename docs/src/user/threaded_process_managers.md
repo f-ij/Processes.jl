@@ -1,7 +1,7 @@
 # [Threaded Process Managers](@id threaded_process_managers_user)
 
 ```@meta
-CurrentModule = Processes
+CurrentModule = StatefulAlgorithms
 ```
 
 Use a `ProcessManager` when you already have a `Process` definition and want to
@@ -36,7 +36,7 @@ run!(manager, jobs, Greedy())
   buffers, counters, and shared parameters.
 
 The API uses the word `worker` for a managed process because a manager can also
-wrap non-`Process` worker objects. For ordinary threaded `Processes.jl` usage,
+wrap non-`Process` worker objects. For ordinary threaded `StatefulAlgorithms.jl` usage,
 read `worker` as "the reusable process in this slot".
 
 ## What `manager.state` Is
@@ -869,40 +869,40 @@ fixed after construction and leaves room for processes with different concrete
 types. `workers(manager)` returns the same fixed-shape tuple of process objects.
 
 ```@docs
-Processes.ProcessManager
-Processes.WorkerSlot
-Processes.FlushPolicy
-Processes.FlushAtEnd
-Processes.NoFlush
-Processes.FlushEvery
-Processes.WorkerLifecycle
-Processes.ReuseWorker
-Processes.OnDemandWorkers
-Processes.ThreadsType
-Processes.Static
-Processes.Dynamic
-Processes.Greedy
-Processes.slots
-Processes.workers
-Processes.copyworker
-Processes.InlineChunkWorker
-Processes.runchunks!
-Processes.prepare!
-Processes.runarguments
-Processes.start!
-Processes.beforechunk!
-Processes.resetexample!
-Processes.loadexample!
-Processes.afterexample!
-Processes.afterchunk!
-Processes.dispatch!
-Processes.poll!
-Processes.drain!
-Processes.run!
-Processes.runthreaded!
-Processes.resetworker!
-Processes.reinitworker!
-Processes.partialinitworker!
+StatefulAlgorithms.ProcessManager
+StatefulAlgorithms.WorkerSlot
+StatefulAlgorithms.FlushPolicy
+StatefulAlgorithms.FlushAtEnd
+StatefulAlgorithms.NoFlush
+StatefulAlgorithms.FlushEvery
+StatefulAlgorithms.WorkerLifecycle
+StatefulAlgorithms.ReuseWorker
+StatefulAlgorithms.OnDemandWorkers
+StatefulAlgorithms.ThreadsType
+StatefulAlgorithms.Static
+StatefulAlgorithms.Dynamic
+StatefulAlgorithms.Greedy
+StatefulAlgorithms.slots
+StatefulAlgorithms.workers
+StatefulAlgorithms.copyworker
+StatefulAlgorithms.InlineChunkWorker
+StatefulAlgorithms.runchunks!
+StatefulAlgorithms.prepare!
+StatefulAlgorithms.runarguments
+StatefulAlgorithms.start!
+StatefulAlgorithms.beforechunk!
+StatefulAlgorithms.resetexample!
+StatefulAlgorithms.loadexample!
+StatefulAlgorithms.afterexample!
+StatefulAlgorithms.afterchunk!
+StatefulAlgorithms.dispatch!
+StatefulAlgorithms.poll!
+StatefulAlgorithms.drain!
+StatefulAlgorithms.run!
+StatefulAlgorithms.runthreaded!
+StatefulAlgorithms.resetworker!
+StatefulAlgorithms.reinitworker!
+StatefulAlgorithms.partialinitworker!
 ```
 
 ## Manager-Owned Process Example

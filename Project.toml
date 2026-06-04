@@ -1,5 +1,5 @@
-name = "Processes"
-uuid = "6a369836-0793-447d-b7ee-625716f2d05b"
+name = "StatefulAlgorithms"
+uuid = "3c03ca44-5aad-4ad5-81af-1baae4bc194b"
 version = "0.1.2"
 authors = ["Fabian IJpelaar <87425229+f-ij@users.noreply.github.com>"]
 

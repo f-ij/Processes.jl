@@ -18,7 +18,7 @@ end
 """Build the Julia expression used to include a test file."""
 function test_expr(path::AbstractString)
     escaped = replace(path, "\\" => "\\\\", "\"" => "\\\"")
-    return "using Test, Processes; include(\"$escaped\")"
+    return "using Test, StatefulAlgorithms; include(\"$escaped\")"
 end
 
 """Run the focused correctness checks and print the expected status."""

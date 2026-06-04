@@ -10,7 +10,7 @@ struct NPIPolicy <: ProcessAlgorithm end
 struct WeeklyReporter <: ProcessAlgorithm end
 struct EpidemicRecorder <: ProcessAlgorithm end
 
-function Processes.step!(::SIRStep, context)
+function StatefulAlgorithms.step!(::SIRStep, context)
     (;s, i, r, n, beta, gamma, dt, incidence) = context
     new_infections = min(beta * s * i / n * dt, s)
     recoveries = min(gamma * i * dt, i)
@@ -22,7 +22,7 @@ function Processes.step!(::SIRStep, context)
     return (;s, i, r, incidence)
 end
 
-function Processes.init(::SIRStep, _input)
+function StatefulAlgorithms.init(::SIRStep, _input)
     n = 1_000_000.0
     i0 = 500.0
     r0 = 0.0
@@ -35,7 +35,7 @@ function Processes.init(::SIRStep, _input)
     return (;s = s0, i = i0, r = r0, n, beta, gamma, dt, incidence)
 end
 
-function Processes.step!(::NPIPolicy, context)
+function StatefulAlgorithms.step!(::NPIPolicy, context)
     (;i, beta, threshold_on, threshold_off, beta_open, beta_restricted) = context
     if i > threshold_on
         beta = beta_restricted
@@ -45,7 +45,7 @@ function Processes.step!(::NPIPolicy, context)
     return (;beta)
 end
 
-function Processes.init(::NPIPolicy, _input)
+function StatefulAlgorithms.init(::NPIPolicy, _input)
     n = 1_000_000.0
     threshold_on = 0.02 * n
     threshold_off = 0.007 * n
@@ -54,17 +54,17 @@ function Processes.init(::NPIPolicy, _input)
     return (;threshold_on, threshold_off, beta_open, beta_restricted)
 end
 
-function Processes.step!(::WeeklyReporter, context)
+function StatefulAlgorithms.step!(::WeeklyReporter, context)
     (;incidence, report_fraction, reported_cases) = context
     reported_cases = report_fraction * incidence
     return (;reported_cases)
 end
 
-function Processes.init(::WeeklyReporter, _input)
+function StatefulAlgorithms.init(::WeeklyReporter, _input)
     return (;report_fraction = 0.65, reported_cases = 0.0)
 end
 
-function Processes.step!(::EpidemicRecorder, context)
+function StatefulAlgorithms.step!(::EpidemicRecorder, context)
     (;
     day,
     s,
@@ -93,7 +93,7 @@ function Processes.step!(::EpidemicRecorder, context)
     return (;day)
 end
 
-function Processes.init(::EpidemicRecorder, input)
+function StatefulAlgorithms.init(::EpidemicRecorder, input)
     days = Int[]
     s_hist = Float64[]
     i_hist = Float64[]

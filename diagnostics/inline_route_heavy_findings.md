@@ -33,7 +33,7 @@ in the InteractiveIsing free-phase probe.
 The active direction is therefore all-immutable context wrappers with a
 package-local rebuild helper instead of Accessors. `replace_namedtuple_field`
 rebuilds one named-tuple field, and `withdata`, `withruntime`, and
-`withsubcontexts` rebuild the specific Processes context objects. This keeps
+`withsubcontexts` rebuild the specific StatefulAlgorithms context objects. This keeps
 immutability and avoids the generic Accessors lens/reconstruction machinery.
 
 The remaining tiny-scalar performance problem is exactly the SROA/stack-local
@@ -70,7 +70,7 @@ plain scalar loop.
 Added `inline_route_heavy_breakdown.jl` to isolate layers:
 
 - `run(process)`
-- direct `Processes.loop(...)`
+- direct `StatefulAlgorithms.loop(...)`
 - generated process-loop entrypoint
 - direct manual `ProcessContext` loop using `merge_into_subcontexts`
 - diagnostic-only batched context loop
@@ -352,7 +352,7 @@ The full test suite under all-immutable `SubContext` passed everything except
 two `InteractiveVar` assertions:
 
 ```text
-Processes | 682 passed, 2 failed
+StatefulAlgorithms | 682 passed, 2 failed
 ```
 
 Both failures are in `InteractiveVar writes through ContextInjector`. This is

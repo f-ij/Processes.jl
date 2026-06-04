@@ -3,22 +3,22 @@
 
 using Test
 using Random
-using Processes
+using StatefulAlgorithms
 
 @testset "Routes: Walker->InsertNoise updates Walker momentum" begin
     # Minimal reproduction of `manual tests/WalkerTest.jl` without print spam.
 
     struct Walker <: ProcessAlgorithm end
 
-    function Processes.init(::Walker, input)
+    function StatefulAlgorithms.init(::Walker, input)
             (; dt) = input
             state = Float64[1.0]
             momentum = 1.0
-            Processes.processsizehint!(state, input)
+            StatefulAlgorithms.processsizehint!(state, input)
             return (; state, momentum, dt)
         end
 
-    function Processes.step!(::Walker, context)
+    function StatefulAlgorithms.step!(::Walker, context)
         (; state, momentum, dt) = context
         push!(state, state[end] + momentum * dt)
         return (; momentum)
@@ -32,7 +32,7 @@ using Processes
 
     InsertNoise(seed::Integer = 1234) = InsertNoise(Int64(seed))
 
-    function Processes.step!(::InsertNoise, context)
+    function StatefulAlgorithms.step!(::InsertNoise, context)
         (; targetnum, scale, rng) = context
         T = typeof(targetnum)
         rand_num = (rand(rng, T) - T(0.5)) * T(2) * scale
@@ -40,7 +40,7 @@ using Processes
         return (; targetnum)
     end
 
-    function Processes.init(::InsertNoise, _input)
+    function StatefulAlgorithms.init(::InsertNoise, _input)
         rng = MersenneTwister(1234)
         return (; rng)
     end
@@ -59,7 +59,7 @@ using Processes
     # Test for correct cleanup output
     @test c isa ProcessContext
 
-    actual = Processes.context(p)[Walker].state
+    actual = StatefulAlgorithms.context(p)[Walker].state
     expected = [
         1.0,
         1.01,
@@ -81,11 +81,11 @@ using Processes
     struct RouteLogger{T} <: ProcessAlgorithm end
     RouteLogger(name::Symbol) = RouteLogger{name}()
 
-    function Processes.init(::RouteLogger{T}, _input) where {T}
+    function StatefulAlgorithms.init(::RouteLogger{T}, _input) where {T}
         log = Vector{Any}()
         return (;log)
     end
-    function Processes.step!(::RouteLogger{T}, context) where {T}
+    function StatefulAlgorithms.step!(::RouteLogger{T}, context) where {T}
         (;log, targetnum) = context
         push!(log, targetnum)
         return (;)
@@ -115,10 +115,10 @@ using Processes
     struct ReverseRouteSource <: ProcessAlgorithm end
     struct ReverseRouteTarget <: ProcessAlgorithm end
 
-    Processes.init(::ReverseRouteSource, context) = (; value = 1.0)
-    Processes.step!(::ReverseRouteSource, context) = (;)
-    Processes.init(::ReverseRouteTarget, context) = (;)
-    Processes.step!(::ReverseRouteTarget, context) = (; input = context.input + 2.0)
+    StatefulAlgorithms.init(::ReverseRouteSource, context) = (; value = 1.0)
+    StatefulAlgorithms.step!(::ReverseRouteSource, context) = (;)
+    StatefulAlgorithms.init(::ReverseRouteTarget, context) = (;)
+    StatefulAlgorithms.step!(::ReverseRouteTarget, context) = (; input = context.input + 2.0)
 
     reverse_algo = CompositeAlgorithm(
         ReverseRouteSource,
@@ -140,10 +140,10 @@ using Processes
     struct ReverseTupleRouteSource <: ProcessAlgorithm end
     struct ReverseTupleRouteTarget <: ProcessAlgorithm end
 
-    Processes.init(::ReverseTupleRouteSource, context) = (; x = 1, y = 2)
-    Processes.step!(::ReverseTupleRouteSource, context) = (;)
-    Processes.init(::ReverseTupleRouteTarget, context) = (;)
-    Processes.step!(::ReverseTupleRouteTarget, context) = (; total = context.total + 5)
+    StatefulAlgorithms.init(::ReverseTupleRouteSource, context) = (; x = 1, y = 2)
+    StatefulAlgorithms.step!(::ReverseTupleRouteSource, context) = (;)
+    StatefulAlgorithms.init(::ReverseTupleRouteTarget, context) = (;)
+    StatefulAlgorithms.step!(::ReverseTupleRouteTarget, context) = (; total = context.total + 5)
 
     reverse_tuple_algo = CompositeAlgorithm(
         ReverseTupleRouteSource,
@@ -163,7 +163,7 @@ using Processes
     @test reverse_tuple_context[ReverseTupleRouteSource].x == 4
     @test reverse_tuple_context[ReverseTupleRouteSource].y == 4
 
-    missing_reverse_location = Processes.VarLocation{:subcontext}(:source, :value, x -> 2x)
-    @test_throws ErrorException Processes._subcontext_view_writeback_exprs(missing_reverse_location, :source, :input)
+    missing_reverse_location = StatefulAlgorithms.VarLocation{:subcontext}(:source, :value, x -> 2x)
+    @test_throws ErrorException StatefulAlgorithms._subcontext_view_writeback_exprs(missing_reverse_location, :source, :input)
 
 end

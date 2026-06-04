@@ -2,7 +2,7 @@ include("_env.jl")
 
 funcs = RunFuncs(sqrt, x -> x^2, x -> x^3, :state)
 struct StateProvider <: ProcessState end
-function Processes.init(::StateProvider, context)
+function StatefulAlgorithms.init(::StateProvider, context)
     return (;state = 2)
 end
 

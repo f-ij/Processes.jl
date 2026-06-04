@@ -24,27 +24,27 @@ We benchmark the same routed graph against:
 - ThreadedCompositeAlgorithm
 """
 
-struct SourceXBench <: Processes.ProcessAlgorithm end
-struct SourceYBench <: Processes.ProcessAlgorithm end
-struct StageABench <: Processes.ProcessAlgorithm end
-struct StageBBench <: Processes.ProcessAlgorithm end
-struct StageCBench <: Processes.ProcessAlgorithm end
-struct JoinDBench <: Processes.ProcessAlgorithm end
-struct JoinEBench <: Processes.ProcessAlgorithm end
-struct StageFBench <: Processes.ProcessAlgorithm end
-struct StageGBench <: Processes.ProcessAlgorithm end
-struct StageHBench <: Processes.ProcessAlgorithm end
-struct ReducerBench <: Processes.ProcessAlgorithm end
+struct SourceXBench <: StatefulAlgorithms.ProcessAlgorithm end
+struct SourceYBench <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageABench <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageBBench <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageCBench <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinDBench <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinEBench <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageFBench <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageGBench <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageHBench <: StatefulAlgorithms.ProcessAlgorithm end
+struct ReducerBench <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::SourceXBench, context)
+function StatefulAlgorithms.init(::SourceXBench, context)
     return (; x_signal = copy(context.start_x), phase_x = 0.01)
 end
 
-function Processes.init(::SourceYBench, context)
+function StatefulAlgorithms.init(::SourceYBench, context)
     return (; y_signal = copy(context.start_y), phase_y = 0.015)
 end
 
-function Processes.step!(::SourceXBench, context)
+function StatefulAlgorithms.step!(::SourceXBench, context)
     x_signal = context.x_signal
     phase_x = context.phase_x
 
@@ -56,7 +56,7 @@ function Processes.step!(::SourceXBench, context)
     return (; phase_x = phase_x + 0.01)
 end
 
-function Processes.step!(::SourceYBench, context)
+function StatefulAlgorithms.step!(::SourceYBench, context)
     y_signal = context.y_signal
     phase_y = context.phase_y
 
@@ -68,17 +68,17 @@ function Processes.step!(::SourceYBench, context)
     return (; phase_y = phase_y + 0.015)
 end
 
-Processes.init(::StageABench, context) = (; a_vec = zeros(context.n))
-Processes.init(::StageBBench, context) = (; b_vec = zeros(context.n))
-Processes.init(::StageCBench, context) = (; c_vec = zeros(context.n))
-Processes.init(::JoinDBench, context) = (; d_vec = zeros(context.n))
-Processes.init(::JoinEBench, context) = (; e_vec = zeros(context.n))
-Processes.init(::StageFBench, context) = (; f_vec = zeros(context.n))
-Processes.init(::StageGBench, context) = (; g_vec = zeros(context.n))
-Processes.init(::StageHBench, context) = (; h_vec = zeros(context.n))
-Processes.init(::ReducerBench, _context) = (; total = 0.0)
+StatefulAlgorithms.init(::StageABench, context) = (; a_vec = zeros(context.n))
+StatefulAlgorithms.init(::StageBBench, context) = (; b_vec = zeros(context.n))
+StatefulAlgorithms.init(::StageCBench, context) = (; c_vec = zeros(context.n))
+StatefulAlgorithms.init(::JoinDBench, context) = (; d_vec = zeros(context.n))
+StatefulAlgorithms.init(::JoinEBench, context) = (; e_vec = zeros(context.n))
+StatefulAlgorithms.init(::StageFBench, context) = (; f_vec = zeros(context.n))
+StatefulAlgorithms.init(::StageGBench, context) = (; g_vec = zeros(context.n))
+StatefulAlgorithms.init(::StageHBench, context) = (; h_vec = zeros(context.n))
+StatefulAlgorithms.init(::ReducerBench, _context) = (; total = 0.0)
 
-function Processes.step!(::StageABench, context)
+function StatefulAlgorithms.step!(::StageABench, context)
     x = context.x_input
     y = context.a_vec
 
@@ -90,7 +90,7 @@ function Processes.step!(::StageABench, context)
     return (;)
 end
 
-function Processes.step!(::StageBBench, context)
+function StatefulAlgorithms.step!(::StageBBench, context)
     x = context.x_input
     y = context.b_vec
 
@@ -102,7 +102,7 @@ function Processes.step!(::StageBBench, context)
     return (;)
 end
 
-function Processes.step!(::StageCBench, context)
+function StatefulAlgorithms.step!(::StageCBench, context)
     x = context.y_input
     y = context.c_vec
 
@@ -114,7 +114,7 @@ function Processes.step!(::StageCBench, context)
     return (;)
 end
 
-function Processes.step!(::JoinDBench, context)
+function StatefulAlgorithms.step!(::JoinDBench, context)
     a = context.a
     c = context.c
     y = context.d_vec
@@ -128,7 +128,7 @@ function Processes.step!(::JoinDBench, context)
     return (;)
 end
 
-function Processes.step!(::JoinEBench, context)
+function StatefulAlgorithms.step!(::JoinEBench, context)
     b = context.b
     c = context.c
     y = context.e_vec
@@ -142,7 +142,7 @@ function Processes.step!(::JoinEBench, context)
     return (;)
 end
 
-function Processes.step!(::StageFBench, context)
+function StatefulAlgorithms.step!(::StageFBench, context)
     a = context.a
     e = context.e
     y = context.f_vec
@@ -156,7 +156,7 @@ function Processes.step!(::StageFBench, context)
     return (;)
 end
 
-function Processes.step!(::StageGBench, context)
+function StatefulAlgorithms.step!(::StageGBench, context)
     d = context.d
     e = context.e
     y = context.g_vec
@@ -170,7 +170,7 @@ function Processes.step!(::StageGBench, context)
     return (;)
 end
 
-function Processes.step!(::StageHBench, context)
+function StatefulAlgorithms.step!(::StageHBench, context)
     b = context.b
     d = context.d
     y = context.h_vec
@@ -184,7 +184,7 @@ function Processes.step!(::StageHBench, context)
     return (;)
 end
 
-function Processes.step!(::ReducerBench, context)
+function StatefulAlgorithms.step!(::ReducerBench, context)
     f = context.f
     g = context.g
     h = context.h

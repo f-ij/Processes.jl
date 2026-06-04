@@ -1,5 +1,5 @@
 include("FibLucDef.jl")
-import Processes as ps
+import StatefulAlgorithms as ps
 
 FibLuc = CompositeAlgorithm( Fib, Luc, (1,1) )
 

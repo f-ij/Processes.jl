@@ -1,12 +1,12 @@
 include("_env.jl")
 
-Processes.@ProcessAlgorithmNew function CopyArray(a, @managed(buffer = type[]); @init((;type = Float64)))
+StatefulAlgorithms.@ProcessAlgorithmNew function CopyArray(a, @managed(buffer = type[]); @init((;type = Float64)))
     resize!(buffer, size(a)...)
     buffer .= a
     return 
 end
 
-Processes.@ProcessAlgorithmNew function ProvideArray(@managed(array = type[]); @init (;type = Float64))
+StatefulAlgorithms.@ProcessAlgorithmNew function ProvideArray(@managed(array = type[]); @init (;type = Float64))
     resize!(array, 1000)
     array .= rand(1000)
     return

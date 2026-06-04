@@ -1,12 +1,12 @@
-using Processes
+using StatefulAlgorithms
 
-struct ManagedAccumulator <: Processes.ProcessAlgorithm end
+struct ManagedAccumulator <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::ManagedAccumulator, context)
+function StatefulAlgorithms.init(::ManagedAccumulator, context)
     return (; value = Ref(0), delta = Ref(1), local_buffer = Int[])
 end
 
-function Processes.step!(::ManagedAccumulator, context)
+function StatefulAlgorithms.step!(::ManagedAccumulator, context)
     push!(context.local_buffer, context.value[])
     context.value[] += context.delta[]
     return (;)

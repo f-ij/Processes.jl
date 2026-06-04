@@ -1,11 +1,11 @@
-using InteractiveIsing.Processes
+using InteractiveIsing.StatefulAlgorithms
 
 function Fib(args)
     (;fiblist) = args
     push!(fiblist, fiblist[end] + fiblist[end-1])
 end
 
-function Processes.init(::typeof(Fib), args)
+function StatefulAlgorithms.init(::typeof(Fib), args)
     fiblist = Int[0, 1]
     processsizehint!(args, fiblist)
     return (;fiblist)
@@ -16,7 +16,7 @@ function Luc(args)
     push!(luclist, luclist[end] + luclist[end-1])
 end
 
-function Processes.init(::typeof(Luc), args)
+function StatefulAlgorithms.init(::typeof(Luc), args)
     luclist = Int[2, 1]
     processsizehint!(args, luclist)
     return (;luclist)

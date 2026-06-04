@@ -2,42 +2,42 @@ include("inline_route_heavy_benchmark.jl")
 
 using Printf
 using Test
-using Processes
+using StatefulAlgorithms
 
 const INLINE_ROUTE_BREAKDOWN_STEPS = parse(Int, get(ENV, "INLINE_ROUTE_BREAKDOWN_STEPS", string(INLINE_ROUTE_HEAVY_STEPS)))
 const INLINE_ROUTE_BREAKDOWN_RUNS = parse(Int, get(ENV, "INLINE_ROUTE_BREAKDOWN_RUNS", string(INLINE_ROUTE_HEAVY_RUNS)))
 const INLINE_ROUTE_BREAKDOWN_SINK = Ref{Any}(nothing)
 
 """Return the direct loop entrypoint result for an already reset inline process."""
-function inline_route_direct_loop(process::IP) where {IP<:Processes.InlineProcess}
-    algo = Processes.getalgo(process)
-    context = Processes.context(process)
-    lifetime = Processes.lifetime(process)
+function inline_route_direct_loop(process::IP) where {IP<:StatefulAlgorithms.InlineProcess}
+    algo = StatefulAlgorithms.getalgo(process)
+    context = StatefulAlgorithms.context(process)
+    lifetime = StatefulAlgorithms.lifetime(process)
     runtime_inputs = (;)
-    return Processes.loop(process, algo, context, lifetime, runtime_inputs)
+    return StatefulAlgorithms.loop(process, algo, context, lifetime, runtime_inputs)
 end
 
 """Return the generated process-loop entrypoint result for an already reset inline process."""
-function inline_route_generated_processloop(process::IP) where {IP<:Processes.InlineProcess}
-    algo = Processes.getalgo(process)
-    context = Processes.context(process)
-    lifetime = Processes.lifetime(process)
+function inline_route_generated_processloop(process::IP) where {IP<:StatefulAlgorithms.InlineProcess}
+    algo = StatefulAlgorithms.getalgo(process)
+    context = StatefulAlgorithms.context(process)
+    lifetime = StatefulAlgorithms.lifetime(process)
     runtime_inputs = (;)
-    return Processes.loop(
+    return StatefulAlgorithms.loop(
         process,
         algo,
         context,
         lifetime,
         runtime_inputs,
-        Processes.Resuming{false}(),
-        Processes.Generated(),
+        StatefulAlgorithms.Resuming{false}(),
+        StatefulAlgorithms.Generated(),
     )
 end
 
 """Run the workload through `ProcessContext` directly, bypassing routes and views."""
-function inline_route_manual_context_loop(process::IP) where {IP<:Processes.InlineProcess}
-    context = Processes.context(process)
-    steps = Processes.repeats(Processes.lifetime(process))
+function inline_route_manual_context_loop(process::IP) where {IP<:StatefulAlgorithms.InlineProcess}
+    context = StatefulAlgorithms.context(process)
+    steps = StatefulAlgorithms.repeats(StatefulAlgorithms.lifetime(process))
 
     # This keeps ProcessContext storage and subcontext writeback, but removes
     # SubContextView construction, routed lookup, and stablemerge routing.
@@ -53,7 +53,7 @@ function inline_route_manual_context_loop(process::IP) where {IP<:Processes.Inli
             plant.energy,
             controller.control,
         )
-        context = Processes.merge_into_subcontexts(context, (; sensor = (; phase, raw, reference, quality, excitation)))
+        context = StatefulAlgorithms.merge_into_subcontexts(context, (; sensor = (; phase, raw, reference, quality, excitation)))
 
         sensor = context[:sensor]
         filter = context[:filter]
@@ -67,7 +67,7 @@ function inline_route_manual_context_loop(process::IP) where {IP<:Processes.Inli
             sensor.quality,
             plant.position,
         )
-        context = Processes.merge_into_subcontexts(context, (; filter = (; estimate, rate, bias, residual, tracking_error)))
+        context = StatefulAlgorithms.merge_into_subcontexts(context, (; filter = (; estimate, rate, bias, residual, tracking_error)))
 
         sensor = context[:sensor]
         filter = context[:filter]
@@ -85,7 +85,7 @@ function inline_route_manual_context_loop(process::IP) where {IP<:Processes.Inli
             sensor.excitation,
             plant.load,
         )
-        context = Processes.merge_into_subcontexts(context, (; controller = (; control, integral, command_power, saturation)))
+        context = StatefulAlgorithms.merge_into_subcontexts(context, (; controller = (; control, integral, command_power, saturation)))
 
         sensor = context[:sensor]
         filter = context[:filter]
@@ -104,7 +104,7 @@ function inline_route_manual_context_loop(process::IP) where {IP<:Processes.Inli
             sensor.excitation,
             controller.saturation,
         )
-        context = Processes.merge_into_subcontexts(context, (; plant = (; position, velocity, energy, load, heat, dt)))
+        context = StatefulAlgorithms.merge_into_subcontexts(context, (; plant = (; position, velocity, energy, load, heat, dt)))
 
         sensor = context[:sensor]
         filter = context[:filter]
@@ -133,16 +133,16 @@ function inline_route_manual_context_loop(process::IP) where {IP<:Processes.Inli
             plant.load,
             plant.heat,
         )
-        context = Processes.merge_into_subcontexts(context, (; audit = (; checksum, risk, trend, score)))
+        context = StatefulAlgorithms.merge_into_subcontexts(context, (; audit = (; checksum, risk, trend, score)))
     end
 
     return context
 end
 
 """Run from `ProcessContext` values but write back only once after the local loop."""
-function inline_route_batched_context_loop(process::IP) where {IP<:Processes.InlineProcess}
-    context = Processes.context(process)
-    steps = Processes.repeats(Processes.lifetime(process))
+function inline_route_batched_context_loop(process::IP) where {IP<:StatefulAlgorithms.InlineProcess}
+    context = StatefulAlgorithms.context(process)
+    steps = StatefulAlgorithms.repeats(StatefulAlgorithms.lifetime(process))
 
     sensor = context[:sensor]
     filter = context[:filter]
@@ -248,7 +248,7 @@ function inline_route_batched_context_loop(process::IP) where {IP<:Processes.Inl
         )
     end
 
-    return Processes.merge_into_subcontexts(
+    return StatefulAlgorithms.merge_into_subcontexts(
         context,
         (;
             sensor = (; phase, raw, reference, quality, excitation),
@@ -261,41 +261,41 @@ function inline_route_batched_context_loop(process::IP) where {IP<:Processes.Inl
 end
 
 """Run the repeat loop by calling the resolved step plan directly."""
-function inline_route_direct_plan_loop(process::IP) where {IP<:Processes.InlineProcess}
-    algo = @inline Processes.getalgo(process)
-    lifetime = @inline Processes.lifetime(process)
-    step_plan = @inline Processes.getplan(algo)
-    step_wiring = @inline Processes._root_wiring_view(algo, step_plan)
-    context = @inline Processes.context(process)
-    runtimecontext = @inline Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
+function inline_route_direct_plan_loop(process::IP) where {IP<:StatefulAlgorithms.InlineProcess}
+    algo = @inline StatefulAlgorithms.getalgo(process)
+    lifetime = @inline StatefulAlgorithms.lifetime(process)
+    step_plan = @inline StatefulAlgorithms.getplan(algo)
+    step_wiring = @inline StatefulAlgorithms._root_wiring_view(algo, step_plan)
+    context = @inline StatefulAlgorithms.context(process)
+    runtimecontext = @inline StatefulAlgorithms._merge_into_globals(StatefulAlgorithms._empty_context(), (; process, lifetime))
 
     # This mirrors the repeat-lifetime `loop` body, minus run entrypoint
     # validation, runtime-input merge, timing stamps, cleanup, and context store.
-    context, runtimecontext = @inline Processes._step!(
+    context, runtimecontext = @inline StatefulAlgorithms._step!(
         step_plan,
         context,
         runtimecontext,
         step_wiring,
-        Processes.Namespace{nothing}(),
+        StatefulAlgorithms.Namespace{nothing}(),
         process,
         lifetime,
     )
-    @inline Processes.inc!(process)
+    @inline StatefulAlgorithms.inc!(process)
 
-    start_idx = @inline Processes.loopidx(process)
-    end_idx = @inline Processes.repeats(lifetime)
+    start_idx = @inline StatefulAlgorithms.loopidx(process)
+    end_idx = @inline StatefulAlgorithms.repeats(lifetime)
     for _ in start_idx:end_idx
-        context, runtimecontext = @inline Processes._step!(
+        context, runtimecontext = @inline StatefulAlgorithms._step!(
             step_plan,
             context,
             runtimecontext,
             step_wiring,
-            Processes.Namespace{nothing}(),
+            StatefulAlgorithms.Namespace{nothing}(),
             process,
             lifetime,
         )
-        @inline Processes.inc!(process)
-        if @inline Processes.breakcondition(lifetime, process, context)
+        @inline StatefulAlgorithms.inc!(process)
+        if @inline StatefulAlgorithms.breakcondition(lifetime, process, context)
             break
         end
     end
@@ -339,7 +339,7 @@ function inline_route_breakdown_measure(
 end
 
 """Assert that each lower-level route entrypoint preserves the benchmark semantics."""
-function inline_route_breakdown_check(process::IP, steps::I) where {IP<:Processes.InlineProcess, I<:Integer}
+function inline_route_breakdown_check(process::IP, steps::I) where {IP<:StatefulAlgorithms.InlineProcess, I<:Integer}
     plain_summary = inline_route_plain_loop(steps)
 
     reset!(process)

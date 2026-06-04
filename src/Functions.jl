@@ -786,7 +786,7 @@ end
 
 Return a new `NamedTuple` with one existing field replaced.
 
-This is the Processes-specific subset of `Accessors.@set` that context rebuilds
+This is the StatefulAlgorithms-specific subset of `Accessors.@set` that context rebuilds
 need: no generic lenses, no recursive property path handling, just one
 statically-known `NamedTuple` field.
 """

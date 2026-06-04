@@ -1,12 +1,12 @@
-using Processes
+using StatefulAlgorithms
 
 const ROUTE_HEAVY_STEPS = parse(Int, get(ENV, "ROUTE_HEAVY_STEPS", "400"))
 const ROUTE_HEAVY_RUNS = parse(Int, get(ENV, "ROUTE_HEAVY_RUNS", "60"))
 
-struct RouteHeavySource <: Processes.ProcessAlgorithm end
-struct RouteHeavySink{I} <: Processes.ProcessAlgorithm end
+struct RouteHeavySource <: StatefulAlgorithms.ProcessAlgorithm end
+struct RouteHeavySink{I} <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::RouteHeavySource, context::C) where {C}
+function StatefulAlgorithms.init(::RouteHeavySource, context::C) where {C}
     return (;
         x1 = 1.0, x2 = 2.0, x3 = 3.0, x4 = 4.0,
         x5 = 5.0, x6 = 6.0, x7 = 7.0, x8 = 8.0,
@@ -14,7 +14,7 @@ function Processes.init(::RouteHeavySource, context::C) where {C}
     )
 end
 
-function Processes.step!(::RouteHeavySource, context::C) where {C}
+function StatefulAlgorithms.step!(::RouteHeavySource, context::C) where {C}
     return (;
         x1 = context.x1 + 1.0, x2 = context.x2 + 1.0,
         x3 = context.x3 + 1.0, x4 = context.x4 + 1.0,
@@ -25,11 +25,11 @@ function Processes.step!(::RouteHeavySource, context::C) where {C}
     )
 end
 
-function Processes.init(::RouteHeavySink{I}, context::C) where {I, C}
+function StatefulAlgorithms.init(::RouteHeavySink{I}, context::C) where {I, C}
     return (; total = 0.0)
 end
 
-function Processes.step!(::RouteHeavySink{I}, context::C) where {I, C}
+function StatefulAlgorithms.step!(::RouteHeavySink{I}, context::C) where {I, C}
     total = context.total +
         context.x1 + context.x2 + context.x3 + context.x4 +
         context.x5 + context.x6 + context.x7 + context.x8 +
@@ -52,7 +52,7 @@ function route_heavy_algorithm()
 end
 
 function sink_total(result)
-    ctx = Processes.context(result)
+    ctx = StatefulAlgorithms.context(result)
     return ctx[RouteHeavySink{1}].total
 end
 

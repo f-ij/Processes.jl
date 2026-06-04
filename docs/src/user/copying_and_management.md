@@ -1,7 +1,7 @@
 # [Copying Processes](@id copying_processes_user)
 
 ```@meta
-CurrentModule = Processes
+CurrentModule = StatefulAlgorithms
 ```
 
 This page documents the process-copy helpers.
@@ -32,9 +32,9 @@ algorithm, persistent context, and replayable `Init`/`Override` specs.
 ## Copy APIs
 
 ```@docs
-Processes.copyinputs
-Processes.copyoverrides
-Processes.copyprocess
+StatefulAlgorithms.copyinputs
+StatefulAlgorithms.copyoverrides
+StatefulAlgorithms.copyprocess
 ```
 
 ## Typical Copy Pattern

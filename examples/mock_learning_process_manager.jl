@@ -1,4 +1,4 @@
-using Processes
+using StatefulAlgorithms
 
 @ProcessAlgorithm function MockLearningDynamics(
     @managed(

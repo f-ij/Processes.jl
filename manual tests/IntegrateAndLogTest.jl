@@ -15,12 +15,12 @@ IntegrateAndLogger = IntegrateAndLog()
     return (;output = val)
 end
 
-function Processes.init(::generate_values, context)
+function StatefulAlgorithms.init(::generate_values, context)
     println("Initializing generate_values")
     (;output = 0.0)
 end
 
 comp = CompositeAlgorithm(generate_values, IntegrateAndLogger, (1,1), Route(generate_values => IntegrateAndLogger, :output => :Δvalue, transform = x -> begin println("x: ", x); x end))
 
-p = Processes.Process(comp, lifetime = 10, Input(IntegrateAndLogger, initialvalue = 101f0))
+p = StatefulAlgorithms.Process(comp, lifetime = 10, Input(IntegrateAndLogger, initialvalue = 101f0))
 run(p)

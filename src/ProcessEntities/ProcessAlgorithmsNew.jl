@@ -267,19 +267,19 @@ Define a `ProcessAlgorithm` from a function-like signature.
 The macro splits the signature into four groups:
 
 1. Plain positional arguments:
-   Runtime values read from the process context during `Processes.step!`.
+   Runtime values read from the process context during `StatefulAlgorithms.step!`.
 2. `@managed(...)` positional arguments:
-   Local algorithm state created during `Processes.init` and then read back from the
-   algorithm's own subcontext during `Processes.step!`.
+   Local algorithm state created during `StatefulAlgorithms.init` and then read back from the
+   algorithm's own subcontext during `StatefulAlgorithms.step!`.
 3. Normal keyword arguments:
-   Runtime keyword-style values looked up from the context during `Processes.step!`, with
+   Runtime keyword-style values looked up from the context during `StatefulAlgorithms.step!`, with
    the declared default used when the key is missing.
 4. `@config ...` declarations:
    Struct fields placed on the generated algorithm type with default values.
 
 An optional trailing `@input((; ...))`, `@inputs((; ...))`, or `@init((; ...))` block declares
 init-time inputs. These are only available while building managed state and in the bootstrap
-form of `Processes.step!`; they are not automatically runtime arguments unless you also
+form of `StatefulAlgorithms.step!`; they are not automatically runtime arguments unless you also
 capture them into managed state.
 
 # Supported signature forms
@@ -307,7 +307,7 @@ Plain positional arguments:
 end
 ```
 
-These are treated as runtime values and are looked up from the context inside `Processes.step!`.
+These are treated as runtime values and are looked up from the context inside `StatefulAlgorithms.step!`.
 
 Managed positional arguments:
 
@@ -328,11 +328,11 @@ The managed forms mean:
 - `@managed(name)`:
   create a managed local called `name` by reading `name` from the init context.
 - `@managed(name = expr)`:
-  create a managed local called `name` by evaluating `expr` during `Processes.init`.
+  create a managed local called `name` by evaluating `expr` during `StatefulAlgorithms.init`.
 - `@managed(a, b = expr, c = expr2)`:
   expand to multiple managed locals in the written order.
 
-Managed initializer expressions run during `Processes.init`, so they may refer to:
+Managed initializer expressions run during `StatefulAlgorithms.init`, so they may refer to:
 
 - init-time inputs declared by `@input/@inputs/@init`
 - earlier managed locals in the same generated init block
@@ -350,7 +350,7 @@ Regular keyword arguments:
 end
 ```
 
-These are runtime keyword-style values. During `Processes.step!`, the macro reads them from the
+These are runtime keyword-style values. During `StatefulAlgorithms.step!`, the macro reads them from the
 context with `get(context, :name, default)`.
 
 Init-time input block:
@@ -413,12 +413,12 @@ end
 
 the macro generates:
 
-- `struct MyAlgo <: Processes.ProcessAlgorithm end`, or `Base.@kwdef struct MyAlgo ... end`
+- `struct MyAlgo <: StatefulAlgorithms.ProcessAlgorithm end`, or `Base.@kwdef struct MyAlgo ... end`
   when `@config` fields are declared
 - a hidden implementation function that contains `body`
-- public `Processes.step!(algo::MyAlgo, ...)` overloads for direct calls
-- `Processes.init(::MyAlgo, context)` to build the managed local subcontext
-- `Processes.step!(::MyAlgo, context)` to read runtime values and call the hidden implementation
+- public `StatefulAlgorithms.step!(algo::MyAlgo, ...)` overloads for direct calls
+- `StatefulAlgorithms.init(::MyAlgo, context)` to build the managed local subcontext
+- `StatefulAlgorithms.step!(::MyAlgo, context)` to read runtime values and call the hidden implementation
 
 # User entrypoints
 
@@ -431,13 +431,13 @@ step!(MyAlgo(), a; @inputs((; n = 4)))
 ```
 
 This evaluates the managed init path immediately when needed and then calls the generated
-implementation through `Processes.step!`. The macro does not define a same-name Julia
+implementation through `StatefulAlgorithms.step!`. The macro does not define a same-name Julia
 function, so normal struct constructors remain untouched.
 
 2. Process init hook:
 
 ```julia
-Processes.init(MyAlgo(), context)
+StatefulAlgorithms.init(MyAlgo(), context)
 ```
 
 This reads the declared init inputs from `context` and returns the managed local named tuple.
@@ -445,7 +445,7 @@ This reads the declared init inputs from `context` and returns the managed local
 3. Process step hook:
 
 ```julia
-Processes.step!(MyAlgo(), context)
+StatefulAlgorithms.step!(MyAlgo(), context)
 ```
 
 This reads plain positional and runtime keyword arguments from `context`, reads managed values
@@ -456,7 +456,7 @@ from the algorithm subcontext, and forwards everything to the generated implemen
 Argument type annotations are preserved on the generated public `step!` signatures and on the
 hidden implementation function. `where` clauses are also preserved there.
 
-The generated `Processes.init` and `Processes.step!` methods currently extract values from the
+The generated `StatefulAlgorithms.init` and `StatefulAlgorithms.step!` methods currently extract values from the
 context into local bindings before calling the typed implementation. That means the original
 argument annotations still constrain the implementation entrypoint, but the context extraction
 bindings themselves are intentionally kept simple and untyped.
@@ -497,7 +497,7 @@ macro ProcessAlgorithm(ex)
     public_config_assignments = _pa_bind_config_fields(config_fields, :_algo)
 
     if isempty(signature.managed_pos)
-        public_signature = Expr(:call, :(Processes.step!), Expr(:(::), :_algo, fname), positional_bindings...)
+        public_signature = Expr(:call, :(StatefulAlgorithms.step!), Expr(:(::), :_algo, fname), positional_bindings...)
         public_kw_bindings = copy(kw_bindings)
         push!(public_kw_bindings, Expr(:kw, :_init, nothing))
         insert!(public_signature.args, 2, Expr(:parameters, public_kw_bindings...))
@@ -511,7 +511,7 @@ macro ProcessAlgorithm(ex)
             end)
         push!(public_defs, public_def)
     else
-        public_piped_signature = Expr(:call, :(Processes.step!), Expr(:(::), :_algo, fname), positional_bindings...)
+        public_piped_signature = Expr(:call, :(StatefulAlgorithms.step!), Expr(:(::), :_algo, fname), positional_bindings...)
         piped_kw_bindings = copy(kw_bindings)
         push!(piped_kw_bindings, Expr(:kw, :_init, nothing))
         insert!(public_piped_signature.args, 2, Expr(:parameters, piped_kw_bindings...))
@@ -523,7 +523,7 @@ macro ProcessAlgorithm(ex)
                 return $impl_name(_algo, $(map(x -> x.name, signature.positional)...); $(kw_forward...))
             end)
 
-        bootstrap_signature = Expr(:call, :(Processes.step!), Expr(:(::), :_algo, fname), plain_pos_bindings...)
+        bootstrap_signature = Expr(:call, :(StatefulAlgorithms.step!), Expr(:(::), :_algo, fname), plain_pos_bindings...)
         bootstrap_kw_bindings = copy(kw_bindings)
         push!(bootstrap_kw_bindings, Expr(:kw, :_init, Expr(:tuple, Expr(:parameters))))
         insert!(bootstrap_signature.args, 2, Expr(:parameters, bootstrap_kw_bindings...))
@@ -552,7 +552,7 @@ macro ProcessAlgorithm(ex)
     managed_assignments = [_pa_bind_managed_field(field, input_temps, :context) for field in signature.managed_pos]
     managed_tuple_expr = Expr(:tuple, Expr(:parameters, [Expr(:kw, field.name, field.name) for field in signature.managed_pos]...))
     init_def = quote
-        function Processes.init(_algo::$fname, context::C) where {C <: Union{Processes.AbstractContext, NamedTuple}}
+        function StatefulAlgorithms.init(_algo::$fname, context::C) where {C <: Union{StatefulAlgorithms.AbstractContext, NamedTuple}}
             $(init_config_assignments...)
             $(input_assignments...)
             $(managed_assignments...)
@@ -566,11 +566,11 @@ macro ProcessAlgorithm(ex)
     step_call_args = [arg.name for arg in signature.positional]
     positional_name_tuple = Expr(:tuple, [QuoteNode(arg.name) for arg in signature.positional]...)
     dsl_metadata_defs = quote
-        Processes._dsl_processalgorithm_positional_names(::$fname) = $positional_name_tuple
-        Processes._dsl_processalgorithm_positional_names(::Type{$fname}) = $positional_name_tuple
+        StatefulAlgorithms._dsl_processalgorithm_positional_names(::$fname) = $positional_name_tuple
+        StatefulAlgorithms._dsl_processalgorithm_positional_names(::Type{$fname}) = $positional_name_tuple
     end
     step_def = quote
-        function Processes.step!(_algo::$fname, context::C) where {C <: Union{Processes.AbstractContext, NamedTuple}}
+        function StatefulAlgorithms.step!(_algo::$fname, context::C) where {C <: Union{StatefulAlgorithms.AbstractContext, NamedTuple}}
             $(step_pos_assignments...)
             $(step_kw_assignments...)
             return $impl_name(_algo, $(step_call_args...); $(step_kw_forward...))
@@ -578,10 +578,10 @@ macro ProcessAlgorithm(ex)
     end
 
     struct_def = if isempty(config_fields)
-        :(struct $fname <: Processes.ProcessAlgorithm end)
+        :(struct $fname <: StatefulAlgorithms.ProcessAlgorithm end)
     else
         field_exprs = [Expr(:(=), _pa_binding_expr(field.name, field.typeexpr), field.default) for field in config_fields]
-        :(Base.@kwdef struct $fname <: Processes.ProcessAlgorithm
+        :(Base.@kwdef struct $fname <: StatefulAlgorithms.ProcessAlgorithm
             $(field_exprs...)
         end)
     end

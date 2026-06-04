@@ -1,7 +1,7 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
-Processes.@ProcessAlgorithm function InspectionProducerForTest(
+StatefulAlgorithms.@ProcessAlgorithm function InspectionProducerForTest(
     @managed(history = Int[]);
     @inputs((; seed::Int = 1))
 )
@@ -9,7 +9,7 @@ Processes.@ProcessAlgorithm function InspectionProducerForTest(
     return (; value = seed + 1)
 end
 
-Processes.@ProcessAlgorithm function InspectionConsumerForTest(value)
+StatefulAlgorithms.@ProcessAlgorithm function InspectionConsumerForTest(value)
     return (; doubled = 2value)
 end
 
@@ -20,10 +20,10 @@ end
         InspectionConsumerForTest(value = value)
     end
 
-    report = Processes.inspect(comp)
+    report = StatefulAlgorithms.inspect(comp)
     printed = sprint(show, report)
 
-    @test report isa Processes.InspectionReport
+    @test report isa StatefulAlgorithms.InspectionReport
     @test isnothing(getfield(report, :resolve_error))
     @test !isempty(getfield(report, :registry_entries))
     @test !isempty(getfield(report, :state_entries))

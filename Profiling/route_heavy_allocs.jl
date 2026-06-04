@@ -8,28 +8,28 @@ function route_heavy_prepared()
     return init(resolve(route_heavy_algorithm()))
 end
 
-function route_heavy_runtime_context(algo::A, lifetime::LT) where {A<:Processes.AbstractLoopAlgorithm, LT}
-    process = Processes.LoopRunProcess(lifetime)
-    stored_context = Processes.getstoredcontext(algo)
-    runtime_context = Processes._merge_into_globals(stored_context, (; process, lifetime))
+function route_heavy_runtime_context(algo::A, lifetime::LT) where {A<:StatefulAlgorithms.AbstractLoopAlgorithm, LT}
+    process = StatefulAlgorithms.LoopRunProcess(lifetime)
+    stored_context = StatefulAlgorithms.getstoredcontext(algo)
+    runtime_context = StatefulAlgorithms._merge_into_globals(stored_context, (; process, lifetime))
     return process, stored_context, runtime_context
 end
 
-function route_heavy_after_bootstrap(algo::A, lifetime::LT) where {A<:Processes.AbstractLoopAlgorithm, LT}
+function route_heavy_after_bootstrap(algo::A, lifetime::LT) where {A<:StatefulAlgorithms.AbstractLoopAlgorithm, LT}
     process, stored_context, runtime_context = route_heavy_runtime_context(algo, lifetime)
-    step_wiring = Processes.getwiring(algo)
-    runtime_context = Processes._step!(algo, runtime_context, step_wiring, process, lifetime, Processes.Unstable())
-    Processes.tick!(process)
-    Processes.inc!(process)
+    step_wiring = StatefulAlgorithms.getwiring(algo)
+    runtime_context = StatefulAlgorithms._step!(algo, runtime_context, step_wiring, process, lifetime, StatefulAlgorithms.Unstable())
+    StatefulAlgorithms.tick!(process)
+    StatefulAlgorithms.inc!(process)
     return process, stored_context, step_wiring, runtime_context
 end
 
-function route_heavy_stable_steps!(algo::A, context::C, step_wiring::SW, n::Int) where {A<:Processes.AbstractLoopAlgorithm, C<:Processes.AbstractContext, SW<:Processes.PlanWiring}
+function route_heavy_stable_steps!(algo::A, context::C, step_wiring::SW, n::Int) where {A<:StatefulAlgorithms.AbstractLoopAlgorithm, C<:StatefulAlgorithms.AbstractContext, SW<:StatefulAlgorithms.PlanWiring}
     runtime_context = context
     lifetime = Repeat(n)
-    process = Processes.LoopRunProcess(lifetime)
+    process = StatefulAlgorithms.LoopRunProcess(lifetime)
     for _ in 1:n
-        runtime_context = Processes._step!(algo, runtime_context, step_wiring, process, lifetime, Processes.Stable())
+        runtime_context = StatefulAlgorithms._step!(algo, runtime_context, step_wiring, process, lifetime, StatefulAlgorithms.Stable())
     end
     return runtime_context
 end
@@ -51,16 +51,16 @@ end
 function main()
     algo = route_heavy_prepared()
     lifetime = Repeat(ALLOC_STEPS)
-    step_wiring = Processes.getwiring(algo)
-    stored_context = Processes.getstoredcontext(algo)
+    step_wiring = StatefulAlgorithms.getwiring(algo)
+    stored_context = StatefulAlgorithms.getstoredcontext(algo)
 
     # Warm all measured paths before recording allocations.
     warm_result = run(algo; repeats = ALLOC_STEPS)
     process, stored, runtime_context = route_heavy_runtime_context(algo, lifetime)
     process2, stored2, wiring2, boot_context = route_heavy_after_bootstrap(algo, lifetime)
     stable_context = route_heavy_stable_steps!(algo, boot_context, wiring2, 16)
-    stripped = Processes._strip_runtime_inputs(stable_context, stored2)
-    ALLOC_SINK[] = Processes._with_lifecycle(algo, stripped, Processes.getstoredinits(algo), Processes.getstoredoverrides(algo))
+    stripped = StatefulAlgorithms._strip_runtime_inputs(stable_context, stored2)
+    ALLOC_SINK[] = StatefulAlgorithms._with_lifecycle(algo, stripped, StatefulAlgorithms.getstoredinits(algo), StatefulAlgorithms.getstoredoverrides(algo))
 
     println("route_heavy_alloc_steps=", ALLOC_STEPS)
     println("route_heavy_alloc_runs=", ALLOC_RUNS)
@@ -69,22 +69,22 @@ function main()
     println("runtime_context_type=", typeof(runtime_context))
 
     allocation_per_call("looprunprocess", ALLOC_RUNS) do
-        Processes.LoopRunProcess(lifetime)
+        StatefulAlgorithms.LoopRunProcess(lifetime)
     end
 
     allocation_per_call("merge_runtime", ALLOC_RUNS) do
-        p = Processes.LoopRunProcess(lifetime)
-        Processes._merge_into_globals(stored_context, (; process = p, lifetime))
+        p = StatefulAlgorithms.LoopRunProcess(lifetime)
+        StatefulAlgorithms._merge_into_globals(stored_context, (; process = p, lifetime))
     end
 
     allocation_per_call("bootstrap_step", ALLOC_RUNS) do
         p, _, runtime = route_heavy_runtime_context(algo, lifetime)
-        Processes._step!(algo, runtime, step_wiring, p, lifetime, Processes.Unstable())
+        StatefulAlgorithms._step!(algo, runtime, step_wiring, p, lifetime, StatefulAlgorithms.Unstable())
     end
 
     allocation_per_call("stable_step", ALLOC_RUNS) do
-        p = Processes.LoopRunProcess(lifetime)
-        Processes._step!(algo, boot_context, step_wiring, p, lifetime, Processes.Stable())
+        p = StatefulAlgorithms.LoopRunProcess(lifetime)
+        StatefulAlgorithms._step!(algo, boot_context, step_wiring, p, lifetime, StatefulAlgorithms.Stable())
     end
 
     allocation_per_call("stable_100_steps", ALLOC_RUNS) do
@@ -92,11 +92,11 @@ function main()
     end
 
     allocation_per_call("strip_runtime", ALLOC_RUNS) do
-        Processes._strip_runtime_inputs(stable_context, stored)
+        StatefulAlgorithms._strip_runtime_inputs(stable_context, stored)
     end
 
     allocation_per_call("with_lifecycle", ALLOC_RUNS) do
-        Processes._with_lifecycle(algo, stripped, Processes.getstoredinits(algo), Processes.getstoredoverrides(algo))
+        StatefulAlgorithms._with_lifecycle(algo, stripped, StatefulAlgorithms.getstoredinits(algo), StatefulAlgorithms.getstoredoverrides(algo))
     end
 
     allocation_per_call("base_run", ALLOC_RUNS) do

@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
-using Processes
-import Processes as ps
+using StatefulAlgorithms
+import StatefulAlgorithms as ps
 
 @ProcessAlgorithm function PreyGrowth(prey, rate)
     prey = prey + prey * rate
@@ -20,15 +20,15 @@ end
     return (;prey)
 end
 
-function Processes.init(::PreyGrowth, input)
+function StatefulAlgorithms.init(::PreyGrowth, input)
     return (;prey = 50.0, rate = 0.02)
 end
 
-function Processes.init(::Predation, input)
+function StatefulAlgorithms.init(::Predation, input)
     return (;predators = 5.0, attack = 0.001)
 end
 
-function Processes.init(::ControlPulse, input)
+function StatefulAlgorithms.init(::ControlPulse, input)
     return (;inject = 10.0)
 end
 

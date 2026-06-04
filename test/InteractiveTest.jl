@@ -1,14 +1,14 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
 @testset "Interactive lifecycle variables" begin
     struct InitTimeInteractiveTarget <: ProcessAlgorithm end
 
-    function Processes.init(::InitTimeInteractiveTarget, context::C) where {C}
+    function StatefulAlgorithms.init(::InitTimeInteractiveTarget, context::C) where {C}
         return (; value = 1.0, seen = 0.0)
     end
 
-    function Processes.step!(::InitTimeInteractiveTarget, context::C) where {C}
+    function StatefulAlgorithms.step!(::InitTimeInteractiveTarget, context::C) where {C}
         # `value` is stored as an InteractiveVar, but algorithms see its value.
         value = context.value
         indexed_value = context[:value]
@@ -26,22 +26,22 @@ using Processes
         Interactive(:target, :value);
         lifetime = Repeat(1),
     )
-    context = Processes.context(initialized)
+    context = StatefulAlgorithms.context(initialized)
 
     @test context.target.value isa InteractiveVar{Float64}
     @test context.target.value[] == 3.0
 
-    stepped_context = Processes._step!(initialized, context)
+    stepped_context = StatefulAlgorithms._step!(initialized, context)
     @test stepped_context.target.value isa InteractiveVar{Float64}
     @test stepped_context.target.value[] == 4.0
     @test stepped_context.target.seen == 5.0
 
     stepped_context.target.value[] = 10
-    stepped_context = Processes._step!(initialized, stepped_context)
+    stepped_context = StatefulAlgorithms._step!(initialized, stepped_context)
     @test stepped_context.target.value[] == 11.0
     @test stepped_context.target.seen == 12.0
 
     replayed = init(initialized; lifetime = Repeat(1))
-    @test Processes.context(replayed).target.value isa InteractiveVar{Float64}
-    @test Processes.context(replayed).target.value[] == 3.0
+    @test StatefulAlgorithms.context(replayed).target.value isa InteractiveVar{Float64}
+    @test StatefulAlgorithms.context(replayed).target.value[] == 3.0
 end

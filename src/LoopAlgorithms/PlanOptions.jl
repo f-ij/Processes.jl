@@ -220,7 +220,7 @@ constructed plan.
 
 @inline @generated function _plan_child_wiring(funcs::Funcs, options::Options) where {Funcs<:Tuple, Options<:Tuple}
     if fieldcount(Funcs) * fieldcount(Options) > _PLAN_CHILD_WIRING_GENERATED_PRODUCT_LIMIT
-        return :(Processes._plan_child_wiring_runtime(funcs, options))
+        return :(StatefulAlgorithms._plan_child_wiring_runtime(funcs, options))
     end
 
     runtime_checks = Any[]

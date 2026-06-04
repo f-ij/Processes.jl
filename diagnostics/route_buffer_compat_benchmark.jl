@@ -3,16 +3,16 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 
 using Printf
 using Test
-using Processes
+using StatefulAlgorithms
 
 const ROUTE_BUFFER_COMPAT_STEPS = parse(Int, get(ENV, "ROUTE_BUFFER_COMPAT_STEPS", "2000"))
 const ROUTE_BUFFER_COMPAT_RUNS = parse(Int, get(ENV, "ROUTE_BUFFER_COMPAT_RUNS", "40"))
 const ROUTE_BUFFER_COMPAT_SINK = Ref{Any}(nothing)
 
-struct CompatController <: Processes.ProcessAlgorithm end
-struct CompatPlant <: Processes.ProcessAlgorithm end
-struct CompatObserver <: Processes.ProcessAlgorithm end
-struct CompatMirror{MirrorId} <: Processes.ProcessAlgorithm end
+struct CompatController <: StatefulAlgorithms.ProcessAlgorithm end
+struct CompatPlant <: StatefulAlgorithms.ProcessAlgorithm end
+struct CompatObserver <: StatefulAlgorithms.ProcessAlgorithm end
+struct CompatMirror{MirrorId} <: StatefulAlgorithms.ProcessAlgorithm end
 
 """Mutate the shared diagnostic buffers with one scalar contribution."""
 function compat_touch_buffers!(
@@ -117,12 +117,12 @@ function compat_mirror_kernel!(
 end
 
 """Initialize controller-local state."""
-function Processes.init(::CompatController, context::C) where {C}
+function StatefulAlgorithms.init(::CompatController, context::C) where {C}
     return (; force = 0.0, control_buffer = zeros(Float64, 4))
 end
 
 """Step the controller and return local plus routed buffer names."""
-function Processes.step!(::CompatController, context::C) where {C}
+function StatefulAlgorithms.step!(::CompatController, context::C) where {C}
     force, trace, scratch, control_buffer = compat_controller_kernel!(
         context.trace,
         context.scratch,
@@ -136,7 +136,7 @@ function Processes.step!(::CompatController, context::C) where {C}
 end
 
 """Initialize plant-local state and the routed buffers."""
-function Processes.init(::CompatPlant, context::C) where {C}
+function StatefulAlgorithms.init(::CompatPlant, context::C) where {C}
     return (;
         position = 0.25,
         velocity = -0.15,
@@ -148,7 +148,7 @@ function Processes.init(::CompatPlant, context::C) where {C}
 end
 
 """Step the plant and return local plus routed buffer names."""
-function Processes.step!(::CompatPlant, context::C) where {C}
+function StatefulAlgorithms.step!(::CompatPlant, context::C) where {C}
     position, velocity, energy, trace, scratch = compat_plant_kernel!(
         context.trace,
         context.scratch,
@@ -162,12 +162,12 @@ function Processes.step!(::CompatPlant, context::C) where {C}
 end
 
 """Initialize observer-local state."""
-function Processes.init(::CompatObserver, context::C) where {C}
+function StatefulAlgorithms.init(::CompatObserver, context::C) where {C}
     return (; checksum = 0.0, observer_buffer = zeros(Float64, 3))
 end
 
 """Step the observer and return local plus routed buffer names."""
-function Processes.step!(::CompatObserver, context::C) where {C}
+function StatefulAlgorithms.step!(::CompatObserver, context::C) where {C}
     checksum, trace, scratch, observer_buffer = compat_observer_kernel!(
         context.trace,
         context.scratch,
@@ -182,12 +182,12 @@ function Processes.step!(::CompatObserver, context::C) where {C}
 end
 
 """Initialize mirror-local state."""
-function Processes.init(::CompatMirror{MirrorId}, context::C) where {MirrorId, C}
+function StatefulAlgorithms.init(::CompatMirror{MirrorId}, context::C) where {MirrorId, C}
     return (; score = 0.0, samples = 0, mirror_buffer = zeros(Float64, 3))
 end
 
 """Step one mirror and return local plus routed buffer names."""
-function Processes.step!(::CompatMirror{MirrorId}, context::C) where {MirrorId, C}
+function StatefulAlgorithms.step!(::CompatMirror{MirrorId}, context::C) where {MirrorId, C}
     score, samples, trace, scratch, mirror_buffer = compat_mirror_kernel!(
         context.trace,
         context.scratch,
@@ -317,8 +317,8 @@ function compat_bespoke_loop(steps::I) where {I<:Integer}
 end
 
 """Extract comparable output from a routed run."""
-function compat_route_buffer_summary(result::A) where {A<:Processes.AbstractLoopAlgorithm}
-    ctx = Processes.context(result)
+function compat_route_buffer_summary(result::A) where {A<:StatefulAlgorithms.AbstractLoopAlgorithm}
+    ctx = StatefulAlgorithms.context(result)
     plant = ctx[:plant]
     controller = ctx[:controller]
     observer = ctx[:observer]

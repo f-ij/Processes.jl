@@ -1,7 +1,7 @@
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
-using Processes
-import Processes as ps
+using StatefulAlgorithms
+import StatefulAlgorithms as ps
 
 @ProcessAlgorithm function AgentsStep(positions, velocity)
     positions = positions .+ velocity
@@ -20,15 +20,15 @@ end
     return (;positions)
 end
 
-function Processes.init(::AgentsStep, input)
+function StatefulAlgorithms.init(::AgentsStep, input)
     return (;positions = [0.0, 1.0], velocity = 0.1)
 end
 
-function Processes.init(::FieldDiffuse, input)
+function StatefulAlgorithms.init(::FieldDiffuse, input)
     return (;field = 0.5, diffusion = 0.05)
 end
 
-function Processes.init(::FieldSense, input)
+function StatefulAlgorithms.init(::FieldSense, input)
     return (;strength = 0.02)
 end
 

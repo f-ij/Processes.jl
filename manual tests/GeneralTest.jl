@@ -1,6 +1,6 @@
 using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."))
-using Processes
+using StatefulAlgorithms
 
 struct Fib <: ProcessAlgorithm end
 
@@ -14,12 +14,12 @@ function Fib(args)
     push!(fiblist, fiblist[end] + fiblist[end-1])
 end
 
-function Processes.init(::Fib, args)
+function StatefulAlgorithms.init(::Fib, args)
     println("Preparing with type")
     return (;fiblist = [0, 1])
 end
 
-function Processes.init(::typeof(Fib), args)
+function StatefulAlgorithms.init(::typeof(Fib), args)
     println("Preparing with typeof")
     return (;fiblist = [0, 1])
 end
@@ -37,11 +37,11 @@ function Luc(args)
 end
 
 
-function Processes.init(::Luc, args)
+function StatefulAlgorithms.init(::Luc, args)
     println("Preparing with type")
     return (;luclist = [2, 1])
 end
-function Processes.init(::typeof(Luc), args)
+function StatefulAlgorithms.init(::typeof(Luc), args)
     println("Preparing with typeof")
     return (;luclist = [2, 1])
 end
@@ -51,7 +51,7 @@ FibLucComp = CompositeAlgorithm( (Fib, Luc), (1,2) )
 ###
 struct FibLuc end
 
-Processes.init(::Type{FibLuc}, args) = (;fiblist = [0, 1], luclist = [2, 1])
+StatefulAlgorithms.init(::Type{FibLuc}, args) = (;fiblist = [0, 1], luclist = [2, 1])
 
 function FibLuc(args)
     (;process) = args
@@ -63,10 +63,10 @@ end
 
 struct FibLucTrig{Intervals} end
 
-function Processes.init(::Type{FibLucTrig{Intervals}}, args) where Intervals
+function StatefulAlgorithms.init(::Type{FibLucTrig{Intervals}}, args) where Intervals
     (;lifetime) = args
-    rpts = Processes.repeats(lifetime)
-    triggers = ((Processes.InitTriggerList(interval) for interval in Intervals)...,)
+    rpts = StatefulAlgorithms.repeats(lifetime)
+    triggers = ((StatefulAlgorithms.InitTriggerList(interval) for interval in Intervals)...,)
     for i in 1:rpts
         for (i_idx, interval) in enumerate(Intervals)
             if i % interval == 0
@@ -74,19 +74,19 @@ function Processes.init(::Type{FibLucTrig{Intervals}}, args) where Intervals
             end
         end
     end
-    triggers = Processes.CompositeTriggers(triggers)
+    triggers = StatefulAlgorithms.CompositeTriggers(triggers)
     return (;fiblist = [0, 1], luclist = [2, 1], triggers)
 end
 
 function FibLucTrig{(1,2)}(args)
     (;process, triggers) = args
     Fib(args)
-    Processes.skiplist!(triggers)
-    if Processes.shouldtrigger(triggers, loopidx(process))
+    StatefulAlgorithms.skiplist!(triggers)
+    if StatefulAlgorithms.shouldtrigger(triggers, loopidx(process))
         Luc(args)
-        Processes.inc!(triggers)
+        StatefulAlgorithms.inc!(triggers)
     end
-    Processes.skiplist!(triggers)
+    StatefulAlgorithms.skiplist!(triggers)
 end
 
 benchmark(FibLucComp, 1000000)
@@ -94,19 +94,19 @@ benchmark(FibLuc, 1000000)
 # benchmark(FibLucTrig{(1,2)}, 1000000)
 
 # benchmark(FibLucComp, 1000000, loopfunction = unrollloop)
-# benchmark(FibLucComp, 1000000, loopfunction = Processes.typeloop, progress = true)
+# benchmark(FibLucComp, 1000000, loopfunction = StatefulAlgorithms.typeloop, progress = true)
 
 
 # p, context = ex_p_and_context(FibLucComp, 1000000, loopfunction = unrollloop)
 # (;lifetime) = args
 
-# import Processes: _comp_dispatch, gethead, gettail, get_intervals, headval, get_funcs, typeheadval, typetail
-# @code_warntype Processes.comp_dispatch(FibLucComp, args)
+# import StatefulAlgorithms: _comp_dispatch, gethead, gettail, get_intervals, headval, get_funcs, typeheadval, typetail
+# @code_warntype StatefulAlgorithms.comp_dispatch(FibLucComp, args)
 # const funcs = get_funcs(FibLucComp)
 # const intervals = get_intervals(FibLucComp)
-# @code_warntype Processes._comp_dispatch(gethead(funcs), typeheadval(intervals), gettail(funcs), typetail(intervals), args)
+# @code_warntype StatefulAlgorithms._comp_dispatch(gethead(funcs), typeheadval(intervals), gettail(funcs), typetail(intervals), args)
 
-# @code_warntype Processes.unroll_step(FibLucComp, args)
+# @code_warntype StatefulAlgorithms.unroll_step(FibLucComp, args)
 
 p1 = Process(FibLuc; lifetime = 1000000)
 start(p1)

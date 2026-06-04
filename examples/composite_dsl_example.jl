@@ -1,23 +1,23 @@
-using Processes
+using StatefulAlgorithms
 
-struct ExampleSourceAlgo <: Processes.ProcessAlgorithm end
-struct ExampleCombineAlgo <: Processes.ProcessAlgorithm end
-struct ExampleSinkAlgo <: Processes.ProcessAlgorithm end
-struct ExampleValueAlgo <: Processes.ProcessAlgorithm end
+struct ExampleSourceAlgo <: StatefulAlgorithms.ProcessAlgorithm end
+struct ExampleCombineAlgo <: StatefulAlgorithms.ProcessAlgorithm end
+struct ExampleSinkAlgo <: StatefulAlgorithms.ProcessAlgorithm end
+struct ExampleValueAlgo <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.step!(::ExampleSourceAlgo, context)
+function StatefulAlgorithms.step!(::ExampleSourceAlgo, context)
     return (; produced = 2, passthrough = context.seed)
 end
 
-function Processes.step!(::ExampleCombineAlgo, context)
+function StatefulAlgorithms.step!(::ExampleCombineAlgo, context)
     return (; combined = context.left + context.right)
 end
 
-function Processes.step!(::ExampleSinkAlgo, context)
+function StatefulAlgorithms.step!(::ExampleSinkAlgo, context)
     return (; seen = context.value)
 end
 
-function Processes.step!(::ExampleValueAlgo, context)
+function StatefulAlgorithms.step!(::ExampleValueAlgo, context)
     return (; value = context.value)
 end
 
@@ -29,7 +29,7 @@ state_only = @state begin
 end
 
 println("standalone @state")
-println(Processes.init(state_only, (; b = 4)))
+println(StatefulAlgorithms.init(state_only, (; b = 4)))
 println()
 
 n = 5

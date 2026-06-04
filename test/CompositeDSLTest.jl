@@ -1,47 +1,47 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
-struct DSLSourceAlgo <: Processes.ProcessAlgorithm end
-struct DSLCombineAlgo <: Processes.ProcessAlgorithm end
-struct DSLSinkAlgo <: Processes.ProcessAlgorithm end
-struct DSLValueAlgo <: Processes.ProcessAlgorithm end
-struct DSLNestedSourceAlgo <: Processes.ProcessAlgorithm end
-struct DSLHeldStateAlgo <: Processes.ProcessAlgorithm end
-struct DSLRepeatLifetimeCounter <: Processes.ProcessAlgorithm end
+struct DSLSourceAlgo <: StatefulAlgorithms.ProcessAlgorithm end
+struct DSLCombineAlgo <: StatefulAlgorithms.ProcessAlgorithm end
+struct DSLSinkAlgo <: StatefulAlgorithms.ProcessAlgorithm end
+struct DSLValueAlgo <: StatefulAlgorithms.ProcessAlgorithm end
+struct DSLNestedSourceAlgo <: StatefulAlgorithms.ProcessAlgorithm end
+struct DSLHeldStateAlgo <: StatefulAlgorithms.ProcessAlgorithm end
+struct DSLRepeatLifetimeCounter <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.step!(::DSLSourceAlgo, context)
+function StatefulAlgorithms.step!(::DSLSourceAlgo, context)
     return (; produced = 2, passthrough = context.seed)
 end
 
-function Processes.step!(::DSLCombineAlgo, context)
+function StatefulAlgorithms.step!(::DSLCombineAlgo, context)
     return (; combined = context.left + context.right)
 end
 
-function Processes.step!(::DSLSinkAlgo, context)
+function StatefulAlgorithms.step!(::DSLSinkAlgo, context)
     return (; seen = context.value)
 end
 
-function Processes.step!(::DSLValueAlgo, context)
+function StatefulAlgorithms.step!(::DSLValueAlgo, context)
     return (; result = context.value)
 end
 
-function Processes.step!(::DSLNestedSourceAlgo, context)
+function StatefulAlgorithms.step!(::DSLNestedSourceAlgo, context)
     return (; captured = 4)
 end
 
-function Processes.init(::DSLHeldStateAlgo, context)
+function StatefulAlgorithms.init(::DSLHeldStateAlgo, context)
     return (; state = 11)
 end
 
-function Processes.step!(::DSLHeldStateAlgo, context)
+function StatefulAlgorithms.step!(::DSLHeldStateAlgo, context)
     return (; state = context.state)
 end
 
-function Processes.init(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
+function StatefulAlgorithms.init(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
     return (; count = get(context, :count, 0))
 end
 
-function Processes.step!(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
+function StatefulAlgorithms.step!(::A, context::C) where {A<:DSLRepeatLifetimeCounter,C}
     return (; count = context.count + 1)
 end
 
@@ -71,22 +71,22 @@ end
     @testset "FuncWrapper steps directly and does not eagerly init" begin
         @info "Composite DSL: FuncWrapper steps directly and does not eagerly init"
         wrapped = FuncWrapper(x -> 2x, (:x,), (:y,))
-        @test Processes.step!(wrapped, (; x = 4)) == (; y = 8)
-        @test Processes.init(wrapped, (; x = 4)) == (;)
+        @test StatefulAlgorithms.step!(wrapped, (; x = 4)) == (; y = 8)
+        @test StatefulAlgorithms.init(wrapped, (; x = 4)) == (;)
         @test occursin("(x) -> (; y)", sprint(summary, wrapped))
 
         kw_wrapped = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (; scale = 3))
-        @test Processes.step!(kw_wrapped, (; external = 4)) == (; y = 12)
-        @test Processes.init(kw_wrapped, (; external = 4)) == (;)
+        @test StatefulAlgorithms.step!(kw_wrapped, (; external = 4)) == (; y = 12)
+        @test StatefulAlgorithms.init(kw_wrapped, (; external = 4)) == (;)
         @test occursin("(external; scale = 3) -> (; y)", sprint(summary, kw_wrapped))
 
         kw_from_context = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (; scale = :factor))
-        @test Processes.step!(kw_from_context, (; external = 4, factor = 5)) == (; y = 20)
-        @test Processes.init(kw_from_context, (; external = 4, factor = 5)) == (;)
+        @test StatefulAlgorithms.step!(kw_from_context, (; external = 4, factor = 5)) == (; y = 20)
+        @test StatefulAlgorithms.init(kw_from_context, (; external = 4, factor = 5)) == (;)
 
         kw_same_name = FuncWrapper((x; scale = 1) -> scale * x, (:external,), (:y,), (:scale,))
-        @test Processes.step!(kw_same_name, (; external = 4, scale = 6)) == (; y = 24)
-        @test Processes.init(kw_same_name, (; external = 4, scale = 6)) == (;)
+        @test StatefulAlgorithms.step!(kw_same_name, (; external = 4, scale = 6)) == (; y = 24)
+        @test StatefulAlgorithms.init(kw_same_name, (; external = 4, scale = 6)) == (;)
 
         literal_wrapped = FuncWrapper(println, ("Num: ", :value), ())
         literal_show = sprint(show, literal_wrapped)
@@ -102,8 +102,8 @@ end
             b
         end
 
-        @test Processes.init(state, (; b = 4)) == (; a = 1, b = 4)
-        @test Processes.init(state, (; a = 7, b = 4)) == (; a = 7, b = 4)
+        @test StatefulAlgorithms.init(state, (; b = 4)) == (; a = 1, b = 4)
+        @test StatefulAlgorithms.init(state, (; a = 7, b = 4)) == (; a = 7, b = 4)
     end
 
     @testset "Mutable @state defaults are rebuilt per init" begin
@@ -112,9 +112,9 @@ end
             nums = Float64[]
         end
 
-        first_init = Processes.init(state, (;))
+        first_init = StatefulAlgorithms.init(state, (;))
         push!(first_init.nums, 1.0)
-        second_init = Processes.init(state, (;))
+        second_init = StatefulAlgorithms.init(state, (;))
 
         @test length(first_init.nums) == 1
         @test isempty(second_init.nums)
@@ -133,13 +133,13 @@ end
         end
 
         merged = merge(left, right)
-        init = Processes.init(merged, (; scale = 3.0))
+        init = StatefulAlgorithms.init(merged, (; scale = 3.0))
 
         @test init == (; seed = 4, scale = 3.0, buffer = Float64[], offset = 2)
         overlap_merged = @test_logs (:warn, r"Overlapping GeneralState field names") merge(left, @state begin
             seed = 7
         end)
-        @test Processes.init(overlap_merged, (; scale = 3.0)) == (; seed = 7, scale = 3.0)
+        @test StatefulAlgorithms.init(overlap_merged, (; scale = 3.0)) == (; seed = 7, scale = 3.0)
     end
 
     @testset "Explicit state bind and merge document overlapping child state" begin
@@ -169,7 +169,7 @@ end
         end
 
         bound_process = Process(resolve(bound), repeat = 1)
-        Processes.run(bound_process)
+        StatefulAlgorithms.run(bound_process)
         wait(bound_process)
         @test context(bound_process)[:_state].buffers == [:writer, :reader]
 
@@ -183,7 +183,7 @@ end
         @test_throws ErrorException init(resolved_required)
         initialized = init(resolved_required, Init(:_state; buffers = Symbol[]))
         merged_process = Process(initialized, repeat = 1)
-        Processes.run(merged_process)
+        StatefulAlgorithms.run(merged_process)
         wait(merged_process)
         @test context(merged_process)[:_state].buffers == [:writer, :reader]
 
@@ -227,43 +227,43 @@ end
 
         resolved = resolve(algo)
 
-        @test resolved isa Processes.LoopAlgorithm
-        @test Processes.getplan(resolved) isa CompositeAlgorithm
-        @test isempty(Processes.getoptions(algo, Processes.Route))
-        @test !isempty(Processes.getoptions(Processes.getplan(resolved), Processes.Route))
+        @test resolved isa StatefulAlgorithms.LoopAlgorithm
+        @test StatefulAlgorithms.getplan(resolved) isa CompositeAlgorithm
+        @test isempty(StatefulAlgorithms.getoptions(algo, StatefulAlgorithms.Route))
+        @test !isempty(StatefulAlgorithms.getoptions(StatefulAlgorithms.getplan(resolved), StatefulAlgorithms.Route))
         @test intervals(resolved) == (
-            Processes.Interval(1),
-            Processes.Interval(1),
-            Processes.Interval(1),
-            Processes.Interval(1),
+            StatefulAlgorithms.Interval(1),
+            StatefulAlgorithms.Interval(1),
+            StatefulAlgorithms.Interval(1),
+            StatefulAlgorithms.Interval(1),
         )
-        @test Processes.plan_child_namespace(resolved, 1) == :source
-        @test length(Processes.getstates(resolved)) == 1
-        @test Processes.getkey(first(Processes.getstates(resolved))) == :_state
+        @test StatefulAlgorithms.plan_child_namespace(resolved, 1) == :source
+        @test length(StatefulAlgorithms.getstates(resolved)) == 1
+        @test StatefulAlgorithms.getkey(first(StatefulAlgorithms.getstates(resolved))) == :_state
 
-        sharedcontexts, sharedvars = Processes._resolve_options(resolved)
+        sharedcontexts, sharedvars = StatefulAlgorithms._resolve_options(resolved)
         @test !isempty(sharedvars)
         combine_routes = sharedvars[:DSLCombineAlgo_1]
-        @test any(route -> Processes.get_fromname(route) == :_runtime && Processes.localnames(route) == (:right,), combine_routes)
+        @test any(route -> StatefulAlgorithms.get_fromname(route) == :_runtime && StatefulAlgorithms.localnames(route) == (:right,), combine_routes)
 
-        init_ctx = Processes.initcontext(resolved; lifetime = Repeat(10))
+        init_ctx = StatefulAlgorithms.initcontext(resolved; lifetime = Repeat(10))
         @test init_ctx[:_state].seed == 3
         @test init_ctx[:_state].doubled == 10
 
         process_repeat = Process(resolved, repeat = 10)
-        @test repeats(Processes.lifetime(process_repeat)) == 10
+        @test repeats(StatefulAlgorithms.lifetime(process_repeat)) == 10
 
         process_indefinite = Process(resolved, repeat = Inf)
-        @test Processes.lifetime(process_indefinite) isa Indefinite
+        @test StatefulAlgorithms.lifetime(process_indefinite) isa Indefinite
 
         p = Process(resolved, repeat = 10)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
 
         @test ctx[:_state].seed == 3
         @test ctx[:_state].doubled == 10
-        @test Processes.getglobals(ctx).doubled == 8
-        @test !haskey(Processes.getglobals(context(p)), :doubled)
+        @test StatefulAlgorithms.getglobals(ctx).doubled == 8
+        @test !haskey(StatefulAlgorithms.getglobals(context(p)), :doubled)
         @test ctx[:source].produced == 2
         @test ctx[:source].passthrough == 3
         @test ctx[:DSLCombineAlgo_1].combined == 11
@@ -280,9 +280,9 @@ end
         end
 
         resolved_named_state = resolve(named_state_algo)
-        @test Processes.getkey(first(Processes.getstates(resolved_named_state))) == :mystate
+        @test StatefulAlgorithms.getkey(first(StatefulAlgorithms.getstates(resolved_named_state))) == :mystate
 
-        named_ctx = Processes.initcontext(resolved_named_state)
+        named_ctx = StatefulAlgorithms.initcontext(resolved_named_state)
         @test named_ctx[:mystate].a == 1
     end
 
@@ -319,30 +319,30 @@ end
             @route source.produced => sink.value
         end
 
-        @test algo isa Processes.LoopAlgorithm
-        plan = Processes.getplan(algo)
-        @test length(Processes.getoptions(plan, Processes.Route)) == 2
-        plan_wiring = Processes.getwiring(plan)
-        @test length(Processes.routes(Processes.global_wiring(plan_wiring))) == 1
-        @test length(Processes.routes(Processes.child_wiring(plan_wiring)[1])) == 1
-        @test isempty(Processes.child_wiring(plan_wiring)[2])
+        @test algo isa StatefulAlgorithms.LoopAlgorithm
+        plan = StatefulAlgorithms.getplan(algo)
+        @test length(StatefulAlgorithms.getoptions(plan, StatefulAlgorithms.Route)) == 2
+        plan_wiring = StatefulAlgorithms.getwiring(plan)
+        @test length(StatefulAlgorithms.routes(StatefulAlgorithms.global_wiring(plan_wiring))) == 1
+        @test length(StatefulAlgorithms.routes(StatefulAlgorithms.child_wiring(plan_wiring)[1])) == 1
+        @test isempty(StatefulAlgorithms.child_wiring(plan_wiring)[2])
 
         resolved = resolve(algo)
-        @test isempty(Processes.getoptions(resolved, Processes.Route))
-        resolved_wiring = Processes.getwiring(Processes.getplan(resolved))
-        @test length(propertynames(Processes.global_wiring(resolved_wiring))) == 1
-        step_wiring = Processes.child_wiring(resolved_wiring)
-        sink_routes = @inferred Processes.routes(step_wiring[2])
-        @test step_wiring[2] isa Processes.Wiring
+        @test isempty(StatefulAlgorithms.getoptions(resolved, StatefulAlgorithms.Route))
+        resolved_wiring = StatefulAlgorithms.getwiring(StatefulAlgorithms.getplan(resolved))
+        @test length(propertynames(StatefulAlgorithms.global_wiring(resolved_wiring))) == 1
+        step_wiring = StatefulAlgorithms.child_wiring(resolved_wiring)
+        sink_routes = @inferred StatefulAlgorithms.routes(step_wiring[2])
+        @test step_wiring[2] isa StatefulAlgorithms.Wiring
         @test length(sink_routes) == 1
-        @test Processes.localnames(only(sink_routes)) == (:value,)
+        @test StatefulAlgorithms.localnames(only(sink_routes)) == (:value,)
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test isempty(ctx[:sink])
         @test getkey(ctx[:sink]) == :sink
-        @test Processes.getdatatype(ctx[:sink]) <: NamedTuple
+        @test StatefulAlgorithms.getdatatype(ctx[:sink]) <: NamedTuple
     end
 
     @testset "Local routes occlude top-level @route aliases" begin
@@ -357,28 +357,28 @@ end
         end
 
         resolved = resolve(algo)
-        step_wiring = Processes.child_wiring(Processes.getwiring(Processes.getplan(resolved)))
-        sink_routes = @inferred Processes.routes(step_wiring[2])
+        step_wiring = StatefulAlgorithms.child_wiring(StatefulAlgorithms.getwiring(StatefulAlgorithms.getplan(resolved)))
+        sink_routes = @inferred StatefulAlgorithms.routes(step_wiring[2])
         @test length(sink_routes) == 1
-        @test Processes.subvarcontextnames(only(sink_routes)) == (:passthrough,)
+        @test StatefulAlgorithms.subvarcontextnames(only(sink_routes)) == (:passthrough,)
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test isempty(ctx[:sink])
         @test getkey(ctx[:sink]) == :sink
-        @test Processes.getdatatype(ctx[:sink]) <: NamedTuple
+        @test StatefulAlgorithms.getdatatype(ctx[:sink]) <: NamedTuple
     end
 
     @testset "@route statements support reverse transforms" begin
         @info "Composite DSL: @route statements support reverse transforms"
-        struct DSLReverseRouteSource <: Processes.ProcessAlgorithm end
-        struct DSLReverseRouteTarget <: Processes.ProcessAlgorithm end
+        struct DSLReverseRouteSource <: StatefulAlgorithms.ProcessAlgorithm end
+        struct DSLReverseRouteTarget <: StatefulAlgorithms.ProcessAlgorithm end
 
-        Processes.init(::DSLReverseRouteSource, context) = (; value = 1.0)
-        Processes.step!(::DSLReverseRouteSource, context) = (;)
-        Processes.init(::DSLReverseRouteTarget, context) = (;)
-        Processes.step!(::DSLReverseRouteTarget, context) = (; input = context.input + 2.0)
+        StatefulAlgorithms.init(::DSLReverseRouteSource, context) = (; value = 1.0)
+        StatefulAlgorithms.step!(::DSLReverseRouteSource, context) = (;)
+        StatefulAlgorithms.init(::DSLReverseRouteTarget, context) = (;)
+        StatefulAlgorithms.step!(::DSLReverseRouteTarget, context) = (; input = context.input + 2.0)
 
         algo = @CompositeAlgorithm begin
             @alias source = DSLReverseRouteSource
@@ -389,14 +389,14 @@ end
         end
 
         resolved = resolve(algo)
-        step_wiring = Processes.child_wiring(Processes.getwiring(Processes.getplan(resolved)))
-        target_routes = @inferred Processes.routes(step_wiring[2])
+        step_wiring = StatefulAlgorithms.child_wiring(StatefulAlgorithms.getwiring(StatefulAlgorithms.getplan(resolved)))
+        target_routes = @inferred StatefulAlgorithms.routes(step_wiring[2])
         @test length(target_routes) == 1
-        @test Processes.gettransform(only(target_routes)) !== nothing
-        @test Processes.getreverse_transform(only(target_routes)) !== nothing
+        @test StatefulAlgorithms.gettransform(only(target_routes)) !== nothing
+        @test StatefulAlgorithms.getreverse_transform(only(target_routes)) !== nothing
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test ctx[:source].value == 2.0
     end
@@ -411,13 +411,13 @@ end
         end
 
         resolved_one_var = resolve(one_var_transform)
-        _, one_var_opts = Processes._resolve_options(resolved_one_var)
+        _, one_var_opts = StatefulAlgorithms._resolve_options(resolved_one_var)
         one_var_routes = one_var_opts[:DSLSinkAlgo_1]
         @test length(one_var_routes) == 1
-        @test Processes.gettransform(first(one_var_routes)) !== nothing
+        @test StatefulAlgorithms.gettransform(first(one_var_routes)) !== nothing
 
         p_one_var = Process(resolved_one_var, repeat = 1)
-        Processes.run(p_one_var)
+        StatefulAlgorithms.run(p_one_var)
         ctx_one_var = fetch(p_one_var)
         @test isempty(ctx_one_var[:DSLSinkAlgo_1])
 
@@ -430,13 +430,13 @@ end
         end
 
         resolved_two_var = resolve(two_var_transform)
-        _, two_var_opts = Processes._resolve_options(resolved_two_var)
+        _, two_var_opts = StatefulAlgorithms._resolve_options(resolved_two_var)
         two_var_routes = two_var_opts[:DSLValueAlgo_1]
         @test length(two_var_routes) == 1
-        @test Processes.gettransform(first(two_var_routes)) !== nothing
+        @test StatefulAlgorithms.gettransform(first(two_var_routes)) !== nothing
 
         p_two_var = Process(resolved_two_var, repeat = 1)
-        Processes.run(p_two_var)
+        StatefulAlgorithms.run(p_two_var)
         ctx_two_var = fetch(p_two_var)
         @test isempty(ctx_two_var[:DSLValueAlgo_1])
     end
@@ -480,8 +480,8 @@ end
         end
 
         resolved_routine = resolve(routine)
-        @test resolved_routine isa Processes.LoopAlgorithm
-        @test Processes.getplan(resolved_routine) isa Routine
+        @test resolved_routine isa StatefulAlgorithms.LoopAlgorithm
+        @test StatefulAlgorithms.getplan(resolved_routine) isa Routine
         @test repeats(resolved_routine) == (3,)
     end
 
@@ -492,42 +492,42 @@ end
         end
 
         until_result = run(until_routine; repeats = 1)
-        @test Processes.context(until_result)[DSLRepeatLifetimeCounter].count == 3
+        @test StatefulAlgorithms.context(until_result)[DSLRepeatLifetimeCounter].count == 3
 
         until_ten_routine = @Routine begin
             count = @repeat Until(x -> x >= 10, count) DSLRepeatLifetimeCounter
         end
 
         until_ten_result = run(until_ten_routine; repeats = 1)
-        @test Processes.context(until_ten_result)[DSLRepeatLifetimeCounter].count == 10
+        @test StatefulAlgorithms.context(until_ten_result)[DSLRepeatLifetimeCounter].count == 10
 
         capped_routine = @Routine begin
             count = @repeat RepeatOrUntil(x -> x >= 10, 4, count) DSLRepeatLifetimeCounter
         end
 
         capped_result = run(capped_routine; repeats = 1)
-        @test Processes.context(capped_result)[DSLRepeatLifetimeCounter].count == 4
+        @test StatefulAlgorithms.context(capped_result)[DSLRepeatLifetimeCounter].count == 4
 
         repeat_routine = @Routine begin
             count = @repeat Repeat(2) DSLRepeatLifetimeCounter
         end
 
         repeat_result = run(repeat_routine; repeats = 1)
-        @test Processes.context(repeat_result)[DSLRepeatLifetimeCounter].count == 2
+        @test StatefulAlgorithms.context(repeat_result)[DSLRepeatLifetimeCounter].count == 2
 
         atleast_routine = @Routine begin
             count = @repeat AtLeast(x -> x >= 1, 4, count) DSLRepeatLifetimeCounter
         end
 
         atleast_result = run(atleast_routine; repeats = 1)
-        @test Processes.context(atleast_result)[DSLRepeatLifetimeCounter].count == 4
+        @test StatefulAlgorithms.context(atleast_result)[DSLRepeatLifetimeCounter].count == 4
 
         atleast_atmost_routine = @Routine begin
             count = @repeat AtLeastAtMost(x -> x >= 10, 2, 5, count) DSLRepeatLifetimeCounter
         end
 
         atleast_atmost_result = run(atleast_atmost_routine; repeats = 1)
-        @test Processes.context(atleast_atmost_result)[DSLRepeatLifetimeCounter].count == 5
+        @test StatefulAlgorithms.context(atleast_atmost_result)[DSLRepeatLifetimeCounter].count == 5
     end
 
     @testset "Nested DSL state writeback resolves through keyed _state" begin
@@ -543,8 +543,8 @@ end
         end
 
         resolved_outer = resolve(outer)
-        @test resolved_outer isa Processes.LoopAlgorithm
-        @test Processes.getplan(resolved_outer) isa CompositeAlgorithm
+        @test resolved_outer isa StatefulAlgorithms.LoopAlgorithm
+        @test StatefulAlgorithms.getplan(resolved_outer) isa CompositeAlgorithm
     end
 
     @testset "FuncWrapper positional args accept @context property routes" begin
@@ -561,19 +561,19 @@ end
         end
 
         resolved = resolve(algo)
-        wrapper = Processes.getalgo(resolved, 2)
-        wrapper_key = Processes.plan_child_namespace(resolved, 2)
-        _, sharedvars = Processes._resolve_options(resolved)
+        wrapper = StatefulAlgorithms.getalgo(resolved, 2)
+        wrapper_key = StatefulAlgorithms.plan_child_namespace(resolved, 2)
+        _, sharedvars = StatefulAlgorithms._resolve_options(resolved)
         routes = sharedvars[wrapper_key]
         @test length(routes) == 1
         @test occursin("c1.plus_capture.captured", sprint(show, wrapper))
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
-        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
         @test isempty(context(p)[wrapper_key])
-        @test !haskey(Processes.getglobals(context(p)), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(context(p)), :result)
     end
 
     @testset "FuncWrapper positional args accept explicit @transform routes" begin
@@ -590,15 +590,15 @@ end
         end
 
         resolved = resolve(algo)
-        wrapper = Processes.getalgo(resolved, 2)
-        wrapper_key = Processes.plan_child_namespace(resolved, 2)
+        wrapper = StatefulAlgorithms.getalgo(resolved, 2)
+        wrapper_key = StatefulAlgorithms.plan_child_namespace(resolved, 2)
         @test occursin("@transform", sprint(show, wrapper))
         @test occursin("c1.plus_capture.captured", sprint(show, wrapper))
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
-        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
     end
 
     @testset "FuncWrapper positional @transform routes can source @state fields" begin
@@ -611,19 +611,19 @@ end
         end
 
         resolved = resolve(algo)
-        wrapper = Processes.getalgo(resolved, 1)
-        wrapper_key = Processes.plan_child_namespace(resolved, 1)
-        _, sharedvars = Processes._resolve_options(resolved)
+        wrapper = StatefulAlgorithms.getalgo(resolved, 1)
+        wrapper_key = StatefulAlgorithms.plan_child_namespace(resolved, 1)
+        _, sharedvars = StatefulAlgorithms._resolve_options(resolved)
         routes = sharedvars[wrapper_key]
         @test length(routes) == 1
-        @test Processes.gettransform(first(routes)) !== nothing
+        @test StatefulAlgorithms.gettransform(first(routes)) !== nothing
         @test occursin("@transform", sprint(show, wrapper))
         @test occursin("clamping_beta", sprint(show, wrapper))
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
-        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
     end
 
     @testset "State fields can be assigned captured values directly" begin
@@ -637,20 +637,20 @@ end
         end
 
         resolved = resolve(algo)
-        writer = Processes.getalgo(resolved, 1)
-        writer_key = Processes.plan_child_namespace(resolved, 1)
-        result_key = Processes.plan_child_namespace(resolved, 2)
-        @test writer isa Processes.ContextWrite
+        writer = StatefulAlgorithms.getalgo(resolved, 1)
+        writer_key = StatefulAlgorithms.plan_child_namespace(resolved, 1)
+        result_key = StatefulAlgorithms.plan_child_namespace(resolved, 2)
+        @test writer isa StatefulAlgorithms.ContextWrite
 
-        _, sharedvars = Processes._resolve_options(resolved)
+        _, sharedvars = StatefulAlgorithms._resolve_options(resolved)
         routes = sharedvars[writer_key]
         @test length(routes) == 1
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test ctx[:_state].clamping_beta === 3.0
-        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
     end
 
     @testset "State buffer indexes can be assigned directly" begin
@@ -665,10 +665,10 @@ end
 
         resolved = resolve(algo)
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test ctx[:_state].somebuffer == [2, 4, 5]
-        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
     end
 
     @testset "State buffers support broadcast assignment syntax" begin
@@ -684,10 +684,10 @@ end
 
         resolved = resolve(algo)
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test ctx[:_state].somebuffer == [1, 7, 8]
-        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
     end
 
     @testset "Owned state fields can be assigned from ref values" begin
@@ -707,10 +707,10 @@ end
 
         resolved = resolve(algo)
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test ctx[:_state].nudged_beta === 2.0
-        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
     end
 
     @testset "FuncWrapper keyword args preserve routed display expressions" begin
@@ -726,13 +726,13 @@ end
         end
 
         resolved = resolve(algo)
-        wrapper = Processes.getalgo(resolved, 2)
+        wrapper = StatefulAlgorithms.getalgo(resolved, 2)
         @test occursin("value = c1.plus_capture.captured", sprint(show, wrapper))
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
-        @test !haskey(Processes.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
     end
 
     @testset "FuncWrapper keyword args accept semicolon same-name syntax" begin
@@ -746,7 +746,7 @@ end
         end
 
         resolved = resolve(algo)
-        wrapper = Processes.getalgo(resolved, 1)
+        wrapper = StatefulAlgorithms.getalgo(resolved, 1)
         wrapper_summary = sprint(show, wrapper)
         @test occursin("a = b", wrapper_summary)
         @test occursin("x = x", wrapper_summary)
@@ -755,7 +755,7 @@ end
         p = Process(resolved, repeat = 1)
         run(p)
         @test fetch(p) == (; result = 321)
-        @test !haskey(Processes.getglobals(context(p)), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(context(p)), :result)
         close(p)
     end
 
@@ -768,14 +768,14 @@ end
         end
 
         resolved = resolve(algo)
-        sink = Processes.getalgo(resolved, 1)
-        sink_key = Processes.plan_child_namespace(resolved, 1)
-        _, sharedvars = Processes._resolve_options(resolved)
+        sink = StatefulAlgorithms.getalgo(resolved, 1)
+        sink_key = StatefulAlgorithms.plan_child_namespace(resolved, 1)
+        _, sharedvars = StatefulAlgorithms._resolve_options(resolved)
         routes = sharedvars[sink_key]
         @test length(routes) == 1
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test isempty(ctx[sink_key])
         @test ctx[:dynamics].state == 11
@@ -794,22 +794,22 @@ end
         end
 
         resolved = resolve(algo)
-        function_key = Processes.plan_child_namespace(resolved, 1)
-        positional_key = Processes.plan_child_namespace(resolved, 2)
-        transform_key = Processes.plan_child_namespace(resolved, 3)
-        sink_key = Processes.plan_child_namespace(resolved, 4)
-        _, sharedvars = Processes._resolve_options(resolved)
+        function_key = StatefulAlgorithms.plan_child_namespace(resolved, 1)
+        positional_key = StatefulAlgorithms.plan_child_namespace(resolved, 2)
+        transform_key = StatefulAlgorithms.plan_child_namespace(resolved, 3)
+        sink_key = StatefulAlgorithms.plan_child_namespace(resolved, 4)
+        _, sharedvars = StatefulAlgorithms._resolve_options(resolved)
         @test length(sharedvars[function_key]) == 1
         @test length(sharedvars[positional_key]) == 1
-        @test Processes.gettransform(first(sharedvars[transform_key])) !== nothing
+        @test StatefulAlgorithms.gettransform(first(sharedvars[transform_key])) !== nothing
         @test length(sharedvars[sink_key]) == 1
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
-        @test !haskey(Processes.getglobals(ctx), :result)
-        @test !haskey(Processes.getglobals(ctx), :doubled)
-        @test !haskey(Processes.getglobals(ctx), :transformed)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :doubled)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :transformed)
         @test isempty(ctx[sink_key])
     end
 
@@ -825,19 +825,19 @@ end
         end
 
         resolved = resolve(algo)
-        nested = Processes.getalgo(resolved, 1)
-        nested_plan = Processes.getalgo(nested, 1)
-        function_key = Processes.plan_child_namespace(nested_plan, 1)
-        positional_key = Processes.plan_child_namespace(nested_plan, 2)
-        _, sharedvars = Processes._resolve_options(resolved)
+        nested = StatefulAlgorithms.getalgo(resolved, 1)
+        nested_plan = StatefulAlgorithms.getalgo(nested, 1)
+        function_key = StatefulAlgorithms.plan_child_namespace(nested_plan, 1)
+        positional_key = StatefulAlgorithms.plan_child_namespace(nested_plan, 2)
+        _, sharedvars = StatefulAlgorithms._resolve_options(resolved)
         @test length(sharedvars[function_key]) == 1
         @test length(sharedvars[positional_key]) == 1
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
-        @test !haskey(Processes.getglobals(ctx), :result)
-        @test !haskey(Processes.getglobals(ctx), :doubled)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :doubled)
     end
 
     @testset "ProcessAlgorithm direct-call positional args accept alias field routes" begin
@@ -849,14 +849,14 @@ end
         end
 
         resolved = resolve(algo)
-        sink = Processes.getalgo(resolved, 1)
-        sink_key = Processes.plan_child_namespace(resolved, 1)
-        _, sharedvars = Processes._resolve_options(resolved)
+        sink = StatefulAlgorithms.getalgo(resolved, 1)
+        sink_key = StatefulAlgorithms.plan_child_namespace(resolved, 1)
+        _, sharedvars = StatefulAlgorithms._resolve_options(resolved)
         routes = sharedvars[sink_key]
         @test length(routes) == 1
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test isempty(ctx[sink_key])
         @test ctx[:dynamics].state == 11
@@ -872,11 +872,11 @@ end
         end
 
         resolved = resolve(algo)
-        sink = Processes.getalgo(resolved, 1)
-        sink_key = Processes.plan_child_namespace(resolved, 1)
+        sink = StatefulAlgorithms.getalgo(resolved, 1)
+        sink_key = StatefulAlgorithms.plan_child_namespace(resolved, 1)
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
         @test isempty(ctx[sink_key])
     end
@@ -891,12 +891,12 @@ end
         end
 
         resolved_skipped = resolve(skipped)
-        @test length(Processes.getalgos(resolved_skipped)) == 1
-        @test Processes.intervals(resolved_skipped) == (Processes.Interval(1),)
-        @test isnothing(Processes.findkey(resolved_skipped, :DSLSourceAlgo_1))
+        @test length(StatefulAlgorithms.getalgos(resolved_skipped)) == 1
+        @test StatefulAlgorithms.intervals(resolved_skipped) == (StatefulAlgorithms.Interval(1),)
+        @test isnothing(StatefulAlgorithms.findkey(resolved_skipped, :DSLSourceAlgo_1))
 
         p_skipped = Process(resolved_skipped, repeat = 1)
-        Processes.run(p_skipped)
+        StatefulAlgorithms.run(p_skipped)
         ctx_skipped = fetch(p_skipped)
         @test isempty(ctx_skipped[:DSLValueAlgo_1])
 
@@ -908,11 +908,11 @@ end
         end
 
         resolved_included = resolve(included)
-        @test length(Processes.getalgos(resolved_included)) == 2
-        @test !isnothing(Processes.findkey(resolved_included, :DSLSourceAlgo_1))
+        @test length(StatefulAlgorithms.getalgos(resolved_included)) == 2
+        @test !isnothing(StatefulAlgorithms.findkey(resolved_included, :DSLSourceAlgo_1))
 
         p_included = Process(resolved_included, repeat = 1)
-        Processes.run(p_included)
+        StatefulAlgorithms.run(p_included)
         ctx_included = fetch(p_included)
         @test isempty(ctx_included[:DSLValueAlgo_1])
     end
@@ -930,11 +930,11 @@ end
         end
 
         resolved_block = resolve(block_algo)
-        @test length(Processes.getalgos(resolved_block)) == 3
-        @test Processes.intervals(resolved_block) == (
-            Processes.Interval(2),
-            Processes.Interval(1),
-            Processes.Interval(1),
+        @test length(StatefulAlgorithms.getalgos(resolved_block)) == 3
+        @test StatefulAlgorithms.intervals(resolved_block) == (
+            StatefulAlgorithms.Interval(2),
+            StatefulAlgorithms.Interval(1),
+            StatefulAlgorithms.Interval(1),
         )
 
         include_block = false
@@ -945,7 +945,7 @@ end
         end
 
         resolved_routine = resolve(routine)
-        @test length(Processes.getalgos(resolved_routine)) == 1
+        @test length(StatefulAlgorithms.getalgos(resolved_routine)) == 1
         @test repeats(resolved_routine) == (1,)
     end
 
@@ -965,13 +965,13 @@ end
         end
 
         resolved = resolve(algo)
-        @test length(Processes.getalgos(resolved)) == 2
+        @test length(StatefulAlgorithms.getalgos(resolved)) == 2
 
         p = Process(resolved, repeat = 1)
-        Processes.run(p)
+        StatefulAlgorithms.run(p)
         ctx = fetch(p)
-        wrapper = Processes.getalgo(resolved, 2)
-        @test !haskey(Processes.getglobals(ctx), :result)
+        wrapper = StatefulAlgorithms.getalgo(resolved, 2)
+        @test !haskey(StatefulAlgorithms.getglobals(ctx), :result)
     end
 
     @testset "@include_if rejects state and alias declarations" begin
@@ -1003,7 +1003,7 @@ end
             @finally dsl_final_summary
         end
 
-        @test algo isa Processes.FinalizedAlgorithm
+        @test algo isa StatefulAlgorithms.FinalizedAlgorithm
         resolved = resolve(algo)
         p = Process(resolved, repeat = 1)
         run(p)
@@ -1052,11 +1052,11 @@ end
         run(p)
         @test fetch(p) == (; result = 4)
         @test isempty(context(p)[:FuncWrapper_1])
-        @test !haskey(Processes.getglobals(context(p)), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(context(p)), :result)
 
         close(p)
         @test fetch(p) == (; result = 4)
-        @test !haskey(Processes.getglobals(context(p)), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(context(p)), :result)
     end
 
     @testset "FuncWrapper runtime output shape does not persist" begin
@@ -1075,11 +1075,11 @@ end
         run(p)
         fetched = fetch(p)
 
-        @test fetched isa Processes.ProcessContext
-        @test !haskey(Processes.getglobals(fetched), :result)
+        @test fetched isa StatefulAlgorithms.ProcessContext
+        @test !haskey(StatefulAlgorithms.getglobals(fetched), :result)
         @test count[] == 2
         @test isempty(context(p)[:FuncWrapper_1])
-        @test !haskey(Processes.getglobals(context(p)), :result)
+        @test !haskey(StatefulAlgorithms.getglobals(context(p)), :result)
         close(p)
     end
 end

@@ -1,5 +1,5 @@
 include("_env.jl")
-import Processes as ps
+import StatefulAlgorithms as ps
 
 struct SomeState
     a::Int

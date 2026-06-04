@@ -1,26 +1,26 @@
 using InteractiveUtils
-using Processes
+using StatefulAlgorithms
 using Profile
 
-struct ManagerProfileAccumulator <: Processes.ProcessAlgorithm end
+struct ManagerProfileAccumulator <: StatefulAlgorithms.ProcessAlgorithm end
 
 """
-    Processes.init(::ManagerProfileAccumulator, context)
+    StatefulAlgorithms.init(::ManagerProfileAccumulator, context)
 
 Initialize a small mutable state used to measure `Process` worker lifecycle
 churn under `ProcessManager`.
 """
-function Processes.init(::ManagerProfileAccumulator, context::C) where {C}
+function StatefulAlgorithms.init(::ManagerProfileAccumulator, context::C) where {C}
     value = get(context, :start, 0)
     return (; value = Ref(value), total = Ref(0))
 end
 
 """
-    Processes.step!(::ManagerProfileAccumulator, context)
+    StatefulAlgorithms.step!(::ManagerProfileAccumulator, context)
 
 Accumulate one value so each process run does a small amount of real loop work.
 """
-function Processes.step!(::ManagerProfileAccumulator, context::C) where {C}
+function StatefulAlgorithms.step!(::ManagerProfileAccumulator, context::C) where {C}
     context.total[] += context.value[]
     return (;)
 end
@@ -31,7 +31,7 @@ end
 Return the algorithm subcontext from the benchmark `Process` worker.
 """
 function manager_profile_process_context(worker::P) where {P<:Process}
-    subcontexts = Processes.get_subcontexts(Processes.context(worker))
+    subcontexts = StatefulAlgorithms.get_subcontexts(StatefulAlgorithms.context(worker))
     names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
     return getproperty(subcontexts, only(names))
 end

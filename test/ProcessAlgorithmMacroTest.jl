@@ -1,5 +1,5 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
 @testset "ProcessAlgorithm macro inputs and managed capture" begin
     @ProcessAlgorithm function CaptureInput(
@@ -13,21 +13,21 @@ using Processes
         return (; b, c, total = a + b + c)
     end
 
-    prepared = Processes.init(CaptureInput(), (; b = 3))
+    prepared = StatefulAlgorithms.init(CaptureInput(), (; b = 3))
     @test prepared.b == 3
     @test prepared.c == 9
 
-    stepped = Processes.step!(CaptureInput(), (; a = 2, b = prepared.b, c = prepared.c))
+    stepped = StatefulAlgorithms.step!(CaptureInput(), (; a = 2, b = prepared.b, c = prepared.c))
     @test stepped.b == 5
     @test stepped.c == 14
     @test stepped.total == 21
 
-    boot_inputs = Processes.step!(CaptureInput(), 2; @inputs((; b = 4)))
+    boot_inputs = StatefulAlgorithms.step!(CaptureInput(), 2; @inputs((; b = 4)))
     @test boot_inputs.b == 6
     @test boot_inputs.c == 22
     @test boot_inputs.total == 30
 
-    boot_init = Processes.step!(CaptureInput(), 2; @init((; b = 4)))
+    boot_init = StatefulAlgorithms.step!(CaptureInput(), 2; @init((; b = 4)))
     @test boot_init == boot_inputs
 end
 
@@ -41,11 +41,11 @@ end
         return (; total = a + b + c)
     end
 
-    prepared = Processes.init(LegacyInputs(), (;))
+    prepared = StatefulAlgorithms.init(LegacyInputs(), (;))
     @test prepared.b == 2
     @test prepared.c == 3
 
-    stepped = Processes.step!(LegacyInputs(), (; a = 5, b = prepared.b, c = prepared.c))
+    stepped = StatefulAlgorithms.step!(LegacyInputs(), (; a = 5, b = prepared.b, c = prepared.c))
     @test stepped.total == 10
 end
 
@@ -60,12 +60,12 @@ end
         return (; state = state + dt + velocity + x)
     end
 
-    prepared = Processes.init(ContextCapture(), (; state = 1.0))
+    prepared = StatefulAlgorithms.init(ContextCapture(), (; state = 1.0))
     @test prepared.state == 1.0
     @test prepared.dt == 0.1
     @test prepared.velocity == 0.0
 
-    stepped = Processes.step!(ContextCapture(), (; x = 0.0, state = prepared.state, dt = prepared.dt, velocity = prepared.velocity))
+    stepped = StatefulAlgorithms.step!(ContextCapture(), (; x = 0.0, state = prepared.state, dt = prepared.dt, velocity = prepared.velocity))
     @test stepped.state == 1.1
 end
 
@@ -78,12 +78,12 @@ end
         return (; total = a + b + c, d)
     end
 
-    prepared = Processes.init(GroupedManaged(), (;))
+    prepared = StatefulAlgorithms.init(GroupedManaged(), (;))
     @test prepared.b == 2
     @test prepared.c == 3
     @test isnothing(prepared.d)
 
-    stepped = Processes.step!(GroupedManaged(), (; a = 5, b = prepared.b, c = prepared.c, d = prepared.d))
+    stepped = StatefulAlgorithms.step!(GroupedManaged(), (; a = 5, b = prepared.b, c = prepared.c, d = prepared.d))
     @test stepped.total == 10
     @test isnothing(stepped.d)
 end
@@ -97,11 +97,11 @@ end
     end
 
     graph = [1, 2, 3]
-    Processes.step!(resetgraph!(), graph)
+    StatefulAlgorithms.step!(resetgraph!(), graph)
     @test graph == [0, 0, 0]
 
     graph2 = [4, 5]
-    Processes.step!(resetgraph!(), (; isinggraph = graph2))
+    StatefulAlgorithms.step!(resetgraph!(), (; isinggraph = graph2))
     @test graph2 == [0, 0]
 end
 
@@ -125,14 +125,14 @@ end
     @test algo.seed == 5
     @test algo.width == 4
 
-    prepared = Processes.init(algo, (;))
+    prepared = StatefulAlgorithms.init(algo, (;))
     @test prepared.buffer == fill(5, 4)
 
-    direct = Processes.step!(algo, 2; gain = 3)
+    direct = StatefulAlgorithms.step!(algo, 2; gain = 3)
     @test direct.total == 34
     @test direct.seed == 5
     @test direct.width == 4
 
-    stepped = Processes.step!(algo, (; target = 2, buffer = prepared.buffer, gain = 3))
+    stepped = StatefulAlgorithms.step!(algo, (; target = 2, buffer = prepared.buffer, gain = 3))
     @test stepped == direct
 end

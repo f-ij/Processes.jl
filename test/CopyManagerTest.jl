@@ -1,14 +1,14 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
-struct CopyManagedAccumulator <: Processes.ProcessAlgorithm end
+struct CopyManagedAccumulator <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::CopyManagedAccumulator, context)
+function StatefulAlgorithms.init(::CopyManagedAccumulator, context)
     (; start, sink) = context
     return (; value = start, sink)
 end
 
-function Processes.step!(::CopyManagedAccumulator, context)
+function StatefulAlgorithms.step!(::CopyManagedAccumulator, context)
     push!(context.sink, context.value)
     return (; value = context.value + context.delta)
 end

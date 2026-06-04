@@ -1,7 +1,7 @@
 
 @inline function _algo_label(f)
     if f isa IdentifiableAlgo
-        return Processes.IdentifiableAlgo_label(f)
+        return StatefulAlgorithms.IdentifiableAlgo_label(f)
     end
     return sprint(summary, f)
 end
@@ -27,7 +27,7 @@ function Base.show(io::IO, ca::CompositeAlgorithm)
         print(io, "└── (empty)")
         return
     end
-    _intervals = Processes.intervals(ca)
+    _intervals = StatefulAlgorithms.intervals(ca)
     limit = get(io, :limit, false)
     show_ctx = IOContext(io, :limit => limit, :color => get(io, :color, false))
     total = length(funcs)
@@ -75,7 +75,7 @@ function _composite_algo_labels(funcs)
     labels = String[]
     for f in funcs
         if f isa IdentifiableAlgo
-            push!(labels, Processes.IdentifiableAlgo_label(f))
+            push!(labels, StatefulAlgorithms.IdentifiableAlgo_label(f))
         else
             push!(labels, summary(f))
         end
@@ -91,7 +91,7 @@ function _composite_algo_type_labels(types::Tuple)
         end
         if t <: IdentifiableAlgo
             algo_type = t.parameters[1]
-            push!(labels, string(nameof(algo_type), "@", Processes.getkey(t)))
+            push!(labels, string(nameof(algo_type), "@", StatefulAlgorithms.getkey(t)))
         else
             push!(labels, string(nameof(t)))
         end
@@ -109,7 +109,7 @@ function Base.summary(io::IO, ca::CompositeAlgorithm)
         print(io, "CompositeAlgorithm (empty)")
         return
     end
-    _intervals = Processes.intervals(ca)
+    _intervals = StatefulAlgorithms.intervals(ca)
     println(io, "CompositeAlgorithm")
     total = length(funcs)
     for (idx, f) in enumerate(funcs)

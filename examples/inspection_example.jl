@@ -1,6 +1,6 @@
-using Processes
+using StatefulAlgorithms
 
-Processes.@ProcessAlgorithm function InspectSource(
+StatefulAlgorithms.@ProcessAlgorithm function InspectSource(
     @managed(counter = 0);
     @inputs((; seed::Int = 1))
 )
@@ -8,11 +8,11 @@ Processes.@ProcessAlgorithm function InspectSource(
     return (; counter = counter + 1, value)
 end
 
-Processes.@ProcessAlgorithm function InspectScale(value, factor)
+StatefulAlgorithms.@ProcessAlgorithm function InspectScale(value, factor)
     return (; scaled = factor * value)
 end
 
-Processes.@ProcessAlgorithm function InspectSink(
+StatefulAlgorithms.@ProcessAlgorithm function InspectSink(
     value,
     @managed(log = Int[])
 )
@@ -20,7 +20,7 @@ Processes.@ProcessAlgorithm function InspectSink(
     return (; last = value)
 end
 
-Processes.@ProcessAlgorithm function InspectOscillator(
+StatefulAlgorithms.@ProcessAlgorithm function InspectOscillator(
     @managed(dt),
     @managed(state = 1.0),
     @managed(velocity = 0.0),
@@ -33,7 +33,7 @@ Processes.@ProcessAlgorithm function InspectOscillator(
     return (; state, velocity)
 end
 
-Processes.@ProcessAlgorithm function InspectDamper(
+StatefulAlgorithms.@ProcessAlgorithm function InspectDamper(
     state,
     velocity,
     trajectory,

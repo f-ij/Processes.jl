@@ -1,14 +1,14 @@
 include("_env.jl")
 struct TransformThis <: ProcessAlgorithm end
 
-function Processes.init(::TransformThis, input)
+function StatefulAlgorithms.init(::TransformThis, input)
     num1 = rand(1:10)
     num2 = rand(1:10)
     println("Initialized with numbers: $num1 and $num2")
     return (;num1, num2)
 end
 
-function Processes.step!(::TransformThis, context)
+function StatefulAlgorithms.step!(::TransformThis, context)
     (;num1, num2) = context
     num1 = rand(1:10)
     num2 = rand(1:10)
@@ -18,7 +18,7 @@ end
 
 struct SquareTwoNumbers <: ProcessAlgorithm end
 
-function Processes.step!(::SquareTwoNumbers, context)
+function StatefulAlgorithms.step!(::SquareTwoNumbers, context)
     (;num1, num2) = context
     println("Got numbers: $num1 and $num2, squaring them.")
     num1 = num1^2
@@ -28,7 +28,7 @@ function Processes.step!(::SquareTwoNumbers, context)
 end
 
 struct SquareOneNumber <: ProcessAlgorithm end
-function Processes.step!(::SquareOneNumber, context)
+function StatefulAlgorithms.step!(::SquareOneNumber, context)
     (;targetnum) = context
     println("SquareOneNumber got number: $targetnum, squaring it.")
     targetnum = targetnum^2

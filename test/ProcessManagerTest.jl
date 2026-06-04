@@ -1,5 +1,5 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
 mutable struct ManagerFakeWorker
     idx::Int
@@ -336,32 +336,32 @@ end
     @test isempty(only(slots(manager)).worker.buffer)
 end
 
-struct ManagerProcessAccumulator <: Processes.ProcessAlgorithm end
+struct ManagerProcessAccumulator <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::ManagerProcessAccumulator, context)
+function StatefulAlgorithms.init(::ManagerProcessAccumulator, context)
     value = get(context, :start, 0)
     return (; value = Ref(value), buffer = Int[])
 end
 
-function Processes.step!(::ManagerProcessAccumulator, context)
+function StatefulAlgorithms.step!(::ManagerProcessAccumulator, context)
     push!(context.buffer, context.value[])
     return (;)
 end
 
-struct ManagerProcessMultiplier <: Processes.ProcessAlgorithm end
+struct ManagerProcessMultiplier <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::ManagerProcessMultiplier, context::C) where {C}
+function StatefulAlgorithms.init(::ManagerProcessMultiplier, context::C) where {C}
     value = get(context, :start, 0)
     return (; value = Ref(value), buffer = Int[])
 end
 
-function Processes.step!(::ManagerProcessMultiplier, context::C) where {C}
+function StatefulAlgorithms.step!(::ManagerProcessMultiplier, context::C) where {C}
     push!(context.buffer, 2 * context.value[])
     return (;)
 end
 
 function manager_process_context(worker)
-    subcontexts = Processes.get_subcontexts(Processes.context(worker))
+    subcontexts = StatefulAlgorithms.get_subcontexts(StatefulAlgorithms.context(worker))
     names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
     return getproperty(subcontexts, only(names))
 end
@@ -381,8 +381,8 @@ end
     @test make_count[] == 1
     @test allequal(typeof(getalgo(slot.worker)) for slot in manager_slots)
     @test allequal(typeof(slot.worker) for slot in manager_slots)
-    @test allequal(typeof(Processes.context(slot.worker)) for slot in manager_slots)
-    @test length(unique(objectid(Processes.context(slot.worker)) for slot in manager_slots)) == 3
+    @test allequal(typeof(StatefulAlgorithms.context(slot.worker)) for slot in manager_slots)
+    @test length(unique(objectid(StatefulAlgorithms.context(slot.worker)) for slot in manager_slots)) == 3
 end
 
 @testset "ProcessManager can build per-slot Process contexts" begin
@@ -403,7 +403,7 @@ end
                 getalgo(template),
                 Input(ManagerProcessAccumulator, :start => idx),
             )
-            Processes.context(initialized)
+            StatefulAlgorithms.context(initialized)
         end,
     )
 
@@ -414,8 +414,8 @@ end
     @test make_count[] == 1
     @test context_count[] == 3
     @test allequal(typeof(getalgo(slot.worker)) for slot in manager_slots)
-    @test allequal(typeof(Processes.context(slot.worker)) for slot in manager_slots)
-    @test length(unique(objectid(Processes.context(slot.worker)) for slot in manager_slots)) == 3
+    @test allequal(typeof(StatefulAlgorithms.context(slot.worker)) for slot in manager_slots)
+    @test length(unique(objectid(StatefulAlgorithms.context(slot.worker)) for slot in manager_slots)) == 3
     @test [ctx.value[] for ctx in contexts] == [1, 2, 3]
 end
 
@@ -444,7 +444,7 @@ end
     contexts = map(slot -> manager_process_context(slot.worker), manager_slots)
 
     @test make_count[] == 3
-    @test length(unique(objectid(Processes.context(slot.worker)) for slot in manager_slots)) == 3
+    @test length(unique(objectid(StatefulAlgorithms.context(slot.worker)) for slot in manager_slots)) == 3
     @test [ctx.value[] for ctx in contexts] == worker_data
 end
 
@@ -699,7 +699,7 @@ end
     template = Process(ManagerProcessAccumulator(); repeats = 1)
     external = Int[]
     recipe = (;
-        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
+        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(StatefulAlgorithms.context(template))),
         prepare! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job
@@ -726,7 +726,7 @@ end
     template = Process(ManagerProcessAccumulator(); repeats = 1)
     external = Int[]
     recipe = (;
-        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
+        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(StatefulAlgorithms.context(template))),
         prepare! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job
@@ -756,7 +756,7 @@ end
     template = Process(ManagerProcessAccumulator(); repeats = 1)
     external = Int[]
     recipe = (;
-        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
+        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(StatefulAlgorithms.context(template))),
         prepare! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job
@@ -872,19 +872,19 @@ end
     @test only(slots(manager)).error isa ArgumentError
 end
 
-struct ManagerInlineAccumulator <: Processes.ProcessAlgorithm end
+struct ManagerInlineAccumulator <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::ManagerInlineAccumulator, context::C) where {C}
+function StatefulAlgorithms.init(::ManagerInlineAccumulator, context::C) where {C}
     return (; value = Ref(0), total = Ref(0))
 end
 
-function Processes.step!(::ManagerInlineAccumulator, context::C) where {C}
+function StatefulAlgorithms.step!(::ManagerInlineAccumulator, context::C) where {C}
     context.total[] += context.value[]
     return (;)
 end
 
 function manager_inline_context(worker::W) where {W<:InlineChunkWorker}
-    subcontexts = Processes.get_subcontexts(Processes.context(worker.process))
+    subcontexts = StatefulAlgorithms.get_subcontexts(StatefulAlgorithms.context(worker.process))
     names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
     return getproperty(subcontexts, only(names))
 end

@@ -170,7 +170,7 @@ name is known, and leaves it unchanged when no name was declared.
 """
 function _dsl_known_owner_expr(entity_expr, name::Symbol)
     name == Symbol() && return entity_expr
-    return :(Processes._composite_dsl_owner($entity_expr, $(QuoteNode(name))))
+    return :(StatefulAlgorithms._composite_dsl_owner($entity_expr, $(QuoteNode(name))))
 end
 
 """Return the key-safe owner value used by `Var` selectors emitted from the DSL."""
@@ -392,7 +392,7 @@ function _dsl_expand_state_expr(fields)
     return quote
         # The field metadata is kept in the type, while defaults are rebuilt on
         # each init call through the stored scheme closure.
-        Processes.GeneralState(() -> $defaults_expr, Val{$field_names}(), Val{$required_names}())
+        StatefulAlgorithms.GeneralState(() -> $defaults_expr, Val{$field_names}(), Val{$required_names}())
     end
 end
 
@@ -532,8 +532,8 @@ function _dsl_state_setup_expr(state_fields, state_name::Symbol)
         local _dsl_state = $state_expr
         push!(_dsl_states, $(QuoteNode(state_name)) => _dsl_state)
         local _dsl_state_owner = $state_owner_expr
-        Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_state_owner, $outputs_expr)
-        Processes._composite_dsl_register_state_outputs!(_dsl_state_owners, _dsl_state_owner, $outputs_expr)
+        StatefulAlgorithms._composite_dsl_register_outputs!(_dsl_producers, _dsl_state_owner, $outputs_expr)
+        StatefulAlgorithms._composite_dsl_register_state_outputs!(_dsl_state_owners, _dsl_state_owner, $outputs_expr)
     end
 end
 
@@ -547,16 +547,16 @@ purposes, while the option performs validation/default handling when users call
 function _dsl_runtime_input_setup_expr(input_fields)
     isempty(input_fields) && return nothing
     specs = map(input_fields) do field
-        :(Processes.RuntimeInput($(QuoteNode(field.name)), $(esc(field.typeexpr)); required = $(field.required), default = $(field.required ? nothing : esc(field.default))))
+        :(StatefulAlgorithms.RuntimeInput($(QuoteNode(field.name)), $(esc(field.typeexpr)); required = $(field.required), default = $(field.required ? nothing : esc(field.default))))
     end
     outputs_expr = Expr(:tuple, [QuoteNode(field.name) for field in input_fields]...)
     return quote
         local _dsl_runtime_input_specs = ($(specs...),)
-        local _dsl_input_state = Processes.RuntimeInputState(_dsl_runtime_input_specs)
+        local _dsl_input_state = StatefulAlgorithms.RuntimeInputState(_dsl_runtime_input_specs)
         push!(_dsl_states, :_input => _dsl_input_state)
-        push!(_dsl_options, Processes.RuntimeInputs(_dsl_runtime_input_specs))
-        local _dsl_input_owner = Processes._composite_dsl_owner(_dsl_input_state, :_input)
-        Processes._composite_dsl_register_outputs!(_dsl_producers, _dsl_input_owner, $outputs_expr)
+        push!(_dsl_options, StatefulAlgorithms.RuntimeInputs(_dsl_runtime_input_specs))
+        local _dsl_input_owner = StatefulAlgorithms._composite_dsl_owner(_dsl_input_state, :_input)
+        StatefulAlgorithms._composite_dsl_register_outputs!(_dsl_producers, _dsl_input_owner, $outputs_expr)
     end
 end
 

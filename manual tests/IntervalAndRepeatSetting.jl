@@ -29,38 +29,38 @@ c1 = run(pc);
 c2 = run(pr);
 
 e_c = context(pr)
-e_c = Processes.makecontext(pr)
-e_c = Processes._merge_into_globals(e_c, (; process=pr))
+e_c = StatefulAlgorithms.makecontext(pr)
+e_c = StatefulAlgorithms._merge_into_globals(e_c, (; process=pr))
 
-lifetime = Processes.lifetime(pr)
+lifetime = StatefulAlgorithms.lifetime(pr)
 mockroutine = resolve(mockroutine)
 
-Processes.loop(pr, mockroutine, e_c, lifetime)
-@code_warntype Processes.loop(pr, mockroutine, e_c, lifetime)
+StatefulAlgorithms.loop(pr, mockroutine, e_c, lifetime)
+@code_warntype StatefulAlgorithms.loop(pr, mockroutine, e_c, lifetime)
 @code_warntype run(pr)
 
-c = @benchmark Processes.loop($pr, $mockroutine, e_c, $lifetime, Processes.Generated()) setup = (e_c = Processes._merge_into_globals(Processes.makecontext(pr), (; process=pr)))
+c = @benchmark StatefulAlgorithms.loop($pr, $mockroutine, e_c, $lifetime, StatefulAlgorithms.Generated()) setup = (e_c = StatefulAlgorithms._merge_into_globals(StatefulAlgorithms.makecontext(pr), (; process=pr)))
 @benchmark run($pr)
     
 function testloop(rr::R, context::C) where {R, C}
     for i in 1:2
-        context = @inline Processes.merge_into_subcontext_mutate(context, Val(:_state), (;num = rand()))
+        context = @inline StatefulAlgorithms.merge_into_subcontext_mutate(context, Val(:_state), (;num = rand()))
         for i in 1:4
-            # context = @inline step!(rr[2], context, Processes.Stable())
-            context = @inline Processes.merge_into_subcontext_mutate(context, Val(:_state), (;num = square(context._state.num)))
+            # context = @inline step!(rr[2], context, StatefulAlgorithms.Stable())
+            context = @inline StatefulAlgorithms.merge_into_subcontext_mutate(context, Val(:_state), (;num = square(context._state.num)))
         end
-        # context = @inline step!(rr[3], context, Processes.Stable())
+        # context = @inline step!(rr[3], context, StatefulAlgorithms.Stable())
         @inline push!(context._state.nums, context._state.num)
     end
     return context 
 end
 
-e_c = Processes.makecontext(pr)
+e_c = StatefulAlgorithms.makecontext(pr)
 cr = testloop(rr, e_c)
 
 
-# @benchmark testloop($rr, c) setup = (c = Processes._merge_into_globals(Processes.makecontext(pr), (; process=pr)))
-@benchmark testloop($rr, c) setup = (c = Processes.makecontext(pr))
+# @benchmark testloop($rr, c) setup = (c = StatefulAlgorithms._merge_into_globals(StatefulAlgorithms.makecontext(pr), (; process=pr)))
+@benchmark testloop($rr, c) setup = (c = StatefulAlgorithms.makecontext(pr))
 
 @code_warntype testloop(rr, e_c)
 testloop(rr, e_c)

@@ -1,7 +1,7 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
-@testset "Processes" begin
+@testset "StatefulAlgorithms" begin
     include("CompositeCompositionTest.jl")
     include("InlineBenchmarkTest.jl")
     include("InlineProcessConstructorTest.jl")

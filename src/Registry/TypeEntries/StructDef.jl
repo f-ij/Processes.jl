@@ -1,7 +1,7 @@
 """
 Abstract supertype for registry implementations.
 
-Registries provide a static, type-driven name/lookup layer used by the Processes
+Registries provide a static, type-driven name/lookup layer used by the StatefulAlgorithms
 system. The primary implementation is `NameSpaceRegistry`, which supports scoped
 values, auto-naming, and multiplier tracking.
 """

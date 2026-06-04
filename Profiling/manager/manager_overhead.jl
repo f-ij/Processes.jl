@@ -1,5 +1,5 @@
 using InteractiveUtils
-using Processes
+using StatefulAlgorithms
 using Profile
 
 mutable struct ManagerProfileWorker

@@ -1,6 +1,6 @@
 include("_env.jl")
 
-Processes.@ProcessAlgorithmNew function NewMetric(
+StatefulAlgorithms.@ProcessAlgorithmNew function NewMetric(
     input_signal,
     @managed(scratch::Vector{Float64} = zeros(n)),
     @managed(scale::Float64 = scale0),
@@ -19,9 +19,9 @@ signal = [1.0, 2.0, 3.0, 4.0]
 
 boot = NewMetric(signal; damp = 0.5, @init (; n = length(signal), scale0 = 2.0))
 piped = NewMetric(signal, copy(boot.scratch), boot.scale, boot.metric; damp = 1.5)
-prepared = Processes.init(NewMetric(), (; n = 4, scale0 = 3.0))
+prepared = StatefulAlgorithms.init(NewMetric(), (; n = 4, scale0 = 3.0))
 ctx = (; input_signal = signal, scratch = copy(prepared.scratch), scale = prepared.scale, metric = prepared.metric, damp = 2.0)
-stepped = Processes.step!(NewMetric(), ctx)
+stepped = StatefulAlgorithms.step!(NewMetric(), ctx)
 
 # This should error if you want to check the mixed-call path manually:
 # NewMetric(signal, copy(boot.scratch), boot.scale, boot.metric; @init (; n = 4, scale0 = 2.0))

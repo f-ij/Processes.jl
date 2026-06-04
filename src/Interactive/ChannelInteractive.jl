@@ -2,12 +2,12 @@ struct Interactive{T} <: ProcessAlgorithm end
 """
 Take value from channel, and overwrite target with it
 """
-function Processes.step!(::Interactive{T}, context) where T
+function StatefulAlgorithms.step!(::Interactive{T}, context) where T
     (;channel, target) = context
     target = take!(channel)
     return (;target)
 end
-function Processes.cleanup(::Interactive{T}, context) where T
+function StatefulAlgorithms.cleanup(::Interactive{T}, context) where T
     (;channel) = context
     close(channel)
     return (;)

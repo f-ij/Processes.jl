@@ -20,7 +20,7 @@
 using Printf
 using Statistics
 
-using Processes
+using StatefulAlgorithms
 
 const MODE = isempty(ARGS) ? "hot" : first(ARGS)
 const TRIALS = parse(Int, get(ENV, "PROCESSES_COMPARE_TRIALS", "25"))
@@ -29,46 +29,46 @@ const CASE_FILTER = let raw = get(ENV, "PROCESSES_COMPARE_CASES", "")
     isempty(raw) ? nothing : Set(Symbol(strip(label)) for label in split(raw, ",") if !isempty(strip(label)))
 end
 
-struct PWBenchCounterA <: Processes.ProcessAlgorithm end
-struct PWBenchCounterB <: Processes.ProcessAlgorithm end
-struct PWBenchFib <: Processes.ProcessAlgorithm end
-struct PWBenchLuc <: Processes.ProcessAlgorithm end
+struct PWBenchCounterA <: StatefulAlgorithms.ProcessAlgorithm end
+struct PWBenchCounterB <: StatefulAlgorithms.ProcessAlgorithm end
+struct PWBenchFib <: StatefulAlgorithms.ProcessAlgorithm end
+struct PWBenchLuc <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::PWBenchCounterA, _context)
+function StatefulAlgorithms.init(::PWBenchCounterA, _context)
     return (; value = 0)
 end
 
-function Processes.init(::PWBenchCounterB, _context)
+function StatefulAlgorithms.init(::PWBenchCounterB, _context)
     return (; value = 0, input = 0)
 end
 
-function Processes.step!(::PWBenchCounterA, context::C) where {C}
+function StatefulAlgorithms.step!(::PWBenchCounterA, context::C) where {C}
     return (; value = context.value + 1)
 end
 
-function Processes.step!(::PWBenchCounterB, context::C) where {C}
+function StatefulAlgorithms.step!(::PWBenchCounterB, context::C) where {C}
     return (; value = context.value + context.input + 1)
 end
 
-function Processes.init(::PWBenchFib, context::C) where {C}
+function StatefulAlgorithms.init(::PWBenchFib, context::C) where {C}
     fib = Int[0, 1]
-    Processes.processsizehint!(fib, context)
+    StatefulAlgorithms.processsizehint!(fib, context)
     return (; fib)
 end
 
-function Processes.init(::PWBenchLuc, context::C) where {C}
+function StatefulAlgorithms.init(::PWBenchLuc, context::C) where {C}
     luc = Int[2, 1]
-    Processes.processsizehint!(luc, context)
+    StatefulAlgorithms.processsizehint!(luc, context)
     return (; luc)
 end
 
-function Processes.step!(::PWBenchFib, context::C) where {C}
+function StatefulAlgorithms.step!(::PWBenchFib, context::C) where {C}
     fib = context.fib
     push!(fib, fib[end] + fib[end - 1])
     return nothing
 end
 
-function Processes.step!(::PWBenchLuc, context::C) where {C}
+function StatefulAlgorithms.step!(::PWBenchLuc, context::C) where {C}
     luc = context.luc
     push!(luc, luc[end] + luc[end - 1])
     return nothing
@@ -101,31 +101,31 @@ function sample(mode, label, f; trials = TRIALS)
 end
 
 function run_inline(ip)
-    Processes.reset!(ip)
+    StatefulAlgorithms.reset!(ip)
     return run(ip)
 end
 
 function run_inline_nogen(ip)
-    Processes.reset!(ip)
-    return Processes.run_nogen(ip)
+    StatefulAlgorithms.reset!(ip)
+    return StatefulAlgorithms.run_nogen(ip)
 end
 
 function hot()
-    plain_counter = Processes.CompositeAlgorithm(PWBenchCounterA, PWBenchCounterB, (1, 1))
-    routed_counter = Processes.CompositeAlgorithm(
+    plain_counter = StatefulAlgorithms.CompositeAlgorithm(PWBenchCounterA, PWBenchCounterB, (1, 1))
+    routed_counter = StatefulAlgorithms.CompositeAlgorithm(
         PWBenchCounterA,
         PWBenchCounterB,
         (1, 1),
-        Processes.Route(PWBenchCounterA => PWBenchCounterB, :value => :input),
+        StatefulAlgorithms.Route(PWBenchCounterA => PWBenchCounterB, :value => :input),
     )
-    fib_luc = Processes.CompositeAlgorithm(PWBenchFib, PWBenchLuc, (1, 1))
+    fib_luc = StatefulAlgorithms.CompositeAlgorithm(PWBenchFib, PWBenchLuc, (1, 1))
 
-    ip_plain = Processes.InlineProcess(plain_counter; repeats = REPEATS)
-    ip_plain_nogen = Processes.InlineProcess(plain_counter; repeats = REPEATS)
-    ip_routed = Processes.InlineProcess(routed_counter; repeats = REPEATS)
-    ip_routed_nogen = Processes.InlineProcess(routed_counter; repeats = REPEATS)
-    ip_fibluc = Processes.InlineProcess(fib_luc; repeats = REPEATS)
-    ip_fibluc_nogen = Processes.InlineProcess(fib_luc; repeats = REPEATS)
+    ip_plain = StatefulAlgorithms.InlineProcess(plain_counter; repeats = REPEATS)
+    ip_plain_nogen = StatefulAlgorithms.InlineProcess(plain_counter; repeats = REPEATS)
+    ip_routed = StatefulAlgorithms.InlineProcess(routed_counter; repeats = REPEATS)
+    ip_routed_nogen = StatefulAlgorithms.InlineProcess(routed_counter; repeats = REPEATS)
+    ip_fibluc = StatefulAlgorithms.InlineProcess(fib_luc; repeats = REPEATS)
+    ip_fibluc_nogen = StatefulAlgorithms.InlineProcess(fib_luc; repeats = REPEATS)
 
     println("branch=", readchomp(`git branch --show-current`))
     println("mode=hot trials=$TRIALS repeats=$REPEATS")
@@ -150,19 +150,19 @@ function ttfp()
     println("mode=ttfp repeats=$REPEATS")
 
     ttfp_case("first_inline_plain_run") do
-        algo = Processes.CompositeAlgorithm(PWBenchCounterA, PWBenchCounterB, (1, 1))
-        ip = Processes.InlineProcess(algo; repeats = REPEATS)
+        algo = StatefulAlgorithms.CompositeAlgorithm(PWBenchCounterA, PWBenchCounterB, (1, 1))
+        ip = StatefulAlgorithms.InlineProcess(algo; repeats = REPEATS)
         run(ip)
     end
 
     ttfp_case("first_inline_routed_run") do
-        algo = Processes.CompositeAlgorithm(
+        algo = StatefulAlgorithms.CompositeAlgorithm(
             PWBenchCounterA,
             PWBenchCounterB,
             (1, 1),
-            Processes.Route(PWBenchCounterA => PWBenchCounterB, :value => :input),
+            StatefulAlgorithms.Route(PWBenchCounterA => PWBenchCounterB, :value => :input),
         )
-        ip = Processes.InlineProcess(algo; repeats = REPEATS)
+        ip = StatefulAlgorithms.InlineProcess(algo; repeats = REPEATS)
         run(ip)
     end
     return nothing

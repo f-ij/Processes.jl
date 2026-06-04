@@ -4,7 +4,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 using Printf
 using Statistics
 using Test
-using Processes
+using StatefulAlgorithms
 
 const BIG_DSL_STATEMENTS = parse(Int, get(ENV, "BIG_DSL_STATEMENTS", "120"))
 const BIG_DSL_RUNS = parse(Int, get(ENV, "BIG_DSL_RUNS", "10"))
@@ -69,7 +69,7 @@ function big_dsl_build_breakdown(n::Int)
     return (; expr_elapsed, macro_elapsed, eval_elapsed, algorithm)
 end
 
-"""Run the same scalar work without Processes for a semantic checksum."""
+"""Run the same scalar work without StatefulAlgorithms for a semantic checksum."""
 function big_dsl_direct(n::Int)
     seed = 0.125
     anchor = 0.75
@@ -91,8 +91,8 @@ end
 """Run one prepared `Process` synchronously and return the routed result."""
 function big_dsl_runprocessinline!(process::P) where {P<:Process}
     reset!(process)
-    Processes.runprocessinline!(process)
-    return Processes.getglobals(fetch(process)).result
+    StatefulAlgorithms.runprocessinline!(process)
+    return StatefulAlgorithms.getglobals(fetch(process)).result
 end
 
 """Return elapsed seconds and the value produced by a callable."""
@@ -131,7 +131,7 @@ function run_big_dsl_statement_probe()
 
     resolve_elapsed, resolved = big_dsl_measure(() -> Base.invokelatest(resolve, algorithm))
     big_dsl_print("resolve_seconds", resolve_elapsed)
-    big_dsl_print("resolved_algorithm_count", length(Processes.getalgos(Processes.getplan(resolved))))
+    big_dsl_print("resolved_algorithm_count", length(StatefulAlgorithms.getalgos(StatefulAlgorithms.getplan(resolved))))
 
     construct_elapsed, process = big_dsl_measure(() -> Base.invokelatest(() -> Process(resolved; repeat = 1)))
     big_dsl_print("process_construct_seconds", construct_elapsed)

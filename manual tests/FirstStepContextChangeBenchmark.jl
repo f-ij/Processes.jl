@@ -15,36 +15,36 @@ This benchmark intentionally does almost no numeric work so that orchestration o
 and loop-carried type instability matter more than raw arithmetic.
 """
 
-struct ScalarProducer <: Processes.ProcessAlgorithm end
-struct StableScalarConsumer <: Processes.ProcessAlgorithm end
-struct LateScalarConsumer <: Processes.ProcessAlgorithm end
+struct ScalarProducer <: StatefulAlgorithms.ProcessAlgorithm end
+struct StableScalarConsumer <: StatefulAlgorithms.ProcessAlgorithm end
+struct LateScalarConsumer <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.init(::ScalarProducer, context)
+function StatefulAlgorithms.init(::ScalarProducer, context)
     return (; tick = 0, scale = context.scale, source = 0.0)
 end
 
-function Processes.init(::StableScalarConsumer, _context)
+function StatefulAlgorithms.init(::StableScalarConsumer, _context)
     return (; tick = 0, accum = 0.0, derived = 0.0)
 end
 
-function Processes.init(::LateScalarConsumer, _context)
+function StatefulAlgorithms.init(::LateScalarConsumer, _context)
     return (; tick = 0, accum = 0.0)
 end
 
-function Processes.step!(::ScalarProducer, context::C) where C
+function StatefulAlgorithms.step!(::ScalarProducer, context::C) where C
     tick = context.tick + 1
     source = muladd(context.scale, tick, context.source)
     return (; tick, source)
 end
 
-function Processes.step!(::StableScalarConsumer, context::C) where C
+function StatefulAlgorithms.step!(::StableScalarConsumer, context::C) where C
     tick = context.tick + 1
     derived = muladd(0.5, context.input_source, 0.001 * tick)
     accum = context.accum + derived
     return (; tick, accum, derived)
 end
 
-function Processes.step!(::LateScalarConsumer, context::C) where C
+function StatefulAlgorithms.step!(::LateScalarConsumer, context::C) where C
     tick = context.tick + 1
     derived = muladd(0.5, context.input_source, 0.001 * tick)
     accum = context.accum + derived
@@ -148,5 +148,5 @@ p = Process(
 )
 c = context(p)
 algo = getalgo(p.taskdata)
-@code_warntype Processes.generated_processloop(p, algo, c, Processes.lifetime(p))
-nc = Processes.generated_processloop(p, algo, c, Processes.lifetime(p))
+@code_warntype StatefulAlgorithms.generated_processloop(p, algo, c, StatefulAlgorithms.lifetime(p))
+nc = StatefulAlgorithms.generated_processloop(p, algo, c, StatefulAlgorithms.lifetime(p))

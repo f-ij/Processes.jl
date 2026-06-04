@@ -1,42 +1,42 @@
 using Printf
 using Test
-using Processes
+using StatefulAlgorithms
 
 const SCALAR_REPLACE_STEPS = parse(Int, get(ENV, "SCALAR_REPLACE_STEPS", "100000"))
 const SCALAR_REPLACE_TRIALS = parse(Int, get(ENV, "SCALAR_REPLACE_TRIALS", "100"))
 const SCALAR_REPLACE_SINK = Ref{Any}(nothing)
 
-struct ProbeScalarFib <: Processes.ProcessAlgorithm end
-struct ProbeScalarLuc <: Processes.ProcessAlgorithm end
+struct ProbeScalarFib <: StatefulAlgorithms.ProcessAlgorithm end
+struct ProbeScalarLuc <: StatefulAlgorithms.ProcessAlgorithm end
 
 """Initialize the tiny scalar Fibonacci state used by the replace probe."""
-function Processes.init(::ProbeScalarFib, context::C) where {C}
+function StatefulAlgorithms.init(::ProbeScalarFib, context::C) where {C}
     return (; prev = Int64(0), curr = Int64(1))
 end
 
 """Initialize the tiny scalar Lucas state used by the replace probe."""
-function Processes.init(::ProbeScalarLuc, context::C) where {C}
+function StatefulAlgorithms.init(::ProbeScalarLuc, context::C) where {C}
     return (; prev = Int64(2), curr = Int64(1))
 end
 
 """Replace both scalar Fibonacci fields with the next pair."""
-function Processes.step!(::ProbeScalarFib, context::C) where {C}
+function StatefulAlgorithms.step!(::ProbeScalarFib, context::C) where {C}
     return (; prev = context.curr, curr = context.prev + context.curr)
 end
 
 """Replace both scalar Lucas fields with the next pair."""
-function Processes.step!(::ProbeScalarLuc, context::C) where {C}
+function StatefulAlgorithms.step!(::ProbeScalarLuc, context::C) where {C}
     return (; prev = context.curr, curr = context.prev + context.curr)
 end
 
 """Build the tiny scalar replace algorithm with stable subcontext names."""
 function scalar_replace_algorithm()
-    return Processes.CompositeAlgorithm(ProbeScalarFib, ProbeScalarLuc, (1, 1))
+    return StatefulAlgorithms.CompositeAlgorithm(ProbeScalarFib, ProbeScalarLuc, (1, 1))
 end
 
 """Create an inline process for the tiny scalar replace workload."""
 function scalar_replace_process(steps::I) where {I<:Integer}
-    return Processes.InlineProcess(scalar_replace_algorithm(); repeats = steps)
+    return StatefulAlgorithms.InlineProcess(scalar_replace_algorithm(); repeats = steps)
 end
 
 """Run the same tiny scalar semantics as ordinary local variables."""
@@ -55,46 +55,46 @@ function scalar_replace_plain(steps::I) where {I<:Integer}
 end
 
 """Run the scalar replace workload through the direct plan entrypoint."""
-function scalar_replace_direct_plan_loop(process::IP) where {IP<:Processes.InlineProcess}
-    isdefined(Processes, :Namespace) || error("direct plan entrypoint requires Processes.Namespace")
-    algo = Processes.getalgo(process)
-    lifetime = Processes.lifetime(process)
-    plan = Processes.getplan(algo)
-    wiring = Processes._root_wiring_view(algo, plan)
-    context = Processes.context(process)
-    runtimecontext = Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
+function scalar_replace_direct_plan_loop(process::IP) where {IP<:StatefulAlgorithms.InlineProcess}
+    isdefined(StatefulAlgorithms, :Namespace) || error("direct plan entrypoint requires StatefulAlgorithms.Namespace")
+    algo = StatefulAlgorithms.getalgo(process)
+    lifetime = StatefulAlgorithms.lifetime(process)
+    plan = StatefulAlgorithms.getplan(algo)
+    wiring = StatefulAlgorithms._root_wiring_view(algo, plan)
+    context = StatefulAlgorithms.context(process)
+    runtimecontext = StatefulAlgorithms._merge_into_globals(StatefulAlgorithms._empty_context(), (; process, lifetime))
 
-    context, runtimecontext = Processes._step!(
+    context, runtimecontext = StatefulAlgorithms._step!(
         plan,
         context,
         runtimecontext,
         wiring,
-        Processes.Namespace{nothing}(),
+        StatefulAlgorithms.Namespace{nothing}(),
         process,
         lifetime,
     )
-    Processes.inc!(process)
+    StatefulAlgorithms.inc!(process)
 
-    for _ in Processes.loopidx(process):Processes.repeats(lifetime)
-        context, runtimecontext = Processes._step!(
+    for _ in StatefulAlgorithms.loopidx(process):StatefulAlgorithms.repeats(lifetime)
+        context, runtimecontext = StatefulAlgorithms._step!(
             plan,
             context,
             runtimecontext,
             wiring,
-            Processes.Namespace{nothing}(),
+            StatefulAlgorithms.Namespace{nothing}(),
             process,
             lifetime,
         )
-        Processes.inc!(process)
-        Processes.breakcondition(lifetime, process, context) && break
+        StatefulAlgorithms.inc!(process)
+        StatefulAlgorithms.breakcondition(lifetime, process, context) && break
     end
 
     return context
 end
 
 """Extract comparable values from the scalar replace process result."""
-function scalar_replace_summary(context::C) where {C<:Processes.ProcessContext}
-    subcontexts = Processes.get_subcontexts(context)
+function scalar_replace_summary(context::C) where {C<:StatefulAlgorithms.ProcessContext}
+    subcontexts = StatefulAlgorithms.get_subcontexts(context)
     subcontext_names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
     fib = getproperty(subcontexts, subcontext_names[1])
     luc = getproperty(subcontexts, subcontext_names[2])
@@ -126,21 +126,21 @@ function run_scalar_replace_probe(;
     process = scalar_replace_process(steps)
     reset!(process)
 
-    context = Processes.context(process)
-    subcontext_names = filter(!=(:globals), fieldnames(typeof(Processes.get_subcontexts(context))))
+    context = StatefulAlgorithms.context(process)
+    subcontext_names = filter(!=(:globals), fieldnames(typeof(StatefulAlgorithms.get_subcontexts(context))))
     merge_target = subcontext_names[1]
-    has_direct_plan_api = isdefined(Processes, :Namespace) &&
-        isdefined(Processes, :getplan) &&
-        isdefined(Processes, :getwiring) &&
-        isdefined(Processes, :_step!)
+    has_direct_plan_api = isdefined(StatefulAlgorithms, :Namespace) &&
+        isdefined(StatefulAlgorithms, :getplan) &&
+        isdefined(StatefulAlgorithms, :getwiring) &&
+        isdefined(StatefulAlgorithms, :_step!)
 
     if has_direct_plan_api
-        algo = Processes.getalgo(process)
-        lifetime = Processes.lifetime(process)
-        plan = Processes.getplan(algo)
-        wiring = Processes._root_wiring_view(algo, plan)
-        namespace = Processes.Namespace{nothing}()
-        runtimecontext = Processes._merge_into_globals(Processes._empty_context(), (; process, lifetime))
+        algo = StatefulAlgorithms.getalgo(process)
+        lifetime = StatefulAlgorithms.lifetime(process)
+        plan = StatefulAlgorithms.getplan(algo)
+        wiring = StatefulAlgorithms._root_wiring_view(algo, plan)
+        namespace = StatefulAlgorithms.Namespace{nothing}()
+        runtimecontext = StatefulAlgorithms._merge_into_globals(StatefulAlgorithms._empty_context(), (; process, lifetime))
     end
 
     reset!(process)
@@ -150,8 +150,8 @@ function run_scalar_replace_probe(;
 
     # Warm the exact allocation probes before recording their steady-state value.
     reset!(process)
-    Processes.merge_into_subcontexts(context, (; merge_target => (; prev = Int64(1), curr = Int64(1))))
-    has_direct_plan_api && Processes._step!(plan, context, runtimecontext, wiring, namespace, process, lifetime)
+    StatefulAlgorithms.merge_into_subcontexts(context, (; merge_target => (; prev = Int64(1), curr = Int64(1))))
+    has_direct_plan_api && StatefulAlgorithms._step!(plan, context, runtimecontext, wiring, namespace, process, lifetime)
     reset!(process)
     run(process)
     if has_direct_plan_api
@@ -161,9 +161,9 @@ function run_scalar_replace_probe(;
 
     reset_alloc = @allocated reset!(process)
     reset!(process)
-    merge_alloc = @allocated Processes.merge_into_subcontexts(context, (; merge_target => (; prev = Int64(1), curr = Int64(1))))
+    merge_alloc = @allocated StatefulAlgorithms.merge_into_subcontexts(context, (; merge_target => (; prev = Int64(1), curr = Int64(1))))
     stable_step_alloc = if has_direct_plan_api
-        @allocated Processes._step!(plan, context, runtimecontext, wiring, namespace, process, lifetime)
+        @allocated StatefulAlgorithms._step!(plan, context, runtimecontext, wiring, namespace, process, lifetime)
     else
         missing
     end

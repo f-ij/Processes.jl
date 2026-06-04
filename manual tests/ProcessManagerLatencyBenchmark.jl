@@ -102,7 +102,7 @@ function make_manager_benchmark(dataset; nworkers = PMB_NWORKERS)
             ctx.params[] = manager.state.params[]
             resetworker!(slot)
         end,
-        flush! = manager -> flush_bench_workers!(manager.state, Processes.workers(manager)),
+        flush! = manager -> flush_bench_workers!(manager.state, StatefulAlgorithms.workers(manager)),
     )
 
     return ProcessManager(

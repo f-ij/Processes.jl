@@ -2,7 +2,7 @@
 
 `ProcessAlgorithm` and `ProcessState` are the two main building blocks you compose into a process.
 
-- Use `ProcessAlgorithm` for something that actively participates in the loop by implementing `Processes.step!`.
+- Use `ProcessAlgorithm` for something that actively participates in the loop by implementing `StatefulAlgorithms.step!`.
 - Use `ProcessState` for data that should be initialized into a subcontext and then shared or read by algorithms.
 
 Both are process entities: values that the package knows how to place inside a
@@ -40,18 +40,18 @@ struct MyAlgo <: ProcessAlgorithm
     gain::Float64
 end
 
-function Processes.init(a::MyAlgo, context)
+function StatefulAlgorithms.init(a::MyAlgo, context)
     x = 0.0
     return (; x)
 end
 
-function Processes.step!(a::MyAlgo, context)
+function StatefulAlgorithms.step!(a::MyAlgo, context)
     (; x) = context
     x = x + a.gain
     return (; x)
 end
 
-function Processes.cleanup(::MyAlgo, context)
+function StatefulAlgorithms.cleanup(::MyAlgo, context)
     return (;)
 end
 ```
@@ -59,7 +59,7 @@ end
 ```julia
 struct MyState <: ProcessState end
 
-function Processes.init(::MyState, context)
+function StatefulAlgorithms.init(::MyState, context)
     return (; shared_buffer = Float64[])
 end
 ```
@@ -88,9 +88,9 @@ Managed local state is data that belongs to one algorithm and is created during
 
 The signature is split into:
 
-- plain positional arguments: values read from context during `Processes.step!`
-- `@managed(...)` positional arguments: algorithm-owned values created during `Processes.init`
-- normal keyword arguments: values read from context during `Processes.step!`, using the declared default when absent
+- plain positional arguments: values read from context during `StatefulAlgorithms.step!`
+- `@managed(...)` positional arguments: algorithm-owned values created during `StatefulAlgorithms.init`
+- normal keyword arguments: values read from context during `StatefulAlgorithms.step!`, using the declared default when absent
 - optional trailing `@input((; ...))` / `@inputs((; ...))` / `@init((; ...))`: values read only while constructing managed state
 - optional `@config ...` declarations before the function: fields stored on the generated algorithm object
 
@@ -120,7 +120,7 @@ end
 Rules worth knowing:
 
 - `@managed(name)` captures `name` from the init context into local managed state.
-- `@managed(name = expr)` evaluates `expr` during `Processes.init`.
+- `@managed(name = expr)` evaluates `expr` during `StatefulAlgorithms.init`.
 - `@managed(a, b = expr, c = expr2)` expands to multiple managed locals in order.
 - `@input/@inputs/@init` may only appear once and must be the last keyword-like item.
 - `@config` fields must have defaults and become fields on the generated struct.
@@ -133,15 +133,15 @@ Rules worth knowing:
 For a macro-generated algorithm `MyAlgo`, the main entrypoints are:
 
 - direct/bootstrap call: `step!(MyAlgo(), args...; @inputs((; ...)))`
-- init hook: `Processes.init(MyAlgo(), context)`
-- step hook: `Processes.step!(MyAlgo(), context)`
+- init hook: `StatefulAlgorithms.init(MyAlgo(), context)`
+- step hook: `StatefulAlgorithms.step!(MyAlgo(), context)`
 
 Internally the macro defines:
 
 - `struct MyAlgo <: ProcessAlgorithm end` or `Base.@kwdef struct MyAlgo ... end`
 - a hidden implementation function containing the user body
-- public `Processes.step!(algo::MyAlgo, ...)` methods for direct calls
-- generated `Processes.init` and `Processes.step!` methods that feed the implementation
+- public `StatefulAlgorithms.step!(algo::MyAlgo, ...)` methods for direct calls
+- generated `StatefulAlgorithms.init` and `StatefulAlgorithms.step!` methods that feed the implementation
 
 Type annotations and `where` clauses are preserved on the generated public call signatures and
 the hidden implementation function. The runtime context extraction methods currently bind simple
@@ -192,10 +192,10 @@ For composite algorithms, use the edit helpers before resolving the algorithm:
 algo = CompositeAlgorithm(FastStep, SlowStep, (1, 10))
 
 algo = changeinterval(algo, 2, 20)
-interval(algo, 2) == Processes.Interval(20)
+interval(algo, 2) == StatefulAlgorithms.Interval(20)
 
 algo = changeintervals(algo, (1, 5))
-intervals(algo) == (Processes.Interval(1), Processes.Interval(5))
+intervals(algo) == (StatefulAlgorithms.Interval(1), StatefulAlgorithms.Interval(5))
 ```
 
 These helpers return a new loop algorithm with the updated schedule. They are

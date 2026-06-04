@@ -1,5 +1,5 @@
 using Test
-using Processes
+using StatefulAlgorithms
 
 @testset "Share: shared variables propagate across subcontexts" begin
     # This mirrors `manual tests/ShareTest.jl` and verifies that `Share(...)` makes
@@ -28,7 +28,7 @@ using Processes
     run(p)
     wait(p)
 
-    actual_traj = Processes.context(p)[Oscillator].trajectory
+    actual_traj = StatefulAlgorithms.context(p)[Oscillator].trajectory
     @test length(actual_traj) == 41  # 1 initial + 2 pushes per step for 20 steps
 
     # Build expected trajectory assuming:

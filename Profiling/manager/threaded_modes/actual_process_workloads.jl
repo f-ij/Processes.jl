@@ -1,6 +1,6 @@
 using LinearAlgebra
 using Printf
-using Processes
+using StatefulAlgorithms
 using Statistics
 
 BLAS.set_num_threads(1)
@@ -22,9 +22,9 @@ function ActualWorkJob(id::I, amount::A, size::S) where {I<:Integer, A<:Integer,
     return ActualWorkJob{I, A, S}(id, amount, size)
 end
 
-struct ActualLinearAlgebraWork <: Processes.ProcessAlgorithm end
-struct ActualTrajectoryWork <: Processes.ProcessAlgorithm end
-struct ActualSortWork <: Processes.ProcessAlgorithm end
+struct ActualLinearAlgebraWork <: StatefulAlgorithms.ProcessAlgorithm end
+struct ActualTrajectoryWork <: StatefulAlgorithms.ProcessAlgorithm end
+struct ActualSortWork <: StatefulAlgorithms.ProcessAlgorithm end
 
 struct ActualProcessWorkload{Name, Template, Jobs, Prepare, Checksum}
     name::Name
@@ -50,11 +50,11 @@ function ActualProcessWorkload(
 end
 
 """
-    Processes.init(::ActualLinearAlgebraWork, context)
+    StatefulAlgorithms.init(::ActualLinearAlgebraWork, context)
 
 Initialize a deterministic matrix-vector workload with reusable buffers.
 """
-function Processes.init(::ActualLinearAlgebraWork, context::C) where {C}
+function StatefulAlgorithms.init(::ActualLinearAlgebraWork, context::C) where {C}
     dim = get(context, :dim, 256)
     matrix = Matrix{Float64}(undef, dim, dim)
     state = Vector{Float64}(undef, dim)
@@ -72,11 +72,11 @@ function Processes.init(::ActualLinearAlgebraWork, context::C) where {C}
 end
 
 """
-    Processes.step!(::ActualLinearAlgebraWork, context)
+    StatefulAlgorithms.step!(::ActualLinearAlgebraWork, context)
 
 Run repeated matrix-vector transforms with in-place state updates.
 """
-function Processes.step!(::ActualLinearAlgebraWork, context::C) where {C}
+function StatefulAlgorithms.step!(::ActualLinearAlgebraWork, context::C) where {C}
     @inbounds for _ in 1:context.passes[]
         mul!(context.scratch, context.matrix, context.state)
         for i in eachindex(context.state, context.scratch)
@@ -89,11 +89,11 @@ function Processes.step!(::ActualLinearAlgebraWork, context::C) where {C}
 end
 
 """
-    Processes.init(::ActualTrajectoryWork, context)
+    StatefulAlgorithms.init(::ActualTrajectoryWork, context)
 
 Initialize reusable particle state for a nonlinear trajectory workload.
 """
-function Processes.init(::ActualTrajectoryWork, context::C) where {C}
+function StatefulAlgorithms.init(::ActualTrajectoryWork, context::C) where {C}
     n = get(context, :n, 2_048)
     position = Vector{Float64}(undef, n)
     velocity = Vector{Float64}(undef, n)
@@ -107,12 +107,12 @@ function Processes.init(::ActualTrajectoryWork, context::C) where {C}
 end
 
 """
-    Processes.step!(::ActualTrajectoryWork, context)
+    StatefulAlgorithms.step!(::ActualTrajectoryWork, context)
 
 Integrate a deterministic nonlinear particle system for the requested number of
 steps.
 """
-function Processes.step!(::ActualTrajectoryWork, context::C) where {C}
+function StatefulAlgorithms.step!(::ActualTrajectoryWork, context::C) where {C}
     dt = context.dt[]
     @inbounds for _ in 1:context.steps[]
         for i in eachindex(context.position, context.velocity)
@@ -129,20 +129,20 @@ function Processes.step!(::ActualTrajectoryWork, context::C) where {C}
 end
 
 """
-    Processes.init(::ActualSortWork, context)
+    StatefulAlgorithms.init(::ActualSortWork, context)
 
 Initialize scalar controls for an allocation-heavy sorting workload.
 """
-function Processes.init(::ActualSortWork, context::C) where {C}
+function StatefulAlgorithms.init(::ActualSortWork, context::C) where {C}
     return (; n = Ref(get(context, :n, 16_384)), seed = Ref(UInt64(1)), checksum = Ref(0.0))
 end
 
 """
-    Processes.step!(::ActualSortWork, context)
+    StatefulAlgorithms.step!(::ActualSortWork, context)
 
 Allocate, fill, and sort a deterministic vector for one job.
 """
-function Processes.step!(::ActualSortWork, context::C) where {C}
+function StatefulAlgorithms.step!(::ActualSortWork, context::C) where {C}
     n = context.n[]
     data = Vector{Float64}(undef, n)
     state = context.seed[]
@@ -164,7 +164,7 @@ end
 Return the single algorithm subcontext from a benchmark `Process` worker.
 """
 function actual_process_context(worker::P) where {P<:Process}
-    subcontexts = Processes.get_subcontexts(Processes.context(worker))
+    subcontexts = StatefulAlgorithms.get_subcontexts(StatefulAlgorithms.context(worker))
     names = filter(!=(:globals), fieldnames(typeof(subcontexts)))
     return getproperty(subcontexts, only(names))
 end
@@ -289,7 +289,7 @@ Create a typed manager with reusable copies of a workload template process.
 """
 function actual_process_manager(workload::W, nworkers::N) where {W<:ActualProcessWorkload, N<:Integer}
     recipe = (;
-        makeworker = (idx, manager) -> copyprocess(workload.template; context = deepcopy(Processes.context(workload.template))),
+        makeworker = (idx, manager) -> copyprocess(workload.template; context = deepcopy(StatefulAlgorithms.context(workload.template))),
         prepare! = workload.prepare!,
     )
 

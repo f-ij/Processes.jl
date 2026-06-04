@@ -15,7 +15,7 @@ algo = resolve(CompositeAlgorithm(
     (1, 20),
 ))
 
-context = Processes.context(init(
+context = StatefulAlgorithms.context(init(
     algo,
     Init(:_exchange; vars = (Var(:target, :value), Var(:target, :seen))),
 ))
@@ -68,7 +68,7 @@ The outer loop schedule still controls how often the exchange child is called:
 
 ```julia
 CompositeAlgorithm(target, :_exchange => ContextExchange(), (1, 20))
-Processes.context(init(algo, Init(:_exchange; vars = (Var(:target, :value),))))
+StatefulAlgorithms.context(init(algo, Init(:_exchange; vars = (Var(:target, :value),))))
 ```
 
 The exchange also supports a wall-clock gate:
@@ -84,15 +84,15 @@ without reading selected variables or applying pending writes.
 ## Complete Example
 
 ```julia
-using Processes
+using StatefulAlgorithms
 
 struct InteractiveTarget <: ProcessAlgorithm end
 
-function Processes.init(::InteractiveTarget, context)
+function StatefulAlgorithms.init(::InteractiveTarget, context)
     return (; value = 1.0)
 end
 
-function Processes.step!(::InteractiveTarget, context)
+function StatefulAlgorithms.step!(::InteractiveTarget, context)
     return (;)
 end
 
@@ -102,7 +102,7 @@ algo = resolve(CompositeAlgorithm(
     (1, 1),
 ))
 
-context = Processes.context(init(
+context = StatefulAlgorithms.context(init(
     algo,
     Init(:_exchange; vars = (Var(:target, :value),));
     lifetime = Repeat(3),
@@ -112,7 +112,7 @@ ref = view(context, :value)
 ref[] == 1.0
 
 ref[] = 4
-context = Processes._step!(algo, context, Processes.Stable())
+context = StatefulAlgorithms._step!(algo, context, StatefulAlgorithms.Stable())
 
 ref[] == 4.0
 context.target.value == 4.0

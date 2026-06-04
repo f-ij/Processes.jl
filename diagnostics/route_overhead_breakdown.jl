@@ -111,8 +111,8 @@ function context_state_buffer_no_merge_algorithm()
 end
 
 """Return a compact checksum from the macro route-buffer run."""
-function macro_route_buffers_summary(result::A) where {A<:Processes.AbstractLoopAlgorithm}
-    ctx = Processes.context(result)
+function macro_route_buffers_summary(result::A) where {A<:StatefulAlgorithms.AbstractLoopAlgorithm}
+    ctx = StatefulAlgorithms.context(result)
     plant = ctx[:plant]
     controller = ctx[:controller]
     observer = ctx[:observer]
@@ -120,14 +120,14 @@ function macro_route_buffers_summary(result::A) where {A<:Processes.AbstractLoop
 end
 
 """Return a compact checksum from the merged state-buffer run."""
-function merge_state_buffer_summary(result::A) where {A<:Processes.AbstractLoopAlgorithm}
-    ctx = Processes.context(result)
+function merge_state_buffer_summary(result::A) where {A<:StatefulAlgorithms.AbstractLoopAlgorithm}
+    ctx = StatefulAlgorithms.context(result)
     return sum(ctx[:_state].merge_buffer)
 end
 
 """Return a compact checksum from the nested non-merged state-buffer run."""
-function context_state_buffer_summary(result::A) where {A<:Processes.AbstractLoopAlgorithm}
-    ctx = Processes.context(result)
+function context_state_buffer_summary(result::A) where {A<:StatefulAlgorithms.AbstractLoopAlgorithm}
+    ctx = StatefulAlgorithms.context(result)
     return sum(ctx[:_state].left_buffer) + sum(ctx[:_state].right_buffer) + sum(ctx[:_state].third_buffer)
 end
 

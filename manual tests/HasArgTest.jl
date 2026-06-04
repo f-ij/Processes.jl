@@ -1,4 +1,4 @@
-using Processes
+using StatefulAlgorithms
 struct TestAlgo end
 
 function (::TestAlgo)(args)

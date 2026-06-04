@@ -26,28 +26,28 @@ Graph:
 - N + O + G + J -> Reducer
 """
 
-struct SourceXMerge <: Processes.ProcessAlgorithm end
-struct SourceYMerge <: Processes.ProcessAlgorithm end
-struct SourceZMerge <: Processes.ProcessAlgorithm end
+struct SourceXMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct SourceYMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct SourceZMerge <: StatefulAlgorithms.ProcessAlgorithm end
 
-struct StageAMerge <: Processes.ProcessAlgorithm end
-struct StageBMerge <: Processes.ProcessAlgorithm end
-struct StageCMerge <: Processes.ProcessAlgorithm end
-struct StageDMerge <: Processes.ProcessAlgorithm end
-struct StageEMerge <: Processes.ProcessAlgorithm end
-struct StageFMerge <: Processes.ProcessAlgorithm end
+struct StageAMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageBMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageCMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageDMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageEMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct StageFMerge <: StatefulAlgorithms.ProcessAlgorithm end
 
-struct JoinGMerge <: Processes.ProcessAlgorithm end
-struct JoinHMerge <: Processes.ProcessAlgorithm end
-struct JoinIMerge <: Processes.ProcessAlgorithm end
-struct JoinJMerge <: Processes.ProcessAlgorithm end
-struct JoinKMerge <: Processes.ProcessAlgorithm end
-struct JoinLMerge <: Processes.ProcessAlgorithm end
-struct JoinMMerge <: Processes.ProcessAlgorithm end
-struct JoinNMerge <: Processes.ProcessAlgorithm end
-struct JoinOMerge <: Processes.ProcessAlgorithm end
+struct JoinGMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinHMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinIMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinJMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinKMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinLMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinMMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinNMerge <: StatefulAlgorithms.ProcessAlgorithm end
+struct JoinOMerge <: StatefulAlgorithms.ProcessAlgorithm end
 
-struct ReducerMerge <: Processes.ProcessAlgorithm end
+struct ReducerMerge <: StatefulAlgorithms.ProcessAlgorithm end
 
 const MERGE_VALUE_NAMES = (:v1, :v2, :v3, :v4, :v5, :v6, :v7, :v8)
 
@@ -133,94 +133,94 @@ end
 @inline _root_state(seed, phase) = (; v1 = seed, v2 = 0.7 * seed, v3 = -0.5 * seed, v4 = 0.3 * seed, v5 = -0.2 * seed, v6 = 0.15 * seed, v7 = -0.1 * seed, v8 = 0.05 * seed, phase)
 @inline _zero_state() = (; v1 = 0.0, v2 = 0.0, v3 = 0.0, v4 = 0.0, v5 = 0.0, v6 = 0.0, v7 = 0.0, v8 = 0.0)
 
-Processes.init(::SourceXMerge, context) = _root_state(context.start_x, 0.011)
-Processes.init(::SourceYMerge, context) = _root_state(context.start_y, 0.017)
-Processes.init(::SourceZMerge, context) = _root_state(context.start_z, 0.023)
+StatefulAlgorithms.init(::SourceXMerge, context) = _root_state(context.start_x, 0.011)
+StatefulAlgorithms.init(::SourceYMerge, context) = _root_state(context.start_y, 0.017)
+StatefulAlgorithms.init(::SourceZMerge, context) = _root_state(context.start_z, 0.023)
 
 for T in (StageAMerge, StageBMerge, StageCMerge, StageDMerge, StageEMerge, StageFMerge,
           JoinGMerge, JoinHMerge, JoinIMerge, JoinJMerge, JoinKMerge, JoinLMerge,
           JoinMMerge, JoinNMerge, JoinOMerge)
-    @eval Processes.init(::$T, _context) = _zero_state()
+    @eval StatefulAlgorithms.init(::$T, _context) = _zero_state()
 end
 
-Processes.init(::ReducerMerge, _context) = (; total = 0.0)
+StatefulAlgorithms.init(::ReducerMerge, _context) = (; total = 0.0)
 
-function Processes.step!(::SourceXMerge, context)
+function StatefulAlgorithms.step!(::SourceXMerge, context)
     vals = _node_update8(_local8(context), _local8(context), context.phase)
     return (; (_vals8(vals))..., phase = context.phase + 0.011)
 end
 
-function Processes.step!(::SourceYMerge, context)
+function StatefulAlgorithms.step!(::SourceYMerge, context)
     vals = _node_update8(_local8(context), _local8(context), context.phase)
     return (; (_vals8(vals))..., phase = context.phase + 0.017)
 end
 
-function Processes.step!(::SourceZMerge, context)
+function StatefulAlgorithms.step!(::SourceZMerge, context)
     vals = _node_update8(_local8(context), _local8(context), context.phase)
     return (; (_vals8(vals))..., phase = context.phase + 0.023)
 end
 
-function Processes.step!(::StageAMerge, context)
+function StatefulAlgorithms.step!(::StageAMerge, context)
     return _vals8(_node_update8(_local8(context), _x8(context)))
 end
 
-function Processes.step!(::StageBMerge, context)
+function StatefulAlgorithms.step!(::StageBMerge, context)
     return _vals8(_node_update8(_local8(context), _x8(context)))
 end
 
-function Processes.step!(::StageCMerge, context)
+function StatefulAlgorithms.step!(::StageCMerge, context)
     return _vals8(_node_update8(_local8(context), _y8(context)))
 end
 
-function Processes.step!(::StageDMerge, context)
+function StatefulAlgorithms.step!(::StageDMerge, context)
     return _vals8(_node_update8(_local8(context), _y8(context)))
 end
 
-function Processes.step!(::StageEMerge, context)
+function StatefulAlgorithms.step!(::StageEMerge, context)
     return _vals8(_node_update8(_local8(context), _z8(context)))
 end
 
-function Processes.step!(::StageFMerge, context)
+function StatefulAlgorithms.step!(::StageFMerge, context)
     return _vals8(_node_update8(_local8(context), _z8(context)))
 end
 
-function Processes.step!(::JoinGMerge, context)
+function StatefulAlgorithms.step!(::JoinGMerge, context)
     return _vals8(_node_update8(_local8(context), (_a8(context)..., _c8(context)...)))
 end
 
-function Processes.step!(::JoinHMerge, context)
+function StatefulAlgorithms.step!(::JoinHMerge, context)
     return _vals8(_node_update8(_local8(context), (_b8(context)..., _d8(context)...)))
 end
 
-function Processes.step!(::JoinIMerge, context)
+function StatefulAlgorithms.step!(::JoinIMerge, context)
     return _vals8(_node_update8(_local8(context), (_c8(context)..., _e8(context)...)))
 end
 
-function Processes.step!(::JoinJMerge, context)
+function StatefulAlgorithms.step!(::JoinJMerge, context)
     return _vals8(_node_update8(_local8(context), (_d8(context)..., _f8(context)...)))
 end
 
-function Processes.step!(::JoinKMerge, context)
+function StatefulAlgorithms.step!(::JoinKMerge, context)
     return _vals8(_node_update8(_local8(context), (_g8(context)..., _h8(context)...)))
 end
 
-function Processes.step!(::JoinLMerge, context)
+function StatefulAlgorithms.step!(::JoinLMerge, context)
     return _vals8(_node_update8(_local8(context), (_h8(context)..., _i8(context)...)))
 end
 
-function Processes.step!(::JoinMMerge, context)
+function StatefulAlgorithms.step!(::JoinMMerge, context)
     return _vals8(_node_update8(_local8(context), (_i8(context)..., _j8(context)...)))
 end
 
-function Processes.step!(::JoinNMerge, context)
+function StatefulAlgorithms.step!(::JoinNMerge, context)
     return _vals8(_node_update8(_local8(context), (_k8(context)..., _l8(context)...)))
 end
 
-function Processes.step!(::JoinOMerge, context)
+function StatefulAlgorithms.step!(::JoinOMerge, context)
     return _vals8(_node_update8(_local8(context), (_l8(context)..., _m8(context)...)))
 end
 
-function Processes.step!(::ReducerMerge, context)
+function StatefulAlgorithms.step!(::ReducerMerge, context)
     inputs = (_n8(context)..., _o8(context)..., _g8(context)..., _j8(context)...)
     total = context.total
     @inbounds for rep in 1:24

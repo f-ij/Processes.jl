@@ -5,7 +5,7 @@ function Base.show(io::IO, tca::ThreadedCompositeAlgorithm)
         print(io, "└── (empty)")
         return
     end
-    _intervals = Processes.intervals(tca)
+    _intervals = StatefulAlgorithms.intervals(tca)
     limit = get(io, :limit, false)
     show_ctx = IOContext(io, :limit => limit, :color => get(io, :color, false))
     total = length(funcs)
@@ -27,7 +27,7 @@ function Base.summary(io::IO, tca::ThreadedCompositeAlgorithm)
         print(io, "BarrieredCompositeAlgorithm (empty)")
         return
     end
-    _intervals = Processes.intervals(tca)
+    _intervals = StatefulAlgorithms.intervals(tca)
     println(io, "BarrieredCompositeAlgorithm")
     total = length(funcs)
     for (idx, f) in enumerate(funcs)

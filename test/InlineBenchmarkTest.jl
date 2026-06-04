@@ -1,29 +1,29 @@
 using Test
 using Statistics
-using Processes
+using StatefulAlgorithms
 
-struct InlineFib <: Processes.ProcessAlgorithm end
-struct InlineLuc <: Processes.ProcessAlgorithm end
+struct InlineFib <: StatefulAlgorithms.ProcessAlgorithm end
+struct InlineLuc <: StatefulAlgorithms.ProcessAlgorithm end
 
-function Processes.step!(::InlineFib, context::C) where C
+function StatefulAlgorithms.step!(::InlineFib, context::C) where C
     fiblist = context.fiblist
     push!(fiblist, fiblist[end] + fiblist[end - 1])
     return nothing
 end
 
-function Processes.init(::InlineFib, context::C) where C
+function StatefulAlgorithms.init(::InlineFib, context::C) where C
     fiblist = Int[0, 1]
     processsizehint!(fiblist, context)
     return (;fiblist)
 end
 
-function Processes.step!(::InlineLuc, context::C) where C
+function StatefulAlgorithms.step!(::InlineLuc, context::C) where C
     luclist = context.luclist
     push!(luclist, luclist[end] + luclist[end - 1])
     return nothing
 end
 
-function Processes.init(::InlineLuc, context::C) where C
+function StatefulAlgorithms.init(::InlineLuc, context::C) where C
     luclist = Int[2, 1]
     processsizehint!(luclist, context)
     return (;luclist)
@@ -59,7 +59,7 @@ function inline_bmark_nogen(ip::IP, trials = 5) where IP
     for _ in 1:trials
         @inline reset!(ip)
         start_ns = time_ns()
-        @inline Processes.run_nogen(ip)
+        @inline StatefulAlgorithms.run_nogen(ip)
         elapsed = (time_ns() - start_ns) / 1e9
         push!(runtimes, elapsed)
     end
@@ -78,8 +78,8 @@ end
 
 @testset "InlineProcess benchmark" begin
     n = 100_000
-    fibluc = Processes.CompositeAlgorithm( InlineFib, InlineLuc , (1, 1))
-    ip = Processes.InlineProcess(fibluc; repeats = n)
+    fibluc = StatefulAlgorithms.CompositeAlgorithm( InlineFib, InlineLuc , (1, 1))
+    ip = StatefulAlgorithms.InlineProcess(fibluc; repeats = n)
     
     println("Benchmarking InlineProcess with $n repeats...")
     inline_bmark(ip, 5)
