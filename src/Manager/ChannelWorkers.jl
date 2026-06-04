@@ -4,11 +4,11 @@ export ChannelWorkers, runchannel!
     ChannelWorkers(; channel_size = nothing)
     ChannelWorkers(channel_size)
 
-Manager run mode that starts one long-lived worker task per slot and has those
+Manager execution mode that starts one long-lived worker task per slot and has those
 workers pull jobs from a channel until it closes. When `channel_size` is
 `nothing`, the internal channel uses one slot per manager worker.
 """
-struct ChannelWorkers{Size}
+struct ChannelWorkers{Size} <: ManagerExecution
     channel_size::Size
 end
 
@@ -34,7 +34,7 @@ function _channel_workers_size(mode::CW, manager::M) where {CW<:ChannelWorkers, 
 end
 
 """
-    _manager_channel_job_type(manager)
+    _manager_channel_job_type(manager)w
 
 Return the job type declared by the manager's slots for typed channel storage.
 """
@@ -154,7 +154,7 @@ function _finish_channel_run!(
     last_error = isnothing(task_error) ? threaded_error : task_error
     manager.throw && !isnothing(last_error) && throw(last_error)
 
-    _apply_flush_policy!(manager, manager.flush_policy; final = true)
+    _apply_sync_policy!(manager, manager.sync_policy; final = true)
     return manager
 end
 
@@ -219,20 +219,20 @@ function runchannel!(manager::M, jobs::Jobs; channel_size::I = length(slots(mana
 end
 
 """
-    run!(manager, jobs, ChannelWorkers(; channel_size = ...))
+    _run_execution!(manager, jobs, ChannelWorkers(; channel_size = ...))
 
 Run `jobs` through the channel-worker manager mode.
 """
-function run!(manager::M, jobs::Jobs, mode::CW) where {M<:ProcessManager, Jobs, CW<:ChannelWorkers}
+function _run_execution!(manager::M, jobs::Jobs, mode::CW) where {M<:ProcessManager, Jobs, CW<:ChannelWorkers}
     return runchannel!(manager, jobs; channel_size = _channel_workers_size(mode, manager))
 end
 
 """
-    run!(manager, jobs_channel, ChannelWorkers())
+    _run_execution!(manager, jobs_channel, ChannelWorkers())
 
 Run jobs from an externally managed channel. The call returns after
 `jobs_channel` is closed and drained.
 """
-function run!(manager::M, jobs_channel::Channel{Job}, mode::CW) where {M<:ProcessManager, Job, CW<:ChannelWorkers}
+function _run_execution!(manager::M, jobs_channel::Channel{Job}, mode::CW) where {M<:ProcessManager, Job, CW<:ChannelWorkers}
     return runchannel!(manager, jobs_channel)
 end

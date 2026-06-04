@@ -54,7 +54,7 @@ recipe = (;
 
     makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(template.context)),
 
-    prepare! = (slot, sample, manager) -> begin
+    loadjob! = (slot, sample, manager) -> begin
         ctx = slot.worker.context[MockLearningDynamics]
         ctx.x[] = sample.x
         ctx.y[] = sample.y
@@ -62,7 +62,7 @@ recipe = (;
         resetworker!(slot)
     end,
 
-    flush! = manager -> begin
+    sync_to_state! = manager -> begin
         total_grad_w = 0.0
         total_grad_b = 0.0
         total_loss = 0.0
@@ -109,7 +109,7 @@ manager = ProcessManager(
         initial_params = (w = 0.0, b = 0.0),
         lr = 0.08,
     ),
-    flush_policy = FlushAtEnd(),
+    sync_policy = SyncAtEnd(),
 )
 
 for _ in 1:8

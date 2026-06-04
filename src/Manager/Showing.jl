@@ -127,7 +127,8 @@ function Base.show(io::IO, ::MIME"text/plain", manager::M) where {M<:ProcessMana
     println(io, "├── status = ", manager.closed ? :closed : :open)
     println(io, "├── workers = ", length(manager.slots), " (active=", active, ", idle=", length(manager.slots) - active, ")")
     println(io, "├── lifecycle = ", typeof(manager.worker_lifecycle))
-    println(io, "├── flush_policy = ", manager.flush_policy)
+    println(io, "├── execution = ", manager.execution)
+    println(io, "├── sync_policy = ", manager.sync_policy)
     println(
         io,
         "├── progress = dispatched=",

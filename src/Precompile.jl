@@ -463,22 +463,24 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         fake_events = Int[]
         fake_recipe = (;
             makeworker = (idx, manager) -> _ProcessPrecompileFakeWorker(idx, 0, false),
-            prepare! = (slot, job, manager) -> begin
+            loadjob! = (slot, job, manager) -> begin
                 slot.worker.value = job
                 slot.worker.done = false
             end,
             start! = (slot, job, manager) -> (slot.worker.done = true),
             isdone = (slot, manager) -> slot.worker.done,
             finalize! = (slot, job, manager) -> nothing,
-            consume! = (slot, job, manager) -> push!(fake_events, slot.worker.value),
-            release! = (slot, job, manager) -> (slot.worker.value = 0),
-            flush! = manager -> length(fake_events),
+            afterjob! = (slot, job, manager) -> begin
+                push!(fake_events, slot.worker.value)
+                slot.worker.value = 0
+            end,
+            sync_to_state! = manager -> length(fake_events),
             close! = (slot, manager) -> (slot.worker.done = true),
         )
         fake_manager = ProcessManager(
             fake_recipe;
             nworkers = 2,
-            flush_policy = FlushEvery(2; drain = true),
+            sync_policy = SyncEvery(2; drain = true),
             job_type = Int,
             result_type = Nothing,
         )
@@ -488,7 +490,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         noflush_manager = ProcessManager(
             fake_recipe;
             nworkers = 1,
-            flush_policy = NoFlush(),
+            sync_policy = NoSync(),
             job_type = Int,
             result_type = Nothing,
         )
@@ -500,7 +502,7 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
         no_drain_manager = ProcessManager(
             fake_recipe;
             nworkers = 1,
-            flush_policy = FlushEvery(1; drain = false),
+            sync_policy = SyncEvery(1; drain = false),
             job_type = Int,
             result_type = Nothing,
         )
@@ -516,22 +518,22 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
                 total_loss = Ref(0.0),
             ),
             makeworker = (idx, manager) -> template,
-            prepare! = (slot, job, manager) -> begin
+            loadjob! = (slot, job, manager) -> begin
                 ctx = _process_manager_precompile_context(slot.worker)
                 ctx.x[] = job.x
                 ctx.y[] = job.y
                 ctx.params[] = manager.state.params[]
                 resetworker!(slot)
             end,
-            runarguments = (slot, job, manager) -> (;),
-            flush! = manager -> _process_manager_precompile_flush!(manager.state, workers(manager)),
+            providearguments = (slot, job, manager) -> (;),
+            sync_to_state! = manager -> _process_manager_precompile_flush!(manager.state, workers(manager)),
         )
 
         manager = ProcessManager(
             recipe;
             nworkers = 2,
             config = (; initial_params = (w = 0.0, b = 0.0), lr = 0.01),
-            flush_policy = FlushAtEnd(),
+            sync_policy = SyncAtEnd(),
             job_type = eltype(jobs),
             result_type = typeof(template),
         )
@@ -543,16 +545,16 @@ _process_precompile_scale(x; scale = 1.0) = x * scale
             repeats = 1,
         )
         reinit_recipe = (;
-            prepare! = (slot, job, manager) -> reinitworker!(
+            loadjob! = (slot, job, manager) -> reinitworker!(
                 slot,
                 Input(_ProcessPrecompileCounter, :value => job),
             ),
-            consume! = (slot, job, manager) -> getticks(slot.worker),
+            afterjob! = (slot, job, manager) -> getticks(slot.worker),
         )
         reinit_manager = ProcessManager(
             reinit_recipe;
             workers = [reinit_worker],
-            flush_policy = NoFlush(),
+            sync_policy = NoSync(),
             job_type = Int,
             result_type = typeof(reinit_worker),
         )
