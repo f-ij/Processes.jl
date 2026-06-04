@@ -81,13 +81,11 @@ function _run_threaded_job!(
 
     try
         _assign_job_worker!(manager, slot, job)
-        prepare!(manager.recipe, slot, job, manager)
+        loadjob!(manager.recipe, slot, job, manager)
         _start_slot_inline!(manager, slot, job)
         dispatched[Int(slot_idx)] += 1
         slot.result = _finalize_slot_worker!(manager, slot, job)
-        afterrun!(manager.recipe, slot, job, manager)
-        consume!(manager.recipe, slot, job, manager)
-        release!(manager.recipe, slot, job, manager)
+        afterjob!(manager.recipe, slot, job, manager)
         _destroy_finished_job_worker!(manager, slot, job)
         slot.runs += 1
         counts[Int(slot_idx)] += 1
@@ -238,14 +236,24 @@ function runthreaded!(manager::M, jobs, schedule::S = Dynamic()) where {M<:Proce
     threaded_error = _merge_threaded_errors!(manager, errors_by_slot)
     manager.throw && !isnothing(threaded_error) && throw(threaded_error)
 
-    _apply_flush_policy!(manager, manager.flush_policy; final = true)
+    _apply_sync_policy!(manager, manager.sync_policy; final = true)
     return manager
+end
+
+"""
+    _run_execution!(manager, jobs, execution::ThreadedWorkers)
+
+Run `jobs` through the manager's stored threaded execution mode.
+"""
+function _run_execution!(manager::M, jobs::Jobs, execution::TW) where {M<:ProcessManager, Jobs, TW<:ThreadedWorkers}
+    return runthreaded!(manager, jobs, execution.schedule)
 end
 
 """
     run!(manager, jobs, schedule)
 
-Convenience form for `runthreaded!(manager, jobs, schedule)`.
+Execution schedules are manager-owned through `ThreadedWorkers(schedule)`.
 """
-run!(manager::M, jobs, schedule::S) where {M<:ProcessManager, S<:ThreadsType} =
-    runthreaded!(manager, jobs, schedule)
+function run!(manager::M, jobs::Jobs, schedule::S) where {M<:ProcessManager, Jobs, S<:ThreadsType}
+    throw(ArgumentError("Thread schedules are stored on ProcessManager. Construct with `ProcessManager(recipe; execution = ThreadedWorkers(schedule))` and call `run!(manager, jobs)`."))
+end

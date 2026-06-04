@@ -18,14 +18,14 @@ external_buffer = Int[]
 recipe = (;
     makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(template.context)),
 
-    prepare! = (slot, job, manager) -> begin
+    loadjob! = (slot, job, manager) -> begin
         ctx = slot.worker.context[ManagedAccumulator]
         ctx.value[] = job.start
         ctx.delta[] = job.delta
         resetworker!(slot)
     end,
 
-    flush! = manager -> begin
+    sync_to_state! = manager -> begin
         for slot in slots(manager)
             ctx = slot.worker.context[ManagedAccumulator]
             append!(external_buffer, ctx.local_buffer)
@@ -40,7 +40,7 @@ jobs = [
     (; start = 100, delta = 10),
 ]
 
-manager = ProcessManager(recipe; nworkers = 2, flush_policy = FlushAtEnd())
+manager = ProcessManager(recipe; nworkers = 2, sync_policy = SyncAtEnd())
 run!(manager, jobs)
 
 println("Flushed values: ", external_buffer)

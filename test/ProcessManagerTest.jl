@@ -10,11 +10,11 @@ end
 function immediate_fake_recipe(external, flush_count)
     return (;
         makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
-        prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job),
+        loadjob! = (slot, job, manager) -> push!(slot.worker.buffer, job),
         start! = (slot, job, manager) -> (slot.worker.done = true),
         isdone = (slot, manager) -> slot.worker.done,
         finalize! = (slot, job, manager) -> (slot.worker.done = false),
-        flush! = manager -> begin
+        sync_to_state! = manager -> begin
             flush_count[] += 1
             for slot in slots(manager)
                 append!(external, slot.worker.buffer)
@@ -25,11 +25,16 @@ function immediate_fake_recipe(external, flush_count)
     )
 end
 
-@testset "ProcessManager stores flush policy traits" begin
+@testset "ProcessManager stores sync policy and execution traits" begin
     manager = ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1)
-    @test manager.flush_policy isa FlushAtEnd
+    @test manager.sync_policy isa SyncAtEnd
+    @test manager.flush_policy isa SyncAtEnd
+    @test manager.execution isa PollingWorkers
+    @test ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, sync_policy = NoSync()).sync_policy isa NoSync
     @test_throws ArgumentError ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, flush_policy = :end)
+    @test_throws ArgumentError ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, sync_policy = :end)
     @test_throws ArgumentError ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, worker_lifecycle = :reuse)
+    @test_throws ArgumentError ProcessManager(immediate_fake_recipe(Int[], Ref(0)); nworkers = 1, execution = :polling)
 end
 
 @testset "ProcessManager can keep slot fields concrete" begin
@@ -66,7 +71,7 @@ end
 
 @testset "ProcessManager stores slots as a typed tuple" begin
     recipe = (;
-        prepare! = (slot, job, manager) -> (slot.worker.done = true; push!(slot.worker.buffer, job)),
+        loadjob! = (slot, job, manager) -> (slot.worker.done = true; push!(slot.worker.buffer, job)),
         isdone = (slot, manager) -> slot.worker.done,
     )
     manager = ProcessManager(
@@ -154,7 +159,7 @@ end
     max_active = Ref(0)
     recipe = (;
         makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
-        prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job),
+        loadjob! = (slot, job, manager) -> push!(slot.worker.buffer, job),
         start! = (slot, job, manager) -> begin
             active[] += 1
             max_active[] = max(max_active[], active[])
@@ -167,7 +172,7 @@ end
         end,
     )
 
-    manager = ProcessManager(recipe; nworkers = 2, flush_policy = NoFlush())
+    manager = ProcessManager(recipe; nworkers = 2, sync_policy = NoSync())
     dispatch!(manager, 1)
     dispatch!(manager, 2)
     @test max_active[] == 2
@@ -192,7 +197,7 @@ end
         finalize! = (slot, job, manager) -> (slot.worker.done = false),
     )
 
-    manager = ProcessManager(recipe; nworkers = 3, flush_policy = NoFlush())
+    manager = ProcessManager(recipe; nworkers = 3, sync_policy = NoSync())
     first_slot = dispatch!(manager, 1)
     second_slot = dispatch!(manager, 2)
     @test manager.active_count == 2
@@ -216,7 +221,7 @@ end
     @test second_slot.runs == 1
 end
 
-@testset "FlushAtEnd syncs worker-local buffers after drain" begin
+@testset "SyncAtEnd syncs worker-local buffers after drain" begin
     external = Int[]
     flush_count = Ref(0)
     manager = ProcessManager(immediate_fake_recipe(external, flush_count); nworkers = 2)
@@ -252,10 +257,10 @@ end
     @test flush_count[] == 1
 end
 
-@testset "NoFlush leaves worker-local buffers untouched" begin
+@testset "NoSync leaves worker-local buffers untouched" begin
     external = Int[]
     flush_count = Ref(0)
-    manager = ProcessManager(immediate_fake_recipe(external, flush_count); nworkers = 2, flush_policy = NoFlush())
+    manager = ProcessManager(immediate_fake_recipe(external, flush_count); nworkers = 2, sync_policy = NoSync())
 
     run!(manager, 1:4)
 
@@ -264,10 +269,10 @@ end
     @test sort(vcat((slot.worker.buffer for slot in slots(manager))...)) == collect(1:4)
 end
 
-@testset "FlushEvery flushes by completed worker runs" begin
+@testset "SyncEvery syncs by completed worker runs" begin
     external = Int[]
     flush_count = Ref(0)
-    manager = ProcessManager(immediate_fake_recipe(external, flush_count); nworkers = 2, flush_policy = FlushEvery(2; drain = false))
+    manager = ProcessManager(immediate_fake_recipe(external, flush_count); nworkers = 2, sync_policy = SyncEvery(2; drain = false))
 
     run!(manager, 1:5)
 
@@ -279,15 +284,29 @@ end
     external = Int[]
     flush_count = Ref(0)
     static_workers = Threads.maxthreadid()
+    threaded_recipe = (;
+        makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
+        loadjob! = (slot, job, manager) -> push!(slot.worker.buffer, job),
+        start! = (slot, job, manager) -> (slot.worker.done = true),
+        finalize! = (slot, job, manager) -> (slot.worker.done = false),
+        sync_to_state! = manager -> begin
+            flush_count[] += 1
+            for slot in slots(manager)
+                append!(external, slot.worker.buffer)
+                empty!(slot.worker.buffer)
+            end
+        end,
+    )
     manager = ProcessManager(
-        immediate_fake_recipe(external, flush_count);
+        threaded_recipe;
         nworkers = static_workers,
-        flush_policy = FlushAtEnd(),
+        sync_policy = SyncAtEnd(),
+        execution = ThreadedWorkers(Static()),
         job_type = Int,
     )
 
     static_jobs = 1:(3 * static_workers)
-    run!(manager, static_jobs, Static())
+    run!(manager, static_jobs)
 
     @test Static() isa ThreadsType
     @test Dynamic() isa ThreadsType
@@ -300,39 +319,55 @@ end
 
     greedy_external = Int[]
     greedy_flush_count = Ref(0)
+    greedy_recipe = (;
+        makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
+        loadjob! = (slot, job, manager) -> push!(slot.worker.buffer, job),
+        start! = (slot, job, manager) -> (slot.worker.done = true),
+        finalize! = (slot, job, manager) -> (slot.worker.done = false),
+        sync_to_state! = manager -> begin
+            greedy_flush_count[] += 1
+            for slot in slots(manager)
+                append!(greedy_external, slot.worker.buffer)
+                empty!(slot.worker.buffer)
+            end
+        end,
+    )
     greedy_manager = ProcessManager(
-        immediate_fake_recipe(greedy_external, greedy_flush_count);
+        greedy_recipe;
         nworkers = 2,
-        flush_policy = FlushAtEnd(),
+        sync_policy = SyncAtEnd(),
+        execution = ThreadedWorkers(Greedy()),
         job_type = Int,
     )
 
-    runthreaded!(greedy_manager, 1:5, Greedy())
+    run!(greedy_manager, 1:5)
 
     @test sort(greedy_external) == collect(1:5)
     @test greedy_flush_count[] == 1
     @test greedy_manager.completions == 5
 end
 
-@testset "release! runs after consume!" begin
+@testset "afterjob! runs after finalize!" begin
     events = Symbol[]
     recipe = (;
         makeworker = (idx, manager) -> ManagerFakeWorker(idx, Int[], false),
-        prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job),
+        loadjob! = (slot, job, manager) -> push!(slot.worker.buffer, job),
         start! = (slot, job, manager) -> (slot.worker.done = true),
         isdone = (slot, manager) -> slot.worker.done,
-        finalize! = (slot, job, manager) -> (slot.worker.done = false),
-        consume! = (slot, job, manager) -> push!(events, :consume),
-        release! = (slot, job, manager) -> begin
-            push!(events, :release)
+        finalize! = (slot, job, manager) -> begin
+            slot.worker.done = false
+            push!(events, :finalize)
+        end,
+        afterjob! = (slot, job, manager) -> begin
+            push!(events, :afterjob)
             empty!(slot.worker.buffer)
         end,
     )
 
-    manager = ProcessManager(recipe; nworkers = 1, flush_policy = NoFlush())
+    manager = ProcessManager(recipe; nworkers = 1, sync_policy = NoSync())
     run!(manager, [1])
 
-    @test events == [:consume, :release]
+    @test events == [:finalize, :afterjob]
     @test isempty(only(slots(manager)).worker.buffer)
 end
 
@@ -375,7 +410,7 @@ end
         end,
     )
 
-    manager = ProcessManager(recipe; nworkers = 3, flush_policy = NoFlush())
+    manager = ProcessManager(recipe; nworkers = 3, sync_policy = NoSync())
     manager_slots = slots(manager)
 
     @test make_count[] == 1
@@ -407,7 +442,7 @@ end
         end,
     )
 
-    manager = ProcessManager(recipe; nworkers = 3, flush_policy = NoFlush())
+    manager = ProcessManager(recipe; nworkers = 3, sync_policy = NoSync())
     manager_slots = slots(manager)
     contexts = map(slot -> manager_process_context(slot.worker), manager_slots)
 
@@ -438,7 +473,7 @@ end
         nworkers = 3,
         worker_init = MakeEachWorker(),
         worker_init_data = worker_data,
-        flush_policy = NoFlush(),
+        sync_policy = NoSync(),
     )
     manager_slots = slots(manager)
     contexts = map(slot -> manager_process_context(slot.worker), manager_slots)
@@ -452,7 +487,6 @@ end
     created = Int[]
     finalized = Int[]
     consumed = Int[]
-    released = Int[]
     construction_count = Ref(0)
     recipe = (;
         makeworker = (idx, manager, job) -> begin
@@ -461,12 +495,11 @@ end
             ManagerFakeWorker(job.value, Int[], false)
         end,
         workername = (idx, manager, job) -> job.name,
-        prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job.value),
+        loadjob! = (slot, job, manager) -> push!(slot.worker.buffer, job.value),
         start! = (slot, job, manager) -> (slot.worker.done = true),
         isdone = (slot, manager) -> slot.worker.done,
         workerfinalizer = (slot, job, manager) -> job.finalizer,
-        consume! = (slot, job, manager) -> push!(consumed, only(slot.worker.buffer)),
-        release! = (slot, job, manager) -> push!(released, slot.worker.idx),
+        afterjob! = (slot, job, manager) -> push!(consumed, only(slot.worker.buffer)),
     )
     jobs = [
         (; name = :trial_a, value = 3, finalizer = worker -> (push!(finalized, worker.idx); worker.done = false; worker)),
@@ -477,7 +510,7 @@ end
         recipe;
         nworkers = 1,
         worker_lifecycle = OnDemandWorkers(destroy_after_finalize = false),
-        flush_policy = NoFlush(),
+        sync_policy = NoSync(),
         job_type = eltype(jobs),
         result_type = ManagerFakeWorker,
     )
@@ -488,7 +521,6 @@ end
     @test created == [3, 5]
     @test finalized == [3, 5]
     @test consumed == [3, 5]
-    @test released == [3, 5]
     @test only(slots(manager)).name == :trial_b
     @test only(workers(manager)).idx == 5
 end
@@ -497,7 +529,7 @@ end
     destroyed = Int[]
     recipe = (;
         makeworker = (idx, manager, job) -> ManagerFakeWorker(job, Int[], false),
-        prepare! = (slot, job, manager) -> push!(slot.worker.buffer, job),
+        loadjob! = (slot, job, manager) -> push!(slot.worker.buffer, job),
         start! = (slot, job, manager) -> (slot.worker.done = true),
         isdone = (slot, manager) -> slot.worker.done,
         workerfinalizer = (slot, job, manager) -> worker -> (worker.done = false; worker),
@@ -508,7 +540,7 @@ end
         recipe;
         nworkers = 1,
         worker_lifecycle = OnDemandWorkers(),
-        flush_policy = NoFlush(),
+        sync_policy = NoSync(),
         job_type = Int,
         result_type = ManagerFakeWorker,
     )
@@ -519,7 +551,7 @@ end
     closed = Int[]
     close_recipe = (;
         makeworker = recipe.makeworker,
-        prepare! = recipe.prepare!,
+        loadjob! = recipe.loadjob!,
         start! = recipe.start!,
         isdone = recipe.isdone,
         workerfinalizer = recipe.workerfinalizer,
@@ -529,7 +561,7 @@ end
         close_recipe;
         nworkers = 1,
         worker_lifecycle = OnDemandWorkers(),
-        flush_policy = NoFlush(),
+        sync_policy = NoSync(),
         job_type = Int,
         result_type = ManagerFakeWorker,
     )
@@ -543,12 +575,12 @@ end
     recipe = (;
         makeworker = (idx, manager, job) -> Process(job.algo; repeats = 1),
         workername = (idx, manager, job) -> job.name,
-        prepare! = (slot, job, manager) -> begin
+        loadjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job.value
             nothing
         end,
-        consume! = (slot, job, manager) -> begin
+        afterjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             push!(outputs, only(local_context.buffer))
         end,
@@ -563,7 +595,7 @@ end
         nworkers = 1,
         worker_lifecycle = OnDemandWorkers(destroy_after_finalize = false),
         worker_type = Process,
-        flush_policy = NoFlush(),
+        sync_policy = NoSync(),
         job_type = Any,
         result_type = Process,
     )
@@ -585,11 +617,11 @@ end
     external = Int[]
     reset_calls = Ref(0)
     recipe = (;
-        prepare! = (slot, job, manager) -> begin
+        loadjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job
         end,
-        flush! = manager -> begin
+        sync_to_state! = manager -> begin
             for slot in slots(manager)
                 local_context = manager_process_context(slot.worker)
                 append!(external, local_context.buffer)
@@ -605,13 +637,13 @@ end
     @test reset_calls[] == 0
 
     reset_recipe = (;
-        prepare! = (slot, job, manager) -> begin
+        loadjob! = (slot, job, manager) -> begin
             reset_calls[] += 1
             resetworker!(slot)
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job
         end,
-        flush! = recipe.flush!,
+        sync_to_state! = recipe.sync_to_state!,
     )
 
     reset_manager = ProcessManager(reset_recipe; workers = [worker])
@@ -624,7 +656,7 @@ end
     worker = Process(ManagerProcessAccumulator(); repeats = 1)
     external = Int[]
     recipe = (;
-        prepare! = (slot, job, manager) -> begin
+        loadjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job
             nothing
@@ -632,14 +664,14 @@ end
         start! = (slot, job, manager) -> runprocessinline!(slot.worker),
         isdone = (slot, manager) -> true,
         finalize! = (slot, job, manager) -> nothing,
-        consume! = (slot, job, manager) -> begin
+        afterjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             push!(external, only(local_context.buffer))
             empty!(local_context.buffer)
         end,
     )
 
-    manager = ProcessManager(recipe; workers = (worker,), flush_policy = NoFlush(), job_type = Int, result_type = Nothing)
+    manager = ProcessManager(recipe; workers = (worker,), sync_policy = NoSync(), job_type = Int, result_type = Nothing)
     run!(manager, 1:3)
 
     @test external == [1, 2, 3]
@@ -647,7 +679,7 @@ end
     @test isnothing(worker.task)
 end
 
-@testset "ProcessManager runarguments can set per-job Process lifetime" begin
+@testset "ProcessManager providearguments can set per-job Process lifetime" begin
     jobs = [
         (; value = 1, repeats = 2),
         (; value = 2, lifetime = Repeat(3)),
@@ -656,19 +688,19 @@ end
     polling_worker = Process(ManagerProcessAccumulator(); repeats = 1)
     polling_output = Int[]
     polling_recipe = (;
-        prepare! = (slot, job, manager) -> begin
+        loadjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job.value
             nothing
         end,
-        runarguments = (slot, job, manager) -> haskey(job, :repeats) ? (; repeats = job.repeats) : (; lifetime = job.lifetime),
-        consume! = (slot, job, manager) -> begin
+        providearguments = (slot, job, manager) -> haskey(job, :repeats) ? (; repeats = job.repeats) : (; lifetime = job.lifetime),
+        afterjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             append!(polling_output, local_context.buffer)
             empty!(local_context.buffer)
         end,
     )
-    polling_manager = ProcessManager(polling_recipe; workers = (polling_worker,), flush_policy = NoFlush())
+    polling_manager = ProcessManager(polling_recipe; workers = (polling_worker,), sync_policy = NoSync())
     run!(polling_manager, jobs)
 
     @test polling_output == [1, 1, 2, 2, 2]
@@ -678,9 +710,9 @@ end
     threaded_output = Int[]
     threaded_recipe = (;
         makeworker = (idx, manager) -> copyprocess(threaded_template; context = deepcopy(context(threaded_template))),
-        prepare! = polling_recipe.prepare!,
-        runarguments = polling_recipe.runarguments,
-        flush! = manager -> begin
+        loadjob! = polling_recipe.loadjob!,
+        providearguments = polling_recipe.providearguments,
+        sync_to_state! = manager -> begin
             for slot in slots(manager)
                 local_context = manager_process_context(slot.worker)
                 append!(threaded_output, local_context.buffer)
@@ -688,8 +720,8 @@ end
             end
         end,
     )
-    threaded_manager = ProcessManager(threaded_recipe; nworkers = 2, flush_policy = FlushAtEnd())
-    runthreaded!(threaded_manager, jobs, Dynamic())
+    threaded_manager = ProcessManager(threaded_recipe; nworkers = 2, sync_policy = SyncAtEnd(), execution = ThreadedWorkers(Dynamic()))
+    run!(threaded_manager, jobs)
 
     @test sort(threaded_output) == [1, 1, 2, 2, 2]
     @test all(isnothing(slot.worker.task) for slot in slots(threaded_manager))
@@ -700,12 +732,12 @@ end
     external = Int[]
     recipe = (;
         makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
-        prepare! = (slot, job, manager) -> begin
+        loadjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job
             nothing
         end,
-        flush! = manager -> begin
+        sync_to_state! = manager -> begin
             for slot in slots(manager)
                 local_context = manager_process_context(slot.worker)
                 append!(external, local_context.buffer)
@@ -714,8 +746,8 @@ end
         end,
     )
 
-    manager = ProcessManager(recipe; nworkers = 2, flush_policy = FlushAtEnd(), job_type = Int)
-    runthreaded!(manager, 1:4, Dynamic())
+    manager = ProcessManager(recipe; nworkers = 2, sync_policy = SyncAtEnd(), execution = ThreadedWorkers(Dynamic()), job_type = Int)
+    run!(manager, 1:4)
 
     @test sort(external) == collect(1:4)
     @test manager.completions == 4
@@ -727,12 +759,12 @@ end
     external = Int[]
     recipe = (;
         makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
-        prepare! = (slot, job, manager) -> begin
+        loadjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job
             nothing
         end,
-        flush! = manager -> begin
+        sync_to_state! = manager -> begin
             for slot in slots(manager)
                 local_context = manager_process_context(slot.worker)
                 append!(external, local_context.buffer)
@@ -741,8 +773,8 @@ end
         end,
     )
 
-    manager = ProcessManager(recipe; nworkers = 2, flush_policy = FlushAtEnd(), job_type = Int)
-    run!(manager, 1:6, ChannelWorkers(; channel_size = 2))
+    manager = ProcessManager(recipe; nworkers = 2, sync_policy = SyncAtEnd(), execution = ChannelWorkers(; channel_size = 2), job_type = Int)
+    run!(manager, 1:6)
 
     @test sort(external) == collect(1:6)
     @test manager.dispatched == 6
@@ -757,12 +789,12 @@ end
     external = Int[]
     recipe = (;
         makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
-        prepare! = (slot, job, manager) -> begin
+        loadjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             local_context.value[] = job
             nothing
         end,
-        flush! = manager -> begin
+        sync_to_state! = manager -> begin
             for slot in slots(manager)
                 local_context = manager_process_context(slot.worker)
                 append!(external, local_context.buffer)
@@ -782,14 +814,101 @@ end
         end
     end
 
-    manager = ProcessManager(recipe; nworkers = 3, flush_policy = FlushAtEnd(), job_type = Int)
-    run!(manager, jobs, ChannelWorkers())
+    manager = ProcessManager(recipe; nworkers = 3, sync_policy = SyncAtEnd(), execution = ChannelWorkers(), job_type = Int)
+    run!(manager, jobs)
     fetch(producer)
 
     @test sort(external) == collect(1:5)
     @test manager.dispatched == 5
     @test manager.completions == 5
     @test all(isnothing(slot.worker.task) for slot in slots(manager))
+end
+
+@testset "Portable manager recipes run under all execution modes" begin
+    template = Process(ManagerProcessAccumulator(); repeats = 1)
+    recipe = (;
+        initstate = (config, manager) -> (; output = Int[]),
+        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
+        loadjob! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job
+            nothing
+        end,
+        sync_to_state! = manager -> begin
+            for slot in slots(manager)
+                local_context = manager_process_context(slot.worker)
+                append!(manager.state.output, local_context.buffer)
+                empty!(local_context.buffer)
+            end
+        end,
+    )
+    executions = (
+        PollingWorkers(),
+        ThreadedWorkers(Dynamic()),
+        ThreadedWorkers(Greedy()),
+        ChannelWorkers(),
+    )
+
+    for execution in executions
+        manager = ProcessManager(recipe; nworkers = 2, sync_policy = SyncAtEnd(), execution, job_type = Int)
+        run!(manager, 1:6)
+
+        @test sort(manager.state.output) == collect(1:6)
+        @test manager.dispatched == 6
+        @test manager.completions == 6
+    end
+end
+
+@testset "ProcessManager execution mode is fixed at construction" begin
+    template = Process(ManagerProcessAccumulator(); repeats = 1)
+    recipe = (;
+        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
+        loadjob! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job
+            nothing
+        end,
+    )
+    manager = ProcessManager(recipe; nworkers = 1, sync_policy = NoSync(), job_type = Int)
+
+    @test_throws ArgumentError run!(manager, 1:2, Dynamic())
+    @test_throws ArgumentError run!(manager, 1:2, ChannelWorkers())
+end
+
+@testset "ProcessManager can use recipe-level execution" begin
+    template = Process(ManagerProcessAccumulator(); repeats = 1)
+    recipe = (;
+        execution = ChannelWorkers(),
+        initstate = (config, manager) -> (; output = Int[]),
+        makeworker = (idx, manager) -> copyprocess(template; context = deepcopy(Processes.context(template))),
+        loadjob! = (slot, job, manager) -> begin
+            local_context = manager_process_context(slot.worker)
+            local_context.value[] = job
+            nothing
+        end,
+        sync_to_state! = manager -> begin
+            for slot in slots(manager)
+                local_context = manager_process_context(slot.worker)
+                append!(manager.state.output, local_context.buffer)
+                empty!(local_context.buffer)
+            end
+        end,
+    )
+
+    manager = ProcessManager(recipe; nworkers = 2, sync_policy = SyncAtEnd(), job_type = Int)
+    run!(manager, 1:4)
+
+    @test manager.execution isa ChannelWorkers
+    @test sort(manager.state.output) == collect(1:4)
+end
+
+@testset "ProcessManager rejects polling-only hooks for channel execution" begin
+    recipe = (;
+        execution = ChannelWorkers(),
+        isdone = (slot, manager) -> true,
+    )
+
+    @test_throws ArgumentError ProcessManager(recipe; nworkers = 1)
 end
 
 @testset "reinitworker! rebuilds Process context through init pipeline" begin
@@ -800,17 +919,17 @@ end
     )
     external = Int[]
     recipe = (;
-        prepare! = (slot, job, manager) -> reinitworker!(
+        loadjob! = (slot, job, manager) -> reinitworker!(
             slot,
             Input(ManagerProcessAccumulator, :start => job),
         ),
-        consume! = (slot, job, manager) -> begin
+        afterjob! = (slot, job, manager) -> begin
             local_context = manager_process_context(slot.worker)
             append!(external, local_context.buffer)
         end,
     )
 
-    manager = ProcessManager(recipe; workers = [worker], flush_policy = NoFlush())
+    manager = ProcessManager(recipe; workers = [worker], sync_policy = NoSync())
     run!(manager, [2, 5])
 
     @test external == [2, 5]
@@ -838,33 +957,33 @@ end
         (; base = 20, delta = 2),
     ]
     recipe = (;
-        prepare! = (slot, job, manager) -> partialinitworker!(
+        loadjob! = (slot, job, manager) -> partialinitworker!(
             slot,
             Init(ManagerRuntimeJobStep; base = job.base),
         ),
-        runarguments = (slot, job, manager) -> begin
+        providearguments = (slot, job, manager) -> begin
             push!(before_jobs, job.base)
             (; delta = job.delta)
         end,
-        consume! = (slot, job, manager) -> push!(
+        afterjob! = (slot, job, manager) -> push!(
             outputs,
             context(slot.worker)[ManagerRuntimeJobStep].total,
         ),
     )
 
-    manager = ProcessManager(recipe; workers = [worker], flush_policy = NoFlush())
+    manager = ProcessManager(recipe; workers = [worker], sync_policy = NoSync())
     run!(manager, jobs)
 
     @test outputs == [11, 22]
     @test before_jobs == [10, 20]
 end
 
-@testset "ProcessManager rejects non-keyword runarguments results" begin
+@testset "ProcessManager rejects non-keyword providearguments results" begin
     worker = Process(ManagerProcessAccumulator(); repeats = 1)
     recipe = (;
-        runarguments = (slot, job, manager) -> job,
+        providearguments = (slot, job, manager) -> job,
     )
-    manager = ProcessManager(recipe; workers = [worker], flush_policy = NoFlush(), throw = false)
+    manager = ProcessManager(recipe; workers = [worker], sync_policy = NoSync(), throw = false)
 
     dispatch!(manager, 1)
 
@@ -915,7 +1034,7 @@ end
     manager = ProcessManager(
         recipe;
         workers = (worker,),
-        flush_policy = NoFlush(),
+        sync_policy = NoSync(),
         job_type = Vector{Int},
         result_type = typeof(worker),
     )
@@ -951,7 +1070,7 @@ end
             push!(slot.scratch, local_context.total[])
             nothing
         end,
-        flush! = manager -> begin
+        sync_to_state! = manager -> begin
             for slot in slots(manager)
                 isnothing(slot.scratch) && continue
                 append!(outputs, slot.scratch)
@@ -963,7 +1082,7 @@ end
     manager = ProcessManager(
         recipe;
         nworkers = 2,
-        flush_policy = FlushAtEnd(),
+        sync_policy = SyncAtEnd(),
         job_type = Vector{Int},
         scratch_type = Vector{Int},
         result_type = InlineChunkWorker,
@@ -996,7 +1115,7 @@ end
     manager = ProcessManager(
         recipe;
         workers = (worker,),
-        flush_policy = NoFlush(),
+        sync_policy = NoSync(),
         job_type = Vector{Int},
         result_type = typeof(worker),
     )
